@@ -1,0 +1,26 @@
+{
+  "name": "minase",
+  "version": "0.1.0",
+  "description": "水瀬 — a digital life companion for OpenClaw with evolving memory and Instagram presence",
+  "main": "bin/cli.js",
+  "bin": {
+    "minase": "bin/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["openclaw", "digital-life", "cosplay", "instagram", "ai-companion"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@fal-ai/client": "^1.2.0",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}
