@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { callInstagramBridge } from './post-pipeline';
+import { callInstagramBridge } from './instagram-bridge-client';
 
 const MEMORY_BASE = path.join(process.env.HOME!, '.openclaw', 'workspace', 'memory', 'minase');
 

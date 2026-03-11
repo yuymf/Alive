@@ -8,7 +8,7 @@
 import { InspirationData, PostHistory } from './types';
 import { PATHS, readJSON, writeJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
-import { callInstagramBridge } from './post-pipeline';
+import { callInstagramBridge } from './instagram-bridge-client';
 
 const DEFAULT_INSPIRATION: InspirationData = {
   instagram_trends: { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: 0 },
