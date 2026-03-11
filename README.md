@@ -6,7 +6,11 @@
 ## 安装
 
 ```bash
-npx minase@latest
+git clone https://github.com/yourname/MizuSan.git
+cd MizuSan
+npm install
+npm run build
+node bin/cli.js
 ```
 
 安装器会引导你完成：
@@ -15,8 +19,32 @@ npx minase@latest
 3. 配置 Instagram Graph API（可选，后期添加）
 4. 将水瀬的人设注入 `~/.openclaw/workspace/SOUL.md`
 5. 初始化记忆系统
+6. 将构建后的 `.js` 脚本安装到 `~/.openclaw/skills/minase/scripts/`
 
-安装包会自动包含构建后的脚本，并将可执行的 `.js` 文件安装到 `~/.openclaw/skills/minase/scripts/`，目标机器无需手动构建 TypeScript。
+## 更新
+
+拉取最新代码后重新运行安装器即可，**已有的记忆数据不会丢失**：
+
+```bash
+cd MizuSan
+git pull
+npm install
+npm run build
+node bin/cli.js
+```
+
+## 卸载
+
+```bash
+cd MizuSan
+node bin/cli.js --uninstall
+```
+
+卸载器会：
+1. 移除技能文件 (`~/.openclaw/skills/minase/`)
+2. 从 `openclaw.json` 中注销技能
+3. 从 `SOUL.md` 中移除人设注入
+4. 询问是否保留记忆数据（默认保留）
 
 ## 使用
 

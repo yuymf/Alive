@@ -54,6 +54,78 @@ function copyBuiltScripts(src, dest) {
   }
 }
 
+function removeDirSafe(dir, label) {
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    ok(`Removed ${label}: ${dir}`);
+  } else {
+    warn(`${label} not found: ${dir} — skipped`);
+  }
+}
+
+async function uninstall() {
+  console.log('\n  水瀬 (Minase) — Uninstall');
+  console.log('  ==========================\n');
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  // Confirm
+  const answer = await ask(rl, '  ⚠ This will remove Minase skill files and config. Continue? (y/N): ');
+  if (answer.trim().toLowerCase() !== 'y') {
+    console.log('\n  Cancelled.\n');
+    rl.close();
+    process.exit(0);
+  }
+
+  // 1. Remove skill files
+  log('Removing skill files...');
+  removeDirSafe(SKILL_DEST, 'Skill directory');
+
+  // 2. Remove from openclaw.json
+  log('Removing config from openclaw.json...');
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      if (config.skills && config.skills.entries && config.skills.entries[SKILL_NAME]) {
+        delete config.skills.entries[SKILL_NAME];
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+        ok('Removed minase from openclaw.json');
+      } else {
+        warn('minase entry not found in openclaw.json — skipped');
+      }
+    } catch {
+      warn('Could not parse openclaw.json — skipped');
+    }
+  }
+
+  // 3. Remove soul injection from SOUL.md
+  log('Cleaning SOUL.md...');
+  if (fs.existsSync(SOUL_FILE)) {
+    let soul = fs.readFileSync(SOUL_FILE, 'utf8');
+    const marker = '<!-- minase-soul-start -->';
+    const markerEnd = '<!-- minase-soul-end -->';
+    if (soul.includes(marker)) {
+      soul = soul.replace(new RegExp(`\n*${marker}[\\s\\S]*?${markerEnd}\n*`), '\n');
+      fs.writeFileSync(SOUL_FILE, soul);
+      ok('Removed minase persona from SOUL.md');
+    } else {
+      warn('No minase injection found in SOUL.md — skipped');
+    }
+  }
+
+  // 4. Ask about memory data
+  const keepMemory = await ask(rl, '\n  Keep memory data (diary, relations, etc.)? (Y/n): ');
+  rl.close();
+
+  if (keepMemory.trim().toLowerCase() === 'n') {
+    removeDirSafe(MEMORY_DIR, 'Memory data');
+  } else {
+    ok(`Memory preserved at ${MEMORY_DIR}`);
+  }
+
+  log('Uninstall complete!\n');
+}
+
 async function main() {
   console.log('\n  水瀬 (Minase) — Digital Life for OpenClaw');
   console.log('  ==========================================\n');
@@ -205,7 +277,16 @@ async function main() {
   console.log('');
 }
 
-main().catch(err => {
-  console.error('\n  Install failed:', err.message);
-  process.exit(1);
-});
+// Entry: route by CLI args
+const args = process.argv.slice(2);
+if (args.includes('--uninstall')) {
+  uninstall().catch(err => {
+    console.error('\n  Uninstall failed:', err.message);
+    process.exit(1);
+  });
+} else {
+  main().catch(err => {
+    console.error('\n  Install failed:', err.message);
+    process.exit(1);
+  });
+}
