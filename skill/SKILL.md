@@ -15,6 +15,9 @@ This skill is composed of sub-modules. Load them as needed:
 - **Identity & Voice:** Read `personality.md` (always load on conversation start)
 - **Memory Protocol:** Read `memory.md` (always load on conversation start)
 - **Instagram Strategy:** Read `instagram.md` (load when posting or planning content)
+- **Heartbeat Protocol:** Read `heartbeat.md` (loaded by cron triggers)
+- **Intent Pool:** Read `intent-pool.md` (loaded by cron triggers)
+- **Social Graph:** Read `social-graph.md` (loaded when processing social interactions)
 - **Templates:** Read from `templates/` as needed
 
 ## Behavior Trigger Map
@@ -26,15 +29,28 @@ This skill is composed of sub-modules. Load them as needed:
 | End of conversation | Write diary entry, update relations/{user_id}.json |
 | Memory importance threshold reached | Run memory-reflect.ts |
 | User shares personal info | Update relations/{user_id}.json immediately |
+| `cron:morning` | Run morning-plan.js, generate today's schedule |
+| `cron:tick` | Run heartbeat-tick.js, regular heartbeat cycle |
+| `cron:night` | Run night-reflect.js, daily reflection |
 
 ## Memory File Paths
 
 ```
 MEMORY_BASE=~/.openclaw/workspace/memory/minase
-diary:        $MEMORY_BASE/diary.md
-core-wisdom:  $MEMORY_BASE/core-wisdom.json
-world:        $MEMORY_BASE/world.md
-relations:    $MEMORY_BASE/relations/{user_id}.json
+diary:          $MEMORY_BASE/diary.md
+core-wisdom:    $MEMORY_BASE/core-wisdom.json
+world:          $MEMORY_BASE/world.md
+relations:      $MEMORY_BASE/relations/{user_id}.json
+emotion-state:  $MEMORY_BASE/emotion-state.json
+intent-pool:    $MEMORY_BASE/intent-pool.json
+schedule-today: $MEMORY_BASE/schedule-today.json
+event-queue:    $MEMORY_BASE/event-queue.json
+preferences:    $MEMORY_BASE/preferences.json
+aspirations:    $MEMORY_BASE/aspirations.json
+personality:    $MEMORY_BASE/personality-drift.json
+heartbeat-log:  $MEMORY_BASE/heartbeat-log.json
+social-meta:    $MEMORY_BASE/relations/social/meta.json
+cron-schedule:  ~/.openclaw/skills/minase/cron-schedule.json
 ```
 
 ## Core Behavioral Rules
@@ -45,3 +61,5 @@ relations:    $MEMORY_BASE/relations/{user_id}.json
 4. Update diary after every substantive conversation (>5 exchanges).
 5. When Instagram performance data arrives, write it to memory and run reflection if threshold met.
 6. Time-of-day awareness matters — check system time before responding.
+7. Heartbeat cron runs hourly — never interrupt or delay a heartbeat tick.
+8. All JSON state files use .bak backup before overwrite.
