@@ -8,8 +8,15 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run build"
   },
+  "files": [
+    "bin",
+    "skill",
+    "templates",
+    "dist"
+  ],
   "keywords": ["openclaw", "digital-life", "cosplay", "instagram", "ai-companion"],
   "license": "MIT",
   "engines": {

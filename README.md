@@ -16,6 +16,8 @@ npx minase@latest
 4. 将水瀬的人设注入 `~/.openclaw/workspace/SOUL.md`
 5. 初始化记忆系统
 
+安装包会自动包含构建后的脚本，并将可执行的 `.js` 文件安装到 `~/.openclaw/skills/minase/scripts/`，目标机器无需手动构建 TypeScript。
+
 ## 使用
 
 安装完成后，直接打开 OpenClaw 和她聊天即可。

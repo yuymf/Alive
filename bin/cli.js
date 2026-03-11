@@ -15,6 +15,7 @@ const MEMORY_DIR = path.join(WORKSPACE_DIR, 'memory', SKILL_NAME);
 const CONFIG_FILE = path.join(OPENCLAW_DIR, 'openclaw.json');
 
 const SKILL_SRC = path.join(__dirname, '..', 'skill');
+const DIST_SRC = path.join(__dirname, '..', 'dist');
 const SOUL_INJECTION_SRC = path.join(__dirname, '..', 'templates', 'soul-injection.md');
 
 function log(msg) { console.log(`\n  ${msg}`); }
@@ -35,6 +36,21 @@ function copyDirRecursive(src, dest) {
     } else {
       fs.copyFileSync(srcPath, destPath);
     }
+  }
+}
+
+function copyBuiltScripts(src, dest) {
+  if (!fs.existsSync(src)) {
+    warn(`Built scripts not found at ${src} — run npm run build before packaging`);
+    return;
+  }
+
+  fs.mkdirSync(dest, { recursive: true });
+  for (const file of fs.readdirSync(src)) {
+    if (!file.endsWith('.js')) {
+      continue;
+    }
+    fs.copyFileSync(path.join(src, file), path.join(dest, file));
   }
 }
 
@@ -73,6 +89,7 @@ async function main() {
     warn(`Existing skill found at ${SKILL_DEST} — overwriting`);
   }
   copyDirRecursive(SKILL_SRC, SKILL_DEST);
+  copyBuiltScripts(DIST_SRC, path.join(SKILL_DEST, 'scripts'));
   ok(`Skill files copied to ${SKILL_DEST}`);
 
   // Step 4: Update openclaw.json
