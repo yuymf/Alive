@@ -5,7 +5,6 @@
  * Minase's perspective: she's browsing Instagram, watching anime news, scrolling Pinterest.
  */
 
-import * as fs from 'fs';
 import { InspirationData, PostHistory } from './types';
 import { PATHS, readJSON, writeJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';

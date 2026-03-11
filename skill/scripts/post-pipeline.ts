@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { PostHistory, PostRecord, InspirationData, ContentStyle } from './types';
+import { PostHistory, PostRecord, ContentStyle, EmotionState } from './types';
 import { PATHS, readJSON, writeJSON, appendText } from './file-utils';
 import { generateImage, buildImagePrompt } from './generate-image';
 import { refreshInspiration } from './inspiration-collector';
@@ -30,8 +30,8 @@ async function uploadToFalCDN(localPath: string): Promise<string> {
   fal.config({ credentials: falKey });
 
   const fileBuffer = fs.readFileSync(localPath);
-  const file = new File([fileBuffer], path.basename(localPath), { type: 'image/png' });
-  const url = await fal.storage.upload(file);
+  const blob = new Blob([fileBuffer], { type: 'image/png' });
+  const url = await fal.storage.upload(blob);
   return url;
 }
 
@@ -72,12 +72,18 @@ async function postToInstagram(imageUrl: string, caption: string): Promise<strin
 
 /**
  * Write diary entry in Minase's voice (not system log).
+ * Reads current emotion state for mood description.
  */
 function writeDiary(entry: string, importance: number, tags: string[]): void {
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
   const timeStr = now.toISOString().split('T')[1].slice(0, 5);
-  appendText(PATHS.diary, `\n## ${dateStr} ${timeStr}\n${entry}\n情绪: happy | 重要性: ${importance}\n标签: ${tags.join(', ')}\n`);
+  const emotion = readJSON<EmotionState>(PATHS.emotionState, {
+    mood: { valence: 0.3, arousal: 0.5, description: '普通' },
+    energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
+    last_updated: null, recent_cause: '',
+  });
+  appendText(PATHS.diary, `\n## ${dateStr} ${timeStr}\n${entry}\n情绪: ${emotion.mood.description} | 重要性: ${importance}\n标签: ${tags.join(', ')}\n`);
 }
 
 /**
@@ -138,7 +144,7 @@ export async function checkPostStats(): Promise<void> {
   const statsMap = new Map<string, PostRecord['stats']>();
   for (const post of postsNeedingStats) {
     try {
-      const url = `https://graph.instagram.com/${post.media_id}/insights?metric=impressions,reach,likes,comments&access_token=${igToken}`;
+      const url = `https://graph.instagram.com/v21.0/${post.media_id}/insights?metric=impressions,reach,likes,comments&period=lifetime&access_token=${igToken}`;
       const res = await fetch(url);
       const data = await res.json() as { data?: Array<{ name: string; values: Array<{ value: number }> }> };
 

@@ -199,7 +199,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
       const hour = new Date().getHours();
       const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
       const existing = fs.existsSync(outputDir) ? fs.readdirSync(outputDir).length : 0;
-      const filename = `${style}_${timeOfDay}_${existing + 1}.png`;
+      const filename = `${timeOfDay}_${style}_${existing + 1}.png`;
       const localPath = path.join(outputDir, filename);
 
       fs.writeFileSync(localPath, imageData);

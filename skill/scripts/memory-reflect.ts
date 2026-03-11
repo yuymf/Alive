@@ -10,6 +10,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { callLLMJSON } from './llm-client';
 
 const MEMORY_BASE = path.join(process.env.HOME!, '.openclaw', 'workspace', 'memory', 'minase');
 const WISDOM_PATH = path.join(MEMORY_BASE, 'core-wisdom.json');
@@ -50,29 +51,7 @@ function extractHighImportanceMemories(diaryContent: string, minImportance = 6):
     .map(b => b.trim());
 }
 
-async function callLLM(prompt: string): Promise<WisdomEntry[]> {
-  // Try Anthropic first, then OpenAI
-  if (process.env.ANTHROPIC_API_KEY) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    const data = await res.json() as { content: Array<{ text: string }> };
-    const text = data.content[0]?.text ?? '[]';
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    return jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-  }
-  throw new Error('No LLM API key found. Set ANTHROPIC_API_KEY.');
-}
+
 
 async function reflect(force = false): Promise<void> {
   const wisdom = loadWisdom();
@@ -105,7 +84,7 @@ async function reflect(force = false): Promise<void> {
     .replace(/```[\s\S]*?```/g, match => match.slice(3, -3).trim());
 
   console.log('Running reflection...');
-  const newLessons = await callLLM(prompt);
+  const newLessons = await callLLMJSON<WisdomEntry[]>(prompt);
 
   // Add new wisdom, deduplicate, trim to max
   const now = new Date().toISOString().split('T')[0];
