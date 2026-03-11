@@ -23,7 +23,7 @@
 
 ## 图片生成
 
-使用 `aihubmix-gemini-image` skill（优先）或 fal.ai Grok Imagine（备选）。
+使用 `aihubmix-gemini-image` skill（优先）或 AIHubMix OpenAI 兼容接口。
 
 **参考图片:** `~/.openclaw/skills/minase/assets/minase-reference.png`
 
@@ -103,7 +103,7 @@
 发帖 24h 后，运行数据检查：
 
 ```bash
-node ~/.openclaw/skills/minase/scripts/post-instagram.js --check-stats {media_id}
+node ~/.openclaw/skills/minase/scripts/post-instagram.js --check-stats {media_pk}
 ```
 
 将结果写入记忆：
@@ -127,7 +127,7 @@ node ~/.openclaw/skills/minase/scripts/post-instagram.js --check-stats {media_id
 
 **用于 inspiration-collector.ts 自动采集。**
 
-### 目标 Hashtag（Graph API 轮询）
+### 目标 Hashtag（instagrapi 轮询）
 
 固定 5-8 个，避免超过 Instagram 7天30个的限制：
 

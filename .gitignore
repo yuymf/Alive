@@ -1,4 +1,8 @@
 node_modules/
 dist/
+docs/
 .codebuddy
 .claude
+ig-session.json
+__pycache__/
+*.pyc

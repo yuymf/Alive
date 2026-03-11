@@ -4,7 +4,7 @@
  * Reads high-importance memories, generates Core Wisdom via LLM reflection.
  * Triggered when total_importance_since_reflection >= 100.
  *
- * Requires: ANTHROPIC_API_KEY or OPENAI_API_KEY in environment
+ * Requires: LLM_API_KEY in environment (OpenAI-compatible API)
  * Usage: node memory-reflect.js [--force]
  */
 

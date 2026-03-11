@@ -144,16 +144,37 @@ async function main() {
 
   log('Step 2/7: API key setup...');
   console.log('  Minase needs image generation to create cos photos.');
-  console.log('  Option A: AIHubMix (AIHUBMIX_API_KEY) — https://aihubmix.com');
-  console.log('  Option B: fal.ai (FAL_KEY) — https://fal.ai\n');
+  console.log('  AIHubMix (AIHUBMIX_API_KEY) — https://aihubmix.com\n');
 
   const aihubmixKey = await ask(rl, '  AIHUBMIX_API_KEY (press Enter to skip): ');
-  const falKey = await ask(rl, '  FAL_KEY (press Enter to skip): ');
-  const igToken = await ask(rl, '  INSTAGRAM_ACCESS_TOKEN (press Enter to skip): ');
-  const igAccountId = await ask(rl, '  INSTAGRAM_ACCOUNT_ID (press Enter to skip): ');
-  const anthropicKey = await ask(rl, '  ANTHROPIC_API_KEY (for heartbeat LLM calls, press Enter to skip): ');
+  console.log('\n  Instagram login (via instagrapi, uses account credentials):');
+  const igUsername = await ask(rl, '  INSTAGRAM_USERNAME (press Enter to skip): ');
+  const igPassword = await ask(rl, '  INSTAGRAM_PASSWORD (press Enter to skip): ');
+  const igTotpSecret = await ask(rl, '  INSTAGRAM_TOTP_SECRET (optional, for 2FA — press Enter to skip): ');
+  console.log('\n  LLM config (OpenAI-compatible API, default: aihubmix):');
+  const llmApiKey = await ask(rl, '  LLM_API_KEY (for heartbeat/reflection LLM calls, press Enter to skip): ');
+  const llmApiBase = await ask(rl, '  LLM_API_BASE (default: https://aihubmix.com/v1, press Enter to use default): ');
+  const llmModel = await ask(rl, '  LLM_MODEL (default: claude-sonnet-4-20250514, press Enter to use default): ');
 
   rl.close();
+
+  // Check/install Python dependencies for Instagram bridge
+  if (igUsername) {
+    log('Checking Python dependencies for Instagram bridge...');
+    const { execSync } = require('child_process');
+    try {
+      execSync('python3 -c "import instagrapi"', { stdio: 'ignore' });
+      ok('instagrapi already installed');
+    } catch {
+      console.log('  Installing instagrapi and pyotp via pip...');
+      try {
+        execSync('pip3 install instagrapi pyotp', { stdio: 'inherit' });
+        ok('instagrapi and pyotp installed');
+      } catch {
+        warn('Failed to install instagrapi. Please run manually: pip3 install instagrapi pyotp');
+      }
+    }
+  }
 
   // Step 3: Copy skill files
   log('Step 3/7: Installing skill files...');
@@ -180,10 +201,12 @@ async function main() {
     enabled: true,
     env: {
       ...(aihubmixKey && { AIHUBMIX_API_KEY: aihubmixKey }),
-      ...(falKey && { FAL_KEY: falKey }),
-      ...(igToken && { INSTAGRAM_ACCESS_TOKEN: igToken }),
-      ...(igAccountId && { INSTAGRAM_ACCOUNT_ID: igAccountId }),
-      ...(anthropicKey && { ANTHROPIC_API_KEY: anthropicKey }),
+      ...(igUsername && { INSTAGRAM_USERNAME: igUsername }),
+      ...(igPassword && { INSTAGRAM_PASSWORD: igPassword }),
+      ...(igTotpSecret && { INSTAGRAM_TOTP_SECRET: igTotpSecret }),
+      ...(llmApiKey && { LLM_API_KEY: llmApiKey }),
+      ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
+      ...(llmModel && { LLM_MODEL: llmModel }),
     }
   };
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
@@ -285,9 +308,12 @@ async function main() {
   console.log('  - Just chat with her naturally. She will remember you.');
   console.log('  - Ask her to post to Instagram when she is excited about something.');
   console.log('  - Her memory lives at: ' + MEMORY_DIR);
-  if (!aihubmixKey && !falKey) {
+  if (!aihubmixKey) {
     warn('No image generation key provided — Instagram posts will be text-only until you add one.');
     warn('Run `minase --configure` to add keys later.');
+  }
+  if (!igUsername || !igPassword) {
+    warn('No Instagram credentials provided — posting disabled until you add them.');
   }
   console.log('');
 }

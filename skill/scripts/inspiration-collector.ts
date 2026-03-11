@@ -8,6 +8,7 @@
 import { InspirationData, PostHistory } from './types';
 import { PATHS, readJSON, writeJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
+import { callInstagramBridge } from './post-pipeline';
 
 const DEFAULT_INSPIRATION: InspirationData = {
   instagram_trends: { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: 0 },
@@ -29,37 +30,32 @@ function isExpired(updatedAt: number, ttl: number): boolean {
 }
 
 /**
- * 2a: Instagram hot post analysis via Graph API.
- * Falls back to web search if token lacks permissions.
+ * 2a: Instagram hot post analysis via instagrapi bridge.
+ * Falls back to LLM general knowledge if bridge unavailable.
  */
 async function collectInstagramTrends(): Promise<InspirationData['instagram_trends']> {
-  const igToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-  const igAccountId = process.env.INSTAGRAM_ACCOUNT_ID;
+  const igUser = process.env.INSTAGRAM_USERNAME;
 
   let rawData = '';
 
-  if (igToken && igAccountId) {
-    // Try Graph API hashtag search
+  if (igUser) {
     const hashtags = ['cosplay', 'cosplaygirl', 'animecosplay', 'コスプレ', '辣妹', 'jfashion'];
     const results: string[] = [];
 
     for (const tag of hashtags.slice(0, 3)) { // Limit API calls
       try {
-        // Search hashtag ID
-        const searchUrl = `https://graph.instagram.com/ig_hashtag_search?q=${encodeURIComponent(tag)}&user_id=${igAccountId}&access_token=${igToken}`;
-        const searchRes = await fetch(searchUrl);
-        const searchData = await searchRes.json() as { data?: Array<{ id: string }> };
-        const hashtagId = searchData.data?.[0]?.id;
+        const data = await callInstagramBridge('hashtag_top', {
+          name: tag,
+          amount: '5',
+        }) as { hashtag: string; posts: Array<{ like_count: number; comment_count: number; caption_text: string }>; error?: string };
 
-        if (hashtagId) {
-          // Get top media
-          const mediaUrl = `https://graph.instagram.com/${hashtagId}/top_media?user_id=${igAccountId}&fields=id,caption,like_count,comments_count&access_token=${igToken}`;
-          const mediaRes = await fetch(mediaUrl);
-          const mediaData = await mediaRes.json() as { data?: Array<{ caption?: string; like_count?: number; comments_count?: number }> };
+        if (data.error) {
+          console.error(`Hashtag search failed for #${tag}: ${data.error}`);
+          continue;
+        }
 
-          for (const post of (mediaData.data ?? []).slice(0, 5)) {
-            results.push(`[${tag}] likes:${post.like_count ?? 0} comments:${post.comments_count ?? 0} "${(post.caption ?? '').slice(0, 100)}"`);
-          }
+        for (const post of data.posts ?? []) {
+          results.push(`[${tag}] likes:${post.like_count ?? 0} comments:${post.comment_count ?? 0} "${(post.caption_text ?? '').slice(0, 100)}"`);
         }
       } catch (err) {
         console.error(`Hashtag search failed for #${tag}: ${(err as Error).message}`);

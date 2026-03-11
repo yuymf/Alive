@@ -9,6 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
 import { PostHistory, PostRecord, ContentStyle, EmotionState } from './types';
 import { PATHS, readJSON, writeJSON, appendText } from './file-utils';
 import { generateImage, buildImagePrompt } from './generate-image';
@@ -19,55 +20,57 @@ const DEFAULT_POST_HISTORY: PostHistory = { posts: [] };
 const PHOTO_ROLL_RETENTION_DAYS = 30;
 
 /**
- * Upload image to fal.ai CDN for a publicly accessible URL.
+ * Call the Python instagram-bridge.py script with a subcommand and args.
+ * Returns parsed JSON from stdout.
  */
-async function uploadToFalCDN(localPath: string): Promise<string> {
-  const falKey = process.env.FAL_KEY;
-  if (!falKey) throw new Error('FAL_KEY not set');
+export function callInstagramBridge(command: string, args: Record<string, string>): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    // Resolve bridge path: works both in installed context (__dirname = scripts/)
+    // and development context (__dirname = dist/, bridge at skill/scripts/)
+    let bridgePath = path.join(__dirname, 'instagram-bridge.py');
+    if (!fs.existsSync(bridgePath)) {
+      bridgePath = path.join(__dirname, '..', 'skill', 'scripts', 'instagram-bridge.py');
+    }
+    if (!fs.existsSync(bridgePath)) {
+      return reject(new Error(`instagram-bridge.py not found (tried __dirname and skill/scripts/)`));
+    }
 
-  // Dynamic import for ESM module in CommonJS context
-  const { fal } = await import('@fal-ai/client');
-  fal.config({ credentials: falKey });
+    const cliArgs = [bridgePath, command];
+    for (const [key, value] of Object.entries(args)) {
+      cliArgs.push(`--${key}`, value);
+    }
 
-  const fileBuffer = fs.readFileSync(localPath);
-  const blob = new Blob([fileBuffer], { type: 'image/png' });
-  const url = await fal.storage.upload(blob);
-  return url;
+    execFile('python3', cliArgs, { timeout: 120_000 }, (error, stdout, stderr) => {
+      if (stderr) console.error(`[ig-bridge] ${stderr.trim()}`);
+      if (error) {
+        try {
+          const parsed = JSON.parse(stdout);
+          if (parsed.error) return reject(new Error(parsed.error));
+        } catch {
+          if (stdout) console.error(`[ig-bridge] Unparseable stdout: ${stdout.slice(0, 200)}`);
+        }
+        return reject(new Error(`instagram-bridge ${command} failed: ${error.message}`));
+      }
+      try {
+        resolve(JSON.parse(stdout));
+      } catch {
+        reject(new Error(`Failed to parse bridge output: ${stdout.slice(0, 200)}`));
+      }
+    });
+  });
 }
 
 /**
- * Post to Instagram using the existing post-instagram module's pattern.
+ * Post a local photo to Instagram via instagrapi bridge.
+ * Returns media_pk as string.
  */
-async function postToInstagram(imageUrl: string, caption: string): Promise<string> {
-  const igToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-  const igAccountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!igToken || !igAccountId) throw new Error('Instagram credentials not set');
-
-  // Create media container
-  const createUrl = `https://graph.instagram.com/v21.0/${igAccountId}/media`;
-  const createBody = new URLSearchParams({
-    access_token: igToken,
-    image_url: imageUrl,
+async function postToInstagram(imagePath: string, caption: string): Promise<string> {
+  const result = await callInstagramBridge('upload_photo', {
+    image: imagePath,
     caption,
-  });
-  const createRes = await fetch(createUrl, { method: 'POST', body: createBody });
-  const createData = await createRes.json() as { id?: string };
-  if (!createData.id) throw new Error(`Media container creation failed: ${JSON.stringify(createData)}`);
-
-  // Wait for Instagram processing
-  await new Promise(r => setTimeout(r, 3000));
-
-  // Publish
-  const publishUrl = `https://graph.instagram.com/v21.0/${igAccountId}/media_publish`;
-  const publishBody = new URLSearchParams({
-    access_token: igToken,
-    creation_id: createData.id,
-  });
-  const publishRes = await fetch(publishUrl, { method: 'POST', body: publishBody });
-  const publishData = await publishRes.json() as { id?: string };
-  if (!publishData.id) throw new Error(`Media publish failed: ${JSON.stringify(publishData)}`);
-
-  return publishData.id;
+  }) as { media_pk: string; media_code: string };
+  if (!result.media_pk) throw new Error(`Upload returned no media_pk: ${JSON.stringify(result)}`);
+  return result.media_pk;
 }
 
 /**
@@ -125,8 +128,8 @@ function cleanupPhotoRoll(): void {
  * Called from heartbeat-tick during regular ticks.
  */
 export async function checkPostStats(): Promise<void> {
-  const igToken = process.env.INSTAGRAM_ACCESS_TOKEN;
-  if (!igToken) return;
+  const igUser = process.env.INSTAGRAM_USERNAME;
+  if (!igUser) return;
 
   const history = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
   const now = Date.now();
@@ -140,29 +143,27 @@ export async function checkPostStats(): Promise<void> {
 
   if (postsNeedingStats.length === 0) return;
 
-  // Fetch stats and build updated media_id → stats map
+  // Fetch stats via bridge and build updated media_id → stats map
   const statsMap = new Map<string, PostRecord['stats']>();
   for (const post of postsNeedingStats) {
     try {
-      const url = `https://graph.instagram.com/v21.0/${post.media_id}/insights?metric=impressions,reach,likes,comments&period=lifetime&access_token=${igToken}`;
-      const res = await fetch(url);
-      const data = await res.json() as { data?: Array<{ name: string; values: Array<{ value: number }> }> };
+      const data = await callInstagramBridge('get_media_insights', {
+        'media-pk': post.media_id,
+      }) as { likes?: number; comments?: number; reach?: number; error?: string };
 
-      if (data.data) {
-        const metrics: Record<string, number> = {};
-        for (const metric of data.data) {
-          metrics[metric.name] = metric.values?.[0]?.value ?? 0;
-        }
-
-        statsMap.set(post.media_id, {
-          likes: metrics.likes ?? 0,
-          comments: metrics.comments ?? 0,
-          reach: metrics.reach ?? 0,
-          follows: 0, // Not available from this endpoint
-          checked_at: now,
-        });
-        console.log(`Stats fetched for media ${post.media_id}`);
+      if (data.error) {
+        console.error(`Bridge error for media ${post.media_id}: ${data.error}`);
+        continue;
       }
+
+      statsMap.set(post.media_id, {
+        likes: data.likes ?? 0,
+        comments: data.comments ?? 0,
+        reach: data.reach ?? 0,
+        follows: 0,
+        checked_at: now,
+      });
+      console.log(`Stats fetched for media ${post.media_id}`);
     } catch (err) {
       console.error(`Failed to fetch stats for media ${post.media_id}: ${(err as Error).message}`);
     }
@@ -239,28 +240,10 @@ async function runPipeline(): Promise<void> {
       return;
     }
 
-    // Upload to CDN
-    console.log('Uploading to CDN...');
-    let imageUrl: string;
-    try {
-      imageUrl = await uploadToFalCDN(postIntent.selectedPhoto);
-    } catch (err) {
-      // Retry once
-      console.error(`Upload failed, retrying: ${(err as Error).message}`);
-      await new Promise(r => setTimeout(r, 5000));
-      try {
-        imageUrl = await uploadToFalCDN(postIntent.selectedPhoto);
-      } catch {
-        writeDiary('想发ins来着，但是网好卡传不上去...算了', 2, ['instagram', '失败']);
-        console.error('Upload failed after retry');
-        return;
-      }
-    }
-
-    // Post to Instagram
+    // Upload and post to Instagram via instagrapi bridge (direct local file upload)
     const fullCaption = `${postIntent.caption}\n\n${postIntent.hashtags.map(t => `#${t}`).join(' ')}`;
     console.log('Posting to Instagram...');
-    const mediaId = await postToInstagram(imageUrl, fullCaption);
+    const mediaId = await postToInstagram(postIntent.selectedPhoto, fullCaption);
 
     // Record to post history
     // Style comes from the photo intent if we took a photo this run,
