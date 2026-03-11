@@ -20,6 +20,7 @@ import {
 import { callLLMJSON } from './llm-client';
 import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
+import { spawn } from 'child_process';
 
 // Default initial states (Spec §16)
 const DEFAULT_EMOTION: EmotionState = {
@@ -233,8 +234,19 @@ async function regularTick(): Promise<void> {
         console.error(`Action failed: ${action.action}: ${(err as Error).message}`);
       }
     } else if (action.type === 'real' && action.skill) {
-      // Real actions — log placeholder, actual skill execution is future work
-      console.log(`[REAL ACTION] Would call skill: ${action.skill} for: ${action.action}`);
+      // Real actions — spawn detached child process
+      if (action.skill === 'post-pipeline' || action.skill === 'auto-photo') {
+        const scriptPath = require.resolve('./post-pipeline');
+        const child = spawn('node', [scriptPath], {
+          detached: true,
+          stdio: 'ignore',
+          env: process.env,
+        });
+        child.unref();
+        console.log(`[REAL ACTION] Spawned post-pipeline (pid: ${child.pid}) for: ${action.action}`);
+      } else {
+        console.log(`[REAL ACTION] Unknown skill: ${action.skill} for: ${action.action}`);
+      }
       actionResults.push(`[real] ${action.action}`);
     }
   }
@@ -242,6 +254,14 @@ async function regularTick(): Promise<void> {
   // 8. Write inner monologue to diary
   if (decision.inner_monologue) {
     appendText(PATHS.diary, `\n> 💭 ${decision.inner_monologue}\n`);
+  }
+
+  // 8b. Check post stats for 24h-old posts (lightweight, runs each heartbeat)
+  try {
+    const { checkPostStats } = await import('./post-pipeline');
+    await checkPostStats();
+  } catch (err) {
+    console.error(`Stats check failed: ${(err as Error).message}`);
   }
 
   // 9. Mark events as processed and enforce max_size (Spec §13)
