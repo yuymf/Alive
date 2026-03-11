@@ -235,3 +235,71 @@ export interface WisdomStore {
   wisdom: WisdomEntry[];
   total_importance_since_reflection: number;
 }
+
+// === Auto-Photo System (Spec: 2026-03-11-auto-photo-instagram) ===
+
+export type ContentStyle = 'cos' | 'daily' | 'behind_scenes' | 'travel';
+
+export interface PostRecord {
+  media_id: string;
+  timestamp: number;
+  style: ContentStyle;
+  caption: string;
+  hashtags: string[];
+  image_local_path: string;
+  stats?: {
+    likes: number;
+    comments: number;
+    reach: number;
+    follows: number;
+    checked_at: number;
+  };
+}
+
+export interface PostHistory {
+  posts: PostRecord[];
+}
+
+export interface InspirationData {
+  instagram_trends: {
+    hot_styles: string[];
+    high_engagement_patterns: string[];
+    trending_hashtags: string[];
+    updated_at: number;
+  };
+  acg_hotspots: {
+    trending_characters: string[];
+    upcoming_events: string[];
+    seasonal_themes: string[];
+    updated_at: number;
+  };
+  visual_trends: {
+    composition_styles: string[];
+    color_palettes: string[];
+    scene_ideas: string[];
+    updated_at: number;
+  };
+  self_performance: {
+    best_style: string;
+    best_time_slots: string[];
+    best_hashtag_combos: string[][];
+    engagement_by_style: Record<string, number>;
+    updated_at: number;
+  };
+}
+
+export interface PhotoIntent {
+  wantToShoot: boolean;
+  sceneDescription: string;
+  style: ContentStyle;
+  mood: string;
+  reason: string;
+}
+
+export interface PostIntent {
+  wantToPost: boolean;
+  selectedPhoto?: string;
+  caption: string;
+  hashtags: string[];
+  reason: string;
+}

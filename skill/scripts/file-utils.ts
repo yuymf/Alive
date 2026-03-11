@@ -28,6 +28,10 @@ export const PATHS = {
   world: path.join(MEMORY_BASE, 'world.md'),
   socialMeta: path.join(MEMORY_BASE, 'relations', 'social', 'meta.json'),
   cronSchedule: path.join(SKILL_BASE, 'cron-schedule.json'),
+  inspiration: path.join(MEMORY_BASE, 'inspiration.json'),
+  postHistory: path.join(MEMORY_BASE, 'post-history.json'),
+  photoRoll: path.join(MEMORY_BASE, 'photo-roll'),
+  referenceImage: path.join(SKILL_BASE, 'assets', 'minase-reference.png'),
 } as const;
 
 /**

@@ -239,6 +239,21 @@ async function main() {
   }
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations', 'social', 'instagram'), { recursive: true });
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations', 'social', 'xiaohongshu'), { recursive: true });
+  // Photo system
+  fs.mkdirSync(path.join(MEMORY_DIR, 'photo-roll'), { recursive: true });
+  const inspirationPath = path.join(MEMORY_DIR, 'inspiration.json');
+  if (!fs.existsSync(inspirationPath)) {
+    fs.writeFileSync(inspirationPath, JSON.stringify({
+      "instagram_trends": { "hot_styles": [], "high_engagement_patterns": [], "trending_hashtags": [], "updated_at": 0 },
+      "acg_hotspots": { "trending_characters": [], "upcoming_events": [], "seasonal_themes": [], "updated_at": 0 },
+      "visual_trends": { "composition_styles": [], "color_palettes": [], "scene_ideas": [], "updated_at": 0 },
+      "self_performance": { "best_style": "cos", "best_time_slots": [], "best_hashtag_combos": [], "engagement_by_style": {}, "updated_at": 0 }
+    }, null, 2));
+  }
+  const postHistoryPath = path.join(MEMORY_DIR, 'post-history.json');
+  if (!fs.existsSync(postHistoryPath)) {
+    fs.writeFileSync(postHistoryPath, JSON.stringify({ "posts": [] }, null, 2));
+  }
   const socialMetaPath = path.join(MEMORY_DIR, 'relations', 'social', 'meta.json');
   if (!fs.existsSync(socialMetaPath)) {
     fs.writeFileSync(socialMetaPath, JSON.stringify({"instagram_following":[],"xiaohongshu_following":[],"stats":{"core":0,"familiar":0,"cognitive":0,"dormant":0}}, null, 2));
