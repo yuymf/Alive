@@ -17,7 +17,13 @@
     "templates",
     "dist"
   ],
-  "keywords": ["openclaw", "digital-life", "cosplay", "instagram", "ai-companion"],
+  "keywords": [
+    "openclaw",
+    "digital-life",
+    "cosplay",
+    "instagram",
+    "ai-companion"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
@@ -26,7 +32,8 @@
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^4.0.18"
   }
 }

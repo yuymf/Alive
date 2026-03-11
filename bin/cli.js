@@ -147,6 +147,8 @@ async function main() {
   console.log('  AIHubMix (AIHUBMIX_API_KEY) — https://aihubmix.com\n');
 
   const aihubmixKey = await ask(rl, '  AIHUBMIX_API_KEY (press Enter to skip): ');
+  console.log('\n  Image hosting (ImgURL — https://www.imgurl.org):');
+  const imgUrlToken = await ask(rl, '  IMGURL_TOKEN (press Enter to skip): ');
   console.log('\n  Instagram login (via instagrapi, uses account credentials):');
   const igUsername = await ask(rl, '  INSTAGRAM_USERNAME (press Enter to skip): ');
   const igPassword = await ask(rl, '  INSTAGRAM_PASSWORD (press Enter to skip): ');
@@ -201,6 +203,7 @@ async function main() {
     enabled: true,
     env: {
       ...(aihubmixKey && { AIHUBMIX_API_KEY: aihubmixKey }),
+      ...(imgUrlToken && { IMGURL_TOKEN: imgUrlToken }),
       ...(igUsername && { INSTAGRAM_USERNAME: igUsername }),
       ...(igPassword && { INSTAGRAM_PASSWORD: igPassword }),
       ...(igTotpSecret && { INSTAGRAM_TOTP_SECRET: igTotpSecret }),

@@ -13,6 +13,7 @@ import { execFile } from 'child_process';
 import { PostHistory, PostRecord, ContentStyle, EmotionState } from './types';
 import { PATHS, readJSON, writeJSON, appendText } from './file-utils';
 import { generateImage, buildImagePrompt } from './generate-image';
+import { uploadToImgURL } from './imgurl-upload';
 import { refreshInspiration } from './inspiration-collector';
 import { planPhoto, planPost, shouldConsiderPosting } from './content-planner';
 
@@ -245,6 +246,17 @@ async function runPipeline(): Promise<void> {
     console.log('Posting to Instagram...');
     const mediaId = await postToInstagram(postIntent.selectedPhoto, fullCaption);
 
+    // Upload to ImgURL for public URL archival (non-blocking, failure is non-fatal)
+    let imageUrl: string | undefined;
+    try {
+      console.log('Uploading to ImgURL...');
+      const imgResult = await uploadToImgURL(postIntent.selectedPhoto);
+      imageUrl = imgResult.url;
+      console.log(`ImgURL: ${imageUrl}`);
+    } catch (err) {
+      console.error(`ImgURL upload failed (non-fatal): ${(err as Error).message}`);
+    }
+
     // Record to post history
     // Style comes from the photo intent if we took a photo this run,
     // otherwise infer from caption keywords (fallback: 'daily')
@@ -259,6 +271,7 @@ async function runPipeline(): Promise<void> {
       caption: postIntent.caption,
       hashtags: postIntent.hashtags,
       image_local_path: postIntent.selectedPhoto,
+      ...(imageUrl && { image_url: imageUrl }),
     };
     const updatedHistory: PostHistory = {
       posts: [...history.posts, record],

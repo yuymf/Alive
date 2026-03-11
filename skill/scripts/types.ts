@@ -247,6 +247,7 @@ export interface PostRecord {
   caption: string;
   hashtags: string[];
   image_local_path: string;
+  image_url?: string;
   stats?: {
     likes: number;
     comments: number;
