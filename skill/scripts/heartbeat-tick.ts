@@ -8,7 +8,7 @@
  */
 
 import {
-  EmotionState, IntentPool, ScheduleToday, EventQueue,
+  EmotionState, IntentPool, IntentCategory, ScheduleToday, EventQueue,
   HeartbeatLog, HeartbeatLogEntry, ActionOutput, RigidSchedule, WisdomStore,
 } from './types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from './file-utils';
@@ -18,6 +18,8 @@ import {
   injectScheduleIntents, getTopIntents, satisfyIntent, addIntent,
 } from './intent-engine';
 import { callLLMJSON } from './llm-client';
+import { runMorningPlan } from './morning-plan';
+import { runNightReflect } from './night-reflect';
 
 // Default initial states (Spec §16)
 const DEFAULT_EMOTION: EmotionState = {
@@ -29,6 +31,12 @@ const DEFAULT_INTENT_POOL: IntentPool = { intents: [], last_updated: null };
 const DEFAULT_SCHEDULE: ScheduleToday = { date: null, rigid: [], flexible: [], generated_by: null };
 const DEFAULT_EVENT_QUEUE: EventQueue = { events: [], max_size: 50 };
 const DEFAULT_HEARTBEAT_LOG: HeartbeatLog = { logs: [], retention_days: 7 };
+
+const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想']);
+
+function toIntentCategory(s: string): IntentCategory {
+  return VALID_CATEGORIES.has(s) ? s as IntentCategory : '表达';
+}
 
 interface HeartbeatDecision {
   inner_monologue: string;
@@ -72,6 +80,7 @@ function buildPerceptionSummary(
   events: EventQueue,
   hour: number,
   weekday: number,
+  worldContext: string,
 ): string {
   const rigidNow = getActiveRigidSchedule(schedule, hour, weekday);
   const unprocessedEvents = events.events.filter(e => !e.processed);
@@ -94,6 +103,10 @@ function buildPerceptionSummary(
     }
   } else {
     parts.push('未处理事件: 无');
+  }
+
+  if (worldContext) {
+    parts.push(`世界动态: ${worldContext}`);
   }
 
   return parts.join('\n');
@@ -131,7 +144,8 @@ async function regularTick(): Promise<void> {
   const schedule = readJSON<ScheduleToday>(PATHS.scheduleToday, DEFAULT_SCHEDULE);
   const events = readJSON<EventQueue>(PATHS.eventQueue, DEFAULT_EVENT_QUEUE);
   const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, DEFAULT_HEARTBEAT_LOG);
-  const recentDiary = readText(PATHS.diary).split('\n').slice(-20).join('\n');
+  const diary = readText(PATHS.diary);
+  const recentDiary = diary.split('\n').slice(-20).join('\n');
   const worldContext = readText(PATHS.world).split('\n').slice(-10).join('\n');
 
   // 2. Perception: decay emotion + process events
@@ -142,7 +156,6 @@ async function regularTick(): Promise<void> {
   const consecutiveActive = recentLogs.length;
 
   // Hours since last post (scan diary for post entries)
-  const diary = readText(PATHS.diary);
   const lastPostMatch = diary.match(/发了新 Instagram 帖子/g);
   const lastPostHoursAgo = lastPostMatch ? 24 : 72; // Simplified: check diary more thoroughly in production
 
@@ -154,7 +167,7 @@ async function regularTick(): Promise<void> {
 
   // 4. Build perception summary
   const rigidNow = getActiveRigidSchedule(schedule, hour, weekday);
-  const perceptionSummary = buildPerceptionSummary(emotion, schedule, events, hour, weekday);
+  const perceptionSummary = buildPerceptionSummary(emotion, schedule, events, hour, weekday, worldContext);
 
   // 5. Intent phase: LLM decision
   const template = readTemplate('heartbeat-prompt.md');
@@ -197,7 +210,7 @@ async function regularTick(): Promise<void> {
 
   // 6. Apply LLM decisions to intent pool
   for (const impulse of decision.new_impulses) {
-    intentPool = addIntent(intentPool, impulse.category as any, impulse.description, impulse.intensity, 'llm');
+    intentPool = addIntent(intentPool, toIntentCategory(impulse.category), impulse.description, impulse.intensity, 'llm');
   }
 
   // 7. Execute actions
@@ -231,10 +244,14 @@ async function regularTick(): Promise<void> {
     appendText(PATHS.diary, `\n> 💭 ${decision.inner_monologue}\n`);
   }
 
-  // 9. Mark events as processed
+  // 9. Mark events as processed and enforce max_size (Spec §13)
+  const processedEvents = events.events.map(e => ({ ...e, processed: true }));
+  const trimmedEvents = processedEvents.length > events.max_size
+    ? processedEvents.slice(-events.max_size)
+    : processedEvents;
   const updatedEvents: EventQueue = {
     ...events,
-    events: events.events.map(e => ({ ...e, processed: true })),
+    events: trimmedEvents,
   };
 
   // 10. Update reflection counter (immutable)
@@ -279,7 +296,6 @@ async function main(): Promise<void> {
   if (hour === 7) {
     // Morning plan — delegate to morning-plan.ts
     console.log('Morning heartbeat — running morning plan');
-    const { runMorningPlan } = require('./morning-plan');
     await runMorningPlan();
     return;
   }
@@ -287,7 +303,6 @@ async function main(): Promise<void> {
   if (hour === 23) {
     // Night reflection — delegate to night-reflect.ts
     console.log('Night heartbeat — running night reflection');
-    const { runNightReflect } = require('./night-reflect');
     await runNightReflect();
     return;
   }

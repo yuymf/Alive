@@ -8,11 +8,17 @@
  */
 
 import {
-  EmotionState, IntentPool, ScheduleToday, EventQueue,
-  HeartbeatLog, CronSchedule, Aspirations, RigidSchedule, EMOTION_BASELINE,
+  EmotionState, IntentPool, IntentCategory, ScheduleToday, EventQueue,
+  HeartbeatLog, HeartbeatLogEntry, CronSchedule, Aspirations, RigidSchedule, EMOTION_BASELINE,
 } from './types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
+
+const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想']);
+
+function toIntentCategory(s: string): IntentCategory {
+  return VALID_CATEGORIES.has(s) ? s as IntentCategory : '表达';
+}
 
 // Default rigid schedule template (Spec §3)
 const WEEKDAY_RIGID: RigidSchedule[] = [
@@ -101,7 +107,7 @@ export async function runMorningPlan(): Promise<void> {
       activity: f.activity,
       preferred_time: f.preferred_time,
       intent_boost: f.intent_boost,
-      intent_category: (f.intent_category || '创作') as any,
+      intent_category: toIntentCategory(f.intent_category || '创作'),
     })),
     generated_by: 'morning-plan',
   };
@@ -110,7 +116,7 @@ export async function runMorningPlan(): Promise<void> {
   const intentPool: IntentPool = {
     intents: decision.intent_seeds.map((seed, i) => ({
       id: `seed_${Date.now()}_${i}`,
-      category: seed.category as any,
+      category: toIntentCategory(seed.category),
       description: seed.description,
       intensity: Math.min(10, Math.max(0, seed.intensity)),
       source: 'accumulation' as const,
@@ -155,7 +161,21 @@ export async function runMorningPlan(): Promise<void> {
   writeJSON(PATHS.intentPool, intentPool);
   writeJSON(PATHS.emotionState, emotion);
   writeJSON(PATHS.cronSchedule, cronSchedule);
-  writeJSON(PATHS.heartbeatLog, trimmedLog);
+
+  // Add morning heartbeat log entry
+  const morningLogEntry: HeartbeatLogEntry = {
+    timestamp: now.toISOString(),
+    type: 'morning',
+    status: 'completed',
+    chosen_actions: [`schedule: ${decision.flexible_schedule.length} flexible items`],
+    emotion_after: { mood: emotion.mood, energy: emotion.energy },
+    importance_added: 3,
+  };
+  const finalLog: HeartbeatLog = {
+    ...trimmedLog,
+    logs: [...trimmedLog.logs, morningLogEntry],
+  };
+  writeJSON(PATHS.heartbeatLog, finalLog);
 
   // Mark overnight events as processed
   const updatedEvents: EventQueue = {
@@ -167,7 +187,9 @@ export async function runMorningPlan(): Promise<void> {
   console.log(`Morning plan complete. Schedule: ${heartbeats.length} heartbeats, ${decision.flexible_schedule.length} flexible items.`);
 }
 
-runMorningPlan().catch(err => {
-  console.error('Morning plan error:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  runMorningPlan().catch(err => {
+    console.error('Morning plan error:', err.message);
+    process.exit(1);
+  });
+}

@@ -8,7 +8,7 @@
  */
 
 import {
-  EmotionState, HeartbeatLog, WisdomStore, WisdomEntry,
+  EmotionState, HeartbeatLog, HeartbeatLogEntry, WisdomStore, WisdomEntry,
   Preferences, Aspirations, PersonalityDrift, PersonalityModifier,
 } from './types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from './file-utils';
@@ -184,6 +184,24 @@ export async function runNightReflect(): Promise<void> {
   writeJSON(PATHS.preferences, updatedPrefs);
   writeJSON(PATHS.aspirations, updatedAspirations);
 
+  // Add night heartbeat log entry
+  const nightLogEntry: HeartbeatLogEntry = {
+    timestamp: now.toISOString(),
+    type: 'night',
+    status: 'completed',
+    chosen_actions: [
+      `+${decision.new_wisdom.length} wisdom`,
+      `${decision.preference_updates.length} pref updates`,
+      `${decision.aspiration_updates.length} aspiration updates`,
+    ],
+    importance_added: 5,
+  };
+  const updatedLog: HeartbeatLog = {
+    ...heartbeatLog,
+    logs: [...heartbeatLog.logs, nightLogEntry],
+  };
+  writeJSON(PATHS.heartbeatLog, updatedLog);
+
   // Reset emotion for sleep
   const sleepEmotion: EmotionState = {
     mood: { valence: 0.2, arousal: 0.1, description: '准备睡觉了' },
@@ -196,7 +214,9 @@ export async function runNightReflect(): Promise<void> {
   console.log(`Night reflection complete. +${decision.new_wisdom.length} wisdom, ${decision.preference_updates.length} pref updates, ${decision.aspiration_updates.length} aspiration updates.`);
 }
 
-runNightReflect().catch(err => {
-  console.error('Night reflection error:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  runNightReflect().catch(err => {
+    console.error('Night reflection error:', err.message);
+    process.exit(1);
+  });
+}

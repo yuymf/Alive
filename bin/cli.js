@@ -134,7 +134,7 @@ async function main() {
   }
   const preferencesPath = path.join(MEMORY_DIR, 'preferences.json');
   if (!fs.existsSync(preferencesPath)) {
-    fs.writeFileSync(preferencesPath, JSON.stringify({"cos_characters":[],"content_style":[],"active_hours":[],"social_platforms":[]}, null, 2));
+    fs.writeFileSync(preferencesPath, JSON.stringify({"cos_characters":[],"content_style":[],"active_hours":[],"social_platforms":[{"platform":"instagram","engagement":0.5,"note":"刚开始经营"}]}, null, 2));
   }
   const aspirationsPath = path.join(MEMORY_DIR, 'aspirations.json');
   if (!fs.existsSync(aspirationsPath)) {
