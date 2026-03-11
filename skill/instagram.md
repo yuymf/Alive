@@ -122,3 +122,29 @@ node ~/.openclaw/skills/minase/scripts/post-instagram.js --check-stats {media_id
 - 不复制粘贴 hashtag（每次手动选择）
 - 不发与水瀬性格不符的"励志文案"
 - 不在连续两天发同一类型内容
+
+## 灵感采集配置
+
+**用于 inspiration-collector.ts 自动采集。**
+
+### 目标 Hashtag（Graph API 轮询）
+
+固定 5-8 个，避免超过 Instagram 7天30个的限制：
+
+- `cosplay` — 主标签
+- `cosplaygirl` — 女性 cos 主标签
+- `animecosplay` — 动漫 cos
+- `コスプレ` — 日语圈
+- `辣妹` — 辣妹日常
+- `jfashion` — 日系穿搭
+
+### 竞品/灵感账号
+
+用于观察风格和互动模式（不直接抓取，通过 WebSearch 间接获取）：
+
+- えなこ (Enako) — 日本顶流 coser
+- 当季热门 coser（动态更新，存入 inspiration.json）
+
+### 图片生成说明
+
+**已由 `generate-image.ts` 替代 `aihubmix-gemini-image` skill 调用。** 直接使用 AIHubMix OpenAI 兼容接口。
