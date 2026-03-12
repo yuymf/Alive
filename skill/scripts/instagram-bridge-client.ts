@@ -48,3 +48,17 @@ export function callInstagramBridge(command: string, args: Record<string, string
     });
   });
 }
+
+/**
+ * Upload a carousel/album post to Instagram.
+ * @param imagePaths Array of local image file paths
+ * @param caption Post caption text
+ * @returns media_pk of the created post
+ */
+export async function uploadAlbum(imagePaths: string[], caption: string): Promise<string> {
+  const result = await callInstagramBridge('upload_album', {
+    images: JSON.stringify(imagePaths),
+    caption,
+  });
+  return (result as { media_pk: string }).media_pk;
+}
