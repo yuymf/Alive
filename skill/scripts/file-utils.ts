@@ -35,6 +35,9 @@ export const PATHS = {
   confidenceState: path.join(MEMORY_BASE, 'confidence-state.json'),
   photoRoll: path.join(MEMORY_BASE, 'photo-roll'),
   referenceImage: path.join(SKILL_BASE, 'assets', 'minase-reference.png'),
+  postImpulse: path.join(MEMORY_BASE, 'post-impulse.json'),
+  inspirationRefs: path.join(MEMORY_BASE, 'inspiration-refs'),
+  references: path.join(SKILL_BASE, 'assets', 'references'),
 } as const;
 
 /**
