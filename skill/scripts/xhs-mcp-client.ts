@@ -50,6 +50,7 @@ async function callXhsMcp(toolName: string, args: Record<string, unknown>): Prom
     signal: AbortSignal.timeout(XHS_MCP_TIMEOUT),
   });
 
+  if (!res.ok) throw new Error(`MCP HTTP ${res.status}`);
   const data = await res.json() as McpResponse;
   if (data.error) {
     throw new Error(data.error.message);
@@ -63,13 +64,13 @@ async function callXhsMcp(toolName: string, args: Record<string, unknown>): Prom
 /** Check if the xiaohongshu-mcp server is reachable. */
 export async function isXhsMcpAvailable(): Promise<boolean> {
   try {
-    await fetch(XHS_MCP_URL, {
+    const res = await fetch(XHS_MCP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/list', id: 0 }),
       signal: AbortSignal.timeout(5_000),
     });
-    return true;
+    return res.ok;
   } catch {
     return false;
   }

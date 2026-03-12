@@ -109,6 +109,7 @@ async function fetchRedditTrends(url: string): Promise<TrendPost[]> {
     headers: { 'User-Agent': 'minase-digital-life/0.1' },
     signal: AbortSignal.timeout(10_000),
   });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json() as RedditResponse;
   const posts = data.data.children
     .sort((a, b) => b.data.score - a.data.score)
