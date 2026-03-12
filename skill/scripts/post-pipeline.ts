@@ -13,6 +13,7 @@ import { PostHistory, PostRecord, ContentStyle, EmotionState } from './types';
 import { PATHS, readJSON, writeJSON, appendText } from './file-utils';
 import { generateImage, buildImagePrompt } from './generate-image';
 import { uploadToImgURL } from './imgurl-upload';
+import { getLocalDate, getLocalTimeHHMM } from './time-utils';
 import { refreshInspiration } from './inspiration-collector';
 import { planPhoto, planPost, shouldConsiderPosting } from './content-planner';
 import { callInstagramBridge } from './instagram-bridge-client';
@@ -39,8 +40,8 @@ async function postToInstagram(imagePath: string, caption: string): Promise<stri
  */
 function writeDiary(entry: string, importance: number, tags: string[]): void {
   const now = new Date();
-  const dateStr = now.toISOString().split('T')[0];
-  const timeStr = now.toISOString().split('T')[1].slice(0, 5);
+  const dateStr = getLocalDate(now);
+  const timeStr = getLocalTimeHHMM(now);
   const emotion = readJSON<EmotionState>(PATHS.emotionState, {
     mood: { valence: 0.3, arousal: 0.5, description: '普通' },
     energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,

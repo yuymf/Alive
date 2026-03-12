@@ -17,6 +17,7 @@ import { callInstagramBridge } from './instagram-bridge-client';
 import { VitalityState } from './types';
 import { morningRecovery, DEFAULT_VITALITY } from './vitality-engine';
 import { syncCronSchedule } from './cron-sync';
+import { getLocalDate, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
 
 const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想']);
 
@@ -55,7 +56,8 @@ interface MorningPlanDecision {
 
 export async function runMorningPlan(): Promise<void> {
   const now = new Date();
-  const weekday = now.getDay() === 0 ? 7 : now.getDay();
+  const weekday = getLocalWeekday(now);
+  const todayStr = getLocalDate(now);
 
   // Refresh expired inspiration data at the start of each day
   try {
@@ -67,7 +69,7 @@ export async function runMorningPlan(): Promise<void> {
 
   // Read yesterday's log
   const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
-  const yesterday = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
+  const yesterday = getLocalDate(new Date(now.getTime() - 86400000));
   const yesterdayLogs = heartbeatLog.logs.filter(l => l.timestamp.startsWith(yesterday));
   const yesterdaySummary = yesterdayLogs.length > 0
     ? yesterdayLogs.map(l => `${l.timestamp.split('T')[1].slice(0, 5)}: ${l.chosen_actions?.join(', ') || l.status}`).join('\n')
@@ -125,7 +127,7 @@ export async function runMorningPlan(): Promise<void> {
   const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
   const prompt = template
-    .replace('{current_time}', now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }))
+    .replace('{current_time}', formatLocalTime(now))
     .replace('{weekday_name}', weekdayNames[weekday])
     .replace('{yesterday_summary}', yesterdaySummary)
     .replace('{aspirations_summary}', aspirations.aspirations.length > 0
@@ -143,7 +145,7 @@ export async function runMorningPlan(): Promise<void> {
 
   // Build schedule-today.json
   const scheduleToday: ScheduleToday = {
-    date: now.toISOString().split('T')[0],
+    date: todayStr,
     rigid: todayRigid,
     flexible: decision.flexible_schedule.map(f => ({
       type: 'flexible' as const,
@@ -192,12 +194,12 @@ export async function runMorningPlan(): Promise<void> {
   heartbeats.push({ time: decision.sleep_time, type: 'night' });
 
   const cronSchedule: CronSchedule = {
-    date: now.toISOString().split('T')[0],
+    date: todayStr,
     heartbeats,
   };
 
   // Write diary entry
-  appendText(PATHS.diary, `\n## ${now.toISOString().split('T')[0]} ${decision.wake_time}\n${decision.diary_entry}\n情绪: ${decision.mood_description} | 重要性: 3\n标签: morning, plan\n`);
+  appendText(PATHS.diary, `\n## ${todayStr} ${decision.wake_time}\n${decision.diary_entry}\n情绪: ${decision.mood_description} | 重要性: 3\n标签: morning, plan\n`);
 
   // Write all state
   writeJSON(PATHS.scheduleToday, scheduleToday);

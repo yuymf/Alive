@@ -133,6 +133,8 @@ node ~/.openclaw/skills/minase/scripts/fetch-trends.js
 - **默认值**: `LLM_API_BASE` 默认为 `https://aihubmix.com/v1`，`LLM_MODEL` 默认为 `claude-sonnet-4-20250514`
 - **作用**: 用于水瀬的自主反思（memory-reflect）、灵感收集等需要 LLM 推理的场景。失败时会自动重试一次
 
+OPENCLAW_RAW_STREAM=1 npx openclaw gateway 
+
 ## 许可
 
 MIT

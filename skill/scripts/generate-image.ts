@@ -10,6 +10,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { ContentStyle } from './types';
 import { PATHS } from './file-utils';
+import { getLocalDate, getLocalHour } from './time-utils';
 
 const MAX_REFERENCE_BYTES = 500_000; // 500KB — avoid oversized API payloads
 
@@ -212,7 +213,7 @@ function loadReferenceBase64(imagePath: string): string {
  */
 export async function generateImage(options: GenerateImageOptions): Promise<GenerateImageResult> {
   const { prompt, referenceImagePath, style = 'daily', aspectRatio = DEFAULT_ASPECT_RATIO } = options;
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDate();
   const outputDir = options.outputDir ?? path.join(PATHS.photoRoll, today);
 
   fs.mkdirSync(outputDir, { recursive: true });
@@ -231,7 +232,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
 
       // Save to file
       const timestamp = Date.now();
-      const hour = new Date().getHours();
+      const hour = getLocalHour();
       const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
       const existing = fs.existsSync(outputDir) ? fs.readdirSync(outputDir).length : 0;
       const filename = `${timeOfDay}_${style}_${existing + 1}.png`;

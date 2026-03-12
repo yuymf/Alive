@@ -15,6 +15,7 @@ import {
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from './file-utils';
 import { callLLMJSON } from './llm-client';
 import { rebalanceTiers, updateMetaStats } from './social-graph-engine';
+import { getLocalDate, formatLocalTime } from './time-utils';
 
 interface NightReflectDecision {
   new_wisdom: Array<{ lesson: string; importance: number; tags: string[] }>;
@@ -26,7 +27,7 @@ interface NightReflectDecision {
 
 export async function runNightReflect(): Promise<void> {
   const now = new Date();
-  const today = now.toISOString().split('T')[0];
+  const today = getLocalDate(now);
 
   // Read today's data
   const diary = readText(PATHS.diary);
@@ -48,7 +49,7 @@ export async function runNightReflect(): Promise<void> {
   // Build prompt
   const template = readTemplate('night-reflect-prompt.md');
   const prompt = template
-    .replace('{current_time}', now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }))
+    .replace('{current_time}', formatLocalTime(now))
     .replace('{today_diary}', todayDiary || '今天似乎没写什么日记。')
     .replace('{today_heartbeat_summary}', logSummary || '没有心跳记录。')
     .replace('{core_wisdom}', wisdom.wisdom.length > 0

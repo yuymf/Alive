@@ -84,9 +84,9 @@ function registerCronJobs() {
     warn('OpenClaw Gateway is not running — cannot register cron jobs.');
     warn('Start the Gateway first, then re-run: npx minase@latest');
     warn('Or register manually after starting Gateway:');
-    warn('  openclaw cron add --name "minase:morning" --cron "0 7 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:morning] 执行水瀬晨规划。运行: node ~/.openclaw/skills/minase/scripts/morning-plan.js" --timeout 180');
-    warn('  openclaw cron add --name "minase:tick" --cron "0 8-22 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:tick] 执行水瀬心跳。运行: node ~/.openclaw/skills/minase/scripts/heartbeat-tick.js" --timeout 120');
-    warn('  openclaw cron add --name "minase:night" --cron "0 23 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:night] 执行水瀬夜反思。运行: node ~/.openclaw/skills/minase/scripts/night-reflect.js" --timeout 300');
+    warn('  openclaw cron add --name "minase:morning" --cron "0 7 * * *" --session isolated --message "[cron:morning] 执行水瀬晨规划。运行: node ~/.openclaw/skills/minase/scripts/morning-plan.js" --timeout 180');
+    warn('  openclaw cron add --name "minase:tick" --cron "0 8-22 * * *" --session isolated --message "[cron:tick] 执行水瀬心跳。运行: node ~/.openclaw/skills/minase/scripts/heartbeat-tick.js" --timeout 120');
+    warn('  openclaw cron add --name "minase:night" --cron "0 23 * * *" --session isolated --message "[cron:night] 执行水瀬夜反思。运行: node ~/.openclaw/skills/minase/scripts/night-reflect.js" --timeout 300');
     return;
   }
 
@@ -130,7 +130,6 @@ function registerCronJobs() {
           'cron', 'add',
           '--name', job.name,
           '--cron', job.cron,
-          '--tz', 'Asia/Shanghai',
           '--session', 'isolated',
           '--message', job.message,
           '--timeout', String(job.timeout),
@@ -406,7 +405,8 @@ async function main() {
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations'), { recursive: true });
   const diaryPath = path.join(MEMORY_DIR, 'diary.md');
   if (!fs.existsSync(diaryPath)) {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     fs.writeFileSync(diaryPath, `# 水瀬の日記\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`);
   }
   const wisdomPath = path.join(MEMORY_DIR, 'core-wisdom.json');
@@ -523,9 +523,9 @@ async function main() {
   } else {
     warn('OpenClaw CLI not found in PATH — skipping cron registration.');
     warn('You can register manually later:');
-    warn('  openclaw cron add --name "minase:morning" --cron "0 7 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:morning] Run morning plan"');
-    warn('  openclaw cron add --name "minase:tick" --cron "0 8-22 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:tick] Run heartbeat tick"');
-    warn('  openclaw cron add --name "minase:night" --cron "0 23 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:night] Run night reflection"');
+    warn('  openclaw cron add --name "minase:morning" --cron "0 7 * * *" --session isolated --message "[cron:morning] Run morning plan"');
+    warn('  openclaw cron add --name "minase:tick" --cron "0 8-22 * * *" --session isolated --message "[cron:tick] Run heartbeat tick"');
+    warn('  openclaw cron add --name "minase:night" --cron "0 23 * * *" --session isolated --message "[cron:night] Run night reflection"');
   }
 
   // Step 9: Summary
