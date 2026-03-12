@@ -31,24 +31,42 @@ Minase 当前系统有 5 个让行为「像机器人」的结构性问题：
 
 **惯性层（Momentum）**
 - 最近 N 次 impulse 的指数加权移动平均，代表「最近几小时的情绪基调」。
+- **适用维度**：全部 6 个维度（valence、arousal、energy、stress、creativity、sociability）都参与 momentum 计算。momentum 对象存储每个维度的加权平均值。
 - 衰减率动态变化 — momentum 持续时间越长，衰减越慢：
   - 持续 <3h：衰减 8%/tick
   - 持续 3-6h：衰减 5%/tick（沉浸效应）
   - 持续 >6h：衰减 3%/tick（惯性锁定）
+- momentum 的「持续时间」定义：从 momentum 主方向（由 valence 符号决定）最近一次翻转算起。即 valence 连续为正或连续为负的 tick 数。
 - 模拟「连续好几个小时心情不好，就越来越难走出来」。
 
 **基调层（Undertone）**
 - 跨天的情绪底色，由睡前反思写入，代替固定 ESTP baseline 作为衰减目标。
+- 包含全部 6 个维度。各维度分别向 undertone 对应值衰减。
 - 晨规划可以重置 undertone。
 - 例：连续两天帖子数据差 → undertone.valence 被压到 0.1。
 
 ### 反刍机制（Rumination）
 
 每次心跳有概率「想起」之前的情绪事件：
-- 概率 = `事件重要性 × 时间衰减因子 × 情绪共振因子`
-- 时间衰减：半衰期 8 小时。
-- 情绪共振：当前情绪和事件情绪同方向时概率更高（心情差时更容易想起坏事）。
-- 触发时：注入一个衰减后的 impulse（原始幅度的 30-50%），写入日记「突然又想起了XX的事...」。
+
+```
+rumination_probability = importance / 10
+                       × 2^(-tick_age / 16)
+                       × (1.0 + resonance_bonus)
+
+其中：
+  importance: 事件重要性 1-10，归一化到 0-1
+  tick_age: 距事件发生了多少个 tick
+  半衰期 = 16 ticks（约 16 小时），即 decay_factor = 2^(-tick_age / 16)
+  resonance_bonus:
+    如果 sign(当前 valence) == sign(事件 delta.valence)：+0.5
+    否则：0
+  最终概率 clamp 到 [0, 0.3]（每 tick 最多 30% 概率反刍某一事件）
+```
+
+- 每 tick 最多触发 1 次反刍（遍历 impulse_history，按概率逐个 roll，首个命中即停止）。
+- 触发时：注入一个衰减后的 impulse（原始幅度 × `0.3 + 0.2 × (importance / 10)`，即重要性越高反刍越强烈）。
+- 写入日记：「突然又想起了XX的事...」。
 
 ### 阈值爆发（Threshold Break）
 
@@ -57,28 +75,67 @@ Minase 当前系统有 5 个让行为「像机器人」的结构性问题：
 - valence 根据积累方向剧烈波动。
 - 强制产生一条高重要性日记。
 - 写入反刍池（之后可能反复想起）。
+- **爆发冷却**：爆发后设置 `threshold_break_cooldown = 5`，每 tick 减 1，冷却期间不再触发爆发。防止 stress 源持续存在时的振荡。
 
 ### 数据结构变化
 
 ```typescript
 interface EmotionState {
-  // 现有 6 维度不变：mood, energy, stress, creativity, sociability
+  // 现有 6 维度不变：
+  //   mood: { valence, arousal, description }
+  //   energy, stress, creativity, sociability
+  //   last_updated, recent_cause
+
+  // 新增字段：
   momentum: {
     valence: number;
     arousal: number;
-    duration_ticks: number;
-    direction: 'positive' | 'negative' | 'neutral';
+    energy: number;
+    stress: number;
+    creativity: number;
+    sociability: number;
+    duration_ticks: number;   // valence 主方向连续持续的 tick 数
   };
-  undertone: EmotionDelta;
-  impulse_history: Array<{
+  undertone: {                // 代替固定 ESTP baseline 的衰减目标
+    valence: number;
+    arousal: number;
+    energy: number;
+    stress: number;
+    creativity: number;
+    sociability: number;
+  };
+  impulse_history: Array<{    // 最近事件记录，用于反刍。最多保留 50 条，超出丢弃最旧。
     delta: EmotionDelta;
     cause: string;
     importance: number;
     timestamp: string;
-    tick_age: number;
+    tick_age: number;         // 每 tick +1，用于衰减计算
   }>;
   consecutive_high_stress: number;
+  threshold_break_cooldown: number;  // 爆发后冷却计数，0 表示可触发
 }
+```
+
+### 默认值（向后兼容）
+
+读入旧 `emotion-state.json` 时，缺失字段用以下默认值补全：
+
+```typescript
+const DEFAULT_MOMENTUM = {
+  valence: 0, arousal: 0, energy: 0,
+  stress: 0, creativity: 0, sociability: 0,
+  duration_ticks: 0,
+};
+
+const DEFAULT_UNDERTONE = {
+  // 即 ESTP baseline，首次运行时等同于旧行为
+  valence: 0.3, arousal: 0.5, energy: 0.6,
+  stress: 0.2, creativity: 0.4, sociability: 0.5,
+};
+
+const DEFAULT_IMPULSE_HISTORY: [] = [];
+const DEFAULT_CONSECUTIVE_HIGH_STRESS = 0;
+const DEFAULT_THRESHOLD_BREAK_COOLDOWN = 0;
 ```
 
 ---
@@ -87,23 +144,24 @@ interface EmotionState {
 
 ### Flow State（沉浸态）
 
-触发条件：上一个 tick 做了某件事 且 当前意图池中该类别强度仍 >5.0。
+触发条件：上一个 tick 做了某件事 且 该意图 `intensity - resistance > 2.0`（即不仅强度够，而且「余量」充足，超过执行门槛有一定裕度）。
 
 进入 flow 后：
 - 自动继续同一件事，不重新走 LLM 裁决（省 token，更真实）。
 - arousal 和对应维度小幅上升。
 - 活力消耗 ×0.7。
 - 日记写「不知不觉又过了一小时」。
+- **创作类 flow 的发帖出口**：如果 flow 类别 = '创作' 且 duration_ticks >= 3 且 post-pipeline 条件满足（vitality gate + 16h since last post），允许在 flow tick 中触发 post-pipeline 作为 flow 的「成果输出」，不需要退出 flow。
 
 退出条件：
-- 意图强度降到 <3.0（做够了）。
+- 意图 `intensity - resistance < 0`（做够了/门槛升高了）。
 - 活力 <20（累到不行）。
 - 被刚性日程打断。
-- 随机中断：每 tick 15% 概率（手机响了、肚子饿了）。
+- 随机中断：每 tick `interrupt_chance` 概率（初始 15%，每持续 1 tick 增加 3%，上限 40%）。
 
 ### Drift State（摆烂态）
 
-触发条件：活力 <40 且 所有意图强度都 <3.0 且 stress <0.3。
+触发条件：活力 <40 且 所有意图的 `intensity - resistance < 1.0`（即没有任何意图能轻松跨过执行门槛）且 stress <0.3。
 
 进入 drift 后：
 - 只做「刷手机」「发呆」「看窗外」。
@@ -112,8 +170,8 @@ interface EmotionState {
 - 窥屏意图累积 ×1.5。
 
 退出条件：
-- 任何意图强度 >5.0。
-- 外部事件触发。
+- 任何意图 `intensity - resistance > 2.0`（有了真正想做且能做的事）。
+- 外部事件触发（新事件进入 event queue）。
 - 活力恢复到 >55。
 
 ### 心跳密度可变
@@ -124,6 +182,8 @@ interface EmotionState {
 | Drift | 1-2 | 否（模板生成） | 刷手机/发呆 |
 | Normal | 3-5 | 是（完整裁决） | 标准流程 |
 
+重要性值按 tick 单独计算，flow 中每 tick 独立贡献 6-8 重要性（不按整个 session 累加）。
+
 ### 数据结构
 
 ```typescript
@@ -133,8 +193,21 @@ interface FlowState {
   category: IntentCategory | null;
   entered_at: string | null;
   duration_ticks: number;
-  interrupt_chance: number;
+  interrupt_chance: number;   // 初始 0.15，每 tick +0.03，上限 0.40
 }
+```
+
+### 默认值
+
+```typescript
+const DEFAULT_FLOW_STATE: FlowState = {
+  status: 'none',
+  activity: null,
+  category: null,
+  entered_at: null,
+  duration_ticks: 0,
+  interrupt_chance: 0.15,
+};
 ```
 
 ### heartbeat-tick.ts 新流程
@@ -171,10 +244,12 @@ interface FlowState {
 | 梦想 | 6.0 | 需要特别心理状态 |
 
 动态修正：
-- 活力低 → 高耗能类别 resistance ×1.5。
+- 活力低（vitality <30）→ 高耗能类别（创作、学习、梦想）resistance ×1.5。
 - 正在 flow → 其他类别 resistance +3.0。
 - 刚性日程中 → 非 allowed_actions 类别 resistance +5.0。
-- 上次做这件事效果差 → resistance +2.0。
+- 上次创作效果差（仅创作类，由 confidence <0.8 判定）→ resistance +2.0。
+
+> **注**：「效果差」的 resistance 修正仅适用于创作类意图，因为只有创作类有 confidence-engine 提供的客观质量信号。其他类别不使用此修正。
 
 执行判定：`intensity > resistance` 时才能执行。
 
@@ -199,12 +274,13 @@ interface FlowState {
   - **内疚爆发**：intensity 一次性 +3.0（再不做不行了）。
   - **放弃**：intensity 骤降到 1.0（算了不想了）。
   - 概率由 stress 决定：stress >0.5 → 80% 放弃；stress <0.3 → 70% 爆发。
+- **爆发/放弃后**：`skipped_count` 重置为 0。
 
 ### 数据结构变化
 
 ```typescript
 interface Intent {
-  // 现有字段不变
+  // 现有字段不变：id, category, description, intensity, source, born_at, decay_rate, satisfied_at
   resistance: number;
   skipped_count: number;
   last_attempted: string | null;
@@ -214,6 +290,17 @@ const BASE_RESISTANCE: Record<IntentCategory, number> = {
   '创作': 4.0, '社交': 1.5, '窥屏': 0.5,
   '表达': 2.0, '学习': 5.0, '休息': 0.3, '梦想': 6.0,
 };
+```
+
+### 默认值
+
+读入旧 `intent-pool.json` 时，缺失字段用以下默认值补全：
+
+```typescript
+// 对每个 Intent：
+//   resistance: BASE_RESISTANCE[intent.category]
+//   skipped_count: 0
+//   last_attempted: null
 ```
 
 ### LLM 裁决改造
@@ -260,9 +347,11 @@ relevance_multiplier 规则：
 | 看到神仙作品 | 越看越焦虑 | 20% | 2-4 tick |
 | 漫展即将到来 | 盘算要 cos 谁 | 70% | 1-2 tick |
 | 漫展即将到来 | 算预算有点慌 | 50% | 3-5 tick |
-| 工作遇到烦心事 | 下班后余波 | 60% | 下班时段 |
-| 工作遇到烦心事 | 睡前反刍 | 30% | 睡前 |
+| 工作遇到烦心事 | 下班后余波 | 60% | 4-8 tick（从上班时段触发算起） |
+| 工作遇到烦心事 | 睡前反刍 | 30% | 8-14 tick（从上班时段触发算起） |
 | 收到同好私信 | 聊了很久停不下来 | 50% | 1-2 tick |
+
+> **注**：所有延迟统一用 tick 计数表示。「下班后余波」和「睡前反刍」的 tick 数已按典型工作时段（10:00 触发 → 下班 18:00 = 8 tick，睡前 23:00 = 13 tick）折算。
 
 ### 事件池扩充
 
@@ -300,18 +389,41 @@ interface RandomEventDef {
   chain_events?: Array<{
     description: string;
     probability: number;
-    delay_ticks: [number, number];
+    delay_ticks: [number, number];   // [最小, 最大] tick 延迟
     emotion_delta: EmotionDelta;
     intent_boosts: Array<{ category: IntentCategory; boost: number }>;
     diary_entry: string;
   }>;
 }
 
+// 连锁事件只使用 ticks_remaining 倒计时，无全局 tick 计数器
 interface PendingChainEvent {
   source_event_id: string;
-  trigger_at_tick: number;
-  ticks_remaining: number;
-  event: RandomEventDef['chain_events'][0];
+  ticks_remaining: number;           // 每 tick 减 1，到 0 时触发
+  event: {
+    description: string;
+    probability: number;             // 已在创建时 roll 过，此处仅记录
+    emotion_delta: EmotionDelta;
+    intent_boosts: Array<{ category: IntentCategory; boost: number }>;
+    diary_entry: string;
+  };
+}
+```
+
+### 默认值
+
+```typescript
+const DEFAULT_PENDING_CHAINS: PendingChainEvent[] = [];
+```
+
+### 事件冷却状态
+
+全局冷却存储在 `pending-chains.json` 同一文件中：
+
+```typescript
+interface ChainAndCooldownState {
+  pending: PendingChainEvent[];
+  cooldowns: Record<string, string>;  // event_description → last_triggered ISO date
 }
 ```
 
@@ -351,7 +463,7 @@ prompt 中注入上一次的 inner_monologue：
 | 情绪爆发 | 长、情绪化、语气词 | 「真的好烦！！！为什么每次都这样」 |
 | 普通 | 正常叙事 | 接近现有风格 |
 
-实现：在 simulated-action.md 模板中根据状态注入 `voice_directive`。
+实现：`heartbeat-tick.ts` 根据当前 `flowState.status` 和情绪状态计算 `voice_directive` 字符串，作为模板参数传入 `simulated-action.md`。模板中新增 `{voice_directive}` 占位符。
 
 ### 叙事一致性
 
@@ -361,12 +473,24 @@ prompt 中注入上一次的 inner_monologue：
 
 ```typescript
 interface HeartbeatLogEntry {
-  // 现有字段
-  tick_summary: string;
-  inner_monologue: string | null;
+  // 现有字段不变：timestamp, type, status, perception_summary,
+  //   chosen_actions, emotion_after, importance_added, error
+  tick_summary: string;           // 一句话摘要，给下次 tick 用
+  inner_monologue: string | null; // 本次独白，给下次 tick 引用
   flow_state: 'flow' | 'drift' | 'none';
-  voice_directive: string;
+  voice_directive: string;        // 日记风格指令
 }
+```
+
+### 默认值
+
+读入旧 `heartbeat-log.json` 时，缺失字段用以下默认值补全：
+
+```typescript
+// tick_summary: ''
+// inner_monologue: null
+// flow_state: 'none'
+// voice_directive: ''
 ```
 
 ---
@@ -375,13 +499,21 @@ interface HeartbeatLogEntry {
 
 ### 状态文件变化总结
 
-| 文件 | 变化 |
-|------|------|
-| `emotion-state.json` | 新增 momentum, undertone, impulse_history, consecutive_high_stress |
-| `intent-pool.json` | Intent 新增 resistance, skipped_count, last_attempted |
-| `heartbeat-log.json` | LogEntry 新增 tick_summary, inner_monologue, flow_state, voice_directive |
-| `flow-state.json` | **新文件** — FlowState 对象 |
-| `pending-chains.json` | **新文件** — PendingChainEvent 数组 |
+| 文件 | 变化 | PATHS 键名 |
+|------|------|-----------|
+| `emotion-state.json` | 新增 momentum, undertone, impulse_history, consecutive_high_stress, threshold_break_cooldown | `emotionState`（已有） |
+| `intent-pool.json` | Intent 新增 resistance, skipped_count, last_attempted | `intentPool`（已有） |
+| `heartbeat-log.json` | LogEntry 新增 tick_summary, inner_monologue, flow_state, voice_directive | `heartbeatLog`（已有） |
+| `flow-state.json` | **新文件** — FlowState 对象 | `flowState`（新增） |
+| `pending-chains.json` | **新文件** — ChainAndCooldownState 对象 | `pendingChains`（新增） |
+
+新文件在 `file-utils.ts` 的 `PATHS` 对象中注册：
+
+```typescript
+// 新增到 PATHS：
+flowState: path.join(MEMORY_BASE, 'flow-state.json'),
+pendingChains: path.join(MEMORY_BASE, 'pending-chains.json'),
+```
 
 ### 模块依赖关系
 
@@ -405,11 +537,12 @@ social-graph-engine.ts 不改
 
 **morning-plan.ts**：
 - 写入 undertone（今天的情绪基调）。
-- 重置 flowState 为 none。
-- 清空 pendingChainEvents。
+- 重置 flowState 为 `DEFAULT_FLOW_STATE`。
+- 清空 pendingChainEvents（注意：夜间连锁事件由 night-reflect 在 23:00 处理完毕后才清空，morning-plan 在 07:00 运行时不会误删夜间事件）。
 - 重置所有意图的 skipped_count。
 
 **night-reflect.ts**：
+- 在反思前先处理所有 `ticks_remaining <= 0` 的 pending chain events（确保夜间连锁事件不被丢失）。
 - 读取全天 flow 记录，生成沉浸统计。
 - undertone 由反思结果决定（明天带着什么底色醒来）。
 - 长期被拖延的意图纳入反思素材（可能产出「我一直想XX但总是做不到」的 wisdom）。
@@ -420,6 +553,6 @@ social-graph-engine.ts 不改
 
 1. **引擎层可重做，架构层不动**：不改变 OpenClaw Skill/Hook/Cron 机制、文件 IO 模式（file-utils.ts）、LLM 调用方式（llm-client.ts）。
 2. **不可变数据**：所有引擎函数继续返回新对象，不原地修改。
-3. **向后兼容**：新字段都有默认值，旧的 emotion-state.json 读入时自动补全缺失字段。
-4. **可测试**：每个新机制（惯性衰减、flow 判定、resistance 计算、事件过滤）都是纯函数，可单独单测。
+3. **向后兼容**：每个新字段都有明确的默认值（见各节「默认值」小节），旧 JSON 读入时自动补全缺失字段。
+4. **可测试**：每个新机制（惯性衰减、flow 判定、resistance 计算、反刍概率、事件过滤）都是纯函数，可单独单测。
 5. **LLM token 节约**：flow/drift 态跳过 LLM 裁决，每天约 40-60% 的 tick 可以不调 LLM。
