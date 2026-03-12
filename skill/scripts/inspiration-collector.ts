@@ -9,12 +9,14 @@ import { InspirationData, PostHistory } from './types';
 import { PATHS, readJSON, writeJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
 import { callInstagramBridge } from './instagram-bridge-client';
+import { isXhsMcpAvailable, listXhsFeed, searchXhsNotes, getXhsNoteDetail } from './xhs-mcp-client';
 
 const DEFAULT_INSPIRATION: InspirationData = {
   instagram_trends: { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: 0 },
   acg_hotspots: { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: 0 },
   visual_trends: { composition_styles: [], color_palettes: [], scene_ideas: [], updated_at: 0 },
   self_performance: { best_style: 'cos', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: 0 },
+  xiaohongshu_trends: { feed_highlights: [], cosplay_notes: [], trending_topics: [], cosplay_insights: [], saved_inspirations: [], updated_at: 0 },
 };
 
 // TTLs in milliseconds
@@ -23,6 +25,7 @@ const TTL = {
   acg_hotspots: 24 * 60 * 60 * 1000,            // 24h
   visual_trends: 72 * 60 * 60 * 1000,           // 72h
   self_performance: 168 * 60 * 60 * 1000,        // 7 days
+  xiaohongshu_trends: 6 * 60 * 60 * 1000,        // 6h — enables 2-4 refreshes/day
 } as const;
 
 function isExpired(updatedAt: number, ttl: number): boolean {
@@ -219,6 +222,107 @@ function collectSelfPerformance(): InspirationData['self_performance'] {
 }
 
 /**
+ * 2e: XiaoHongShu feed + search trends via xiaohongshu-mcp.
+ * Browses recommendation feed and searches cos-specific content.
+ * Also extracts visual inspiration descriptions for future photo shoots.
+ */
+export async function collectXiaohongshuTrends(): Promise<NonNullable<InspirationData['xiaohongshu_trends']>> {
+  const empty: NonNullable<InspirationData['xiaohongshu_trends']> = {
+    feed_highlights: [], cosplay_notes: [], trending_topics: [], cosplay_insights: [],
+    saved_inspirations: [], updated_at: 0,
+  };
+
+  const available = await isXhsMcpAvailable();
+  if (!available) {
+    console.warn('XHS MCP server not available, skipping XiaoHongShu trends.');
+    return empty;
+  }
+
+  // Collect feed and search results
+  let feedNotes: Awaited<ReturnType<typeof listXhsFeed>> = [];
+  let searchNotes: Awaited<ReturnType<typeof searchXhsNotes>> = [];
+
+  try {
+    feedNotes = await listXhsFeed();
+  } catch (err) {
+    console.warn(`XHS feed fetch failed: ${(err as Error).message}`);
+  }
+
+  try {
+    searchNotes = await searchXhsNotes('cosplay');
+  } catch (err) {
+    console.warn(`XHS search failed: ${(err as Error).message}`);
+  }
+
+  // Fetch details for top 3 high-engagement notes
+  const allNotes = [...feedNotes, ...searchNotes]
+    .filter((note, idx, arr) => arr.findIndex(n => n.id === note.id) === idx)
+    .sort((a, b) => b.likes - a.likes);
+  const topNotes = allNotes.filter(n => n.likes > 500).slice(0, 3);
+
+  const details: string[] = [];
+  for (const note of topNotes) {
+    try {
+      const detail = await getXhsNoteDetail(note.id, note.xsec_token);
+      const commentSummary = detail.comments.slice(0, 3).map(c => `  - ${c.user}: ${c.content}`).join('\n');
+      details.push(`标题: ${detail.title}\n描述: ${detail.description}\n点赞: ${detail.likes}\n评论:\n${commentSummary}`);
+    } catch (err) {
+      console.warn(`XHS detail fetch failed for ${note.id}: ${(err as Error).message}`);
+    }
+  }
+
+  // Format raw data for LLM
+  const feedText = feedNotes.slice(0, 10).map(n => `- ${n.title} (❤️${n.likes}) [${n.tags.join(', ')}]`).join('\n') || '无数据';
+  const searchText = searchNotes.slice(0, 10).map(n => `- ${n.title} (❤️${n.likes}) [${n.tags.join(', ')}]`).join('\n') || '无数据';
+  const detailText = details.join('\n---\n') || '无高互动笔记';
+
+  const template = readTemplate('xhs-inspiration-prompt.md');
+  const prompt = template
+    .replace('{feed_data}', feedText)
+    .replace('{search_data}', searchText)
+    .replace('{detail_data}', detailText);
+
+  try {
+    const result = await callLLMJSON<{
+      feed_highlights: Array<{ title: string; likes: number; topic: string }>;
+      cosplay_notes: Array<{ title: string; likes: number; topic: string }>;
+      trending_topics: string[];
+      cosplay_insights: string[];
+      saved_inspirations: Array<{
+        source_note_id: string;
+        source_title: string;
+        visual_description: string;
+        style_tags: string[];
+      }>;
+    }>(prompt, 1024);
+
+    // Merge saved_inspirations with existing (persists across refreshes)
+    const current = readJSON<InspirationData>(PATHS.inspiration, DEFAULT_INSPIRATION);
+    const existingInspos = current.xiaohongshu_trends?.saved_inspirations ?? [];
+    const newInspos = (result.saved_inspirations ?? []).map(s => ({
+      ...s,
+      saved_at: Date.now(),
+    }));
+    // Prefer new entries over old when source_note_id collides
+    const newIds = new Set(newInspos.map(s => s.source_note_id));
+    const filteredExisting = existingInspos.filter(s => !newIds.has(s.source_note_id));
+    const merged = [...filteredExisting, ...newInspos].slice(-20);
+
+    return {
+      feed_highlights: result.feed_highlights ?? [],
+      cosplay_notes: result.cosplay_notes ?? [],
+      trending_topics: result.trending_topics ?? [],
+      cosplay_insights: result.cosplay_insights ?? [],
+      saved_inspirations: merged,
+      updated_at: Date.now(),
+    };
+  } catch (err) {
+    console.error(`XHS LLM summarization failed: ${(err as Error).message}`);
+    return { ...empty, updated_at: Date.now() };
+  }
+}
+
+/**
  * Main entry: refresh expired inspiration sections.
  */
 export async function refreshInspiration(forceAll = false): Promise<InspirationData> {
@@ -243,6 +347,11 @@ export async function refreshInspiration(forceAll = false): Promise<InspirationD
   if (forceAll || isExpired(current.self_performance.updated_at, TTL.self_performance)) {
     console.log('Refreshing self performance...');
     updated = { ...updated, self_performance: collectSelfPerformance() };
+  }
+
+  if (forceAll || isExpired(current.xiaohongshu_trends?.updated_at ?? 0, TTL.xiaohongshu_trends)) {
+    console.log('Refreshing XiaoHongShu trends...');
+    updated = { ...updated, xiaohongshu_trends: await collectXiaohongshuTrends() };
   }
 
   writeJSON(PATHS.inspiration, updated);
