@@ -9,7 +9,12 @@
 - ins上热门: {instagram_trends}
 - 当季热门角色: {trending_characters}
 - 视觉灵感: {visual_trends}
+- 小红书热门话题: {xhs_trends}
+- 小红书cos洞察: {xhs_cosplay_insights}
 - 你过去拍的照片里 {best_style} 类反响最好
+
+## 收藏的灵感图（小红书上看到的好图）
+{saved_inspirations}
 
 ## 最近发过的类型
 {recent_styles}
