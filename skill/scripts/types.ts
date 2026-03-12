@@ -240,13 +240,19 @@ export interface WisdomStore {
 
 export type ContentStyle = 'cos' | 'daily' | 'behind_scenes' | 'travel';
 
+export interface ShotDescription {
+  description: string;
+  angle: string;
+  variation: string;
+}
+
 export interface PostRecord {
   media_id: string;
   timestamp: number;
   style: ContentStyle;
   caption: string;
   hashtags: string[];
-  image_local_path: string;
+  image_local_paths: string[];
   image_url?: string;
   stats?: {
     likes: number;
@@ -301,6 +307,7 @@ export interface InspirationData {
     }>;
     updated_at: number;
   };
+  saved_references?: SavedReference[];
 }
 
 export interface PhotoIntent {
@@ -309,11 +316,14 @@ export interface PhotoIntent {
   style: ContentStyle;
   mood: string;
   reason: string;
+  imageCount: number;
+  shots: ShotDescription[];
+  referenceInspiration?: string;
 }
 
 export interface PostIntent {
   wantToPost: boolean;
-  selectedPhoto?: string;
+  selectedPhotos: string[];
   caption: string;
   hashtags: string[];
   reason: string;
@@ -340,4 +350,27 @@ export interface RandomEvent {
   emotion_delta: EmotionDelta;
   intent_boosts: Array<{ category: IntentCategory; boost: number }>;
   diary_entry: string;
+}
+
+export interface PostImpulseState {
+  value: number;
+  last_post_at: number;
+  posts_today_date: string;
+  posts_today: number;
+}
+
+export const DEFAULT_POST_IMPULSE: PostImpulseState = {
+  value: 0,
+  last_post_at: 0,
+  posts_today_date: '',
+  posts_today: 0,
+};
+
+export interface SavedReference {
+  url: string;
+  local_path: string;
+  source_hashtag: string;
+  style_tags: string[];
+  scene_description: string;
+  saved_at: number;
 }
