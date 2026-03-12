@@ -10,10 +10,11 @@
 import {
   EmotionState, IntentPool, IntentCategory, ScheduleToday, EventQueue,
   HeartbeatLog, HeartbeatLogEntry, ActionOutput, RigidSchedule, WisdomStore,
-  SocialRelation, SocialMeta,
+  SocialRelation, SocialMeta, VitalityState, ConfidenceState, PostHistory,
+  CronSchedule,
 } from './types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from './file-utils';
-import { decayTowardBaseline, applyDelta } from './emotion-engine';
+import { decayTowardBaseline, applyDelta, computeEmotionIntentCoupling, intentSatisfactionFeedback } from './emotion-engine';
 import {
   decaySatisfied, accumulateIntents, applyEventBoosts,
   injectScheduleIntents, getTopIntents, satisfyIntent, addIntent,
@@ -23,9 +24,13 @@ import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
 import {
   decayAllRelations, processDormancy, generateSocialIntents,
-  updateMetaStats,
+  updateMetaStats, reactivateRelation, classifyTier,
 } from './social-graph-engine';
 import { spawn } from 'child_process';
+import { drainVitality, applyActionCost, replenishVitality, getVitalityConstraints, DEFAULT_VITALITY } from './vitality-engine';
+import { updateConfidence, decayConfidence, getCreationRateMultiplier, getConfidenceMoodHint, DEFAULT_CONFIDENCE } from './confidence-engine';
+import { rollRandomEvent } from './random-events';
+import { isActiveHeartbeatHour } from './heartbeat-gate';
 
 // Default initial states (Spec §16)
 const DEFAULT_EMOTION: EmotionState = {
@@ -153,9 +158,13 @@ async function regularTick(): Promise<void> {
   const diary = readText(PATHS.diary);
   const recentDiary = diary.split('\n').slice(-20).join('\n');
   const worldContext = readText(PATHS.world).split('\n').slice(-10).join('\n');
+  let vitality = readJSON<VitalityState>(PATHS.vitalityState, DEFAULT_VITALITY);
+  let confidence = readJSON<ConfidenceState>(PATHS.confidenceState, DEFAULT_CONFIDENCE);
 
-  // 2. Perception: decay emotion + process events
+  // 2. Perception: decay emotion + drain vitality
   emotion = decayTowardBaseline(emotion);
+  vitality = drainVitality(vitality, emotion);
+  confidence = decayConfidence(confidence);
 
   // 2b. Social graph: decay relations, process dormancy, generate social intents
   const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { instagram_following: [], xiaohongshu_following: [], stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
@@ -163,6 +172,18 @@ async function regularTick(): Promise<void> {
   socialRelations = decayAllRelations(socialRelations, now);
   const dormancyResult = processDormancy(socialRelations, now);
   socialRelations = dormancyResult.active;
+
+  // 2c. Reactivate dormant relations with new interactions
+  const unprocessedEvents = events.events.filter(e => !e.processed);
+  for (const event of unprocessedEvents) {
+    const eventUserId = (event.data as { user_id?: string }).user_id;
+    if (!eventUserId) continue;
+    socialRelations = socialRelations.map(r =>
+      r.id === eventUserId && classifyTier(r.relationship.closeness) === 'dormant'
+        ? reactivateRelation(r, now.toISOString())
+        : r
+    );
+  }
   const socialIntents = generateSocialIntents(socialRelations, socialMeta, now);
 
   // Write updated social relations back
@@ -191,6 +212,33 @@ async function regularTick(): Promise<void> {
     intentPool = addIntent(intentPool, si.category, si.description, si.intensity, 'accumulation');
   }
 
+  // 3c. Apply emotion→intent coupling (non-linear dimension interaction)
+  const couplingMultipliers = computeEmotionIntentCoupling(emotion);
+  const vitalityConstraints = getVitalityConstraints(vitality.vitality);
+  const creationMultiplier = getCreationRateMultiplier(confidence.confidence);
+  intentPool = {
+    ...intentPool,
+    intents: intentPool.intents.map(i => {
+      if (i.satisfied_at !== null) return i;
+      const coupling = couplingMultipliers[i.category] ?? 1.0;
+      const vitalityMod = vitalityConstraints.intentMultiplier;
+      const confidenceMod = i.category === '创作' ? creationMultiplier : 1.0;
+      const adjustedIntensity = Math.min(10, i.intensity * coupling * vitalityMod * confidenceMod);
+      return adjustedIntensity !== i.intensity ? { ...i, intensity: adjustedIntensity } : i;
+    }),
+  };
+
+  // 3d. Random perturbation: "life happens"
+  const randomEvent = rollRandomEvent();
+  if (randomEvent) {
+    emotion = applyDelta(emotion, randomEvent.emotion_delta, randomEvent.description);
+    for (const boost of randomEvent.intent_boosts) {
+      intentPool = addIntent(intentPool, boost.category, randomEvent.description, boost.boost, 'event');
+    }
+    appendText(PATHS.diary, `\n## ${now.toISOString().split('T')[0]} ${now.toISOString().split('T')[1].slice(0, 5)}\n${randomEvent.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: 随机事件\n`);
+    console.log(`Random event: ${randomEvent.description}`);
+  }
+
   // 4. Build perception summary
   const rigidNow = getActiveRigidSchedule(schedule, hour, weekday);
   const perceptionSummary = buildPerceptionSummary(emotion, schedule, events, hour, weekday, worldContext);
@@ -215,7 +263,9 @@ async function regularTick(): Promise<void> {
     .replace('{recent_diary}', recentDiary)
     .replace('{perception_summary}', perceptionSummary)
     .replace('{intent_pool_summary}', intentSummary || '（空）')
-    .replace('{personality_context}', personalityContext);
+    .replace('{personality_context}', personalityContext)
+    .replace('{vitality_context}', `活力: ${Math.round(vitality.vitality)}/100${vitalityConstraints.moodModifier ? ` (${vitalityConstraints.moodModifier})` : ''}`)
+    .replace('{confidence_context}', getConfidenceMoodHint(confidence.confidence));
 
   let decision: HeartbeatDecision;
   try {
@@ -245,13 +295,26 @@ async function regularTick(): Promise<void> {
 
   for (const action of decision.chosen_actions) {
     if (action.satisfies_intent) {
+      const satisfiedIntent = intentPool.intents.find(i => i.id === action.satisfies_intent);
       intentPool = satisfyIntent(intentPool, action.satisfies_intent);
+      // Intent satisfaction → emotion feedback (dimension coupling)
+      if (satisfiedIntent) {
+        emotion = intentSatisfactionFeedback(emotion, satisfiedIntent.category);
+      }
     }
 
     if (action.type === 'simulated' || action.type === 'inner') {
       try {
         const result = await executeSimulatedAction(action.action, emotion, scheduleContext);
         emotion = applyDelta(emotion, result.emotion_delta, result.narrative.slice(0, 50));
+
+        // Vitality: replenish from rest actions, drain from intense actions
+        if (action.action.includes('休息') || action.action.includes('摸鱼') || action.action.includes('追番')) {
+          vitality = replenishVitality(vitality, 'rest');
+        } else if (action.action.includes('刷') || action.action.includes('看手机')) {
+          vitality = replenishVitality(vitality, 'browsing_light');
+        }
+
         appendText(PATHS.diary, `\n## ${now.toISOString().split('T')[0]} ${now.toISOString().split('T')[1].slice(0, 5)}\n${result.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 4\n标签: heartbeat, ${action.type}\n`);
         totalImportance += 4;
         actionResults.push(action.action);
@@ -271,6 +334,13 @@ async function regularTick(): Promise<void> {
     } else if (action.type === 'real' && action.skill) {
       // Real actions — spawn detached child process
       if (action.skill === 'post-pipeline' || action.skill === 'auto-photo') {
+        // Vitality gate: cannot post when vitality is low
+        if (!vitalityConstraints.canPost) {
+          console.log(`[REAL ACTION] Skipped post-pipeline — vitality too low (${Math.round(vitality.vitality)})`);
+          actionResults.push(`[skipped:low-vitality] ${action.action}`);
+          continue;
+        }
+        vitality = applyActionCost(vitality, 'post-pipeline');
         const scriptPath = require.resolve('./post-pipeline');
         const child = spawn('node', [scriptPath], {
           detached: true,
@@ -295,6 +365,9 @@ async function regularTick(): Promise<void> {
   try {
     const { checkPostStats } = await import('./post-pipeline');
     await checkPostStats();
+    // Update confidence based on latest stats
+    const postHistory = readJSON<PostHistory>(PATHS.postHistory, { posts: [] });
+    confidence = updateConfidence(confidence, postHistory);
   } catch (err) {
     console.error(`Stats check failed: ${(err as Error).message}`);
   }
@@ -320,9 +393,13 @@ async function regularTick(): Promise<void> {
   // 11. Write all state
   emotion = { ...emotion, last_updated: now.toISOString() };
   intentPool = { ...intentPool, last_updated: now.toISOString() };
+  vitality = { ...vitality, last_updated: now.toISOString() };
+  confidence = { ...confidence, last_updated: now.toISOString() };
   writeJSON(PATHS.emotionState, emotion);
   writeJSON(PATHS.intentPool, intentPool);
   writeJSON(PATHS.eventQueue, updatedEvents);
+  writeJSON(PATHS.vitalityState, vitality);
+  writeJSON(PATHS.confidenceState, confidence);
 
   const logEntry: HeartbeatLogEntry = {
     timestamp: now.toISOString(),
@@ -348,27 +425,28 @@ async function regularTick(): Promise<void> {
 async function main(): Promise<void> {
   const hour = getCurrentHour();
 
-  if (hour === 7) {
-    // Morning plan — delegate to morning-plan.ts
-    console.log('Morning heartbeat — running morning plan');
-    await runMorningPlan();
+  // Read today's cron schedule (written by morning plan)
+  const cronSchedule = readJSON<CronSchedule>(PATHS.cronSchedule, { date: '', heartbeats: [] });
+  const activeHeartbeat = isActiveHeartbeatHour(hour, cronSchedule);
+
+  if (!activeHeartbeat) {
+    console.log(`Hour ${hour} is not in today's heartbeat schedule — skipping.`);
     return;
   }
 
-  if (hour === 23) {
-    // Night reflection — delegate to night-reflect.ts
-    console.log('Night heartbeat — running night reflection');
-    await runNightReflect();
-    return;
+  switch (activeHeartbeat.type) {
+    case 'morning':
+      console.log('Morning heartbeat — running morning plan');
+      await runMorningPlan();
+      break;
+    case 'night':
+      console.log('Night heartbeat — running night reflection');
+      await runNightReflect();
+      break;
+    case 'regular':
+      await regularTick();
+      break;
   }
-
-  if (hour >= 0 && hour < 7) {
-    // Sleep hours — do nothing (Spec §1)
-    console.log('Sleep hours — no heartbeat.');
-    return;
-  }
-
-  await regularTick();
 }
 
 main().catch(err => {
