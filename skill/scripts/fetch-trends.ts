@@ -33,6 +33,47 @@ interface RedditResponse {
   };
 }
 
+interface RedditComment {
+  data: {
+    body: string;
+    score: number;
+    author: string;
+  };
+}
+
+export interface TrendPost {
+  title: string;
+  score: number;
+  selftext: string;
+  subreddit: string;
+  topComments: string[];
+}
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max) + '...';
+}
+
+export function formatTrendEntry(post: TrendPost): string {
+  const lines: string[] = [];
+  lines.push(`**${post.title}** (↑${post.score})`);
+  if (post.selftext.trim()) {
+    lines.push(`   > ${truncate(post.selftext.trim(), 200)}`);
+  }
+  for (const comment of post.topComments) {
+    lines.push(`   - 热评: "${truncate(comment, 150)}"`);
+  }
+  return lines.join('\n');
+}
+
+export function formatTrendSection(subreddit: string, posts: TrendPost[]): string {
+  const lines: string[] = [`### r/${subreddit}`];
+  posts.forEach((post, i) => {
+    lines.push(`${i + 1}. ${formatTrendEntry(post)}`);
+  });
+  return lines.join('\n');
+}
+
 async function fetchRedditTrends(url: string): Promise<string[]> {
   const res = await fetch(url, {
     headers: { 'User-Agent': 'minase-digital-life/0.1' }
