@@ -27,6 +27,7 @@ export const PATHS = {
   coreWisdom: path.join(MEMORY_BASE, 'core-wisdom.json'),
   world: path.join(MEMORY_BASE, 'world.md'),
   socialMeta: path.join(MEMORY_BASE, 'relations', 'social', 'meta.json'),
+  socialInstagramDir: path.join(MEMORY_BASE, 'relations', 'social', 'instagram'),
   cronSchedule: path.join(SKILL_BASE, 'cron-schedule.json'),
   inspiration: path.join(MEMORY_BASE, 'inspiration.json'),
   postHistory: path.join(MEMORY_BASE, 'post-history.json'),
@@ -97,4 +98,29 @@ export function readTemplate(templateName: string): string {
   if (fs.existsSync(devPath)) return fs.readFileSync(devPath, 'utf8');
 
   throw new Error(`Template not found: ${templateName} (tried ${installedPath} and ${devPath})`);
+}
+
+/**
+ * Read all JSON files in a directory as an array.
+ */
+export function readAllJSON<T>(dirPath: string): T[] {
+  if (!fs.existsSync(dirPath)) return [];
+  const results: T[] = [];
+  for (const file of fs.readdirSync(dirPath)) {
+    if (!file.endsWith('.json')) continue;
+    const filePath = path.join(dirPath, file);
+    try {
+      results.push(JSON.parse(fs.readFileSync(filePath, 'utf8')));
+    } catch {
+      // Skip corrupt files
+    }
+  }
+  return results;
+}
+
+/**
+ * Write a social relation to its file by id.
+ */
+export function writeSocialRelation(dirPath: string, relation: { id: string }): void {
+  writeJSON(path.join(dirPath, `${relation.id}.json`), relation);
 }

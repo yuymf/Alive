@@ -10,9 +10,11 @@
 import {
   EmotionState, HeartbeatLog, HeartbeatLogEntry, WisdomStore, WisdomEntry,
   Preferences, Aspirations, PersonalityDrift, PersonalityModifier,
+  SocialRelation, SocialMeta,
 } from './types';
-import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from './file-utils';
+import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from './file-utils';
 import { callLLMJSON } from './llm-client';
+import { rebalanceTiers, updateMetaStats } from './social-graph-engine';
 
 interface NightReflectDecision {
   new_wisdom: Array<{ lesson: string; importance: number; tags: string[] }>;
@@ -201,6 +203,15 @@ export async function runNightReflect(): Promise<void> {
     logs: [...heartbeatLog.logs, nightLogEntry],
   };
   writeJSON(PATHS.heartbeatLog, updatedLog);
+
+  // Rebalance social graph tiers at end of day
+  const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { instagram_following: [], xiaohongshu_following: [], stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
+  let socialRelations = readAllJSON<SocialRelation>(PATHS.socialInstagramDir);
+  socialRelations = rebalanceTiers(socialRelations);
+  for (const r of socialRelations) {
+    writeSocialRelation(PATHS.socialInstagramDir, r);
+  }
+  writeJSON(PATHS.socialMeta, updateMetaStats(socialMeta, socialRelations));
 
   // Reset emotion for sleep
   const sleepEmotion: EmotionState = {

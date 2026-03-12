@@ -53,6 +53,14 @@ export async function runMorningPlan(): Promise<void> {
   const now = new Date();
   const weekday = now.getDay() === 0 ? 7 : now.getDay();
 
+  // Refresh expired inspiration data at the start of each day
+  try {
+    const { refreshInspiration } = await import('./inspiration-collector');
+    await refreshInspiration();
+  } catch (err) {
+    console.error(`Inspiration refresh failed: ${(err as Error).message}`);
+  }
+
   // Read yesterday's log
   const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
   const yesterday = new Date(now.getTime() - 86400000).toISOString().split('T')[0];

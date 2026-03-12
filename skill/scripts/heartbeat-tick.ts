@@ -10,8 +10,9 @@
 import {
   EmotionState, IntentPool, IntentCategory, ScheduleToday, EventQueue,
   HeartbeatLog, HeartbeatLogEntry, ActionOutput, RigidSchedule, WisdomStore,
+  SocialRelation, SocialMeta,
 } from './types';
-import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from './file-utils';
+import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from './file-utils';
 import { decayTowardBaseline, applyDelta } from './emotion-engine';
 import {
   decaySatisfied, accumulateIntents, applyEventBoosts,
@@ -20,6 +21,10 @@ import {
 import { callLLMJSON } from './llm-client';
 import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
+import {
+  decayAllRelations, processDormancy, generateSocialIntents,
+  updateMetaStats,
+} from './social-graph-engine';
 import { spawn } from 'child_process';
 
 // Default initial states (Spec §16)
@@ -152,6 +157,21 @@ async function regularTick(): Promise<void> {
   // 2. Perception: decay emotion + process events
   emotion = decayTowardBaseline(emotion);
 
+  // 2b. Social graph: decay relations, process dormancy, generate social intents
+  const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { instagram_following: [], xiaohongshu_following: [], stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
+  let socialRelations = readAllJSON<SocialRelation>(PATHS.socialInstagramDir);
+  socialRelations = decayAllRelations(socialRelations, now);
+  const dormancyResult = processDormancy(socialRelations, now);
+  socialRelations = dormancyResult.active;
+  const socialIntents = generateSocialIntents(socialRelations, socialMeta, now);
+
+  // Write updated social relations back
+  for (const r of socialRelations) {
+    writeSocialRelation(PATHS.socialInstagramDir, r);
+  }
+  const updatedMeta = updateMetaStats(socialMeta, socialRelations);
+  writeJSON(PATHS.socialMeta, updatedMeta);
+
   // Count consecutive active heartbeats for rest calculation
   const recentLogs = heartbeatLog.logs.filter(l => l.status === 'completed').slice(-10);
   const consecutiveActive = recentLogs.length;
@@ -165,6 +185,11 @@ async function regularTick(): Promise<void> {
   intentPool = accumulateIntents(intentPool, hour, lastPostHoursAgo, consecutiveActive, events.events.some(e => !e.processed));
   intentPool = applyEventBoosts(intentPool, events);
   intentPool = injectScheduleIntents(intentPool, schedule, hour);
+
+  // 3b. Inject social graph intents
+  for (const si of socialIntents) {
+    intentPool = addIntent(intentPool, si.category, si.description, si.intensity, 'accumulation');
+  }
 
   // 4. Build perception summary
   const rigidNow = getActiveRigidSchedule(schedule, hour, weekday);
@@ -230,6 +255,16 @@ async function regularTick(): Promise<void> {
         appendText(PATHS.diary, `\n## ${now.toISOString().split('T')[0]} ${now.toISOString().split('T')[1].slice(0, 5)}\n${result.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 4\n标签: heartbeat, ${action.type}\n`);
         totalImportance += 4;
         actionResults.push(action.action);
+
+        // Trigger inspiration refresh on browsing actions
+        if (action.action.includes('刷') || action.action.includes('看手机') || action.action.includes('窥屏')) {
+          try {
+            const { refreshInspiration } = await import('./inspiration-collector');
+            await refreshInspiration();
+          } catch (inspErr) {
+            console.error(`Inspiration refresh failed: ${(inspErr as Error).message}`);
+          }
+        }
       } catch (err) {
         console.error(`Action failed: ${action.action}: ${(err as Error).message}`);
       }

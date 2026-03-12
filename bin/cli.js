@@ -63,6 +63,135 @@ function removeDirSafe(dir, label) {
   }
 }
 
+function isOpenClawCLIAvailable() {
+  try {
+    require('child_process').execSync('which openclaw', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function registerCronJobs() {
+  const { execSync } = require('child_process');
+  const jobs = [
+    {
+      name: 'minase:morning',
+      cron: '0 7 * * *',
+      message: '[cron:morning] 执行水瀬晨规划。运行: node ~/.openclaw/skills/minase/scripts/morning-plan.js',
+      timeout: 180,
+    },
+    {
+      name: 'minase:tick',
+      cron: '0 8-22 * * *',
+      message: '[cron:tick] 执行水瀬心跳。运行: node ~/.openclaw/skills/minase/scripts/heartbeat-tick.js',
+      timeout: 120,
+    },
+    {
+      name: 'minase:night',
+      cron: '0 23 * * *',
+      message: '[cron:night] 执行水瀬夜反思。运行: node ~/.openclaw/skills/minase/scripts/night-reflect.js',
+      timeout: 300,
+    },
+  ];
+
+  for (const job of jobs) {
+    try {
+      execSync(
+        `openclaw cron add --name "${job.name}" --cron "${job.cron}" --tz "Asia/Shanghai" --session isolated --message "${job.message}" --timeout ${job.timeout}`,
+        { stdio: 'ignore' }
+      );
+      ok(`Registered cron: ${job.name} (${job.cron})`);
+    } catch {
+      warn(`Failed to register cron ${job.name} — you may need to add it manually`);
+    }
+  }
+}
+
+function removeCronJobs() {
+  const { execSync } = require('child_process');
+  const jobNames = ['minase:morning', 'minase:tick', 'minase:night'];
+  for (const name of jobNames) {
+    try {
+      execSync(`openclaw cron remove --name "${name}"`, { stdio: 'ignore' });
+      ok(`Removed cron: ${name}`);
+    } catch {
+      // Ignore — may not exist
+    }
+  }
+}
+
+async function configure() {
+  console.log('\n  水瀬 (Minase) — Configure');
+  console.log('  ==========================\n');
+
+  if (!fs.existsSync(CONFIG_FILE)) {
+    console.error('  ✗ openclaw.json not found. Run `npx minase` to install first.');
+    process.exit(1);
+  }
+
+  let config;
+  try {
+    config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  } catch {
+    console.error('  ✗ Could not parse openclaw.json');
+    process.exit(1);
+  }
+
+  const existing = (config.skills && config.skills.entries && config.skills.entries[SKILL_NAME] && config.skills.entries[SKILL_NAME].env) || {};
+
+  log('Current key status:');
+  const keys = [
+    { key: 'AIHUBMIX_API_KEY', label: 'AIHubMix (image gen)' },
+    { key: 'IMGURL_TOKEN', label: 'ImgURL (image hosting)' },
+    { key: 'INSTAGRAM_USERNAME', label: 'Instagram username' },
+    { key: 'INSTAGRAM_PASSWORD', label: 'Instagram password' },
+    { key: 'INSTAGRAM_TOTP_SECRET', label: 'Instagram 2FA secret' },
+    { key: 'LLM_API_KEY', label: 'LLM API key' },
+    { key: 'LLM_API_BASE', label: 'LLM API base URL' },
+    { key: 'LLM_MODEL', label: 'LLM model name' },
+  ];
+
+  for (const { key, label } of keys) {
+    const status = existing[key] ? '✓ set' : '✗ not set';
+    console.log(`    ${label} (${key}): ${status}`);
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  log('Enter new values below. Press Enter to keep existing value.\n');
+
+  const updates = {};
+  for (const { key, label } of keys) {
+    const hint = existing[key] ? ' (press Enter to keep current)' : '';
+    const value = await ask(rl, `  ${label}${hint}: `);
+    if (value.trim()) {
+      updates[key] = value.trim();
+    }
+  }
+
+  rl.close();
+
+  const updatedEnv = { ...existing, ...updates };
+  config.skills = config.skills || {};
+  config.skills.entries = config.skills.entries || {};
+  config.skills.entries[SKILL_NAME] = {
+    ...(config.skills.entries[SKILL_NAME] || {}),
+    enabled: true,
+    env: updatedEnv,
+  };
+
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+
+  const updateCount = Object.keys(updates).length;
+  if (updateCount > 0) {
+    ok(`Updated ${updateCount} key(s) in openclaw.json`);
+  } else {
+    log('No changes made.');
+  }
+  console.log('');
+}
+
 async function uninstall() {
   console.log('\n  水瀬 (Minase) — Uninstall');
   console.log('  ==========================\n');
@@ -95,6 +224,25 @@ async function uninstall() {
       }
     } catch {
       warn('Could not parse openclaw.json — skipped');
+    }
+  }
+
+  // 2.5. Remove cron jobs
+  log('Removing cron jobs...');
+  if (isOpenClawCLIAvailable()) {
+    removeCronJobs();
+  } else {
+    warn('OpenClaw CLI not found — cron jobs may need manual removal');
+  }
+
+  // 2.5b. Remove hooks
+  log('Removing hooks...');
+  const hooksToRemove = ['minase-context-loader', 'minase-memory-save'];
+  for (const hookName of hooksToRemove) {
+    const hookDir = path.join(OPENCLAW_DIR, 'hooks', hookName);
+    if (fs.existsSync(hookDir)) {
+      fs.rmSync(hookDir, { recursive: true, force: true });
+      ok(`Removed hook: ${hookName}`);
     }
   }
 
@@ -131,7 +279,7 @@ async function main() {
   console.log('  ==========================================\n');
 
   // Step 1: Verify OpenClaw
-  log('Step 1/7: Verifying OpenClaw installation...');
+  log('Step 1/9: Verifying OpenClaw installation...');
   if (!fs.existsSync(OPENCLAW_DIR)) {
     console.error('  ✗ OpenClaw not found at ~/.openclaw');
     console.error('    Install OpenClaw first: https://openclaw.ai');
@@ -142,7 +290,7 @@ async function main() {
   // Step 2: Collect API keys
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  log('Step 2/7: API key setup...');
+  log('Step 2/9: API key setup...');
   console.log('  Minase needs image generation to create cos photos.');
   console.log('  AIHubMix (AIHUBMIX_API_KEY) — https://aihubmix.com\n');
 
@@ -179,7 +327,7 @@ async function main() {
   }
 
   // Step 3: Copy skill files
-  log('Step 3/7: Installing skill files...');
+  log('Step 3/9: Installing skill files...');
   if (fs.existsSync(SKILL_DEST)) {
     warn(`Existing skill found at ${SKILL_DEST} — overwriting`);
   }
@@ -188,7 +336,7 @@ async function main() {
   ok(`Skill files copied to ${SKILL_DEST}`);
 
   // Step 4: Update openclaw.json
-  log('Step 4/7: Registering skill in OpenClaw config...');
+  log('Step 4/9: Registering skill in OpenClaw config...');
   let config = {};
   if (fs.existsSync(CONFIG_FILE)) {
     try {
@@ -216,7 +364,7 @@ async function main() {
   ok('openclaw.json updated');
 
   // Step 5: Initialize memory directories
-  log('Step 5/7: Setting up memory directories...');
+  log('Step 5/9: Setting up memory directories...');
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations'), { recursive: true });
   const diaryPath = path.join(MEMORY_DIR, 'diary.md');
   if (!fs.existsSync(diaryPath)) {
@@ -284,10 +432,36 @@ async function main() {
   if (!fs.existsSync(socialMetaPath)) {
     fs.writeFileSync(socialMetaPath, JSON.stringify({"instagram_following":[],"xiaohongshu_following":[],"stats":{"core":0,"familiar":0,"cognitive":0,"dormant":0}}, null, 2));
   }
+  const cronSchedulePath = path.join(SKILL_DEST, 'cron-schedule.json');
+  if (!fs.existsSync(cronSchedulePath)) {
+    const defaultHeartbeats = [
+      { time: '07:00', type: 'morning' },
+    ];
+    for (let h = 8; h <= 22; h++) {
+      defaultHeartbeats.push({ time: `${String(h).padStart(2, '0')}:00`, type: 'regular' });
+    }
+    defaultHeartbeats.push({ time: '23:00', type: 'night' });
+    fs.writeFileSync(cronSchedulePath, JSON.stringify({ date: null, heartbeats: defaultHeartbeats }, null, 2));
+  }
   ok(`Memory initialized at ${MEMORY_DIR}`);
 
-  // Step 6: Inject persona into SOUL.md
-  log('Step 6/7: Injecting Minase persona into SOUL.md...');
+  // Step 6: Deploy hooks
+  log('Step 6/9: Deploying memory hooks...');
+  const hooksToInstall = ['minase-context-loader', 'minase-memory-save'];
+  const hooksSrc = path.join(SKILL_SRC, 'hooks');
+  for (const hookName of hooksToInstall) {
+    const src = path.join(hooksSrc, hookName);
+    const dest = path.join(OPENCLAW_DIR, 'hooks', hookName);
+    if (fs.existsSync(src)) {
+      copyDirRecursive(src, dest);
+      ok(`Deployed hook: ${hookName}`);
+    } else {
+      warn(`Hook source not found: ${src} — skipped`);
+    }
+  }
+
+  // Step 7: Inject persona into SOUL.md
+  log('Step 7/9: Injecting Minase persona into SOUL.md...');
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
   const injection = fs.readFileSync(SOUL_INJECTION_SRC, 'utf8');
   const marker = '<!-- minase-soul-start -->';
@@ -304,8 +478,20 @@ async function main() {
   fs.writeFileSync(SOUL_FILE, soul);
   ok('SOUL.md updated');
 
-  // Step 7: Summary
-  log('Step 7/7: Installation complete!\n');
+  // Step 8: Register heartbeat cron jobs
+  log('Step 8/9: Registering heartbeat cron jobs...');
+  if (isOpenClawCLIAvailable()) {
+    registerCronJobs();
+  } else {
+    warn('OpenClaw CLI not found in PATH — skipping cron registration.');
+    warn('You can register manually later:');
+    warn('  openclaw cron add --name "minase:morning" --cron "0 7 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:morning] Run morning plan"');
+    warn('  openclaw cron add --name "minase:tick" --cron "0 8-22 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:tick] Run heartbeat tick"');
+    warn('  openclaw cron add --name "minase:night" --cron "0 23 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:night] Run night reflection"');
+  }
+
+  // Step 9: Summary
+  log('Step 9/9: Installation complete!\n');
   console.log('  水瀬 is ready. Start OpenClaw and she will be there.\n');
   console.log('  Tips:');
   console.log('  - Just chat with her naturally. She will remember you.');
@@ -326,6 +512,11 @@ const args = process.argv.slice(2);
 if (args.includes('--uninstall')) {
   uninstall().catch(err => {
     console.error('\n  Uninstall failed:', err.message);
+    process.exit(1);
+  });
+} else if (args.includes('--configure')) {
+  configure().catch(err => {
+    console.error('\n  Configure failed:', err.message);
     process.exit(1);
   });
 } else {
