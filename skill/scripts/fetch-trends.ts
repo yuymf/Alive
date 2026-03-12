@@ -24,6 +24,11 @@ interface RedditPost {
     title: string;
     score: number;
     url: string;
+    selftext: string;
+    permalink: string;
+    num_comments: number;
+    id: string;
+    subreddit: string;
   };
 }
 
@@ -99,40 +104,69 @@ export async function fetchPostComments(permalink: string, limit: number): Promi
   }
 }
 
-async function fetchRedditTrends(url: string): Promise<string[]> {
+async function fetchRedditTrends(url: string): Promise<TrendPost[]> {
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'minase-digital-life/0.1' }
+    headers: { 'User-Agent': 'minase-digital-life/0.1' },
+    signal: AbortSignal.timeout(10_000),
   });
   const data = await res.json() as RedditResponse;
-  return data.data.children.map(p => p.data.title);
+  const posts = data.data.children
+    .sort((a, b) => b.data.score - a.data.score)
+    .slice(0, 3);
+
+  const results: TrendPost[] = [];
+  for (const post of posts) {
+    const topComments: string[] = [];
+    if (post.data.num_comments > 0) {
+      await delay(1000);
+      const comments = await fetchPostComments(post.data.permalink, 3);
+      topComments.push(...comments.map(c => c.data.body));
+    }
+    results.push({
+      title: post.data.title,
+      score: post.data.score,
+      selftext: post.data.selftext ?? '',
+      subreddit: post.data.subreddit,
+      topComments,
+    });
+  }
+  return results;
 }
 
 async function fetchTrends(query?: string): Promise<void> {
-  const topics: string[] = [];
+  const allPosts: Map<string, TrendPost[]> = new Map();
 
   for (const source of TREND_SOURCES) {
     try {
-      const results = await fetchRedditTrends(source);
-      topics.push(...results);
+      const posts = await fetchRedditTrends(source);
+      if (posts.length > 0) {
+        const sub = posts[0].subreddit;
+        allPosts.set(sub, [...(allPosts.get(sub) ?? []), ...posts]);
+      }
     } catch (e) {
       // Silently skip failed sources
     }
   }
 
-  if (topics.length === 0) {
+  if (allPosts.size === 0) {
     console.log('No trends fetched.');
     return;
   }
 
   const now = getLocalDate();
-  const entry = `\n## ${now} 趋势观察\n\n${topics.slice(0, 10).map(t => `- ${t}`).join('\n')}\n`;
+  const sections: string[] = [`\n## ${now} 趋势观察\n`];
+  for (const [sub, posts] of allPosts) {
+    sections.push(formatTrendSection(sub, posts));
+  }
+  const entry = sections.join('\n') + '\n';
 
   fs.mkdirSync(MEMORY_BASE, { recursive: true });
   if (!fs.existsSync(WORLD_PATH)) {
     fs.writeFileSync(WORLD_PATH, '# 世界观察\n\n_水瀬在浏览网络时学到的事情。_\n');
   }
   fs.appendFileSync(WORLD_PATH, entry);
-  console.log(`Wrote ${topics.length} trends to world.md`);
+  const totalPosts = [...allPosts.values()].reduce((sum, p) => sum + p.length, 0);
+  console.log(`Wrote ${totalPosts} trends to world.md`);
 }
 
 const queryIdx = process.argv.indexOf('--query');
