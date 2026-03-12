@@ -287,6 +287,20 @@ export interface InspirationData {
     engagement_by_style: Record<string, number>;
     updated_at: number;
   };
+  xiaohongshu_trends?: {
+    feed_highlights: Array<{ title: string; likes: number; topic: string }>;
+    cosplay_notes: Array<{ title: string; likes: number; topic: string }>;
+    trending_topics: string[];
+    cosplay_insights: string[];
+    saved_inspirations: Array<{
+      source_note_id: string;
+      source_title: string;
+      visual_description: string;
+      style_tags: string[];
+      saved_at: number;
+    }>;
+    updated_at: number;
+  };
 }
 
 export interface PhotoIntent {
