@@ -74,6 +74,31 @@ export function formatTrendSection(subreddit: string, posts: TrendPost[]): strin
   return lines.join('\n');
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export async function fetchPostComments(permalink: string, limit: number): Promise<RedditComment[]> {
+  try {
+    const url = `https://www.reddit.com${permalink}.json?limit=${limit}&sort=top`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'minase-digital-life/0.1' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json() as Array<{ data: { children: Array<{ kind: string; data: RedditComment['data'] }> } }>;
+    if (!Array.isArray(data) || data.length < 2) return [];
+    return data[1].data.children
+      .filter(c => c.kind === 't1' && c.data.score > 10)
+      .sort((a, b) => b.data.score - a.data.score)
+      .slice(0, limit)
+      .map(c => ({ data: c.data }));
+  } catch (err) {
+    console.warn(`Failed to fetch comments for ${permalink}: ${(err as Error).message}`);
+    return [];
+  }
+}
+
 async function fetchRedditTrends(url: string): Promise<string[]> {
   const res = await fetch(url, {
     headers: { 'User-Agent': 'minase-digital-life/0.1' }
