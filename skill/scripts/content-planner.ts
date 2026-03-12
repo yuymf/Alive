@@ -21,6 +21,7 @@ const DEFAULT_INSPIRATION: InspirationData = {
   acg_hotspots: { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: 0 },
   visual_trends: { composition_styles: [], color_palettes: [], scene_ideas: [], updated_at: 0 },
   self_performance: { best_style: 'cos', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: 0 },
+  xiaohongshu_trends: { feed_highlights: [], cosplay_notes: [], trending_topics: [], cosplay_insights: [], saved_inspirations: [], updated_at: 0 },
 };
 const DEFAULT_EMOTION: EmotionState = {
   mood: { valence: 0.3, arousal: 0.5, description: '普通' },
@@ -125,6 +126,13 @@ export async function planPhoto(): Promise<PhotoIntent> {
   const inspiration = readJSON<InspirationData>(PATHS.inspiration, DEFAULT_INSPIRATION);
   const history = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
 
+  const xhsTrends = inspiration.xiaohongshu_trends?.trending_topics?.join('、') || '没有最新数据';
+  const xhsCosInsights = inspiration.xiaohongshu_trends?.cosplay_insights?.join('、') || '没有最新数据';
+  const savedInspo = inspiration.xiaohongshu_trends?.saved_inspirations?.slice(-5) ?? [];
+  const inspoText = savedInspo.length > 0
+    ? savedInspo.map(s => `- ${s.visual_description} (${s.style_tags.join(', ')})`).join('\n')
+    : '没有收藏的灵感图';
+
   const template = readTemplate('photo-intent-prompt.md');
   const prompt = template
     .replace('{current_time}', formatLocalTime())
@@ -139,7 +147,10 @@ export async function planPhoto(): Promise<PhotoIntent> {
     .replace('{best_style}', inspiration.self_performance.best_style)
     .replace('{recent_performance}', formatRecentPerformance(history))
     .replace('{recent_styles}', getRecentStyleDistribution(history))
-    .replace('{target_ratios}', formatTargetRatios());
+    .replace('{target_ratios}', formatTargetRatios())
+    .replace('{xhs_trends}', xhsTrends)
+    .replace('{xhs_cosplay_insights}', xhsCosInsights)
+    .replace('{saved_inspirations}', inspoText);
 
   return callLLMJSON<PhotoIntent>(prompt, 512);
 }
