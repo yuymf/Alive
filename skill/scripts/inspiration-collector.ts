@@ -5,11 +5,65 @@
  * Minase's perspective: she's browsing Instagram, watching anime news, scrolling Pinterest.
  */
 
-import { InspirationData, PostHistory } from './types';
+import * as fs from 'fs';
+import * as path from 'path';
+
+import { InspirationData, PostHistory, SavedReference } from './types';
 import { PATHS, readJSON, writeJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
 import { callInstagramBridge } from './instagram-bridge-client';
-import { isXhsMcpAvailable, listXhsFeed, searchXhsNotes, getXhsNoteDetail } from './xhs-mcp-client';
+import { isXhsAvailable, listXhsFeed, searchXhsNotes, getXhsNoteDetail } from './xhs-bridge-client';
+
+const DOWNLOAD_TIMEOUT_MS = 10_000;
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_SAVED_REFS = 20;
+const REF_EXPIRY_DAYS = 7;
+
+const IMAGE_MAGIC_BYTES: Record<string, Buffer> = {
+  png: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+  jpg: Buffer.from([0xff, 0xd8, 0xff]),
+  webp: Buffer.from([0x52, 0x49, 0x46, 0x46]),
+};
+
+function isValidImage(buffer: Buffer): boolean {
+  return Object.values(IMAGE_MAGIC_BYTES).some(magic =>
+    buffer.length > magic.length && buffer.subarray(0, magic.length).equals(magic)
+  );
+}
+
+async function downloadImage(url: string, destPath: string): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!res.ok) return false;
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length === 0 || buffer.length > MAX_FILE_SIZE) return false;
+    if (!isValidImage(buffer)) return false;
+
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.writeFileSync(destPath, buffer);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function cleanupExpiredRefs(refs: SavedReference[]): SavedReference[] {
+  const expiryMs = REF_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  return refs.filter(ref => {
+    const expired = now - ref.saved_at > expiryMs;
+    if (expired && fs.existsSync(ref.local_path)) {
+      try { fs.unlinkSync(ref.local_path); } catch { /* ignore */ }
+    }
+    return !expired;
+  });
+}
 
 const DEFAULT_INSPIRATION: InspirationData = {
   instagram_trends: { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: 0 },
@@ -35,11 +89,17 @@ function isExpired(updatedAt: number, ttl: number): boolean {
 /**
  * 2a: Instagram hot post analysis via instagrapi bridge.
  * Falls back to LLM general knowledge if bridge unavailable.
+ * Also downloads "心动" images as saved_references for future photo generation.
  */
-async function collectInstagramTrends(): Promise<InspirationData['instagram_trends']> {
+async function collectInstagramTrends(): Promise<{
+  trends: InspirationData['instagram_trends'];
+  newRefs: SavedReference[];
+}> {
   const igUser = process.env.INSTAGRAM_USERNAME;
 
   let rawData = '';
+  // Collect all posts-with-images across hashtags for later image selection
+  const allPostsWithImages: Array<{ post: any; hashtag: string }> = [];
 
   if (igUser) {
     const hashtags = ['cosplay', 'cosplaygirl', 'animecosplay', 'コスプレ', '辣妹', 'jfashion'];
@@ -50,7 +110,7 @@ async function collectInstagramTrends(): Promise<InspirationData['instagram_tren
         const data = await callInstagramBridge('hashtag_top', {
           name: tag,
           amount: '5',
-        }) as { hashtag: string; posts: Array<{ like_count: number; comment_count: number; caption_text: string }>; error?: string };
+        }) as { hashtag: string; posts: Array<{ pk?: string; like_count: number; comment_count: number; caption_text: string; thumbnail_url?: string }>; error?: string };
 
         if (data.error) {
           console.error(`Hashtag search failed for #${tag}: ${data.error}`);
@@ -59,6 +119,9 @@ async function collectInstagramTrends(): Promise<InspirationData['instagram_tren
 
         for (const post of data.posts ?? []) {
           results.push(`[${tag}] likes:${post.like_count ?? 0} comments:${post.comment_count ?? 0} "${(post.caption_text ?? '').slice(0, 100)}"`);
+          if (post.thumbnail_url) {
+            allPostsWithImages.push({ post, hashtag: tag });
+          }
         }
       } catch (err) {
         console.error(`Hashtag search failed for #${tag}: ${(err as Error).message}`);
@@ -78,6 +141,7 @@ async function collectInstagramTrends(): Promise<InspirationData['instagram_tren
   const template = readTemplate('inspiration-summary-prompt.md');
   const prompt = template.replace('{raw_data}', rawData);
 
+  let trends: InspirationData['instagram_trends'];
   try {
     const result = await callLLMJSON<{
       hot_styles: string[];
@@ -85,10 +149,54 @@ async function collectInstagramTrends(): Promise<InspirationData['instagram_tren
       trending_hashtags: string[];
     }>(prompt, 512);
 
-    return { ...result, updated_at: Date.now() };
+    trends = { ...result, updated_at: Date.now() };
   } catch {
-    return { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: Date.now() };
+    trends = { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: Date.now() };
   }
+
+  // Image selection: ask LLM to pick "心动" images (max 5 per refresh)
+  const newRefs: SavedReference[] = [];
+
+  if (allPostsWithImages.length > 0) {
+    const selectionPrompt = `你是水瀬（Minase），18岁辣妹系coser。从以下Instagram热门帖子中选出最多5张让你"心动"的图片（符合你的审美：辣妹风、cos、街拍、潮流）。
+
+帖子列表：
+${allPostsWithImages.map(({ post }, i) => `${i + 1}. [${(post.caption_text ?? '').slice(0, 50)}] 点赞:${post.like_count}`).join('\n')}
+
+返回JSON：{"selected": [序号], "reasons": {"序号": "原因"}}`;
+
+    try {
+      const filterResult = await callLLMJSON<{ selected: number[]; reasons: Record<string, string> }>(selectionPrompt, 256);
+      const selected = filterResult.selected ?? [];
+
+      const refsDir = PATHS.inspirationRefs;
+
+      for (const idx of selected) {
+        const entry = allPostsWithImages[idx - 1];
+        if (!entry?.post?.thumbnail_url) continue;
+
+        const { post, hashtag: currentHashtag } = entry;
+        const filename = `ig_${post.pk ?? idx}_${Date.now()}.jpg`;
+        const destPath = path.join(refsDir, filename);
+
+        const ok = await downloadImage(post.thumbnail_url, destPath);
+        if (ok) {
+          newRefs.push({
+            url: post.thumbnail_url,
+            local_path: destPath,
+            source_hashtag: currentHashtag,
+            style_tags: [],
+            scene_description: (post.caption_text ?? '').slice(0, 100),
+            saved_at: Date.now(),
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`Image selection LLM failed: ${(err as Error).message}`);
+    }
+  }
+
+  return { trends, newRefs };
 }
 
 /**
@@ -222,7 +330,7 @@ function collectSelfPerformance(): InspirationData['self_performance'] {
 }
 
 /**
- * 2e: XiaoHongShu feed + search trends via xiaohongshu-mcp.
+ * 2e: XiaoHongShu feed + search trends via xiaohongshu-skills CLI.
  * Browses recommendation feed and searches cos-specific content.
  * Also extracts visual inspiration descriptions for future photo shoots.
  */
@@ -232,9 +340,9 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
     saved_inspirations: [], updated_at: 0,
   };
 
-  const available = await isXhsMcpAvailable();
+  const available = await isXhsAvailable();
   if (!available) {
-    console.warn('XHS MCP server not available, skipping XiaoHongShu trends.');
+    console.warn('XHS CLI not available, skipping XiaoHongShu trends.');
     return empty;
   }
 
@@ -331,7 +439,14 @@ export async function refreshInspiration(forceAll = false): Promise<InspirationD
 
   if (forceAll || isExpired(current.instagram_trends.updated_at, TTL.instagram_trends)) {
     console.log('Refreshing Instagram trends...');
-    updated = { ...updated, instagram_trends: await collectInstagramTrends() };
+    const { trends, newRefs } = await collectInstagramTrends();
+    updated = { ...updated, instagram_trends: trends };
+    if (newRefs.length > 0) {
+      const existing = updated.saved_references ?? [];
+      const cleaned = cleanupExpiredRefs(existing);
+      const merged = [...cleaned, ...newRefs].slice(-MAX_SAVED_REFS);
+      updated = { ...updated, saved_references: merged };
+    }
   }
 
   if (forceAll || isExpired(current.acg_hotspots.updated_at, TTL.acg_hotspots)) {
