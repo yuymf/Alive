@@ -13,6 +13,10 @@ import {
 } from './types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
+import { callInstagramBridge } from './instagram-bridge-client';
+import { VitalityState } from './types';
+import { morningRecovery, DEFAULT_VITALITY } from './vitality-engine';
+import { syncCronSchedule } from './cron-sync';
 
 const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想']);
 
@@ -84,6 +88,37 @@ export async function runMorningPlan(): Promise<void> {
 
   // Build rigid schedule for today
   const todayRigid = WEEKDAY_RIGID.filter(r => r.weekdays.includes(weekday));
+
+  // Sync follower count from Instagram (non-fatal if it fails)
+  try {
+    const igUser = process.env.INSTAGRAM_USERNAME;
+    if (igUser) {
+      const userInfo = await callInstagramBridge('get_user_info', {}) as {
+        follower_count?: number;
+        following_count?: number;
+        media_count?: number;
+      };
+      if (userInfo.follower_count !== undefined) {
+        const currentMeta = readJSON<Record<string, unknown>>(PATHS.socialMeta, {});
+        writeJSON(PATHS.socialMeta, {
+          ...currentMeta,
+          follower_count: userInfo.follower_count,
+          following_count: userInfo.following_count,
+          media_count: userInfo.media_count,
+          follower_synced_at: new Date().toISOString(),
+        });
+        console.log(`Follower sync: ${userInfo.follower_count} followers`);
+      }
+    }
+  } catch (err) {
+    console.error(`Follower sync failed (non-fatal): ${(err as Error).message}`);
+  }
+
+  // Morning vitality recovery: simulate overnight sleep
+  const prevVitality = readJSON<VitalityState>(PATHS.vitalityState, DEFAULT_VITALITY);
+  const recoveredVitality = morningRecovery(prevVitality);
+  writeJSON(PATHS.vitalityState, recoveredVitality);
+  console.log(`Vitality: ${Math.round(prevVitality.vitality)} → ${Math.round(recoveredVitality.vitality)} (morning recovery)`);
 
   // Build prompt
   const template = readTemplate('morning-plan-prompt.md');
@@ -169,6 +204,14 @@ export async function runMorningPlan(): Promise<void> {
   writeJSON(PATHS.intentPool, intentPool);
   writeJSON(PATHS.emotionState, emotion);
   writeJSON(PATHS.cronSchedule, cronSchedule);
+
+  // Sync dynamic cron schedule to OpenClaw (non-fatal)
+  const syncResult = syncCronSchedule(cronSchedule);
+  if (syncResult.synced) {
+    console.log(`Cron sync: OK (morning=${syncResult.details.morning}, tick=${syncResult.details.tick}, night=${syncResult.details.night})`);
+  } else {
+    console.error(`Cron sync: partial/failed — ${JSON.stringify(syncResult.details)}. Fallback: heartbeat-tick will gate by cron-schedule.json.`);
+  }
 
   // Add morning heartbeat log entry
   const morningLogEntry: HeartbeatLogEntry = {
