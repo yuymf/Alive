@@ -203,6 +203,21 @@ def cmd_hashtag_top(args):
     print(json.dumps(result))
 
 
+def cmd_get_user_info(args):
+    """Get current user's profile info (follower count, etc.)."""
+    cl = get_client()
+    def do_info():
+        info = cl.user_info(cl.user_id)
+        return {
+            "follower_count": info.follower_count,
+            "following_count": info.following_count,
+            "media_count": info.media_count,
+            "username": info.username,
+        }
+    result = with_retry(do_info)
+    print(json.dumps(result))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Instagram bridge via instagrapi")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -225,6 +240,9 @@ def main():
     p_hashtag.add_argument("--name", required=True, help="Hashtag name (without #)")
     p_hashtag.add_argument("--amount", default="15", help="Number of posts")
 
+    # get_user_info
+    subparsers.add_parser("get_user_info")
+
     args = parser.parse_args()
 
     try:
@@ -236,6 +254,8 @@ def main():
             cmd_get_media_info(args)
         elif args.command == "hashtag_top":
             cmd_hashtag_top(args)
+        elif args.command == "get_user_info":
+            cmd_get_user_info(args)
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stdout)
         print(f"Error: {e}", file=sys.stderr)

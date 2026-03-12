@@ -121,3 +121,64 @@ export const EVENT_DELTAS: Record<string, { delta: EmotionDelta; cause: string }
     cause: '追番/摸鱼放松了',
   },
 };
+
+// === Dimension Coupling (digital-life-comparison §2.1) ===
+// Non-linear interactions between emotion dimensions and intent weights.
+
+/**
+ * Compute intent intensity multipliers based on current emotion state.
+ * This creates coupling: emotion → intent weight.
+ * Returns a record of category → multiplier.
+ */
+export function computeEmotionIntentCoupling(emotion: EmotionState): Record<string, number> {
+  return {
+    '创作': 1.0 + 0.5 * emotion.creativity,                          // creativity boosts creation urge
+    '社交': 1.0 + 0.3 * emotion.sociability - 0.2 * emotion.stress,  // sociability boosts, stress suppresses
+    '窥屏': 1.0 + 0.2 * (1.0 - emotion.energy),                      // low energy → more browsing
+    '休息': 1.0 + 0.8 * (1.0 - emotion.energy),                      // low energy → strong rest urge
+    '表达': 1.0 + 0.3 * Math.abs(emotion.mood.valence),              // strong feelings → urge to express
+    '学习': 1.0 + 0.2 * emotion.creativity - 0.3 * emotion.stress,   // curiosity minus stress
+    '梦想': 1.0 + 0.2 * emotion.mood.valence,                        // positive mood → dreaming
+  };
+}
+
+/**
+ * Apply emotion feedback from intent satisfaction.
+ * When an intent is satisfied, it feeds back into emotion.
+ * This creates coupling: intent satisfaction → emotion change.
+ */
+export function intentSatisfactionFeedback(
+  emotion: EmotionState,
+  category: string,
+): EmotionState {
+  const feedbacks: Record<string, EmotionDelta> = {
+    '创作': { creativity: 0.1, valence: 0.1 },
+    '社交': { sociability: 0.15, valence: 0.05 },
+    '窥屏': { energy: -0.05 },
+    '休息': { energy: 0.15, stress: -0.1 },
+    '表达': { valence: 0.05, arousal: 0.05 },
+    '学习': { creativity: 0.1, energy: -0.05 },
+    '梦想': { valence: 0.1 },
+  };
+
+  const delta = feedbacks[category];
+  if (!delta) return emotion;
+
+  return applyDelta(emotion, delta, `满足了${category}需求`);
+}
+
+/**
+ * Scale an emotion delta by social closeness.
+ * Core circle interactions have full impact; distant interactions are muted.
+ */
+export function scaleByCloseness(delta: EmotionDelta, closeness: number): EmotionDelta {
+  const scale = Math.max(0.1, closeness / 10.0);
+  const result: EmotionDelta = {};
+  if (delta.valence !== undefined) result.valence = delta.valence * scale;
+  if (delta.arousal !== undefined) result.arousal = delta.arousal * scale;
+  if (delta.energy !== undefined) result.energy = delta.energy * scale;
+  if (delta.stress !== undefined) result.stress = delta.stress * scale;
+  if (delta.creativity !== undefined) result.creativity = delta.creativity * scale;
+  if (delta.sociability !== undefined) result.sociability = delta.sociability * scale;
+  return result;
+}

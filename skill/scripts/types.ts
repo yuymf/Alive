@@ -304,3 +304,26 @@ export interface PostIntent {
   hashtags: string[];
   reason: string;
 }
+
+// === Vitality / Metabolism System ===
+export interface VitalityState {
+  vitality: number;        // 0-100
+  last_updated: string | null;
+  consecutive_low_days: number;  // days where vitality stayed < 30
+}
+
+// === Confidence / Positive Feedback Loop ===
+export interface ConfidenceState {
+  confidence: number;       // 0.5-1.5 (1.0 = neutral)
+  streak: number;           // consecutive positive/negative results
+  last_updated: string | null;
+}
+
+// === Random Events ===
+export interface RandomEvent {
+  id: string;
+  description: string;
+  emotion_delta: EmotionDelta;
+  intent_boosts: Array<{ category: IntentCategory; boost: number }>;
+  diary_entry: string;
+}

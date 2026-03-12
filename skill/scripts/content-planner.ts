@@ -38,10 +38,13 @@ const MIN_POST_INTERVAL_MS = 16 * 60 * 60 * 1000; // 16 hours
 
 /**
  * Determine current phase based on follower count.
- * For now, default to Phase 1 (we don't have follower data in the system yet).
+ * Reads the real follower count from socialMeta.
  */
 function getCurrentPhase(): number {
-  // TODO: Read from instagram_meta.json when available
+  const meta = readJSON<{ follower_count?: number }>(PATHS.socialMeta, {});
+  const followers = meta.follower_count ?? 0;
+  if (followers >= 5000) return 3;
+  if (followers >= 500) return 2;
   return 1;
 }
 
@@ -101,6 +104,19 @@ function getRecentStyleDistribution(history: PostHistory, n = 10): string {
 }
 
 /**
+ * Format recent post performance data for LLM context.
+ */
+function formatRecentPerformance(history: PostHistory): string {
+  const withStats = history.posts.filter(p => p.stats).slice(-5);
+  if (withStats.length === 0) return '暂无历史表现数据';
+
+  return withStats.map(p => {
+    const engagement = p.stats!.likes + p.stats!.comments * 3;
+    return `${p.style} (${new Date(p.timestamp).toLocaleDateString('zh-CN')}): ${p.stats!.likes}赞 ${p.stats!.comments}评 互动率≈${(engagement / Math.max(p.stats!.reach, 1) * 100).toFixed(1)}%`;
+  }).join('\n');
+}
+
+/**
  * Plan a photo: ask Minase if she wants to take a picture.
  */
 export async function planPhoto(): Promise<PhotoIntent> {
@@ -120,6 +136,7 @@ export async function planPhoto(): Promise<PhotoIntent> {
       ...inspiration.visual_trends.composition_styles.slice(0, 2),
     ].join('、') || '没有最新数据')
     .replace('{best_style}', inspiration.self_performance.best_style)
+    .replace('{recent_performance}', formatRecentPerformance(history))
     .replace('{recent_styles}', getRecentStyleDistribution(history))
     .replace('{target_ratios}', formatTargetRatios());
 

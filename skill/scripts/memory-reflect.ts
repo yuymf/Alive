@@ -86,21 +86,30 @@ async function reflect(force = false): Promise<void> {
   console.log('Running reflection...');
   const newLessons = await callLLMJSON<WisdomEntry[]>(prompt);
 
-  // Add new wisdom, deduplicate, trim to max
+  // Add new wisdom (immutable — build new array)
   const now = new Date().toISOString().split('T')[0];
-  for (const lesson of newLessons) {
-    const id = `w${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    wisdom.wisdom.push({ ...lesson, id, date: now, source: 'reflection' });
-  }
+  const newEntries: WisdomEntry[] = newLessons.map(lesson => ({
+    ...lesson,
+    id: `w${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    date: now,
+    source: 'reflection',
+  }));
 
-  // Trim oldest low-importance if over limit
-  if (wisdom.wisdom.length > MAX_WISDOM_ENTRIES) {
-    wisdom.wisdom.sort((a, b) => b.importance - a.importance || b.date.localeCompare(a.date));
-    wisdom.wisdom = wisdom.wisdom.slice(0, MAX_WISDOM_ENTRIES);
-  }
+  const allWisdom = [...wisdom.wisdom, ...newEntries];
 
-  wisdom.total_importance_since_reflection = 0;
-  fs.writeFileSync(WISDOM_PATH, JSON.stringify(wisdom, null, 2));
+  // Trim oldest low-importance if over limit (immutable sort)
+  const trimmedWisdom = allWisdom.length > MAX_WISDOM_ENTRIES
+    ? [...allWisdom]
+        .sort((a, b) => b.importance - a.importance || b.date.localeCompare(a.date))
+        .slice(0, MAX_WISDOM_ENTRIES)
+    : allWisdom;
+
+  const updatedStore: WisdomStore = {
+    ...wisdom,
+    wisdom: trimmedWisdom,
+    total_importance_since_reflection: 0,
+  };
+  fs.writeFileSync(WISDOM_PATH, JSON.stringify(updatedStore, null, 2));
 
   console.log(`Reflection complete. Added ${newLessons.length} new wisdom entries.`);
 }

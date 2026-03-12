@@ -31,6 +31,8 @@ export const PATHS = {
   cronSchedule: path.join(SKILL_BASE, 'cron-schedule.json'),
   inspiration: path.join(MEMORY_BASE, 'inspiration.json'),
   postHistory: path.join(MEMORY_BASE, 'post-history.json'),
+  vitalityState: path.join(MEMORY_BASE, 'vitality-state.json'),
+  confidenceState: path.join(MEMORY_BASE, 'confidence-state.json'),
   photoRoll: path.join(MEMORY_BASE, 'photo-roll'),
   referenceImage: path.join(SKILL_BASE, 'assets', 'minase-reference.png'),
 } as const;

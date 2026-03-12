@@ -7,8 +7,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
 import { ContentStyle } from './types';
 import { PATHS } from './file-utils';
+
+const MAX_REFERENCE_BYTES = 500_000; // 500KB — avoid oversized API payloads
 
 // Hardcoded appearance traits — extracted from personality.md
 // Do NOT parse markdown dynamically; update this constant if personality changes.
@@ -173,6 +176,38 @@ async function checkQuality(generatedImagePath: string, referenceImagePath: stri
 }
 
 /**
+ * Load reference image as base64, compressing with sips if it exceeds MAX_REFERENCE_BYTES.
+ * Caches the compressed version next to the original as .compressed.jpg.
+ */
+function loadReferenceBase64(imagePath: string): string {
+  const raw = fs.readFileSync(imagePath);
+  if (raw.length <= MAX_REFERENCE_BYTES) {
+    return raw.toString('base64');
+  }
+
+  const cachedPath = imagePath.replace(/\.[^.]+$/, '.compressed.jpg');
+  if (fs.existsSync(cachedPath) && fs.statSync(cachedPath).mtimeMs >= fs.statSync(imagePath).mtimeMs) {
+    return fs.readFileSync(cachedPath).toString('base64');
+  }
+
+  // Compress using sips (macOS) — resize to max 1024px, JPEG 85%
+  try {
+    execFileSync('sips', [
+      '-s', 'format', 'jpeg',
+      '-s', 'formatOptions', '85',
+      '-Z', '1024',
+      imagePath,
+      '--out', cachedPath,
+    ], { stdio: 'pipe' });
+    console.log(`Reference image compressed: ${Math.round(raw.length / 1024)}KB → ${Math.round(fs.statSync(cachedPath).size / 1024)}KB`);
+    return fs.readFileSync(cachedPath).toString('base64');
+  } catch {
+    // Fallback: send original
+    return raw.toString('base64');
+  }
+}
+
+/**
  * Main entry: generate an image ("take a photo").
  */
 export async function generateImage(options: GenerateImageOptions): Promise<GenerateImageResult> {
@@ -182,11 +217,11 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
 
   fs.mkdirSync(outputDir, { recursive: true });
 
-  // Read reference image
+  // Read reference image, compressing if too large for API
   if (!fs.existsSync(referenceImagePath)) {
     throw new Error(`Reference image not found: ${referenceImagePath}`);
   }
-  const referenceBase64 = fs.readFileSync(referenceImagePath).toString('base64');
+  const referenceBase64 = loadReferenceBase64(referenceImagePath);
 
   // Generate with retry
   let lastError: Error | null = null;
