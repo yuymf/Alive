@@ -6,6 +6,7 @@ Called from TypeScript via child_process.execFile.
 
 Subcommands:
   upload_photo     --image <path> --caption <text>
+  upload_album     --images <json_array> --caption <text>
   get_media_insights --media-pk <pk>
   get_media_info   --media-pk <pk>
   hashtag_top      --name <tag> --amount <n>
@@ -196,6 +197,7 @@ def cmd_hashtag_top(args):
                 "like_count": m.like_count,
                 "comment_count": m.comment_count,
                 "caption_text": (m.caption_text or "")[:200],
+                "thumbnail_url": str(m.thumbnail_url) if m.thumbnail_url else None,
             })
         return {"hashtag": args.name, "posts": posts}
 
@@ -216,6 +218,17 @@ def cmd_get_user_info(args):
         }
     result = with_retry(do_info)
     print(json.dumps(result))
+
+
+def cmd_upload_album(args):
+    """Upload a carousel/album post."""
+    cl = get_client()
+    image_paths = json.loads(args.images)
+    media = with_retry(lambda: cl.album_upload(
+        paths=[Path(p) for p in image_paths],
+        caption=args.caption or ''
+    ))
+    print(json.dumps({"media_pk": str(media.pk)}))
 
 
 def main():
@@ -243,11 +256,18 @@ def main():
     # get_user_info
     subparsers.add_parser("get_user_info")
 
+    # upload_album
+    p_album = subparsers.add_parser("upload_album")
+    p_album.add_argument("--images", required=True, help="JSON array of image paths")
+    p_album.add_argument("--caption", default="", help="Post caption")
+
     args = parser.parse_args()
 
     try:
         if args.command == "upload_photo":
             cmd_upload_photo(args)
+        elif args.command == "upload_album":
+            cmd_upload_album(args)
         elif args.command == "get_media_insights":
             cmd_get_media_insights(args)
         elif args.command == "get_media_info":
