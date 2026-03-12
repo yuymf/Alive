@@ -43,7 +43,7 @@ function getRecentDiary(diaryPath, days) {
 
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
-  const cutoffStr = cutoffDate.toISOString().split('T')[0];
+  const cutoffStr = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}-${String(cutoffDate.getDate()).padStart(2, '0')}`;
 
   const entries = content.split('\n## ').filter(Boolean);
   const recentEntries = entries.filter(entry => {

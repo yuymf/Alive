@@ -31,6 +31,7 @@ import { drainVitality, applyActionCost, replenishVitality, getVitalityConstrain
 import { updateConfidence, decayConfidence, getCreationRateMultiplier, getConfidenceMoodHint, DEFAULT_CONFIDENCE } from './confidence-engine';
 import { rollRandomEvent } from './random-events';
 import { isActiveHeartbeatHour } from './heartbeat-gate';
+import { getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
 
 // Default initial states (Spec §16)
 const DEFAULT_EMOTION: EmotionState = {
@@ -61,12 +62,8 @@ interface HeartbeatDecision {
   }>;
 }
 
-function getCurrentHour(): number {
-  return new Date().getHours();
-}
-
 function formatTime(): string {
-  return new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+  return formatLocalTime();
 }
 
 /**
@@ -146,8 +143,10 @@ async function executeSimulatedAction(
  */
 async function regularTick(): Promise<void> {
   const now = new Date();
-  const hour = now.getHours();
-  const weekday = now.getDay() === 0 ? 7 : now.getDay(); // 1=Mon..7=Sun
+  const hour = getLocalHour(now);
+  const weekday = getLocalWeekday(now);
+  const todayStr = getLocalDate(now);
+  const timeStr = getLocalTimeHHMM(now);
 
   // 1. Read state
   let emotion = readJSON<EmotionState>(PATHS.emotionState, DEFAULT_EMOTION);
@@ -235,7 +234,7 @@ async function regularTick(): Promise<void> {
     for (const boost of randomEvent.intent_boosts) {
       intentPool = addIntent(intentPool, boost.category, randomEvent.description, boost.boost, 'event');
     }
-    appendText(PATHS.diary, `\n## ${now.toISOString().split('T')[0]} ${now.toISOString().split('T')[1].slice(0, 5)}\n${randomEvent.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: 随机事件\n`);
+    appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${randomEvent.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: 随机事件\n`);
     console.log(`Random event: ${randomEvent.description}`);
   }
 
@@ -315,7 +314,7 @@ async function regularTick(): Promise<void> {
           vitality = replenishVitality(vitality, 'browsing_light');
         }
 
-        appendText(PATHS.diary, `\n## ${now.toISOString().split('T')[0]} ${now.toISOString().split('T')[1].slice(0, 5)}\n${result.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 4\n标签: heartbeat, ${action.type}\n`);
+        appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${result.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 4\n标签: heartbeat, ${action.type}\n`);
         totalImportance += 4;
         actionResults.push(action.action);
 
@@ -423,10 +422,21 @@ async function regularTick(): Promise<void> {
 
 // Entry point: route to the right handler
 async function main(): Promise<void> {
-  const hour = getCurrentHour();
+  const now = new Date();
+  const hour = getLocalHour(now);
+  const todayStr = getLocalDate(now);
 
   // Read today's cron schedule (written by morning plan)
   const cronSchedule = readJSON<CronSchedule>(PATHS.cronSchedule, { date: '', heartbeats: [] });
+
+  // First-wake detection: if schedule date doesn't match today,
+  // this is the first tick of the day — run morning plan regardless of hour.
+  if (cronSchedule.date !== todayStr) {
+    console.log(`First wake of ${todayStr} (schedule date: ${cronSchedule.date || 'none'}) — running morning plan`);
+    await runMorningPlan();
+    return;
+  }
+
   const activeHeartbeat = isActiveHeartbeatHour(hour, cronSchedule);
 
   if (!activeHeartbeat) {

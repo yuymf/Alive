@@ -6,3 +6,4 @@ docs/
 ig-session.json
 __pycache__/
 *.pyc
+.superpowers/

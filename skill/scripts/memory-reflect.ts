@@ -11,6 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { callLLMJSON } from './llm-client';
+import { getLocalDate } from './time-utils';
 
 const MEMORY_BASE = path.join(process.env.HOME!, '.openclaw', 'workspace', 'memory', 'minase');
 const WISDOM_PATH = path.join(MEMORY_BASE, 'core-wisdom.json');
@@ -87,7 +88,7 @@ async function reflect(force = false): Promise<void> {
   const newLessons = await callLLMJSON<WisdomEntry[]>(prompt);
 
   // Add new wisdom (immutable — build new array)
-  const now = new Date().toISOString().split('T')[0];
+  const now = getLocalDate();
   const newEntries: WisdomEntry[] = newLessons.map(lesson => ({
     ...lesson,
     id: `w${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,

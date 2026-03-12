@@ -8,6 +8,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { getLocalDate } from './time-utils';
 
 const MEMORY_BASE = path.join(process.env.HOME!, '.openclaw', 'workspace', 'memory', 'minase');
 const WORLD_PATH = path.join(MEMORY_BASE, 'world.md');
@@ -57,7 +58,7 @@ async function fetchTrends(query?: string): Promise<void> {
     return;
   }
 
-  const now = new Date().toISOString().split('T')[0];
+  const now = getLocalDate();
   const entry = `\n## ${now} 趋势观察\n\n${topics.slice(0, 10).map(t => `- ${t}`).join('\n')}\n`;
 
   fs.mkdirSync(MEMORY_BASE, { recursive: true });

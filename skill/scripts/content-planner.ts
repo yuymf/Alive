@@ -13,6 +13,7 @@ import {
 } from './types';
 import { PATHS, readJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
+import { getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime } from './time-utils';
 
 const DEFAULT_POST_HISTORY: PostHistory = { posts: [] };
 const DEFAULT_INSPIRATION: InspirationData = {
@@ -67,9 +68,9 @@ export function shouldConsiderPosting(history: PostHistory): { allowed: boolean;
   }
 
   // Check if already posted today
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getLocalDate();
   const postedToday = history.posts.some(p =>
-    new Date(p.timestamp).toISOString().split('T')[0] === todayStr
+    getLocalDate(new Date(p.timestamp)) === todayStr
   );
   if (postedToday) {
     return { allowed: false, reason: '今天已经发过了' };
@@ -126,7 +127,7 @@ export async function planPhoto(): Promise<PhotoIntent> {
 
   const template = readTemplate('photo-intent-prompt.md');
   const prompt = template
-    .replace('{current_time}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }))
+    .replace('{current_time}', formatLocalTime())
     .replace('{mood}', `${emotion.mood.description} (energy: ${emotion.energy.toFixed(1)}, creativity: ${emotion.creativity.toFixed(1)})`)
     .replace('{activity}', getActivityFromSchedule())
     .replace('{instagram_trends}', inspiration.instagram_trends.hot_styles.join('、') || '没有最新数据')
@@ -164,7 +165,7 @@ export async function planPost(): Promise<PostIntent> {
   const template = readTemplate('post-intent-prompt.md');
   const prompt = template
     .replace('{photo_list}', photoList.map((p, i) => `${i + 1}. ${path.basename(p)} (${path.basename(path.dirname(p))})`).join('\n'))
-    .replace('{current_time}', new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }))
+    .replace('{current_time}', formatLocalTime())
     .replace('{mood}', emotion.mood.description)
     .replace('{best_time_slots}', inspiration.self_performance.best_time_slots.join('、') || '暂无数据')
     .replace('{best_hashtag_combos}', inspiration.self_performance.best_hashtag_combos.map(c => c.join(', ')).join(' | ') || '暂无数据')
@@ -212,8 +213,8 @@ function listPhotoRoll(): string[] {
  */
 function getActivityFromSchedule(): string {
   const schedule = readJSON<ScheduleToday>(PATHS.scheduleToday, { date: null, rigid: [], flexible: [], generated_by: null });
-  const hour = new Date().getHours();
-  const weekday = new Date().getDay() === 0 ? 7 : new Date().getDay();
+  const hour = getLocalHour();
+  const weekday = getLocalWeekday();
 
   for (const rigid of schedule.rigid) {
     if (!rigid.weekdays.includes(weekday)) continue;
