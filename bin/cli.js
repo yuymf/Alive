@@ -73,7 +73,34 @@ function isOpenClawCLIAvailable() {
 }
 
 function registerCronJobs() {
-  const { execSync } = require('child_process');
+  const { execFileSync } = require('child_process');
+
+  // Pre-flight: check if Gateway is reachable by listing jobs
+  let existingJobs = [];
+  try {
+    const raw = execFileSync('openclaw', ['cron', 'list', '--json'], { timeout: 10000, encoding: 'utf8' });
+    existingJobs = JSON.parse(raw);
+  } catch {
+    warn('OpenClaw Gateway is not running — cannot register cron jobs.');
+    warn('Start the Gateway first, then re-run: npx minase@latest');
+    warn('Or register manually after starting Gateway:');
+    warn('  openclaw cron add --name "minase:morning" --cron "0 7 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:morning] 执行水瀬晨规划。运行: node ~/.openclaw/skills/minase/scripts/morning-plan.js" --timeout 180');
+    warn('  openclaw cron add --name "minase:tick" --cron "0 8-22 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:tick] 执行水瀬心跳。运行: node ~/.openclaw/skills/minase/scripts/heartbeat-tick.js" --timeout 120');
+    warn('  openclaw cron add --name "minase:night" --cron "0 23 * * *" --tz "Asia/Shanghai" --session isolated --message "[cron:night] 执行水瀬夜反思。运行: node ~/.openclaw/skills/minase/scripts/night-reflect.js" --timeout 300');
+    return;
+  }
+
+  // Remove existing jobs first (idempotent re-install)
+  const existingNames = ['minase:morning', 'minase:tick', 'minase:night'];
+  for (const name of existingNames) {
+    const existing = existingJobs.find(j => j.name === name);
+    if (existing) {
+      try {
+        execFileSync('openclaw', ['cron', 'rm', existing.id], { timeout: 10000, stdio: 'ignore' });
+      } catch { /* best effort */ }
+    }
+  }
+
   const jobs = [
     {
       name: 'minase:morning',
@@ -97,13 +124,24 @@ function registerCronJobs() {
 
   for (const job of jobs) {
     try {
-      execSync(
-        `openclaw cron add --name "${job.name}" --cron "${job.cron}" --tz "Asia/Shanghai" --session isolated --message "${job.message}" --timeout ${job.timeout}`,
-        { stdio: 'ignore' }
+      const output = execFileSync(
+        'openclaw',
+        [
+          'cron', 'add',
+          '--name', job.name,
+          '--cron', job.cron,
+          '--tz', 'Asia/Shanghai',
+          '--session', 'isolated',
+          '--message', job.message,
+          '--timeout', String(job.timeout),
+          '--exact',
+          '--json',
+        ],
+        { timeout: 10000, encoding: 'utf8' }
       );
       ok(`Registered cron: ${job.name} (${job.cron})`);
-    } catch {
-      warn(`Failed to register cron ${job.name} — you may need to add it manually`);
+    } catch (err) {
+      warn(`Failed to register cron ${job.name}: ${err.message}`);
     }
   }
 }
