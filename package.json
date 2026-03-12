@@ -31,6 +31,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "jimp": "^1.6.0",
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
