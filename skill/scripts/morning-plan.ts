@@ -20,7 +20,7 @@ import { callInstagramBridge } from './instagram-bridge-client';
 import { VitalityState } from './types';
 import { morningRecovery, DEFAULT_VITALITY } from './vitality-engine';
 import { syncCronSchedule } from './cron-sync';
-import { getLocalDate, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
+import { now, getLocalDate, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
 
 const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想']);
 
@@ -58,9 +58,9 @@ interface MorningPlanDecision {
 }
 
 export async function runMorningPlan(): Promise<void> {
-  const now = new Date();
-  const weekday = getLocalWeekday(now);
-  const todayStr = getLocalDate(now);
+  const currentTime = now();
+  const weekday = getLocalWeekday(currentTime);
+  const todayStr = getLocalDate(currentTime);
 
   // Refresh expired inspiration data at the start of each day
   try {
@@ -72,14 +72,14 @@ export async function runMorningPlan(): Promise<void> {
 
   // Read yesterday's log
   const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
-  const yesterday = getLocalDate(new Date(now.getTime() - 86400000));
+  const yesterday = getLocalDate(new Date(currentTime.getTime() - 86400000));
   const yesterdayLogs = heartbeatLog.logs.filter(l => l.timestamp.startsWith(yesterday));
   const yesterdaySummary = yesterdayLogs.length > 0
     ? yesterdayLogs.map(l => `${l.timestamp.split('T')[1].slice(0, 5)}: ${l.chosen_actions?.join(', ') || l.status}`).join('\n')
     : '昨天好像断片了……不太记得发生了什么。';
 
   // Rotate old logs (Spec §13: 7 day retention)
-  const cutoff = new Date(now.getTime() - 7 * 86400000).toISOString();
+  const cutoff = new Date(currentTime.getTime() - 7 * 86400000).toISOString();
   const trimmedLog: HeartbeatLog = {
     ...heartbeatLog,
     logs: heartbeatLog.logs.filter(l => l.timestamp >= cutoff),
@@ -110,7 +110,7 @@ export async function runMorningPlan(): Promise<void> {
           follower_count: userInfo.follower_count,
           following_count: userInfo.following_count,
           media_count: userInfo.media_count,
-          follower_synced_at: new Date().toISOString(),
+          follower_synced_at: now().toISOString(),
         });
         console.log(`Follower sync: ${userInfo.follower_count} followers`);
       }
@@ -130,7 +130,7 @@ export async function runMorningPlan(): Promise<void> {
   const weekdayNames = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
   const prompt = template
-    .replace('{current_time}', formatLocalTime(now))
+    .replace('{current_time}', formatLocalTime(currentTime))
     .replace('{weekday_name}', weekdayNames[weekday])
     .replace('{yesterday_summary}', yesterdaySummary)
     .replace('{aspirations_summary}', aspirations.aspirations.length > 0
@@ -165,12 +165,12 @@ export async function runMorningPlan(): Promise<void> {
     intents: decision.intent_seeds.map((seed, i) => {
       const category = toIntentCategory(seed.category);
       return {
-        id: `seed_${Date.now()}_${i}`,
+        id: `seed_${currentTime.getTime()}_${i}`,
         category,
         description: seed.description,
         intensity: Math.min(10, Math.max(0, seed.intensity)),
         source: 'accumulation' as const,
-        born_at: now.toISOString(),
+        born_at: currentTime.toISOString(),
         decay_rate: 0.3,
         satisfied_at: null,
         resistance: BASE_RESISTANCE[category] ?? 0,
@@ -178,7 +178,7 @@ export async function runMorningPlan(): Promise<void> {
         last_attempted: null,
       };
     }),
-    last_updated: now.toISOString(),
+    last_updated: currentTime.toISOString(),
   };
 
   // Build emotion state for morning (using ESTP baseline from spec)
@@ -197,7 +197,7 @@ export async function runMorningPlan(): Promise<void> {
     stress: EMOTION_BASELINE.stress!,
     creativity: EMOTION_BASELINE.creativity!,
     sociability: EMOTION_BASELINE.sociability!,
-    last_updated: now.toISOString(),
+    last_updated: currentTime.toISOString(),
     recent_cause: '晨规划',
     momentum: { ...DEFAULT_MOMENTUM },
     undertone: morningUndertone,
@@ -244,7 +244,7 @@ export async function runMorningPlan(): Promise<void> {
 
   // Add morning heartbeat log entry
   const morningLogEntry: HeartbeatLogEntry = {
-    timestamp: now.toISOString(),
+    timestamp: currentTime.toISOString(),
     type: 'morning',
     status: 'completed',
     chosen_actions: [`schedule: ${decision.flexible_schedule.length} flexible items`],

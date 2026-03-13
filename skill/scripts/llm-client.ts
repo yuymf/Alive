@@ -2,6 +2,8 @@
 // LLM client with retry logic (Spec §13: retry once, then skip)
 // Uses OpenAI-compatible API (works with aihubmix, openrouter, etc.)
 
+import { now } from './time-utils';
+
 const DEFAULT_API_BASE = 'https://aihubmix.com/v1';
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 
@@ -9,7 +11,7 @@ const isDebug = () => process.env.LLM_DEBUG === '1' || process.env.LLM_DEBUG ===
 
 function debugLog(label: string, content: string): void {
   if (!isDebug()) return;
-  const ts = new Date().toISOString();
+  const ts = now().toISOString();
   const separator = '─'.repeat(60);
   console.error(`\n${separator}`);
   console.error(`[LLM_DEBUG] ${ts} ${label}`);
@@ -50,7 +52,7 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<string>
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const startTime = Date.now();
+      const startTime = now().getTime();
       const res = await fetch(`${apiBase}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -72,7 +74,7 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<string>
 
       const data = await res.json() as OpenAIChatResponse;
       const content = data.choices?.[0]?.message?.content ?? '';
-      const elapsed = Date.now() - startTime;
+      const elapsed = now().getTime() - startTime;
       debugLog('RESPONSE', `elapsed: ${elapsed}ms | attempt: ${attempt + 1}\n\n${content}`);
       return content;
     } catch (err) {

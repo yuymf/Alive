@@ -19,7 +19,7 @@ import {
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from './file-utils';
 import { callLLMJSON } from './llm-client';
 import { rebalanceTiers, updateMetaStats } from './social-graph-engine';
-import { getLocalDate, formatLocalTime } from './time-utils';
+import { now, getLocalDate, formatLocalTime } from './time-utils';
 import { processChainEvents } from './random-events';
 
 interface NightReflectDecision {
@@ -31,8 +31,8 @@ interface NightReflectDecision {
 }
 
 export async function runNightReflect(): Promise<void> {
-  const now = new Date();
-  const today = getLocalDate(now);
+  const currentTime = now();
+  const today = getLocalDate(currentTime);
 
   // Read today's data
   const diary = readText(PATHS.diary);
@@ -79,7 +79,7 @@ export async function runNightReflect(): Promise<void> {
   // Build prompt
   const template = readTemplate('night-reflect-prompt.md');
   const prompt = template
-    .replace('{current_time}', formatLocalTime(now))
+    .replace('{current_time}', formatLocalTime(currentTime))
     .replace('{today_diary}', todayDiary || '今天似乎没写什么日记。')
     .replace('{today_heartbeat_summary}', [logSummary, flowSummary, procrastinationSummary].filter(Boolean).join('\n') || '没有心跳记录。')
     .replace('{core_wisdom}', wisdom.wisdom.length > 0
@@ -95,7 +95,7 @@ export async function runNightReflect(): Promise<void> {
   // Apply Core Wisdom updates (immutable)
   let updatedWisdomList = [...wisdom.wisdom];
   for (const w of decision.new_wisdom) {
-    const id = `w${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const id = `w${currentTime.getTime()}_${Math.random().toString(36).slice(2, 6)}`;
     updatedWisdomList = [
       ...updatedWisdomList,
       {
@@ -169,7 +169,7 @@ export async function runNightReflect(): Promise<void> {
         aspirations: [
           ...updatedAspirations.aspirations,
           {
-            id: `asp_${Date.now()}`,
+            id: `asp_${currentTime.getTime()}`,
             content: au.content,
             born_from: `reflection_${today}`,
             context: au.context,
@@ -219,7 +219,7 @@ export async function runNightReflect(): Promise<void> {
 
   // Add night heartbeat log entry
   const nightLogEntry: HeartbeatLogEntry = {
-    timestamp: now.toISOString(),
+    timestamp: currentTime.toISOString(),
     type: 'night',
     status: 'completed',
     chosen_actions: [
@@ -248,7 +248,7 @@ export async function runNightReflect(): Promise<void> {
   const defaultSleepEmotion: EmotionState = {
     mood: { valence: 0.2, arousal: 0.1, description: '准备睡觉了' },
     energy: 0.3, stress: 0.1, creativity: 0.2, sociability: 0.1,
-    last_updated: now.toISOString(),
+    last_updated: currentTime.toISOString(),
     recent_cause: '睡前反思完毕',
     momentum: { ...DEFAULT_MOMENTUM },
     undertone: { ...DEFAULT_UNDERTONE },

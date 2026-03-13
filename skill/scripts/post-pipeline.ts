@@ -13,7 +13,7 @@ import { PostHistory, PostRecord, ContentStyle, EmotionState, PostImpulseState, 
 import { PATHS, readJSON, writeJSON, appendText } from './file-utils';
 import { generateImageSet, GenerateSetResult } from './generate-image';
 import { uploadToImgURL } from './imgurl-upload';
-import { getLocalDate, getLocalTimeHHMM } from './time-utils';
+import { now, getLocalDate, getLocalTimeHHMM } from './time-utils';
 import { refreshInspiration } from './inspiration-collector';
 import { planPhoto, planPost, shouldConsiderPosting } from './content-planner';
 import { callInstagramBridge, uploadAlbum } from './instagram-bridge-client';
@@ -55,9 +55,9 @@ export function normalizePostRecord(post: PostRecord): PostRecord {
  * Reads current emotion state for mood description.
  */
 function writeDiary(entry: string, importance: number, tags: string[]): void {
-  const now = new Date();
-  const dateStr = getLocalDate(now);
-  const timeStr = getLocalTimeHHMM(now);
+  const currentTime = now();
+  const dateStr = getLocalDate(currentTime);
+  const timeStr = getLocalTimeHHMM(currentTime);
   const emotion = hydrateEmotionState(readJSON<Record<string, unknown>>(PATHS.emotionState, {
     mood: { valence: 0.3, arousal: 0.5, description: '普通' },
     energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
@@ -81,7 +81,7 @@ function cleanupPhotoRoll(): void {
   const history = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
   const normalizedHistory: PostHistory = { posts: history.posts.map(normalizePostRecord) };
   const postedPaths = new Set(normalizedHistory.posts.flatMap(p => p.image_local_paths));
-  const cutoff = Date.now() - PHOTO_ROLL_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  const cutoff = now().getTime() - PHOTO_ROLL_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
   for (const dateDir of fs.readdirSync(rollDir)) {
     const dirPath = path.join(rollDir, dateDir);
@@ -116,13 +116,13 @@ export async function checkPostStats(): Promise<void> {
 
   const history = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
   const normalizedHistory: PostHistory = { posts: history.posts.map(normalizePostRecord) };
-  const now = Date.now();
+  const currentMs = now().getTime();
   const CHECK_AFTER_MS = 24 * 60 * 60 * 1000; // 24h
   const CHECK_WINDOW_MS = 72 * 60 * 60 * 1000; // Only check posts up to 72h old
 
   // Find posts needing stats
   const postsNeedingStats = normalizedHistory.posts.filter(
-    p => !p.stats && (now - p.timestamp) >= CHECK_AFTER_MS && (now - p.timestamp) <= CHECK_WINDOW_MS
+    p => !p.stats && (currentMs - p.timestamp) >= CHECK_AFTER_MS && (currentMs - p.timestamp) <= CHECK_WINDOW_MS
   );
 
   if (postsNeedingStats.length === 0) return;
@@ -145,7 +145,7 @@ export async function checkPostStats(): Promise<void> {
         comments: data.comments ?? 0,
         reach: data.reach ?? 0,
         follows: 0,
-        checked_at: now,
+        checked_at: currentMs,
       });
       console.log(`Stats fetched for media ${post.media_id}`);
     } catch (err) {
@@ -280,7 +280,7 @@ async function runPipeline(): Promise<void> {
         : 'daily');
     const newRecord: PostRecord = {
       media_id: mediaPk,
-      timestamp: Date.now(),
+      timestamp: now().getTime(),
       style: inferredStyle,
       caption: postIntent.caption,
       hashtags: postIntent.hashtags,

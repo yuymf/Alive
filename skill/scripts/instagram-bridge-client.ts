@@ -7,9 +7,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
+import { now } from './time-utils';
 
 function mockInstagramResponse(command: string): unknown {
-  const ts = Date.now();
+  const ts = now().getTime();
   switch (command) {
     case 'upload_photo':
       return { media_pk: `mock_${ts}`, media_code: 'mock_code' };

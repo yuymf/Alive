@@ -3,6 +3,7 @@
 // (digital-life-comparison §3.3)
 
 import { ConfidenceState, PostHistory } from './types';
+import { now } from './time-utils';
 
 const CONFIDENCE_MIN = 0.5;
 const CONFIDENCE_MAX = 1.5;
@@ -25,7 +26,7 @@ export function updateConfidence(
   if (postsWithStats.length < 2) return state;
 
   // Calculate 7-day average engagement
-  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const sevenDaysAgo = now().getTime() - 7 * 24 * 60 * 60 * 1000;
   const recentPosts = postsWithStats.filter(p => p.timestamp > sevenDaysAgo);
   if (recentPosts.length === 0) return state;
 
@@ -49,7 +50,7 @@ export function updateConfidence(
   return {
     confidence: clampConfidence(state.confidence + delta + streakBonus),
     streak: newStreak,
-    last_updated: new Date().toISOString(),
+    last_updated: now().toISOString(),
   };
 }
 

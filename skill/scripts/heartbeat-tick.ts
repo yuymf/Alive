@@ -41,7 +41,7 @@ import { updateConfidence, decayConfidence, getCreationRateMultiplier, getConfid
 import { rollContextAwareEvent, processChainEvents, EventContext } from './random-events';
 import { isActiveHeartbeatHour } from './heartbeat-gate';
 import { accumulateImpulse, decayImpulse, shouldInjectPostDesire, checkDormancy } from './post-impulse';
-import { getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
+import { now, getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
 import {
   checkFlowEntry, checkDriftEntry, checkFlowExit, checkDriftExit,
   tickFlow, resetFlow, generateFlowDiary, generateDriftDiary,
@@ -169,11 +169,11 @@ async function executeSimulatedAction(
  * Regular heartbeat tick (Spec §10).
  */
 async function regularTick(): Promise<void> {
-  const now = new Date();
-  const hour = getLocalHour(now);
-  const weekday = getLocalWeekday(now);
-  const todayStr = getLocalDate(now);
-  const timeStr = getLocalTimeHHMM(now);
+  const currentTime = now();
+  const hour = getLocalHour(currentTime);
+  const weekday = getLocalWeekday(currentTime);
+  const todayStr = getLocalDate(currentTime);
+  const timeStr = getLocalTimeHHMM(currentTime);
 
   // 1. Read state (+ hydration for backward compat)
   let emotion = hydrateEmotionState(readJSON(PATHS.emotionState, DEFAULT_EMOTION) as unknown as Record<string, unknown>);
@@ -246,8 +246,8 @@ async function regularTick(): Promise<void> {
   // 2c. Social graph: decay relations, process dormancy, generate social intents
   const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { instagram_following: [], xiaohongshu_following: [], stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
   let socialRelations = readAllJSON<SocialRelation>(PATHS.socialInstagramDir);
-  socialRelations = decayAllRelations(socialRelations, now);
-  const dormancyResult = processDormancy(socialRelations, now);
+  socialRelations = decayAllRelations(socialRelations, currentTime);
+  const dormancyResult = processDormancy(socialRelations, currentTime);
   socialRelations = dormancyResult.active;
 
   // 2d. Reactivate dormant relations with new interactions
@@ -258,11 +258,11 @@ async function regularTick(): Promise<void> {
     if (!eventUserId) continue;
     socialRelations = socialRelations.map(r =>
       r.id === eventUserId && classifyTier(r.relationship.closeness) === 'dormant'
-        ? reactivateRelation(r, now.toISOString())
+        ? reactivateRelation(r, currentTime.toISOString())
         : r
     );
   }
-  const socialIntents = generateSocialIntents(socialRelations, socialMeta, now);
+  const socialIntents = generateSocialIntents(socialRelations, socialMeta, currentTime);
 
   // Write updated social relations back
   for (const r of socialRelations) {
@@ -302,7 +302,7 @@ async function regularTick(): Promise<void> {
       appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${flowDiary}\n情绪: ${emotion.mood.description} | 重要性: 7\n标签: flow, ${flowState.category}\n`);
 
       // Write state and return early
-      writeFlowTickState(now, emotion, intentPool, events, vitality, confidence, impulse, flowState, chainState, heartbeatLog, {
+      writeFlowTickState(currentTime, emotion, intentPool, events, vitality, confidence, impulse, flowState, chainState, heartbeatLog, {
         tickSummary: `flow中: ${flowState.activity}`,
         innerMonologue: null,
         actions: [`[flow] ${flowState.activity}`],
@@ -329,7 +329,7 @@ async function regularTick(): Promise<void> {
       appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${driftDiary}\n情绪: ${emotion.mood.description} | 重要性: 2\n标签: drift\n`);
 
       // Write state and return early
-      writeFlowTickState(now, emotion, intentPool, events, vitality, confidence, impulse, flowState, chainState, heartbeatLog, {
+      writeFlowTickState(currentTime, emotion, intentPool, events, vitality, confidence, impulse, flowState, chainState, heartbeatLog, {
         tickSummary: 'drift中: 刷手机/发呆',
         innerMonologue: null,
         actions: ['[drift] 刷手机'],
@@ -415,7 +415,7 @@ async function regularTick(): Promise<void> {
       ...chainState,
       cooldowns: {
         ...chainState.cooldowns,
-        [randomResult.event.description]: now.toISOString(),
+        [randomResult.event.description]: currentTime.toISOString(),
       },
     };
   }
@@ -459,7 +459,7 @@ async function regularTick(): Promise<void> {
     decision = await callLLMJSON<HeartbeatDecision>(prompt, 1024);
   } catch (err) {
     const logEntry: HeartbeatLogEntry = {
-      timestamp: now.toISOString(),
+      timestamp: currentTime.toISOString(),
       type: 'regular',
       status: 'skipped',
       error: (err as Error).message,
@@ -605,7 +605,7 @@ async function regularTick(): Promise<void> {
     ? actionResults.join(', ')
     : decision.inner_monologue?.slice(0, 50) || '(无动作)';
 
-  writeFlowTickState(now, emotion, intentPool, updatedEvents, vitality, confidence, impulse, flowState, chainState, heartbeatLog, {
+  writeFlowTickState(currentTime, emotion, intentPool, updatedEvents, vitality, confidence, impulse, flowState, chainState, heartbeatLog, {
     tickSummary,
     innerMonologue: decision.inner_monologue || null,
     actions: actionResults,
@@ -620,7 +620,7 @@ async function regularTick(): Promise<void> {
  * Helper to write all state at end of a tick (normal, flow, or drift).
  */
 function writeFlowTickState(
-  now: Date,
+  tickTime: Date,
   emotion: EmotionState,
   intentPool: IntentPool,
   events: EventQueue,
@@ -638,10 +638,10 @@ function writeFlowTickState(
     voiceDirective: string;
   },
 ): void {
-  emotion = { ...emotion, last_updated: now.toISOString() };
-  intentPool = { ...intentPool, last_updated: now.toISOString() };
-  vitality = { ...vitality, last_updated: now.toISOString() };
-  confidence = { ...confidence, last_updated: now.toISOString() };
+  emotion = { ...emotion, last_updated: tickTime.toISOString() };
+  intentPool = { ...intentPool, last_updated: tickTime.toISOString() };
+  vitality = { ...vitality, last_updated: tickTime.toISOString() };
+  confidence = { ...confidence, last_updated: tickTime.toISOString() };
 
   writeJSON(PATHS.emotionState, emotion);
   writeJSON(PATHS.intentPool, intentPool);
@@ -653,7 +653,7 @@ function writeFlowTickState(
   writeJSON(PATHS.pendingChains, chainState);
 
   const logEntry: HeartbeatLogEntry = {
-    timestamp: now.toISOString(),
+    timestamp: tickTime.toISOString(),
     type: 'regular',
     status: 'completed',
     perception_summary: '',
@@ -676,9 +676,9 @@ function writeFlowTickState(
 
 // Entry point: route to the right handler
 async function main(): Promise<void> {
-  const now = new Date();
-  const hour = getLocalHour(now);
-  const todayStr = getLocalDate(now);
+  const currentTime = now();
+  const hour = getLocalHour(currentTime);
+  const todayStr = getLocalDate(currentTime);
 
   // Read today's cron schedule (written by morning plan)
   const cronSchedule = readJSON<CronSchedule>(PATHS.cronSchedule, { date: '', heartbeats: [] });
@@ -721,7 +721,7 @@ main().catch(err => {
     const errorLog: HeartbeatLog = {
       ...log,
       logs: [...log.logs, {
-        timestamp: new Date().toISOString(),
+        timestamp: now().toISOString(),
         type: 'regular',
         status: 'skipped',
         error: err.message,

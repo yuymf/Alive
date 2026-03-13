@@ -3,7 +3,7 @@
 // Replaces the old 16-hour mechanical posting interval with an organic desire system.
 
 import { PostImpulseState } from './types';
-import { getLocalDate } from './time-utils';
+import { now, getLocalDate } from './time-utils';
 
 const BASE_DECAY = 3;
 const EXTRA_DECAY_1_POST = 5;
@@ -64,7 +64,7 @@ export function resetImpulseAfterPost(state: PostImpulseState): PostImpulseState
 
   return {
     value: 0,
-    last_post_at: Date.now(),
+    last_post_at: now().getTime(),
     posts_today_date: today,
     posts_today: postsToday + 1,
   };
@@ -83,6 +83,6 @@ export function shouldInjectPostDesire(state: PostImpulseState): boolean {
  */
 export function checkDormancy(state: PostImpulseState): number {
   if (state.last_post_at === 0) return 0;
-  const daysSincePost = (Date.now() - state.last_post_at) / (24 * 60 * 60 * 1000);
+  const daysSincePost = (now().getTime() - state.last_post_at) / (24 * 60 * 60 * 1000);
   return daysSincePost >= DORMANCY_DAYS ? DORMANCY_BOOST : 0;
 }

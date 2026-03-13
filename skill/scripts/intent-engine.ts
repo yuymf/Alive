@@ -2,6 +2,7 @@
 // Intent pool rule engine (Spec §2)
 
 import { Intent, IntentPool, IntentCategory, EmotionState, ScheduleToday, EventQueue, BASE_RESISTANCE } from './types';
+import { now } from './time-utils';
 
 const INTENSITY_CAP = 10.0;
 
@@ -10,7 +11,7 @@ function cap(value: number): number {
 }
 
 function generateId(): string {
-  return `int_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  return `int_${now().getTime()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
 /**
@@ -140,7 +141,7 @@ function boostOrCreate(
       description,
       intensity: cap(boost),
       source,
-      born_at: new Date().toISOString(),
+      born_at: now().toISOString(),
       decay_rate: 0.5,
       satisfied_at: null,
       resistance: BASE_RESISTANCE[category] ?? 0,
@@ -197,7 +198,7 @@ export function satisfyIntent(pool: IntentPool, intentId: string): IntentPool {
     ...pool,
     intents: pool.intents.map(i =>
       i.id === intentId
-        ? { ...i, satisfied_at: new Date().toISOString() }
+        ? { ...i, satisfied_at: now().toISOString() }
         : i
     ),
   };
@@ -223,7 +224,7 @@ export function addIntent(
         description,
         intensity: cap(intensity),
         source,
-        born_at: new Date().toISOString(),
+        born_at: now().toISOString(),
         decay_rate: 0.5,
         satisfied_at: null,
         resistance: BASE_RESISTANCE[category] ?? 0,
@@ -362,7 +363,7 @@ export function processProcrastination(
     if (chosenIntentIds.has(intent.id)) {
       // Was chosen → reset skipped_count
       return intent.skipped_count > 0
-        ? { ...intent, skipped_count: 0, last_attempted: new Date().toISOString() }
+        ? { ...intent, skipped_count: 0, last_attempted: now().toISOString() }
         : intent;
     }
 

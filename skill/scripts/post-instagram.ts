@@ -10,6 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { callInstagramBridge } from './instagram-bridge-client';
+import { now } from './time-utils';
 
 const MEMORY_BASE = path.join(process.env.HOME!, '.openclaw', 'workspace', 'memory', 'minase');
 
@@ -64,8 +65,8 @@ async function postToInstagram(imagePath: string, caption: string): Promise<void
 
   // Write to diary
   const diaryPath = path.join(MEMORY_BASE, 'diary.md');
-  const now = new Date().toISOString();
-  const entry = `\n## ${now.split('T')[0]} ${now.split('T')[1].slice(0, 5)}\n发了新 Instagram 帖子。Media PK: ${result.media_pk}\n情绪: excited | 重要性: 6\n标签: instagram, post\n`;
+  const currentTime = now().toISOString();
+  const entry = `\n## ${currentTime.split('T')[0]} ${currentTime.split('T')[1].slice(0, 5)}\n发了新 Instagram 帖子。Media PK: ${result.media_pk}\n情绪: excited | 重要性: 6\n标签: instagram, post\n`;
   if (fs.existsSync(diaryPath)) {
     fs.appendFileSync(diaryPath, entry);
   }
