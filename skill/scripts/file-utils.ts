@@ -56,6 +56,7 @@ export const PATHS = {
   get vitalityState() { return path.join(getMemoryBase(), 'vitality-state.json'); },
   get confidenceState() { return path.join(getMemoryBase(), 'confidence-state.json'); },
   get photoRoll() { return path.join(getMemoryBase(), 'photo-roll'); },
+  get photoGallery() { return path.join(getMemoryBase(), 'photo-gallery.json'); },
   get referenceImage() { return path.join(getSkillBase(), 'assets', 'references', 'minase-reference.png'); },
   get postImpulse() { return path.join(getMemoryBase(), 'post-impulse.json'); },
   get inspirationRefs() { return path.join(getMemoryBase(), 'inspiration-refs'); },

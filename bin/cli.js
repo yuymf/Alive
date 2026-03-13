@@ -412,6 +412,7 @@ async function reinstall() {
   }, null, 2));
   fs.writeFileSync(path.join(MEMORY_DIR, 'post-history.json'), JSON.stringify({ "posts": [] }, null, 2));
   fs.writeFileSync(path.join(MEMORY_DIR, 'post-impulse.json'), JSON.stringify({ value: 0, last_post_at: 0, posts_today_date: '', posts_today: 0 }, null, 2));
+  fs.writeFileSync(path.join(MEMORY_DIR, 'photo-gallery.json'), JSON.stringify({ "photos": [] }, null, 2));
   fs.mkdirSync(path.join(MEMORY_DIR, 'inspiration-refs'), { recursive: true });
   const srcRefs = path.join(__dirname, '..', 'skill', 'assets', 'references');
   const destRefs = path.join(SKILL_DEST, 'assets', 'references');
@@ -844,6 +845,12 @@ async function main() {
       posts_today: 0,
     }, null, 2));
     console.log('  ✓ post-impulse.json');
+  }
+  // photo-gallery.json
+  const photoGalleryPath = path.join(MEMORY_DIR, 'photo-gallery.json');
+  if (!fs.existsSync(photoGalleryPath)) {
+    fs.writeFileSync(photoGalleryPath, JSON.stringify({ "photos": [] }, null, 2));
+    console.log('  ✓ photo-gallery.json');
   }
   // inspiration-refs/
   const inspirationRefsDir = path.join(MEMORY_DIR, 'inspiration-refs');

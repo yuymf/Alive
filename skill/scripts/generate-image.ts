@@ -21,11 +21,22 @@ const MAX_REFERENCE_BYTES = 500_000; // 500KB — avoid oversized API payloads
 // Do NOT parse markdown dynamically; update this constant if personality changes.
 const APPEARANCE_TRAITS = '18岁女生，辣妹系风格，丰满，性感，美丽，自信外放的气质。注意：严格参考所给图片主角，保持人脸特征与参考图一致，五官轮廓、发型发色、体型比例都要匹配';
 
+const INSTAGRAM_PHOTO_HEADER = '写实摄影风格、适合 Instagram 的高质量照片。';
+const NEGATIVE_CONSTRAINTS = [
+  '不要卡通/二次元/插画感',
+  '不要过度磨皮与塑料肤质',
+  '不要夸张瘦脸/大眼滤镜感',
+  '避免广角畸变与不自然拉伸',
+  '避免多余手指/手部异常/肢体扭曲',
+  '不要文字水印、字幕、Logo、签名',
+  '不要低清晰度、强噪点、严重糊掉',
+].join('；');
+
 const AIHUBMIX_BASE_URL = 'https://aihubmix.com/v1/chat/completions';
-const AIHUBMIX_MODEL = 'gemini-3-pro-image-preview';
+const AIHUBMIX_MODEL = 'gemini-3.1-flash-image-preview';
 const DEFAULT_ASPECT_RATIO = '3:4'; // Instagram portrait
 const MAX_RETRIES = 1;
-const QUALITY_THRESHOLD = 5;
+const QUALITY_THRESHOLD = 4;
 const MAX_QUALITY_RETRIES = 2;
 
 export interface GenerateImageOptions {
@@ -35,6 +46,7 @@ export interface GenerateImageOptions {
   style?: ContentStyle;
   aspectRatio?: string;
   outputDir?: string;
+  skipQualityCheck?: boolean;
 }
 
 export interface GenerateImageResult {
@@ -55,11 +67,20 @@ export function buildImagePrompt(sceneDescription: string, style: ContentStyle):
     travel: '旅行外景拍摄，风景搭配人物，旅行感',
   };
 
-  return `一张${sceneDescription}的照片，照片中的人物是（${APPEARANCE_TRAITS}），${styleHints[style]}，真实感强，ins风格`;
+  return [
+    INSTAGRAM_PHOTO_HEADER,
+    '人物一致性（最重要）：严格参考所给图片主角，保持人脸特征与参考图一致（五官轮廓、发型发色、体型比例匹配）。',
+    `人物：同一位女性（参考图一致），${APPEARANCE_TRAITS}。`,
+    `场景：${sceneDescription}（补全地点/时间段/氛围/季节，让画面更像“真实发生”）。`,
+    `风格：${styleHints[style]}。`,
+    '构图/镜头：明确半身/全身/特写与相机角度；主体占比偏大；背景允许有环境信息但不要喧宾夺主。',
+    '光线/质感：自然肤色不过曝，细节清晰但不过度锐化；色彩高级，清透或轻胶片质感，ins 氛围感。',
+    `负面约束：${NEGATIVE_CONSTRAINTS}。`,
+  ].join('\n');
 }
 
 const REALISTIC_HINTS: Record<string, string> = {
-  daily: '用iPhone拍摄，自然光线，轻微过曝，浅景深，手持微晃感，非专业构图，主体偶尔偏离中心，背景有生活杂物，像发给朋友看的随手拍',
+  daily: '用iPhone拍摄，自然光线，允许轻微过曝但不要炸白；浅景深；手持轻微微晃；非专业但舒服的构图（主体偶尔偏离中心）；背景允许少量生活元素但不要脏乱',
   behind_scenes: '手机随手拍的花絮，光线一般，有工作台杂物，未完成感，不是摆拍',
   travel: '手机广角，自然色彩，有游客感，背景有路人，光线不完美，有时逆光或阴影',
 };
@@ -67,7 +88,7 @@ const REALISTIC_HINTS: Record<string, string> = {
 export function buildRealisticPrompt(sceneDescription: string, style: ContentStyle): string {
   const base = buildImagePrompt(sceneDescription, style);
   const hint = REALISTIC_HINTS[style];
-  return hint ? `${base}，${hint}` : base;
+  return hint ? `${base}\n真实感补充（可轻微瑕疵但不要影响人物一致性与清晰度）：${hint}。` : base;
 }
 
 /**
@@ -305,7 +326,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
     : undefined;
 
   const selfie = isSelfieType(style, prompt);
-  const qualityThreshold = selfie ? 6 : QUALITY_THRESHOLD;
+  const qualityThreshold = selfie ? 5 : QUALITY_THRESHOLD;
   const maxQualityRetries = selfie ? 2 : MAX_QUALITY_RETRIES;
 
   // Generate with retry
@@ -325,6 +346,11 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
       const localPath = path.join(outputDir, filename);
 
       fs.writeFileSync(localPath, imageData);
+
+      // Skip quality check for low-latency paths (chat real-time generation)
+      if (options.skipQualityCheck) {
+        return { localPath, textResponse, timestamp };
+      }
 
       const primaryRef = referenceImages.find(p => fs.existsSync(p)) ?? referenceImages[0];
 

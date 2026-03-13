@@ -409,6 +409,38 @@ export const DEFAULT_POST_IMPULSE: PostImpulseState = {
   posts_today: 0,
 };
 
+// === Photo Gallery (chat sharing) ===
+
+export interface GalleryPhoto {
+  id: string;
+  localPath: string;
+  publicUrl: string;
+  description: string;
+  tags: string[];
+  style: ContentStyle;
+  emotion: { valence: number; energy: number };
+  createdAt: string;
+  sharedAt: string | null;
+  shareCount: number;
+  postedToInstagram: boolean;
+}
+
+export interface PhotoGallery {
+  photos: GalleryPhoto[];
+}
+
+export interface GallerySearchResult {
+  results: Pick<GalleryPhoto, 'id' | 'description' | 'tags' | 'style' | 'emotion' | 'createdAt' | 'publicUrl'>[];
+  total: number;
+}
+
+export interface GallerySendResult {
+  success: boolean;
+  photoId: string;
+  error?: string;
+}
+
+export const DEFAULT_PHOTO_GALLERY: PhotoGallery = { photos: [] };
 export interface SavedReference {
   url: string;
   local_path: string;

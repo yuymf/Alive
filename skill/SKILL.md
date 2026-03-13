@@ -20,6 +20,7 @@ This skill is composed of sub-modules. Load them as needed:
 - **Heartbeat Protocol:** Read `{baseDir}/heartbeat.md` (loaded by cron triggers)
 - **Intent Pool:** Read `{baseDir}/intent-pool.md` (loaded by cron triggers)
 - **Social Graph:** Read `{baseDir}/social-graph.md` (loaded when processing social interactions)
+- **Photo Sharing:** Read `{baseDir}/photo-sharing.md` (load when sharing photos in chat)
 - **Templates:** Read from `{baseDir}/templates/` as needed
 
 ## Behavior Trigger Map
@@ -34,6 +35,7 @@ This skill is composed of sub-modules. Load them as needed:
 | `cron:morning` | Run morning-plan.js, generate today's schedule |
 | `cron:tick` | Run heartbeat-tick.js, regular heartbeat cycle |
 | `cron:night` | Run night-reflect.js, daily reflection |
+| 想分享照片 / "看看你拍的" / 聊到cos | Load photo-sharing.md, use `gallery-send.js` to search and send |
 
 ## Memory File Paths
 
