@@ -7,6 +7,7 @@ import {
   IntentCategory, PendingChainEvent, ChainAndCooldownState,
   VitalityState, FlowState,
 } from './types';
+import { now } from './time-utils';
 
 // === Extended Event Pool ===
 
@@ -285,7 +286,7 @@ function checkPreconditions(event: RandomEventDef, ctx: EventContext): boolean {
   if (p.global_cooldown_days) {
     const lastTriggered = ctx.cooldowns[event.description];
     if (lastTriggered) {
-      const daysSince = (Date.now() - new Date(lastTriggered).getTime()) / (86400000);
+      const daysSince = (now().getTime() - new Date(lastTriggered).getTime()) / (86400000);
       if (daysSince < p.global_cooldown_days) return false;
     }
   }
@@ -359,7 +360,7 @@ export function rollContextAwareEvent(
   const selected = weightedRandomSelect(eligible, rng);
 
   const event: RandomEvent = {
-    id: `rnd_${Date.now()}_${rng().toString(36).slice(2, 6)}`,
+    id: `rnd_${now().getTime()}_${rng().toString(36).slice(2, 6)}`,
     description: selected.description,
     emotion_delta: selected.emotion_delta,
     intent_boosts: selected.intent_boosts,
@@ -451,6 +452,6 @@ export function rollRandomEvent(options?: {
 
   return {
     ...selected,
-    id: `rnd_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    id: `rnd_${now().getTime()}_${Math.random().toString(36).slice(2, 6)}`,
   };
 }

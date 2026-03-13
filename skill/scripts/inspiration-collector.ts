@@ -14,6 +14,7 @@ import { callLLMJSON } from './llm-client';
 import { callInstagramBridge } from './instagram-bridge-client';
 import { accumulateImpulse } from './post-impulse';
 import { isXhsAvailable, listXhsFeed, searchXhsNotes, getXhsNoteDetail } from './xhs-bridge-client';
+import { now } from './time-utils';
 
 const DOWNLOAD_TIMEOUT_MS = 10_000;
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -56,9 +57,9 @@ async function downloadImage(url: string, destPath: string): Promise<boolean> {
 
 function cleanupExpiredRefs(refs: SavedReference[]): SavedReference[] {
   const expiryMs = REF_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
-  const now = Date.now();
+  const currentMs = now().getTime();
   return refs.filter(ref => {
-    const expired = now - ref.saved_at > expiryMs;
+    const expired = currentMs - ref.saved_at > expiryMs;
     if (expired && fs.existsSync(ref.local_path)) {
       try { fs.unlinkSync(ref.local_path); } catch { /* ignore */ }
     }
@@ -84,7 +85,7 @@ const TTL = {
 } as const;
 
 function isExpired(updatedAt: number, ttl: number): boolean {
-  return Date.now() - updatedAt > ttl;
+  return now().getTime() - updatedAt > ttl;
 }
 
 /**
@@ -150,9 +151,9 @@ async function collectInstagramTrends(): Promise<{
       trending_hashtags: string[];
     }>(prompt, 512);
 
-    trends = { ...result, updated_at: Date.now() };
+    trends = { ...result, updated_at: now().getTime() };
   } catch {
-    trends = { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: Date.now() };
+    trends = { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: now().getTime() };
   }
 
   // Image selection: ask LLM to pick "心动" images (max 5 per refresh)
@@ -177,7 +178,7 @@ ${allPostsWithImages.map(({ post }, i) => `${i + 1}. [${(post.caption_text ?? ''
         if (!entry?.post?.thumbnail_url) continue;
 
         const { post, hashtag: currentHashtag } = entry;
-        const filename = `ig_${post.pk ?? idx}_${Date.now()}.jpg`;
+        const filename = `ig_${post.pk ?? idx}_${now().getTime()}.jpg`;
         const destPath = path.join(refsDir, filename);
 
         const ok = await downloadImage(post.thumbnail_url, destPath);
@@ -188,7 +189,7 @@ ${allPostsWithImages.map(({ post }, i) => `${i + 1}. [${(post.caption_text ?? ''
             source_hashtag: currentHashtag,
             style_tags: [],
             scene_description: (post.caption_text ?? '').slice(0, 100),
-            saved_at: Date.now(),
+            saved_at: now().getTime(),
           });
         }
       }
@@ -227,9 +228,9 @@ async function collectACGHotspots(): Promise<InspirationData['acg_hotspots']> {
       seasonal_themes: string[];
     }>(prompt, 512);
 
-    return { ...result, updated_at: Date.now() };
+    return { ...result, updated_at: now().getTime() };
   } catch {
-    return { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: Date.now() };
+    return { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: now().getTime() };
   }
 }
 
@@ -259,9 +260,9 @@ async function collectVisualTrends(): Promise<InspirationData['visual_trends']> 
       scene_ideas: string[];
     }>(prompt, 512);
 
-    return { ...result, updated_at: Date.now() };
+    return { ...result, updated_at: now().getTime() };
   } catch {
-    return { composition_styles: [], color_palettes: [], scene_ideas: [], updated_at: Date.now() };
+    return { composition_styles: [], color_palettes: [], scene_ideas: [], updated_at: now().getTime() };
   }
 }
 
@@ -273,7 +274,7 @@ function collectSelfPerformance(): InspirationData['self_performance'] {
   const postsWithStats = history.posts.filter(p => p.stats);
 
   if (postsWithStats.length === 0) {
-    return { best_style: 'cos', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: Date.now() };
+    return { best_style: 'cos', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: now().getTime() };
   }
 
   // Calculate engagement by style
@@ -326,7 +327,7 @@ function collectSelfPerformance(): InspirationData['self_performance'] {
     best_time_slots: bestTimeSlots,
     best_hashtag_combos: bestHashtagCombos,
     engagement_by_style: engagementByStyle,
-    updated_at: Date.now(),
+    updated_at: now().getTime(),
   };
 }
 
@@ -410,7 +411,7 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
     const existingInspos = current.xiaohongshu_trends?.saved_inspirations ?? [];
     const newInspos = (result.saved_inspirations ?? []).map(s => ({
       ...s,
-      saved_at: Date.now(),
+      saved_at: now().getTime(),
     }));
     // Prefer new entries over old when source_note_id collides
     const newIds = new Set(newInspos.map(s => s.source_note_id));
@@ -423,11 +424,11 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
       trending_topics: result.trending_topics ?? [],
       cosplay_insights: result.cosplay_insights ?? [],
       saved_inspirations: merged,
-      updated_at: Date.now(),
+      updated_at: now().getTime(),
     };
   } catch (err) {
     console.error(`XHS LLM summarization failed: ${(err as Error).message}`);
-    return { ...empty, updated_at: Date.now() };
+    return { ...empty, updated_at: now().getTime() };
   }
 }
 

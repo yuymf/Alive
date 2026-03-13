@@ -11,7 +11,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { ContentStyle, ShotDescription } from './types';
 import { PATHS } from './file-utils';
-import { getLocalDate, getLocalHour } from './time-utils';
+import { now, getLocalDate, getLocalHour } from './time-utils';
 import { isSelfieType, selectReferences } from './reference-selector';
 import { postProcessImage } from './image-post-process';
 
@@ -25,7 +25,7 @@ const AIHUBMIX_BASE_URL = 'https://aihubmix.com/v1/chat/completions';
 const AIHUBMIX_MODEL = 'gemini-3-pro-image-preview';
 const DEFAULT_ASPECT_RATIO = '3:4'; // Instagram portrait
 const MAX_RETRIES = 1;
-const QUALITY_THRESHOLD = 6;
+const QUALITY_THRESHOLD = 5;
 const MAX_QUALITY_RETRIES = 2;
 
 export interface GenerateImageOptions {
@@ -305,7 +305,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
     : undefined;
 
   const selfie = isSelfieType(style, prompt);
-  const qualityThreshold = selfie ? 7 : QUALITY_THRESHOLD;
+  const qualityThreshold = selfie ? 6 : QUALITY_THRESHOLD;
   const maxQualityRetries = selfie ? 2 : MAX_QUALITY_RETRIES;
 
   // Generate with retry
@@ -317,7 +317,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
       );
 
       // Save to file
-      const timestamp = Date.now();
+      const timestamp = now().getTime();
       const hour = getLocalHour();
       const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
       const existing = fs.existsSync(outputDir) ? fs.readdirSync(outputDir).length : 0;

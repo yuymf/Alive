@@ -2,6 +2,7 @@
 // Emotion computation engine (Spec §6)
 
 import { EmotionState, EmotionDelta, EMOTION_BASELINE, ImpulseHistoryEntry, EmotionMomentum } from './types';
+import { now } from './time-utils';
 
 const DECAY_RATE = 0.1; // 10% per hour toward baseline
 
@@ -76,7 +77,7 @@ export function applyDelta(state: EmotionState, delta: EmotionDelta, cause: stri
     stress: clamp(state.stress + (delta.stress ?? 0), 0, 1.0),
     creativity: clamp(state.creativity + (delta.creativity ?? 0), 0, 1.0),
     sociability: clamp(state.sociability + (delta.sociability ?? 0), 0, 1.0),
-    last_updated: new Date().toISOString(),
+    last_updated: now().toISOString(),
     recent_cause: cause,
   };
 }
@@ -286,7 +287,7 @@ export function applyImpulse(
     delta,
     cause,
     importance,
-    timestamp: new Date().toISOString(),
+    timestamp: now().toISOString(),
     tick_age: 0,
   };
   const newHistory = [...afterDelta.impulse_history, entry].slice(-MAX_IMPULSE_HISTORY);
@@ -397,7 +398,7 @@ export function checkThresholdBreak(
         delta: { valence: valenceShift, arousal: 0.3, stress: -(state.stress - 0.2) },
         cause: '情绪爆发',
         importance: 8,
-        timestamp: new Date().toISOString(),
+        timestamp: now().toISOString(),
         tick_age: 0,
       },
     ].slice(-MAX_IMPULSE_HISTORY),

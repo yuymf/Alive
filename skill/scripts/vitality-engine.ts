@@ -3,6 +3,7 @@
 // Vitality is a resource that depletes naturally and must be replenished through actions.
 
 import { VitalityState, EmotionState } from './types';
+import { now } from './time-utils';
 
 const VITALITY_MAX = 100;
 const VITALITY_MIN = 0;
@@ -50,7 +51,7 @@ export function drainVitality(
   return {
     ...state,
     vitality: clampVitality(state.vitality - drain),
-    last_updated: new Date().toISOString(),
+    last_updated: now().toISOString(),
   };
 }
 
@@ -106,7 +107,7 @@ export function morningRecovery(state: VitalityState): VitalityState {
   return {
     ...state,
     vitality: newVitality,
-    last_updated: new Date().toISOString(),
+    last_updated: now().toISOString(),
     consecutive_low_days: emergencyRecovery ? 0 : newConsecutive,
   };
 }

@@ -5,6 +5,7 @@ import {
   FlowState, IntentPool, IntentCategory, EmotionState,
   DEFAULT_FLOW_STATE,
 } from './types';
+import { now } from './time-utils';
 
 const INTERRUPT_CHANCE_INITIAL = 0.15;
 const INTERRUPT_CHANCE_INCREMENT = 0.03;
@@ -42,7 +43,7 @@ export function checkFlowEntry(
     status: 'flow',
     activity: lastAction.activity,
     category: lastAction.category,
-    entered_at: new Date().toISOString(),
+    entered_at: now().toISOString(),
     duration_ticks: 0,
     interrupt_chance: INTERRUPT_CHANCE_INITIAL,
   };
@@ -71,7 +72,7 @@ export function checkDriftEntry(
     status: 'drift',
     activity: '刷手机',
     category: '窥屏',
-    entered_at: new Date().toISOString(),
+    entered_at: now().toISOString(),
     duration_ticks: 0,
     interrupt_chance: INTERRUPT_CHANCE_INITIAL,
   };
