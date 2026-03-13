@@ -7,6 +7,10 @@
 **当前时间：** {current_time}
 **场景：** {schedule_context}
 
+## 写作风格
+
+{voice_directive}
+
 请以水瀬的视角，生成这个行动的叙述和影响。
 
 输出 JSON 格式：

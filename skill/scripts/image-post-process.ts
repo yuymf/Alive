@@ -147,9 +147,12 @@ export async function postProcessImage(
 
   // 饱和度调整
   if (params.saturationDelta !== 0) {
-    image.color([
-      { apply: 'saturate', params: [Math.round(params.saturationDelta * 100)] },
-    ]);
+    const absSat = Math.round(Math.abs(params.saturationDelta) * 100);
+    if (absSat > 0) {
+      image.color([
+        { apply: params.saturationDelta > 0 ? 'saturate' : 'desaturate', params: [absSat] },
+      ]);
+    }
   }
 
   // 噪点：随机扰动像素模拟感光噪声
@@ -165,7 +168,7 @@ export async function postProcessImage(
       const g = Math.min(255, Math.max(0, ((pixel >> 16) & 0xff) + offset));
       const b = Math.min(255, Math.max(0, ((pixel >> 8) & 0xff) + offset));
       const a = pixel & 0xff;
-      image.setPixelColor((r << 24) | (g << 16) | (b << 8) | a, x, y);
+      image.setPixelColor(((r << 24) | (g << 16) | (b << 8) | a) >>> 0, x, y);
     }
   }
 

@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { PostHistory, PostRecord, ContentStyle, EmotionState, PostImpulseState, DEFAULT_POST_IMPULSE } from './types';
+import { PostHistory, PostRecord, ContentStyle, EmotionState, PostImpulseState, DEFAULT_POST_IMPULSE, hydrateEmotionState, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from './types';
 import { PATHS, readJSON, writeJSON, appendText } from './file-utils';
 import { generateImageSet, GenerateSetResult } from './generate-image';
 import { uploadToImgURL } from './imgurl-upload';
@@ -58,11 +58,16 @@ function writeDiary(entry: string, importance: number, tags: string[]): void {
   const now = new Date();
   const dateStr = getLocalDate(now);
   const timeStr = getLocalTimeHHMM(now);
-  const emotion = readJSON<EmotionState>(PATHS.emotionState, {
+  const emotion = hydrateEmotionState(readJSON<Record<string, unknown>>(PATHS.emotionState, {
     mood: { valence: 0.3, arousal: 0.5, description: '普通' },
     energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
     last_updated: null, recent_cause: '',
-  });
+    momentum: { ...DEFAULT_MOMENTUM },
+    undertone: { ...DEFAULT_UNDERTONE },
+    impulse_history: [],
+    consecutive_high_stress: 0,
+    threshold_break_cooldown: 0,
+  }));
   appendText(PATHS.diary, `\n## ${dateStr} ${timeStr}\n${entry}\n情绪: ${emotion.mood.description} | 重要性: ${importance}\n标签: ${tags.join(', ')}\n`);
 }
 

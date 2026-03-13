@@ -7,3 +7,5 @@ ig-session.json
 __pycache__/
 *.pyc
 .superpowers/
+.DS_Store
+e2e/e2e-output/

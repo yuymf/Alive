@@ -1,7 +1,7 @@
 // skill/scripts/intent-engine.ts
 // Intent pool rule engine (Spec §2)
 
-import { Intent, IntentPool, IntentCategory, EmotionState, ScheduleToday, EventQueue } from './types';
+import { Intent, IntentPool, IntentCategory, EmotionState, ScheduleToday, EventQueue, BASE_RESISTANCE } from './types';
 
 const INTENSITY_CAP = 10.0;
 
@@ -143,6 +143,9 @@ function boostOrCreate(
       born_at: new Date().toISOString(),
       decay_rate: 0.5,
       satisfied_at: null,
+      resistance: BASE_RESISTANCE[category] ?? 0,
+      skipped_count: 0,
+      last_attempted: null,
     },
   ];
 }
@@ -165,9 +168,21 @@ export function injectScheduleIntents(pool: IntentPool, schedule: ScheduleToday,
 }
 
 /**
- * Get the top N intents by intensity, filtering by allowed actions if in rigid schedule.
+ * Get the top N intents by net intensity (intensity - resistance).
+ * Only returns intents where intensity > resistance (executable).
  */
 export function getTopIntents(pool: IntentPool, n: number): Intent[] {
+  return [...pool.intents]
+    .filter(i => i.satisfied_at === null && i.intensity > i.resistance)
+    .sort((a, b) => (b.intensity - b.resistance) - (a.intensity - a.resistance))
+    .slice(0, n);
+}
+
+/**
+ * Get the top N intents by raw intensity (original behavior, ignoring resistance).
+ * Useful for LLM prompt display where all intents should be visible.
+ */
+export function getTopIntentsRaw(pool: IntentPool, n: number): Intent[] {
   return [...pool.intents]
     .filter(i => i.satisfied_at === null)
     .sort((a, b) => b.intensity - a.intensity)
@@ -211,7 +226,174 @@ export function addIntent(
         born_at: new Date().toISOString(),
         decay_rate: 0.5,
         satisfied_at: null,
+        resistance: BASE_RESISTANCE[category] ?? 0,
+        skipped_count: 0,
+        last_attempted: null,
       },
     ],
+  };
+}
+
+// === Verisimilitude §3: Resistance, Impulse Breakthrough, Procrastination ===
+
+const HIGH_ENERGY_CATEGORIES: ReadonlySet<IntentCategory> = new Set(['创作', '学习', '梦想']);
+
+/**
+ * Compute dynamic resistance for an intent based on context.
+ * Modifiers: low vitality, in-flow, rigid schedule, low confidence (creation only).
+ */
+export function computeDynamicResistance(
+  intent: Intent,
+  vitality: number,
+  confidence: number,
+  inFlow: boolean,
+  flowCategory: IntentCategory | null,
+  rigidSchedule: { allowed_actions: string[] } | null,
+): number {
+  let resistance = BASE_RESISTANCE[intent.category] ?? 0;
+
+  // Low vitality → high-energy categories cost more
+  if (vitality < 30 && HIGH_ENERGY_CATEGORIES.has(intent.category)) {
+    resistance *= 1.5;
+  }
+
+  // In flow → other categories are harder to start
+  if (inFlow && intent.category !== flowCategory) {
+    resistance += 3.0;
+  }
+
+  // Rigid schedule → non-allowed categories are much harder
+  if (rigidSchedule) {
+    const categoryStr = intent.category as string;
+    if (!rigidSchedule.allowed_actions.some(a => a.includes(categoryStr))) {
+      resistance += 5.0;
+    }
+  }
+
+  // Low confidence hurts creation resistance
+  if (intent.category === '创作' && confidence < 0.8) {
+    resistance += 2.0;
+  }
+
+  return resistance;
+}
+
+/**
+ * Batch-apply dynamic resistance to all intents in the pool.
+ */
+export function applyResistanceToPool(
+  pool: IntentPool,
+  vitality: number,
+  confidence: number,
+  inFlow: boolean,
+  flowCategory: IntentCategory | null,
+  rigidSchedule: { allowed_actions: string[] } | null,
+): IntentPool {
+  return {
+    ...pool,
+    intents: pool.intents.map(intent => {
+      if (intent.satisfied_at !== null) return intent;
+      const newResistance = computeDynamicResistance(
+        intent, vitality, confidence, inFlow, flowCategory, rigidSchedule,
+      );
+      return newResistance !== intent.resistance
+        ? { ...intent, resistance: newResistance }
+        : intent;
+    }),
+  };
+}
+
+/**
+ * Check for impulse breakthrough conditions (Verisimilitude §3).
+ * Returns the breakthrough intent if one exists, null otherwise.
+ */
+export function checkImpulseBreakthrough(
+  pool: IntentPool,
+  vitality: number,
+  inFlow: boolean,
+): Intent | null {
+  const unsatisfied = pool.intents.filter(i => i.satisfied_at === null);
+
+  // Condition 1: intensity > 8.0 and source is 'event' → breaks flow
+  const eventBreakthrough = unsatisfied.find(i => i.intensity > 8.0 && i.source === 'event');
+  if (eventBreakthrough) return eventBreakthrough;
+
+  // Condition 2: 窥屏 + not in flow + low vitality → almost inevitable
+  if (!inFlow && vitality < 50) {
+    const browsing = unsatisfied.find(i => i.category === '窥屏');
+    if (browsing) return browsing;
+  }
+
+  // Condition 3: 休息 + very low vitality → must rest
+  if (vitality < 15) {
+    const rest = unsatisfied.find(i => i.category === '休息');
+    if (rest) return rest;
+  }
+
+  return null;
+}
+
+export interface ProcrastinationResult {
+  pool: IntentPool;
+  stressDelta: number;
+  diaryEntries: string[];
+}
+
+/**
+ * Process procrastination for intents that are above their resistance but not chosen.
+ * - skipped_count tracks how many times an executable intent was skipped
+ * - 3+ skips → stress accumulation
+ * - 5+ skips → guilt burst (intensity +3) or abandonment (intensity → 1), then reset
+ */
+export function processProcrastination(
+  pool: IntentPool,
+  chosenIntentIds: ReadonlySet<string>,
+  rng: () => number = Math.random,
+  currentStress: number = 0,
+): ProcrastinationResult {
+  let stressDelta = 0;
+  const diaryEntries: string[] = [];
+
+  const intents = pool.intents.map(intent => {
+    if (intent.satisfied_at !== null) return intent;
+    if (intent.intensity <= intent.resistance) return intent;
+
+    // This intent was executable
+    if (chosenIntentIds.has(intent.id)) {
+      // Was chosen → reset skipped_count
+      return intent.skipped_count > 0
+        ? { ...intent, skipped_count: 0, last_attempted: new Date().toISOString() }
+        : intent;
+    }
+
+    // Was skippable (executable but not chosen)
+    const newSkippedCount = intent.skipped_count + 1;
+
+    if (newSkippedCount >= 5) {
+      // Guilt burst or abandonment
+      const abandonProb = currentStress > 0.5 ? 0.8 : (currentStress < 0.3 ? 0.3 : 0.5);
+      if (rng() < abandonProb) {
+        // Abandon
+        diaryEntries.push(`算了...${intent.description}不想做了`);
+        return { ...intent, intensity: 1.0, skipped_count: 0 };
+      } else {
+        // Guilt burst
+        diaryEntries.push(`不行，${intent.description}再不做真的不行了！`);
+        return { ...intent, intensity: cap(intent.intensity + 3.0), skipped_count: 0 };
+      }
+    }
+
+    if (newSkippedCount >= 3) {
+      stressDelta += 0.05;
+      diaryEntries.push(`一直想${intent.description}但还没开始...`);
+    }
+
+    return { ...intent, skipped_count: newSkippedCount };
+  });
+
+  return {
+    pool: { ...pool, intents },
+    stressDelta,
+    diaryEntries,
   };
 }

@@ -19,7 +19,7 @@ const MAX_REFERENCE_BYTES = 500_000; // 500KB — avoid oversized API payloads
 
 // Hardcoded appearance traits — extracted from personality.md
 // Do NOT parse markdown dynamically; update this constant if personality changes.
-const APPEARANCE_TRAITS = '18岁女生，辣妹系风格，黑色长发带挑染色，日常穿搭偏短裙厚底靴，指甲做夸张款式，自信外放的气质';
+const APPEARANCE_TRAITS = '18岁女生，辣妹系风格，参考图中主角，胸大臀翘，可爱美丽，性感，诱惑，自信外放的气质';
 
 const AIHUBMIX_BASE_URL = 'https://aihubmix.com/v1/chat/completions';
 const AIHUBMIX_MODEL = 'gemini-3-pro-image-preview';
@@ -55,7 +55,7 @@ export function buildImagePrompt(sceneDescription: string, style: ContentStyle):
     travel: '旅行外景拍摄，风景搭配人物，旅行感',
   };
 
-  return `一张${sceneDescription}的照片，照片中的人物是${APPEARANCE_TRAITS}，${styleHints[style]}，真实感强，ins风格`;
+  return `一张${sceneDescription}的照片，照片中的人物是（${APPEARANCE_TRAITS}），${styleHints[style]}，真实感强，ins风格`;
 }
 
 const REALISTIC_HINTS: Record<string, string> = {

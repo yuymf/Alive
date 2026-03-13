@@ -571,7 +571,7 @@ async function main() {
   }
   const emotionStatePath = path.join(MEMORY_DIR, 'emotion-state.json');
   if (!fs.existsSync(emotionStatePath)) {
-    fs.writeFileSync(emotionStatePath, JSON.stringify({"mood":{"valence":0.3,"arousal":0.5,"description":"刚醒来"},"energy":0.6,"stress":0.2,"creativity":0.4,"sociability":0.5,"last_updated":null,"recent_cause":"初始化"}, null, 2));
+    fs.writeFileSync(emotionStatePath, JSON.stringify({"mood":{"valence":0.3,"arousal":0.5,"description":"刚醒来"},"energy":0.6,"stress":0.2,"creativity":0.4,"sociability":0.5,"last_updated":null,"recent_cause":"初始化","momentum":{"valence":0,"arousal":0,"energy":0,"stress":0,"creativity":0,"sociability":0,"duration_ticks":0},"undertone":{"valence":0.3,"arousal":0.5,"energy":0.6,"stress":0.2,"creativity":0.4,"sociability":0.5},"impulse_history":[],"consecutive_high_stress":0,"threshold_break_cooldown":0}, null, 2));
   }
   const intentPoolPath = path.join(MEMORY_DIR, 'intent-pool.json');
   if (!fs.existsSync(intentPoolPath)) {
@@ -600,6 +600,14 @@ async function main() {
   const heartbeatLogPath = path.join(MEMORY_DIR, 'heartbeat-log.json');
   if (!fs.existsSync(heartbeatLogPath)) {
     fs.writeFileSync(heartbeatLogPath, JSON.stringify({"logs":[],"retention_days":7}, null, 2));
+  }
+  const flowStatePath = path.join(MEMORY_DIR, 'flow-state.json');
+  if (!fs.existsSync(flowStatePath)) {
+    fs.writeFileSync(flowStatePath, JSON.stringify({"status":"none","activity":null,"category":null,"entered_at":null,"duration_ticks":0,"interrupt_chance":0.15}, null, 2));
+  }
+  const pendingChainsPath = path.join(MEMORY_DIR, 'pending-chains.json');
+  if (!fs.existsSync(pendingChainsPath)) {
+    fs.writeFileSync(pendingChainsPath, JSON.stringify({"pending":[],"cooldowns":{}}, null, 2));
   }
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations', 'social', 'instagram'), { recursive: true });
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations', 'social', 'xiaohongshu'), { recursive: true });

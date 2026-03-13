@@ -1,7 +1,7 @@
 // skill/scripts/emotion-engine.ts
 // Emotion computation engine (Spec §6)
 
-import { EmotionState, EmotionDelta, EMOTION_BASELINE } from './types';
+import { EmotionState, EmotionDelta, EMOTION_BASELINE, ImpulseHistoryEntry, EmotionMomentum } from './types';
 
 const DECAY_RATE = 0.1; // 10% per hour toward baseline
 
@@ -66,6 +66,7 @@ export function applyDelta(state: EmotionState, delta: EmotionDelta, cause: stri
   const newValence = clamp(state.mood.valence + (delta.valence ?? 0), -1.0, 1.0);
   const newArousal = clamp(state.mood.arousal + (delta.arousal ?? 0), 0, 1.0);
   return {
+    ...state,
     mood: {
       valence: newValence,
       arousal: newArousal,
@@ -181,4 +182,230 @@ export function scaleByCloseness(delta: EmotionDelta, closeness: number): Emotio
   if (delta.creativity !== undefined) result.creativity = delta.creativity * scale;
   if (delta.sociability !== undefined) result.sociability = delta.sociability * scale;
   return result;
+}
+
+// === Three-Layer Emotion Model (Verisimilitude §1) ===
+
+const IMPULSE_DECAY = 0.20;
+const MAX_IMPULSE_HISTORY = 50;
+
+/** Dimension keys for iterating. */
+const DIM_KEYS = ['valence', 'arousal', 'energy', 'stress', 'creativity', 'sociability'] as const;
+type DimKey = typeof DIM_KEYS[number];
+
+function getDimension(state: EmotionState, key: DimKey): number {
+  return key === 'valence' ? state.mood.valence
+    : key === 'arousal' ? state.mood.arousal
+    : state[key];
+}
+
+function getMomentumDuration(momentum: EmotionMomentum): number {
+  return momentum.duration_ticks;
+}
+
+function getMomentumDecayRate(durationTicks: number): number {
+  if (durationTicks > 6) return 0.03;
+  if (durationTicks >= 3) return 0.05;
+  return 0.08;
+}
+
+/**
+ * Three-layer decay (Verisimilitude §1):
+ * - Impulse layer: current dimensions decay 20%/tick toward momentum
+ * - Momentum layer: momentum decays dynamically (3-8%/tick) toward undertone
+ * - Undertone layer: static per day, set by morning-plan / night-reflect
+ *
+ * Also ages impulse_history entries (+1 tick_age each) and trims to 50.
+ */
+export function decayThreeLayer(state: EmotionState): EmotionState {
+  const momentumRate = getMomentumDecayRate(getMomentumDuration(state.momentum));
+
+  // Decay momentum toward undertone
+  const newMomentum: EmotionMomentum = {
+    ...state.momentum,
+    valence: state.momentum.valence + (state.undertone.valence - state.momentum.valence) * momentumRate,
+    arousal: state.momentum.arousal + (state.undertone.arousal - state.momentum.arousal) * momentumRate,
+    energy: state.momentum.energy + (state.undertone.energy - state.momentum.energy) * momentumRate,
+    stress: state.momentum.stress + (state.undertone.stress - state.momentum.stress) * momentumRate,
+    creativity: state.momentum.creativity + (state.undertone.creativity - state.momentum.creativity) * momentumRate,
+    sociability: state.momentum.sociability + (state.undertone.sociability - state.momentum.sociability) * momentumRate,
+  };
+
+  // Update momentum duration: track how long valence direction has been consistent
+  const prevValenceSign = Math.sign(state.momentum.valence);
+  const newValenceSign = Math.sign(newMomentum.valence);
+  newMomentum.duration_ticks = prevValenceSign === newValenceSign
+    ? state.momentum.duration_ticks + 1
+    : 0;
+
+  // Decay impulse layer (current dimensions) toward momentum
+  const newValence = clamp(state.mood.valence + (newMomentum.valence - state.mood.valence) * IMPULSE_DECAY, -1.0, 1.0);
+  const newArousal = clamp(state.mood.arousal + (newMomentum.arousal - state.mood.arousal) * IMPULSE_DECAY, 0, 1.0);
+  const newEnergy = clamp(state.energy + (newMomentum.energy - state.energy) * IMPULSE_DECAY, 0, 1.0);
+  const newStress = clamp(state.stress + (newMomentum.stress - state.stress) * IMPULSE_DECAY, 0, 1.0);
+  const newCreativity = clamp(state.creativity + (newMomentum.creativity - state.creativity) * IMPULSE_DECAY, 0, 1.0);
+  const newSociability = clamp(state.sociability + (newMomentum.sociability - state.sociability) * IMPULSE_DECAY, 0, 1.0);
+
+  // Age impulse_history entries and trim
+  const agedHistory = state.impulse_history
+    .map(e => ({ ...e, tick_age: e.tick_age + 1 }))
+    .slice(-MAX_IMPULSE_HISTORY);
+
+  return {
+    ...state,
+    mood: {
+      valence: newValence,
+      arousal: newArousal,
+      description: describeMood(newValence, newArousal),
+    },
+    energy: newEnergy,
+    stress: newStress,
+    creativity: newCreativity,
+    sociability: newSociability,
+    momentum: newMomentum,
+    impulse_history: agedHistory,
+    threshold_break_cooldown: Math.max(0, state.threshold_break_cooldown - 1),
+  };
+}
+
+/**
+ * Apply an emotion impulse and record it in impulse_history.
+ * Also updates momentum via exponential weighted moving average.
+ */
+export function applyImpulse(
+  state: EmotionState,
+  delta: EmotionDelta,
+  cause: string,
+  importance: number,
+): EmotionState {
+  // Apply the impulse to current state
+  const afterDelta = applyDelta(state, delta, cause);
+
+  // Record in impulse_history
+  const entry: ImpulseHistoryEntry = {
+    delta,
+    cause,
+    importance,
+    timestamp: new Date().toISOString(),
+    tick_age: 0,
+  };
+  const newHistory = [...afterDelta.impulse_history, entry].slice(-MAX_IMPULSE_HISTORY);
+
+  // Update momentum: blend new impulse into momentum (EMA with alpha=0.3)
+  const alpha = 0.3;
+  const newMomentum: EmotionMomentum = {
+    valence: afterDelta.momentum.valence + ((delta.valence ?? 0) * alpha),
+    arousal: afterDelta.momentum.arousal + ((delta.arousal ?? 0) * alpha),
+    energy: afterDelta.momentum.energy + ((delta.energy ?? 0) * alpha),
+    stress: afterDelta.momentum.stress + ((delta.stress ?? 0) * alpha),
+    creativity: afterDelta.momentum.creativity + ((delta.creativity ?? 0) * alpha),
+    sociability: afterDelta.momentum.sociability + ((delta.sociability ?? 0) * alpha),
+    duration_ticks: afterDelta.momentum.duration_ticks,
+  };
+
+  return {
+    ...afterDelta,
+    impulse_history: newHistory,
+    momentum: newMomentum,
+  };
+}
+
+/**
+ * Rumination: each tick, roll for each impulse_history entry to see if it's recalled.
+ * Probability = (importance / 10) × 2^(-tick_age / 16) × (1 + resonance_bonus), capped at 0.3.
+ * At most 1 rumination per tick. First hit stops the loop.
+ * Returns updated state (with injected rumination impulse) and optional diary entry.
+ */
+export function rollRumination(
+  state: EmotionState,
+  rng: () => number = Math.random,
+): { state: EmotionState; diaryEntry: string | null } {
+  if (state.impulse_history.length === 0) {
+    return { state, diaryEntry: null };
+  }
+
+  for (const entry of state.impulse_history) {
+    const resonanceBonus = Math.sign(state.mood.valence) === Math.sign(entry.delta.valence ?? 0) ? 0.5 : 0;
+    const prob = clamp(
+      (entry.importance / 10) * Math.pow(2, -entry.tick_age / 16) * (1.0 + resonanceBonus),
+      0,
+      0.3,
+    );
+
+    if (rng() < prob) {
+      // Rumination triggered: inject a decayed impulse
+      const ruminationStrength = 0.3 + 0.2 * (entry.importance / 10);
+      const ruminationDelta: EmotionDelta = {};
+      if (entry.delta.valence !== undefined) ruminationDelta.valence = entry.delta.valence * ruminationStrength;
+      if (entry.delta.arousal !== undefined) ruminationDelta.arousal = entry.delta.arousal * ruminationStrength;
+      if (entry.delta.energy !== undefined) ruminationDelta.energy = entry.delta.energy * ruminationStrength;
+      if (entry.delta.stress !== undefined) ruminationDelta.stress = entry.delta.stress * ruminationStrength;
+      if (entry.delta.creativity !== undefined) ruminationDelta.creativity = entry.delta.creativity * ruminationStrength;
+      if (entry.delta.sociability !== undefined) ruminationDelta.sociability = entry.delta.sociability * ruminationStrength;
+
+      const updatedState = applyDelta(state, ruminationDelta, `反刍: ${entry.cause}`);
+      const diary = `突然又想起了${entry.cause}的事...`;
+      return { state: updatedState, diaryEntry: diary };
+    }
+  }
+
+  return { state, diaryEntry: null };
+}
+
+/**
+ * Check threshold break (Verisimilitude §1):
+ * When stress > 0.6 for 3+ consecutive ticks, triggers an emotional explosion.
+ * Returns updated state and optional diary entry.
+ */
+export function checkThresholdBreak(
+  state: EmotionState,
+): { state: EmotionState; diaryEntry: string | null } {
+  // Update consecutive high stress counter
+  const newConsecutive = state.stress > 0.6
+    ? state.consecutive_high_stress + 1
+    : 0;
+
+  const updatedState = {
+    ...state,
+    consecutive_high_stress: newConsecutive,
+  };
+
+  // Check if threshold break should trigger
+  if (newConsecutive < 3 || state.threshold_break_cooldown > 0) {
+    return { state: updatedState, diaryEntry: null };
+  }
+
+  // Threshold break! Stress crashes, valence spikes in accumulated direction
+  const valenceDirection = state.mood.valence >= 0 ? 1 : -1;
+  const valenceShift = valenceDirection * 0.4;
+  const newValence = clamp(state.mood.valence + valenceShift, -1.0, 1.0);
+  const newArousal = clamp(state.mood.arousal + 0.3, 0, 1.0);
+
+  const breakState: EmotionState = {
+    ...updatedState,
+    mood: {
+      valence: newValence,
+      arousal: newArousal,
+      description: describeMood(newValence, newArousal),
+    },
+    stress: 0.2,
+    consecutive_high_stress: 0,
+    threshold_break_cooldown: 5,
+    impulse_history: [
+      ...updatedState.impulse_history,
+      {
+        delta: { valence: valenceShift, arousal: 0.3, stress: -(state.stress - 0.2) },
+        cause: '情绪爆发',
+        importance: 8,
+        timestamp: new Date().toISOString(),
+        tick_age: 0,
+      },
+    ].slice(-MAX_IMPULSE_HISTORY),
+  };
+
+  const diary = state.mood.valence >= 0
+    ? '受不了了！！！压力太大了但是我要坚持！！'
+    : '真的好烦！！！为什么每次都这样...';
+
+  return { state: breakState, diaryEntry: diary };
 }

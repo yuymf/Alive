@@ -10,6 +10,9 @@
 import {
   EmotionState, IntentPool, IntentCategory, ScheduleToday, EventQueue,
   HeartbeatLog, HeartbeatLogEntry, CronSchedule, Aspirations, RigidSchedule, EMOTION_BASELINE,
+  DEFAULT_MOMENTUM, DEFAULT_UNDERTONE, BASE_RESISTANCE,
+  FlowState, DEFAULT_FLOW_STATE,
+  ChainAndCooldownState, DEFAULT_CHAIN_STATE,
 } from './types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
@@ -159,20 +162,35 @@ export async function runMorningPlan(): Promise<void> {
 
   // Build intent pool with seeds
   const intentPool: IntentPool = {
-    intents: decision.intent_seeds.map((seed, i) => ({
-      id: `seed_${Date.now()}_${i}`,
-      category: toIntentCategory(seed.category),
-      description: seed.description,
-      intensity: Math.min(10, Math.max(0, seed.intensity)),
-      source: 'accumulation' as const,
-      born_at: now.toISOString(),
-      decay_rate: 0.3,
-      satisfied_at: null,
-    })),
+    intents: decision.intent_seeds.map((seed, i) => {
+      const category = toIntentCategory(seed.category);
+      return {
+        id: `seed_${Date.now()}_${i}`,
+        category,
+        description: seed.description,
+        intensity: Math.min(10, Math.max(0, seed.intensity)),
+        source: 'accumulation' as const,
+        born_at: now.toISOString(),
+        decay_rate: 0.3,
+        satisfied_at: null,
+        resistance: BASE_RESISTANCE[category] ?? 0,
+        skipped_count: 0,
+        last_attempted: null,
+      };
+    }),
     last_updated: now.toISOString(),
   };
 
   // Build emotion state for morning (using ESTP baseline from spec)
+  // Set undertone from today's starting mood to guide emotional drift for the day
+  const morningUndertone = {
+    valence: EMOTION_BASELINE.valence!,
+    arousal: EMOTION_BASELINE.arousal!,
+    energy: EMOTION_BASELINE.energy! + 0.1,
+    stress: EMOTION_BASELINE.stress!,
+    creativity: EMOTION_BASELINE.creativity!,
+    sociability: EMOTION_BASELINE.sociability!,
+  };
   const emotion: EmotionState = {
     mood: { valence: EMOTION_BASELINE.valence!, arousal: EMOTION_BASELINE.arousal!, description: decision.mood_description },
     energy: EMOTION_BASELINE.energy! + 0.1, // Slightly above baseline: morning freshness
@@ -181,6 +199,11 @@ export async function runMorningPlan(): Promise<void> {
     sociability: EMOTION_BASELINE.sociability!,
     last_updated: now.toISOString(),
     recent_cause: '晨规划',
+    momentum: { ...DEFAULT_MOMENTUM },
+    undertone: morningUndertone,
+    impulse_history: [],
+    consecutive_high_stress: 0,
+    threshold_break_cooldown: 0,
   };
 
   // Build cron schedule (Spec §14)
@@ -206,6 +229,10 @@ export async function runMorningPlan(): Promise<void> {
   writeJSON(PATHS.intentPool, intentPool);
   writeJSON(PATHS.emotionState, emotion);
   writeJSON(PATHS.cronSchedule, cronSchedule);
+
+  // Reset flow state and chain events for new day
+  writeJSON(PATHS.flowState, { ...DEFAULT_FLOW_STATE });
+  writeJSON(PATHS.pendingChains, { ...DEFAULT_CHAIN_STATE });
 
   // Sync dynamic cron schedule to OpenClaw (non-fatal)
   const syncResult = syncCronSchedule(cronSchedule);

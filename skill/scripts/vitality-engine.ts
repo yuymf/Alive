@@ -40,10 +40,12 @@ const REPLENISHMENT: Record<string, number> = {
 export function drainVitality(
   state: VitalityState,
   emotion: EmotionState,
+  flowModifier?: number,
 ): VitalityState {
   const stressMultiplier = 1.0 + emotion.stress * 0.5;  // max 1.5x at full stress
   const arousalDiscount = emotion.mood.arousal < 0.3 ? 0.8 : 1.0;  // resting state costs less
-  const drain = BASE_DRAIN_PER_TICK * stressMultiplier * arousalDiscount;
+  const modifier = flowModifier ?? 1.0;
+  const drain = BASE_DRAIN_PER_TICK * stressMultiplier * arousalDiscount * modifier;
 
   return {
     ...state,
