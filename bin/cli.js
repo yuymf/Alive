@@ -5,6 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
+const { execSync, execFileSync } = require('child_process');
+const os = require('os');
+
 const OPENCLAW_DIR = path.join(process.env.HOME, '.openclaw');
 const SKILLS_DIR = path.join(OPENCLAW_DIR, 'skills');
 const WORKSPACE_DIR = path.join(OPENCLAW_DIR, 'workspace');
@@ -13,6 +16,7 @@ const SKILL_DEST = path.join(SKILLS_DIR, SKILL_NAME);
 const SOUL_FILE = path.join(WORKSPACE_DIR, 'SOUL.md');
 const MEMORY_DIR = path.join(WORKSPACE_DIR, 'memory', SKILL_NAME);
 const CONFIG_FILE = path.join(OPENCLAW_DIR, 'openclaw.json');
+const XHS_SKILLS_DIR = path.join(SKILLS_DIR, 'xiaohongshu-skills');
 
 const SKILL_SRC = path.join(__dirname, '..', 'skill');
 const DIST_SRC = path.join(__dirname, '..', 'dist');
@@ -65,16 +69,60 @@ function removeDirSafe(dir, label) {
 
 function isOpenClawCLIAvailable() {
   try {
-    require('child_process').execSync('which openclaw', { stdio: 'ignore' });
+    execSync('which openclaw', { stdio: 'ignore' });
     return true;
   } catch {
     return false;
   }
 }
 
-function registerCronJobs() {
-  const { execFileSync } = require('child_process');
+function isXhsSkillsInstalled() {
+  return fs.existsSync(path.join(XHS_SKILLS_DIR, 'scripts', 'cli.py'));
+}
 
+function isUvAvailable() {
+  try {
+    execSync('which uv', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getPythonVersion() {
+  try {
+    const output = execSync('python3 --version', { encoding: 'utf8' }).trim();
+    const match = output.match(/(\d+)\.(\d+)/);
+    if (match) return { major: parseInt(match[1]), minor: parseInt(match[2]) };
+  } catch { /* not found */ }
+  return null;
+}
+
+function probeXhsCli() {
+  try {
+    const cliPath = path.join(XHS_SKILLS_DIR, 'scripts', 'cli.py');
+    execSync(`uv run --directory "${XHS_SKILLS_DIR}" python "${cliPath}" check-login`, { stdio: 'ignore', timeout: 30000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function probeXhsCliVerbose() {
+  try {
+    const cliPath = path.join(XHS_SKILLS_DIR, 'scripts', 'cli.py');
+    const output = execSync(`uv run --directory "${XHS_SKILLS_DIR}" python "${cliPath}" check-login`, { encoding: 'utf8', timeout: 60000 });
+    return JSON.parse(output);
+  } catch (err) {
+    // check-login exits 1 when not logged in but still outputs JSON
+    if (err.stdout) {
+      try { return JSON.parse(err.stdout); } catch { /* fall through */ }
+    }
+    return null;
+  }
+}
+
+function registerCronJobs() {
   // Pre-flight: check if Gateway is reachable by listing jobs
   let existingJobs = [];
   try {
@@ -146,7 +194,6 @@ function registerCronJobs() {
 }
 
 function removeCronJobs() {
-  const { execSync } = require('child_process');
   const jobNames = ['minase:morning', 'minase:tick', 'minase:night'];
   for (const name of jobNames) {
     try {
@@ -187,6 +234,7 @@ async function configure() {
     { key: 'LLM_API_KEY', label: 'LLM API key' },
     { key: 'LLM_API_BASE', label: 'LLM API base URL' },
     { key: 'LLM_MODEL', label: 'LLM model name' },
+    { key: 'XHS_SKILLS_DIR', label: 'XiaoHongShu skills dir' },
   ];
 
   for (const { key, label } of keys) {
@@ -283,6 +331,14 @@ async function uninstall() {
     }
   }
 
+  // 2.6. Remove xiaohongshu-skills
+  const keepXhs = await ask(rl, '\n  Remove xiaohongshu-skills? (y/N): ');
+  if (keepXhs.trim().toLowerCase() === 'y') {
+    removeDirSafe(XHS_SKILLS_DIR, 'xiaohongshu-skills');
+  } else if (fs.existsSync(XHS_SKILLS_DIR)) {
+    ok(`xiaohongshu-skills preserved at ${XHS_SKILLS_DIR}`);
+  }
+
   // 3. Remove soul injection from SOUL.md
   log('Cleaning SOUL.md...');
   if (fs.existsSync(SOUL_FILE)) {
@@ -316,7 +372,7 @@ async function main() {
   console.log('  ==========================================\n');
 
   // Step 1: Verify OpenClaw
-  log('Step 1/9: Verifying OpenClaw installation...');
+  log('Step 1/10: Verifying OpenClaw installation...');
   if (!fs.existsSync(OPENCLAW_DIR)) {
     console.error('  ✗ OpenClaw not found at ~/.openclaw');
     console.error('    Install OpenClaw first: https://openclaw.ai');
@@ -327,7 +383,7 @@ async function main() {
   // Step 2: Collect API keys
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  log('Step 2/9: API key setup...');
+  log('Step 2/10: API key setup...');
   console.log('  Minase needs image generation to create cos photos.');
   console.log('  AIHubMix (AIHUBMIX_API_KEY) — https://aihubmix.com\n');
 
@@ -343,12 +399,107 @@ async function main() {
   const llmApiBase = await ask(rl, '  LLM_API_BASE (default: https://aihubmix.com/v1, press Enter to use default): ');
   const llmModel = await ask(rl, '  LLM_MODEL (default: claude-sonnet-4-20250514, press Enter to use default): ');
 
+  // XiaoHongShu skills setup
+  console.log('\n  XiaoHongShu (小红书内容浏览, optional):');
+  console.log('  Enables Minase to browse XiaoHongShu for cos trends and inspiration.');
+  console.log('  Requires: Python 3.11+, uv, Google Chrome.');
+  const xhsSetup = await ask(rl, '  Install xiaohongshu-skills? (y/N): ');
+  let xhsInstalled = false;
+
+  if (xhsSetup.trim().toLowerCase() === 'y') {
+    // Check uv
+    if (!isUvAvailable()) {
+      const installUv = await ask(rl, '  uv not found. Install now? (Y/n): ');
+      if (installUv.trim().toLowerCase() !== 'n') {
+        try {
+          execSync('curl -LsSf https://astral.sh/uv/install.sh | sh', { stdio: 'inherit', timeout: 60000 });
+          ok('uv installed');
+        } catch {
+          warn('Failed to install uv. Please install manually: https://docs.astral.sh/uv/');
+        }
+      }
+    } else {
+      ok('uv found');
+    }
+
+    // Check Python 3.11+
+    const pyVer = getPythonVersion();
+    if (!pyVer) {
+      warn('Python 3 not found. Please install Python 3.11+ before using xiaohongshu-skills.');
+    } else if (pyVer.major < 3 || (pyVer.major === 3 && pyVer.minor < 11)) {
+      warn(`Python ${pyVer.major}.${pyVer.minor} found, but 3.11+ is required.`);
+    } else {
+      ok(`Python ${pyVer.major}.${pyVer.minor} found`);
+    }
+
+    // Check Chrome
+    let chromeFound = false;
+    try {
+      execSync('which google-chrome || which chromium-browser || which chromium || which "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"', { stdio: 'ignore' });
+      chromeFound = true;
+      ok('Chrome/Chromium found');
+    } catch {
+      if (os.platform() === 'linux') {
+        warn('Google Chrome or Chromium not found.');
+        const installChrome = await ask(rl, '  Install chromium-browser via apt? (Y/n): ');
+        if (installChrome.trim().toLowerCase() !== 'n') {
+          try {
+            execSync('sudo apt-get update -qq && sudo apt-get install -y -qq chromium-browser', { stdio: 'inherit', timeout: 120000 });
+            chromeFound = true;
+            ok('chromium-browser installed');
+          } catch {
+            warn('Failed to install chromium-browser. Install manually: sudo apt install chromium-browser');
+          }
+        }
+      } else {
+        warn('Google Chrome not found. Install Chrome before using xiaohongshu-skills.');
+      }
+    }
+
+    // Clone or update repo
+    if (isXhsSkillsInstalled()) {
+      ok('xiaohongshu-skills already installed');
+      const update = await ask(rl, '  Pull latest version? (y/N): ');
+      if (update.trim().toLowerCase() === 'y') {
+        try {
+          execSync(`git -C "${XHS_SKILLS_DIR}" pull`, { stdio: 'inherit', timeout: 60000 });
+          ok('xiaohongshu-skills updated');
+        } catch (err) {
+          warn(`Failed to update: ${err.message}`);
+        }
+      }
+    } else {
+      log('Cloning xiaohongshu-skills...');
+      try {
+        fs.mkdirSync(SKILLS_DIR, { recursive: true });
+        execSync(`git clone https://github.com/autoclaw-cc/xiaohongshu-skills.git "${XHS_SKILLS_DIR}"`, { stdio: 'inherit', timeout: 120000 });
+        ok(`xiaohongshu-skills cloned to ${XHS_SKILLS_DIR}`);
+      } catch (err) {
+        warn(`Failed to clone xiaohongshu-skills: ${err.message}`);
+        warn('You can install manually: git clone https://github.com/autoclaw-cc/xiaohongshu-skills.git ~/.openclaw/skills/xiaohongshu-skills/');
+      }
+    }
+
+    // Run uv sync
+    if (fs.existsSync(XHS_SKILLS_DIR) && isUvAvailable()) {
+      log('Running uv sync...');
+      try {
+        execSync(`cd "${XHS_SKILLS_DIR}" && uv sync`, { stdio: 'inherit', timeout: 120000 });
+        ok('Python dependencies installed');
+      } catch (err) {
+        warn(`uv sync failed: ${err.message}`);
+        warn('Run manually: cd ~/.openclaw/skills/xiaohongshu-skills && uv sync');
+      }
+    }
+
+    xhsInstalled = isXhsSkillsInstalled();
+  }
+
   rl.close();
 
   // Check/install Python dependencies for Instagram bridge
   if (igUsername) {
     log('Checking Python dependencies for Instagram bridge...');
-    const { execSync } = require('child_process');
     try {
       execSync('python3 -c "import instagrapi"', { stdio: 'ignore' });
       ok('instagrapi already installed');
@@ -364,7 +515,7 @@ async function main() {
   }
 
   // Step 3: Copy skill files
-  log('Step 3/9: Installing skill files...');
+  log('Step 3/10: Installing skill files...');
   if (fs.existsSync(SKILL_DEST)) {
     warn(`Existing skill found at ${SKILL_DEST} — overwriting`);
   }
@@ -373,7 +524,7 @@ async function main() {
   ok(`Skill files copied to ${SKILL_DEST}`);
 
   // Step 4: Update openclaw.json
-  log('Step 4/9: Registering skill in OpenClaw config...');
+  log('Step 4/10: Registering skill in OpenClaw config...');
   let config = {};
   if (fs.existsSync(CONFIG_FILE)) {
     try {
@@ -395,13 +546,14 @@ async function main() {
       ...(llmApiKey && { LLM_API_KEY: llmApiKey }),
       ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
       ...(llmModel && { LLM_MODEL: llmModel }),
+      ...(xhsInstalled && { XHS_SKILLS_DIR: XHS_SKILLS_DIR }),
     }
   };
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
   ok('openclaw.json updated');
 
   // Step 5: Initialize memory directories
-  log('Step 5/9: Setting up memory directories...');
+  log('Step 5/10: Setting up memory directories...');
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations'), { recursive: true });
   const diaryPath = path.join(MEMORY_DIR, 'diary.md');
   if (!fs.existsSync(diaryPath)) {
@@ -466,6 +618,33 @@ async function main() {
   if (!fs.existsSync(postHistoryPath)) {
     fs.writeFileSync(postHistoryPath, JSON.stringify({ "posts": [] }, null, 2));
   }
+  // post-impulse.json
+  const postImpulsePath = path.join(MEMORY_DIR, 'post-impulse.json');
+  if (!fs.existsSync(postImpulsePath)) {
+    fs.writeFileSync(postImpulsePath, JSON.stringify({
+      value: 0,
+      last_post_at: 0,
+      posts_today_date: '',
+      posts_today: 0,
+    }, null, 2));
+    console.log('  ✓ post-impulse.json');
+  }
+  // inspiration-refs/
+  const inspirationRefsDir = path.join(MEMORY_DIR, 'inspiration-refs');
+  if (!fs.existsSync(inspirationRefsDir)) {
+    fs.mkdirSync(inspirationRefsDir, { recursive: true });
+    console.log('  ✓ inspiration-refs/');
+  }
+  // Copy reference images
+  const srcRefs = path.join(__dirname, '..', 'skill', 'assets', 'references');
+  const destRefs = path.join(SKILL_DEST, 'assets', 'references');
+  if (fs.existsSync(srcRefs) && !fs.existsSync(destRefs)) {
+    fs.mkdirSync(destRefs, { recursive: true });
+    for (const file of fs.readdirSync(srcRefs)) {
+      fs.copyFileSync(path.join(srcRefs, file), path.join(destRefs, file));
+    }
+    console.log('  ✓ reference images');
+  }
   const socialMetaPath = path.join(MEMORY_DIR, 'relations', 'social', 'meta.json');
   if (!fs.existsSync(socialMetaPath)) {
     fs.writeFileSync(socialMetaPath, JSON.stringify({"instagram_following":[],"xiaohongshu_following":[],"stats":{"core":0,"familiar":0,"cognitive":0,"dormant":0}}, null, 2));
@@ -484,7 +663,7 @@ async function main() {
   ok(`Memory initialized at ${MEMORY_DIR}`);
 
   // Step 6: Deploy hooks
-  log('Step 6/9: Deploying memory hooks...');
+  log('Step 6/10: Deploying memory hooks...');
   const hooksToInstall = ['minase-context-loader', 'minase-memory-save'];
   const hooksSrc = path.join(SKILL_SRC, 'hooks');
   for (const hookName of hooksToInstall) {
@@ -499,7 +678,7 @@ async function main() {
   }
 
   // Step 7: Inject persona into SOUL.md
-  log('Step 7/9: Injecting Minase persona into SOUL.md...');
+  log('Step 7/10: Injecting Minase persona into SOUL.md...');
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
   const injection = fs.readFileSync(SOUL_INJECTION_SRC, 'utf8');
   const marker = '<!-- minase-soul-start -->';
@@ -517,7 +696,7 @@ async function main() {
   ok('SOUL.md updated');
 
   // Step 8: Register heartbeat cron jobs
-  log('Step 8/9: Registering heartbeat cron jobs...');
+  log('Step 8/10: Registering heartbeat cron jobs...');
   if (isOpenClawCLIAvailable()) {
     registerCronJobs();
   } else {
@@ -528,8 +707,38 @@ async function main() {
     warn('  openclaw cron add --name "minase:night" --cron "0 23 * * *" --session isolated --message "[cron:night] Run night reflection"');
   }
 
-  // Step 9: Summary
-  log('Step 9/9: Installation complete!\n');
+  // Step 9: Verify XHS CLI (if installed)
+  if (xhsInstalled) {
+    log('Step 9/10: Verifying XiaoHongShu CLI...');
+    const reachable = probeXhsCli();
+    if (reachable) {
+      ok('xiaohongshu-skills CLI is working (logged in)');
+    } else {
+      warn('XiaoHongShu not logged in yet.');
+      // Try verbose probe to get QR code info
+      const probeResult = probeXhsCliVerbose();
+      if (probeResult && probeResult.qrcode_image_url) {
+        console.log('\n  A QR code has been generated for login.');
+        console.log('  Option A — Scan QR code:');
+        console.log('    1. Open this data URL in a browser to see the QR code:');
+        console.log(`       ${probeResult.qrcode_image_url.slice(0, 80)}...`);
+        if (probeResult.qrcode_path) {
+          console.log(`    Or view the saved image: ${probeResult.qrcode_path}`);
+        }
+        console.log(`    2. After scanning, run:`);
+        console.log(`       cd "${XHS_SKILLS_DIR}" && uv run python scripts/cli.py wait-login`);
+      }
+      console.log('\n  Option B — Phone verification:');
+      console.log(`    1. cd "${XHS_SKILLS_DIR}" && uv run python scripts/cli.py send-code --phone <your_phone>`);
+      console.log('    2. uv run python scripts/cli.py verify-code --code <sms_code>');
+      console.log('\n  XiaoHongShu browsing will be skipped until login succeeds.');
+    }
+  } else {
+    log('Step 9/10: XiaoHongShu not installed — skipping.');
+  }
+
+  // Step 10: Summary
+  log('Step 10/10: Installation complete!\n');
   console.log('  水瀬 is ready. Start OpenClaw and she will be there.\n');
   console.log('  Tips:');
   console.log('  - Just chat with her naturally. She will remember you.');
@@ -541,6 +750,12 @@ async function main() {
   }
   if (!igUsername || !igPassword) {
     warn('No Instagram credentials provided — posting disabled until you add them.');
+  }
+  if (xhsInstalled) {
+    ok('XiaoHongShu integration enabled — she can browse 小红书 for cos trends.');
+    console.log(`    Skills dir: ${XHS_SKILLS_DIR}`);
+  } else {
+    warn('XiaoHongShu not configured — re-run installer to add it.');
   }
   console.log('');
 }
