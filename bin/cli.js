@@ -127,7 +127,8 @@ function registerCronJobs() {
   let existingJobs = [];
   try {
     const raw = execFileSync('openclaw', ['cron', 'list', '--json'], { timeout: 10000, encoding: 'utf8' });
-    existingJobs = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    existingJobs = Array.isArray(parsed) ? parsed : (parsed.jobs ?? []);
   } catch {
     warn('OpenClaw Gateway is not running — cannot register cron jobs.');
     warn('Start the Gateway first, then re-run: npx minase@latest');
