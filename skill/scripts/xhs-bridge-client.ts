@@ -132,6 +132,7 @@ function mapDetailToNoteDetail(raw: Record<string, unknown>): XhsNoteDetail {
 
 /** Check if xiaohongshu-skills CLI is available and logged in. */
 export async function isXhsAvailable(): Promise<boolean> {
+  if (process.env.E2E_MOCK_XHS === '1') return false;
   try {
     await callXhsCli('check-login');
     return true;

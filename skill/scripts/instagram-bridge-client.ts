@@ -8,11 +8,42 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 
+function mockInstagramResponse(command: string): unknown {
+  const ts = Date.now();
+  switch (command) {
+    case 'upload_photo':
+      return { media_pk: `mock_${ts}`, media_code: 'mock_code' };
+    case 'upload_album':
+      return { media_pk: `mock_album_${ts}`, media_code: 'mock_album_code' };
+    case 'get_media_insights':
+      return {
+        likes: 15 + Math.floor(Math.random() * 30),
+        comments: 2 + Math.floor(Math.random() * 5),
+        reach: 200 + Math.floor(Math.random() * 300),
+      };
+    case 'hashtag_top':
+      return {
+        posts: [
+          { caption: 'Amazing cosplay! #cosplay #anime', likes: 500, thumbnail_url: '' },
+          { caption: 'Daily OOTD #fashion #daily', likes: 300, thumbnail_url: '' },
+        ],
+      };
+    case 'get_user_info':
+      return { follower_count: 150, following_count: 200, media_count: 10 };
+    default:
+      console.log(`[MOCK] Unhandled Instagram command: ${command}`);
+      return {};
+  }
+}
+
 /**
  * Call the Python instagram-bridge.py script with a subcommand and args.
  * Returns parsed JSON from stdout.
  */
 export function callInstagramBridge(command: string, args: Record<string, string>): Promise<unknown> {
+  if (process.env.E2E_MOCK_INSTAGRAM === '1') {
+    return Promise.resolve(mockInstagramResponse(command));
+  }
   return new Promise((resolve, reject) => {
     // Resolve bridge path: works both in installed context (__dirname = scripts/)
     // and development context (__dirname = dist/, bridge at skill/scripts/)

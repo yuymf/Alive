@@ -125,6 +125,9 @@ function listAllCronJobs(): CronJob[] {
  * Non-fatal: returns status per job so caller can log gracefully.
  */
 export function syncCronSchedule(schedule: CronSchedule): SyncResult {
+  if (process.env.E2E_MOCK_CRON === '1') {
+    return { synced: true, details: { morning: 'synced', tick: 'synced', night: 'synced' } };
+  }
   const expressions = buildCronExpression(schedule);
   const allJobs = listAllCronJobs();
 
