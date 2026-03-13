@@ -11,6 +11,7 @@ import {
   DEFAULT_FLOW_STATE, DEFAULT_CHAIN_STATE,
   DEFAULT_POST_IMPULSE,
 } from '../skill/scripts/types';
+import { runQualityJudge, writeQualitySummary } from './e2e-quality-judge';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const SANDBOX_DIR = path.join(PROJECT_ROOT, 'tests', 'e2e-sandbox');
@@ -307,5 +308,22 @@ describe('E2E Lifecycle', () => {
     console.log(`Diary length: ${diary.length} chars`);
     console.log(`Wisdom entries: ${wisdom.wisdom.length}`);
     console.log(`Pipeline ran: ${pipelineRanAtLeastOnce}`);
+
+    // Run quality judge
+    console.log('\n=== Running Quality Judge ===');
+    const qualityReport = await runQualityJudge(OUTPUT_DIR);
+
+    // Write reports
+    fs.writeFileSync(
+      path.join(OUTPUT_DIR, 'quality-report.json'),
+      JSON.stringify(qualityReport, null, 2),
+    );
+    writeQualitySummary(qualityReport, OUTPUT_DIR);
+
+    console.log(`Quality: ${qualityReport.overall_pass ? 'PASS' : 'FAIL'}`);
+    console.log(`  Image: ${qualityReport.image_consistency.pass ? 'PASS' : 'FAIL'}`);
+    console.log(`  Emotion: ${qualityReport.emotion_dynamics.pass ? 'PASS' : 'FAIL'}`);
+    console.log(`  Memory: ${qualityReport.memory_quality.pass ? 'PASS' : 'FAIL'}`);
+    if (qualityReport.diagnosis) console.log(`  Diagnosis: ${qualityReport.diagnosis}`);
   }, 600_000); // 10 minute timeout
 });
