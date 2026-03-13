@@ -19,7 +19,7 @@ const MAX_REFERENCE_BYTES = 500_000; // 500KB — avoid oversized API payloads
 
 // Hardcoded appearance traits — extracted from personality.md
 // Do NOT parse markdown dynamically; update this constant if personality changes.
-const APPEARANCE_TRAITS = '18岁女生，辣妹系风格，参考图中主角，胸大臀翘，可爱美丽，性感，诱惑，自信外放的气质';
+const APPEARANCE_TRAITS = '18岁女生，辣妹系风格，胸大，臀翘，性感，美丽，自信外放的气质。注意：严格参考所给图片主角，保持人脸特征与参考图一致，五官轮廓、发型发色、体型比例都要匹配';
 
 const AIHUBMIX_BASE_URL = 'https://aihubmix.com/v1/chat/completions';
 const AIHUBMIX_MODEL = 'gemini-3-pro-image-preview';
