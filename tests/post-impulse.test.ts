@@ -150,3 +150,35 @@ describe('checkDormancy', () => {
     expect(checkDormancy(state)).toBe(0);
   });
 });
+
+describe('impulse rhythm simulation', () => {
+  it('simulates 5-day dormancy triggering a boost', () => {
+    let state = makeState({ last_post_at: Date.now() - 6 * 24 * 60 * 60 * 1000, value: 10 });
+    const boost = checkDormancy(state);
+    expect(boost).toBe(50);
+    state = accumulateImpulse(state, boost);
+    expect(state.value).toBe(60);
+    state = accumulateImpulse(state, 10);
+    expect(shouldInjectPostDesire(state)).toBe(true);
+  });
+
+  it('simulates daily limit preventing 4th post', () => {
+    const today = getLocalDate();
+    let state = makeState({ value: 80, posts_today: 0, posts_today_date: today });
+    state = resetImpulseAfterPost(state);
+    expect(state.posts_today).toBe(1);
+    state = accumulateImpulse(state, 80);
+    state = resetImpulseAfterPost(state);
+    expect(state.posts_today).toBe(2);
+    state = accumulateImpulse(state, 80);
+    state = resetImpulseAfterPost(state);
+    expect(state.posts_today).toBe(3);
+  });
+
+  it('simulates rapid decay after 2 posts today', () => {
+    const today = getLocalDate();
+    let state = makeState({ value: 80, posts_today: 2, posts_today_date: today });
+    for (let i = 0; i < 5; i++) { state = decayImpulse(state); }
+    expect(state.value).toBe(0);
+  });
+});
