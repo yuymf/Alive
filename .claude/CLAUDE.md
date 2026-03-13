@@ -16,7 +16,9 @@ npm run test:watch     # Run tests in watch mode
 npx vitest run tests/emotion-engine.test.ts   # Run a single test file
 ```
 
-Install the skill locally: `npx minase@latest` (runs `bin/cli.js` 9-step wizard).
+Install the skill locally: `npx minase@latest` (runs `bin/cli.js` 10-step wizard).
+
+Subcommands: `minase --configure` (update env vars), `minase --uninstall`.
 
 Manual script execution (post-install, scripts live at `~/.openclaw/skills/minase/scripts/`):
 ```bash
@@ -41,13 +43,13 @@ The skill uses four OpenClaw mechanisms:
    - `minase:tick` (`0 8-22 * * *`) → `heartbeat-tick.js` — hourly perceive-intend-act loop.
    - `minase:night` (`0 23 * * *`) → `night-reflect.js` — daily reflection producing wisdom, preferences, aspirations, personality drift.
 
-4. **Environment variables** — stored in `~/.openclaw/openclaw.json` under `skills.entries.minase.env`: `AIHUBMIX_API_KEY` (image gen), `IMGURL_TOKEN` (image hosting), `INSTAGRAM_USERNAME`/`INSTAGRAM_PASSWORD`/`INSTAGRAM_TOTP_SECRET` (posting), `LLM_API_KEY`/`LLM_API_BASE`/`LLM_MODEL` (heartbeat/reflection LLM calls via OpenAI-compatible API), `XHS_MCP_URL` (XiaoHongShu MCP endpoint, default: `http://localhost:18060/mcp`).
+4. **Environment variables** — stored in `~/.openclaw/openclaw.json` under `skills.entries.minase.env`: `AIHUBMIX_API_KEY` (image gen), `IMGURL_TOKEN` (image hosting), `INSTAGRAM_USERNAME`/`INSTAGRAM_PASSWORD`/`INSTAGRAM_TOTP_SECRET` (posting), `LLM_API_KEY`/`LLM_API_BASE`/`LLM_MODEL` (heartbeat/reflection LLM calls via OpenAI-compatible API), `XHS_SKILLS_DIR` (XiaoHongShu skills directory, default: `~/.openclaw/skills/xiaohongshu-skills`).
 
 ### Heartbeat System (Core Loop)
 
 `heartbeat-tick.ts` is the main entry point, routing by hour to `runMorningPlan()` (7:00), `runNightReflect()` (23:00), or `regularTick()` (8:00-22:00). Sleep hours (0:00-6:00) are skipped.
 
-Each regular tick runs: **Perceive** (read emotion/events/schedule/world) → **Intend** (rule engine + LLM decision) → **Act** (real/simulated/inner actions). The tick orchestrates six engines:
+Each regular tick runs: **Perceive** (read emotion/events/schedule/world) → **Intend** (rule engine + LLM decision) → **Act** (real/simulated/inner actions). The tick orchestrates seven engines:
 
 - **Emotion engine** (`emotion-engine.ts`) — 6-dimensional state (valence/arousal/energy/stress/creativity/sociability) with hourly decay toward ESTP baseline, event deltas, and bidirectional coupling with intents.
 - **Intent engine** (`intent-engine.ts`) — 7 intent categories (创作/社交/窥屏/表达/学习/休息/梦想) with rule-based accumulation, event boosts, schedule injection, and LLM final arbitration.
@@ -55,17 +57,18 @@ Each regular tick runs: **Perceive** (read emotion/events/schedule/world) → **
 - **Confidence engine** (`confidence-engine.ts`) — 0.5x-1.5x multiplier on creation intent, updated by comparing post performance to 7-day average, with streak bonuses.
 - **Random events** (`random-events.ts`) — 10% per-tick chance of stochastic life events (12 types) that inject emotion deltas and intent boosts.
 - **Social graph engine** (`social-graph-engine.ts`) — 4-tier relationship system (core/familiar/cognitive/dormant) with closeness decay, dormancy processing, and social intent generation.
+- **Post impulse engine** (`post-impulse.ts`) — 0-100 impulse value that accumulates from photo success (+20-30), inspiration image discovery (+10-15), and high emotion (+5-10/tick), with per-tick decay (-3 base, extra -5/-15 based on daily post count) and 5-day dormancy fallback (+50). When impulse ≥ 70, injects posting desire into LLM context.
 
 ### Post Pipeline
 
 When heartbeat chooses `type: "real", skill: "post-pipeline"`, it spawns a detached child process running `post-pipeline.ts`:
-1. `refreshInspiration()` — collect trends from web
-2. `planPhoto()` — LLM decides whether/what to photograph
-3. `generateImage()` — AIHubMix Gemini API + reference image
-4. `shouldConsiderPosting()` — rule gate (>16h since last post, not posted today)
-5. `planPost()` — LLM selects photo, writes caption/hashtags
-6. `postToInstagram()` — Python instagrapi bridge (`instagram-bridge.py` called via `instagram-bridge-client.ts`)
-7. Record to `post-history.json` + `diary.md`
+1. `refreshInspiration()` — collect trends from web + download inspiration reference images (saved to `inspiration-refs/`, FIFO 20 cap, 7-day expiry)
+2. `planPhoto()` — LLM decides whether/what to photograph, outputs multi-shot descriptions (`shots[]` with angle/variation per image)
+3. `generateImageSet()` — per-shot reference selection via `selectReferences()`, AIHubMix Gemini API with multi-reference fallback chain (multi-image → grid composite → single), jimp post-processing (noise/blur/vignette/color temp per style), quality check with selfie-aware thresholds (7 for selfie, 6 otherwise)
+4. `shouldConsiderPosting()` — 3 posts/day hard limit (replaced old 16h interval)
+5. `planPost()` — LLM selects multiple photos (`selectedPhotos[]`), writes caption/hashtags
+6. `postToInstagram()` — single photo via `upload_photo` or carousel via `upload_album` (Python instagrapi bridge)
+7. Record to `post-history.json` + `diary.md` + reset post impulse
 
 ### Memory System (4 Layers)
 
@@ -110,4 +113,5 @@ All JSON state reads/writes go through `file-utils.ts` which provides:
 - **TypeScript config:** Strict mode, ES2022 target, CommonJS modules. Source in `skill/scripts/`, output to `dist/`. Tests excluded from compilation.
 - **Testing:** Vitest with `globals: true`. Tests in `tests/`. Engine modules (emotion, intent, vitality, confidence, random-events, social-graph) all have unit tests. Tests import source `.ts` files directly.
 - **Templates:** 10 prompt templates in `skill/templates/` (e.g., `heartbeat-prompt.md`, `morning-plan-prompt.md`). Templates use `{placeholder}` syntax replaced at runtime.
-- **Installer:** `bin/cli.js` is plain Node.js (no build step). It copies skill files, registers cron jobs, deploys hooks, injects persona into `SOUL.md`, and initializes 15+ state files with defaults.
+- **Installer:** `bin/cli.js` is plain Node.js (no build step). It copies skill files, registers cron jobs, deploys hooks, injects persona into `SOUL.md`, and initializes 15+ state files with defaults. Subcommands: `--configure`, `--uninstall`.
+- **XiaoHongShu:** Optional Python CDP-based CLI at `~/.openclaw/skills/xiaohongshu-skills/`. The installer can git clone the repo and run `uv sync`. `xhs-bridge-client.ts` calls it via `child_process.execFile('python3', ['scripts/cli.py', ...])`, following the same subprocess pattern as `instagram-bridge-client.ts`.

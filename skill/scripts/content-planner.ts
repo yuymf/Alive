@@ -39,13 +39,6 @@ const PHASE_RATIOS: Record<number, Record<ContentStyle, number>> = {
 const MAX_POSTS_PER_DAY = 3;
 
 /**
- * Backward-compat helper: get the first image path from a post record.
- */
-function getFirstImagePath(post: PostRecord): string {
-  return post.image_local_paths?.[0] ?? (post as any).image_local_path ?? '';
-}
-
-/**
  * Determine current phase based on follower count.
  * Reads the real follower count from socialMeta.
  */
