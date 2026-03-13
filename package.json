@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "vitest run tests/e2e-lifecycle.test.ts --timeout 600000",
+    "e2e": "vitest run tests/e2e-lifecycle.test.ts --testTimeout 600000",
     "prepack": "npm run build"
   },
   "files": [
