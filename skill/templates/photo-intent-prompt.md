@@ -16,6 +16,18 @@
 ## 收藏的灵感图（小红书上看到的好图）
 {saved_inspirations}
 
+## 灵感参考图片
+
+{inspiration_refs}
+
+## 拍照张数参考
+
+根据内容类型选择拍照张数：
+- cos: 3-6张（多角度/多表情组图）
+- daily: 1-2张（随手拍）
+- behind_scenes: 2-4张（过程记录）
+- travel: 4-8张（旅行多场景）
+
 ## 最近发过的类型
 {recent_styles}
 
@@ -27,11 +39,17 @@
 以 JSON 格式返回：
 ```json
 {
-  "wantToShoot": true/false,
-  "sceneDescription": "你想拍的画面描述（用你自己的话，口语化）",
+  "wantToShoot": true,
+  "sceneDescription": "整体场景描述",
   "style": "cos/daily/behind_scenes/travel",
   "mood": "当前心情",
-  "reason": "为什么想/不想拍（写入日记的内心独白，用你的语气）"
+  "reason": "为什么想拍",
+  "imageCount": 3,
+  "shots": [
+    {"description": "第一张具体描述", "angle": "机位角度", "variation": "与其他图的差异"},
+    {"description": "第二张具体描述", "angle": "机位角度", "variation": "与其他图的差异"}
+  ],
+  "referenceInspiration": "ig_123_xxx.jpg 或 null"
 }
 ```
 
