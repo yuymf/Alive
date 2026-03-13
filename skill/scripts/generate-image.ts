@@ -17,26 +17,21 @@ import { postProcessImage } from './image-post-process';
 
 const MAX_REFERENCE_BYTES = 500_000; // 500KB — avoid oversized API payloads
 
-// Hardcoded appearance traits — extracted from personality.md
-// Do NOT parse markdown dynamically; update this constant if personality changes.
-const APPEARANCE_TRAITS = '18岁女生，辣妹系风格，丰满，性感，美丽，自信外放的气质。注意：严格参考所给图片主角，保持人脸特征与参考图一致，五官轮廓、发型发色、体型比例都要匹配';
+// Per-style camera/lens anchors — Google recommends specifying camera model for photorealism
+const CAMERA_ANCHORS: Record<ContentStyle, string> = {
+  cos: 'Canon EOS R5, 85mm f/1.4, studio lighting, shallow depth of field',
+  daily: 'iPhone 15 Pro, natural lighting, casual framing',
+  behind_scenes: 'iPhone handheld, overhead fluorescent, slightly messy',
+  travel: 'iPhone 15 Pro wide angle, golden hour, travel snapshot feel',
+};
 
-const INSTAGRAM_PHOTO_HEADER = '写实摄影风格、适合 Instagram 的高质量照片。';
-const NEGATIVE_CONSTRAINTS = [
-  '不要卡通/二次元/插画感',
-  '不要过度磨皮与塑料肤质',
-  '不要夸张瘦脸/大眼滤镜感',
-  '避免广角畸变与不自然拉伸',
-  '避免多余手指/手部异常/肢体扭曲',
-  '不要文字水印、字幕、Logo、签名',
-  '不要低清晰度、强噪点、严重糊掉',
-].join('；');
+const NEGATIVE_CONSTRAINTS = '不要卡通/二次元风格；不要多余手指或肢体异常；不要文字水印';
 
 const AIHUBMIX_BASE_URL = 'https://aihubmix.com/v1/chat/completions';
 const AIHUBMIX_MODEL = 'gemini-3.1-flash-image-preview';
 const DEFAULT_ASPECT_RATIO = '3:4'; // Instagram portrait
 const MAX_RETRIES = 1;
-const QUALITY_THRESHOLD = 4;
+const QUALITY_THRESHOLD = 6;
 const MAX_QUALITY_RETRIES = 2;
 
 export interface GenerateImageOptions {
@@ -56,39 +51,38 @@ export interface GenerateImageResult {
 }
 
 /**
- * Convert Minase's natural language scene description into a structured
- * image generation prompt following instagram.md's template format.
+ * Convert Minase's natural language scene description into a narrative
+ * image generation prompt following Google's recommended Gemini template.
  */
 export function buildImagePrompt(sceneDescription: string, style: ContentStyle): string {
-  const styleHints: Record<ContentStyle, string> = {
-    cos: '工作室或外景cosplay拍摄，角色还原度高，灯光精致',
-    daily: '日常自拍，街头风格，自然光，随意感',
-    behind_scenes: 'cos制作幕后花絮，工作台或试穿，未完成感',
-    travel: '旅行外景拍摄，风景搭配人物，旅行感',
+  const styleContext: Record<ContentStyle, string> = {
+    cos: 'a professional cosplay photoshoot in a studio or scenic outdoor location, with precise costume detail and dramatic lighting',
+    daily: 'a casual everyday moment, street style, relaxed and candid',
+    behind_scenes: 'a behind-the-scenes glimpse of cosplay preparation, with an unfinished and authentic feel',
+    travel: 'a travel snapshot at a scenic destination, blending the subject with the environment',
   };
 
+  const camera = CAMERA_ANCHORS[style];
+  const context = styleContext[style];
+
   return [
-    INSTAGRAM_PHOTO_HEADER,
-    '人物一致性（最重要）：严格参考所给图片主角，保持人脸特征与参考图一致（五官轮廓、发型发色、体型比例匹配）。',
-    `人物：同一位女性（参考图一致），${APPEARANCE_TRAITS}。`,
-    `场景：${sceneDescription}（补全地点/时间段/氛围/季节，让画面更像“真实发生”）。`,
-    `风格：${styleHints[style]}。`,
-    '构图/镜头：明确半身/全身/特写与相机角度；主体占比偏大；背景允许有环境信息但不要喧宾夺主。',
-    '光线/质感：自然肤色不过曝，细节清晰但不过度锐化；色彩高级，清透或轻胶片质感，ins 氛围感。',
-    `负面约束：${NEGATIVE_CONSTRAINTS}。`,
+    `A photorealistic Instagram photo of ${context}. ${sceneDescription}`,
+    `同一位女性（严格匹配参考图：五官轮廓、发型发色、体型），18岁，辣妹风，自信外放。Shot on ${camera}.`,
+    `氛围自然真实，色彩高级清透，肤色自然不过曝，构图舒适，主体突出。`,
+    NEGATIVE_CONSTRAINTS,
   ].join('\n');
 }
 
-const REALISTIC_HINTS: Record<string, string> = {
-  daily: '用iPhone拍摄，自然光线，允许轻微过曝但不要炸白；浅景深；手持轻微微晃；非专业但舒服的构图（主体偶尔偏离中心）；背景允许少量生活元素但不要脏乱',
-  behind_scenes: '手机随手拍的花絮，光线一般，有工作台杂物，未完成感，不是摆拍',
-  travel: '手机广角，自然色彩，有游客感，背景有路人，光线不完美，有时逆光或阴影',
-};
-
 export function buildRealisticPrompt(sceneDescription: string, style: ContentStyle): string {
+  const realisticHints: Record<string, string> = {
+    daily: '允许轻微过曝和手持微晃，非专业但舒服的构图，主体偶尔偏离中心',
+    behind_scenes: '光线一般，有工作台杂物，未完成感，不是摆拍',
+    travel: '自然色彩，有游客感，光线不完美，允许逆光或阴影',
+  };
+
   const base = buildImagePrompt(sceneDescription, style);
-  const hint = REALISTIC_HINTS[style];
-  return hint ? `${base}\n真实感补充（可轻微瑕疵但不要影响人物一致性与清晰度）：${hint}。` : base;
+  const hint = realisticHints[style];
+  return hint ? `${base}\n真实感细节：${hint}。` : base;
 }
 
 /**
@@ -240,7 +234,7 @@ async function checkQuality(generatedImagePath: string, referenceImagePath: stri
       {
         role: 'user',
         content: [
-          { type: 'text', text: '对比这两张图片中的人物。她们看起来像同一个人吗？照片自然吗？只返回一个1-10的数字评分，不要其他文字。' },
+          { type: 'text', text: '对比这两张图。评估：1. 人脸相似度（五官、轮廓是否像同一人）2. 照片自然度（是否像真实照片而非AI生成）3. 整体质量（清晰度、构图、光线）。只返回一个1-10的综合评分数字，不要其他文字。7分以上=可用。' },
           { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${referenceBase64}` } },
           { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${generatedBase64}` } },
         ],
@@ -326,7 +320,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
     : undefined;
 
   const selfie = isSelfieType(style, prompt);
-  const qualityThreshold = selfie ? 5 : QUALITY_THRESHOLD;
+  const qualityThreshold = selfie ? 7 : QUALITY_THRESHOLD;
   const maxQualityRetries = selfie ? 2 : MAX_QUALITY_RETRIES;
 
   // Generate with retry
@@ -361,9 +355,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
           return { localPath, textResponse, timestamp };
         }
 
-        const correctionPrompt = (selfie && qAttempt >= 1)
-          ? `${prompt}，注意：请严格保持人脸特征与参考图一致，五官轮廓、发型发色、体型比例都要匹配`
-          : prompt;
+        const correctionPrompt = `${prompt}\n请特别注意让人物面部特征与参考图完全一致，这是最重要的要求。五官轮廓、发型发色、体型比例必须匹配参考图。`;
 
         // Re-generate
         console.log(`Quality score ${score} < ${qualityThreshold}, retrying (${qAttempt + 1}/${maxQualityRetries})...`);

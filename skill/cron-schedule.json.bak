@@ -1,0 +1,65 @@
+{
+  "date": "2026-03-14",
+  "heartbeats": [
+    {
+      "time": "09:30",
+      "type": "morning"
+    },
+    {
+      "time": "10:00",
+      "type": "regular"
+    },
+    {
+      "time": "11:00",
+      "type": "regular"
+    },
+    {
+      "time": "12:00",
+      "type": "regular"
+    },
+    {
+      "time": "13:00",
+      "type": "regular"
+    },
+    {
+      "time": "14:00",
+      "type": "regular"
+    },
+    {
+      "time": "15:00",
+      "type": "regular"
+    },
+    {
+      "time": "16:00",
+      "type": "regular"
+    },
+    {
+      "time": "17:00",
+      "type": "regular"
+    },
+    {
+      "time": "18:00",
+      "type": "regular"
+    },
+    {
+      "time": "19:00",
+      "type": "regular"
+    },
+    {
+      "time": "20:00",
+      "type": "regular"
+    },
+    {
+      "time": "21:00",
+      "type": "regular"
+    },
+    {
+      "time": "22:00",
+      "type": "regular"
+    },
+    {
+      "time": "23:30",
+      "type": "night"
+    }
+  ]
+}
