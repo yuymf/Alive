@@ -18,6 +18,9 @@ import { refreshInspiration } from './inspiration-collector';
 import { planPhoto, planPost, shouldConsiderPosting } from './content-planner';
 import { callInstagramBridge, uploadAlbum } from './instagram-bridge-client';
 import { resetImpulseAfterPost, accumulateImpulse } from './post-impulse';
+import type { GalleryPhoto, PhotoGallery } from './types';
+import { DEFAULT_PHOTO_GALLERY } from './types';
+import { addPhotoToGallery, pruneGallery } from './gallery-send';
 
 const DEFAULT_POST_HISTORY: PostHistory = { posts: [] };
 const PHOTO_ROLL_RETENTION_DAYS = 30;
@@ -104,6 +107,9 @@ function cleanupPhotoRoll(): void {
       fs.rmdirSync(dirPath);
     }
   }
+
+  // Also prune gallery entries older than retention period
+  pruneGallery();
 }
 
 /**
@@ -163,6 +169,68 @@ export async function checkPostStats(): Promise<void> {
 }
 
 /**
+ * Write gallery entries for a batch of generated images.
+ * Called after generateImageSet() with upload results.
+ */
+export function writePhotosToGallery(
+  images: Array<{ localPath: string; timestamp: number }>,
+  uploadResults: Array<{ url: string }>,
+  style: ContentStyle,
+  description: string,
+  tags: string[],
+): void {
+  const emotion = hydrateEmotionState(readJSON<Record<string, unknown>>(PATHS.emotionState, {
+    mood: { valence: 0.3, arousal: 0.5, description: '普通' },
+    energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
+    last_updated: null, recent_cause: '',
+    momentum: { ...DEFAULT_MOMENTUM },
+    undertone: { ...DEFAULT_UNDERTONE },
+    impulse_history: [],
+    consecutive_high_stress: 0,
+    threshold_break_cooldown: 0,
+  }));
+
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+    const upload = uploadResults[i] ?? { url: '' };
+    const hour = new Date(img.timestamp).getHours();
+    const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+    const seq = String(Date.now() % 1000).padStart(3, '0');
+    const dateStr = getLocalDate(new Date(img.timestamp)).replace(/-/g, '');
+
+    const photo: GalleryPhoto = {
+      id: `${dateStr}_${style}_${timeOfDay}_${seq}`,
+      localPath: img.localPath,
+      publicUrl: upload.url,
+      description,
+      tags: [...tags],
+      style,
+      emotion: { valence: emotion.mood.valence, energy: emotion.energy },
+      createdAt: new Date(img.timestamp).toISOString(),
+      sharedAt: null,
+      shareCount: 0,
+      postedToInstagram: false,
+    };
+
+    addPhotoToGallery(photo);
+  }
+}
+
+/**
+ * Mark photos as posted to Instagram by localPath.
+ */
+export function markPhotosAsPosted(localPaths: string[]): void {
+  const gallery = readJSON<PhotoGallery>(PATHS.photoGallery, DEFAULT_PHOTO_GALLERY);
+  const pathSet = new Set(localPaths);
+  const updatedGallery: PhotoGallery = {
+    photos: gallery.photos.map(p =>
+      pathSet.has(p.localPath) ? { ...p, postedToInstagram: true } : p
+    ),
+  };
+  writeJSON(PATHS.photoGallery, updatedGallery);
+}
+
+/**
  * Main pipeline entry point.
  */
 async function runPipeline(): Promise<void> {
@@ -216,6 +284,21 @@ async function runPipeline(): Promise<void> {
     lastPhotoStyle = photoIntent.style;
     writeDiary(photoIntent.reason, 4, ['拍照', photoIntent.style]);
     console.log(`Photos saved: ${setResult.images.length} successful, ${setResult.failed} failed`);
+
+    // Upload all photos to ImgURL and write gallery index
+    const uploadResults: Array<{ url: string }> = [];
+    for (const img of setResult.images) {
+      try {
+        const uploadResult = await uploadToImgURL(img.localPath);
+        uploadResults.push({ url: uploadResult.url });
+      } catch (err) {
+        console.error(`ImgURL upload failed for ${img.localPath}: ${(err as Error).message}`);
+        uploadResults.push({ url: '' });
+      }
+    }
+
+    const photoTags = [photoIntent.style, ...(photoIntent.sceneDescription.match(/[\u4e00-\u9fff]+/g) ?? []).slice(0, 5)];
+    writePhotosToGallery(setResult.images, uploadResults, photoIntent.style, photoIntent.sceneDescription, photoTags);
   } catch (err) {
     // "拍糊了"
     writeDiary('今天想拍照来着，但是没拍好...手机有点卡', 2, ['拍照', '失败']);
@@ -291,6 +374,9 @@ async function runPipeline(): Promise<void> {
       posts: [...normalizedHistory.posts, newRecord],
     };
     writeJSON(PATHS.postHistory, updatedHistory);
+
+    // Mark posted photos in gallery
+    markPhotosAsPosted(existingPhotos);
 
     // Reset impulse after successful post
     let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);

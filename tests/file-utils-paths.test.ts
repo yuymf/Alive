@@ -25,7 +25,7 @@ describe('file-utils path override', () => {
   });
 
   it('resetBasePaths restores defaults', () => {
-    setBasePaths('/tmp/a', '/tmp/b');
+    setBasePaths('/tmp/test-memory', '/tmp/test-skill');
     resetBasePaths();
     expect(PATHS.emotionState).toContain('.openclaw');
   });
@@ -39,5 +39,10 @@ describe('file-utils path override', () => {
     expect(result.test).toBe(true);
 
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('PATHS.photoGallery points to photo-gallery.json', () => {
+    setBasePaths('/tmp/test-memory', '/tmp/test-skill');
+    expect(PATHS.photoGallery).toBe('/tmp/test-memory/photo-gallery.json');
   });
 });
