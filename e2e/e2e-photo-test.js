@@ -21,7 +21,7 @@ const { generateImage, buildRealisticPrompt, buildImagePrompt } = require('../di
 const { postProcessImage } = require('../dist/image-post-process');
 
 const REFERENCE_IMAGE = path.join(
-  process.env.HOME, '.openclaw', 'skills', 'minase', 'assets', 'minase-reference.png'
+  process.env.HOME, '.openclaw', 'skills', 'minase', 'assets', 'references', 'minase-reference.png'
 );
 const OUTPUT_DIR = path.join(__dirname, 'e2e-output');
 
