@@ -40,6 +40,19 @@ cd MizuSan
 node bin/cli.js --uninstall
 ```
 
+## 本地开发测试
+
+修改代码后，一条命令重新构建并重装（**会清除记忆数据，保留 API Key 配置**）：
+
+```bash
+npm run build && node bin/cli.js --reinstall
+```
+
+`--reinstall` 会：
+1. 静默卸载（删除技能文件、hooks、cron 任务、SOUL 注入、记忆数据）
+2. 从 `~/.openclaw/openclaw.json` 读取已有的 API Key 配置
+3. 用最新构建文件重新安装，无需再次输入任何配置
+
 卸载器会：
 1. 移除技能文件 (`~/.openclaw/skills/minase/`)
 2. 从 `openclaw.json` 中注销技能
