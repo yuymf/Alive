@@ -5,6 +5,19 @@
 const DEFAULT_API_BASE = 'https://aihubmix.com/v1';
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 
+const isDebug = () => process.env.LLM_DEBUG === '1' || process.env.LLM_DEBUG === 'true';
+
+function debugLog(label: string, content: string): void {
+  if (!isDebug()) return;
+  const ts = new Date().toISOString();
+  const separator = '─'.repeat(60);
+  console.error(`\n${separator}`);
+  console.error(`[LLM_DEBUG] ${ts} ${label}`);
+  console.error(separator);
+  console.error(content);
+  console.error(separator);
+}
+
 interface LLMMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -33,8 +46,11 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<string>
   const apiBase = (process.env.LLM_API_BASE || DEFAULT_API_BASE).replace(/\/+$/, '');
   const model = process.env.LLM_MODEL || DEFAULT_MODEL;
 
+  debugLog('REQUEST', `model: ${model} | maxTokens: ${maxTokens}\n\n${prompt}`);
+
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      const startTime = Date.now();
       const res = await fetch(`${apiBase}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -49,16 +65,23 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<string>
       });
 
       if (!res.ok) {
-        throw new Error(`API returned ${res.status}: ${await res.text()}`);
+        const errText = await res.text();
+        debugLog('ERROR', `HTTP ${res.status}: ${errText}`);
+        throw new Error(`API returned ${res.status}: ${errText}`);
       }
 
       const data = await res.json() as OpenAIChatResponse;
-      return data.choices?.[0]?.message?.content ?? '';
+      const content = data.choices?.[0]?.message?.content ?? '';
+      const elapsed = Date.now() - startTime;
+      debugLog('RESPONSE', `elapsed: ${elapsed}ms | attempt: ${attempt + 1}\n\n${content}`);
+      return content;
     } catch (err) {
       if (attempt === 0) {
+        debugLog('RETRY', `attempt 1 failed: ${(err as Error).message}`);
         console.error(`LLM call failed, retrying in 10s: ${(err as Error).message}`);
         await new Promise(r => setTimeout(r, 10_000));
       } else {
+        debugLog('FAIL', `attempt 2 failed: ${(err as Error).message}`);
         throw err;
       }
     }
@@ -76,7 +99,9 @@ export async function callLLMJSON<T>(prompt: string, maxTokens = 1024): Promise<
   // Try to extract JSON from code block or raw text
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
   if (!jsonMatch) {
+    debugLog('JSON_PARSE_FAIL', `raw response:\n${text}`);
     throw new Error(`Could not parse JSON from LLM response: ${text.slice(0, 200)}`);
   }
+  debugLog('JSON_PARSED', jsonMatch[1]);
   return JSON.parse(jsonMatch[1]);
 }

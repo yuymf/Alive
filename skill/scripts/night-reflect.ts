@@ -11,11 +11,16 @@ import {
   EmotionState, HeartbeatLog, HeartbeatLogEntry, WisdomStore, WisdomEntry,
   Preferences, Aspirations, PersonalityDrift, PersonalityModifier,
   SocialRelation, SocialMeta,
+  DEFAULT_MOMENTUM, DEFAULT_UNDERTONE,
+  FlowState, DEFAULT_FLOW_STATE,
+  ChainAndCooldownState, DEFAULT_CHAIN_STATE,
+  IntentPool,
 } from './types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from './file-utils';
 import { callLLMJSON } from './llm-client';
 import { rebalanceTiers, updateMetaStats } from './social-graph-engine';
 import { getLocalDate, formatLocalTime } from './time-utils';
+import { processChainEvents } from './random-events';
 
 interface NightReflectDecision {
   new_wisdom: Array<{ lesson: string; importance: number; tags: string[] }>;
@@ -42,6 +47,31 @@ export async function runNightReflect(): Promise<void> {
     .map(l => `${l.timestamp.split('T')[1].slice(0, 5)} [${l.status}] ${l.chosen_actions?.join(', ') || '—'}`)
     .join('\n');
 
+  // Process remaining chain events before reflection
+  let chainState = readJSON<ChainAndCooldownState>(PATHS.pendingChains, DEFAULT_CHAIN_STATE);
+  const chainResult = processChainEvents(chainState);
+  chainState = chainResult.remaining;
+  // Note chain events in diary if any triggered
+  for (const triggered of chainResult.triggered) {
+    appendText(PATHS.diary, `\n## ${today} 23:00\n${triggered.event.diary_entry}\n情绪: 连锁事件 | 重要性: 2\n标签: 连锁事件, night\n`);
+  }
+
+  // Gather flow statistics for today
+  const flowTicks = todayLogs.filter(l => l.flow_state === 'flow').length;
+  const driftTicks = todayLogs.filter(l => l.flow_state === 'drift').length;
+  const flowSummary = flowTicks > 0 || driftTicks > 0
+    ? `今天的状态: ${flowTicks}小时沉浸, ${driftTicks}小时摆烂`
+    : '';
+
+  // Gather procrastination data from intent pool
+  const intentPool = readJSON<IntentPool>(PATHS.intentPool, { intents: [], last_updated: null });
+  const procrastinatedIntents = intentPool.intents
+    .filter(i => i.satisfied_at === null && i.skipped_count >= 3)
+    .map(i => `${i.description} (拖了${i.skipped_count}次)`);
+  const procrastinationSummary = procrastinatedIntents.length > 0
+    ? `一直拖延的事: ${procrastinatedIntents.join('、')}`
+    : '';
+
   const wisdom = readJSON<WisdomStore>(PATHS.coreWisdom, { version: 1, wisdom: [], total_importance_since_reflection: 0 });
   const preferences = readJSON<Preferences>(PATHS.preferences, { cos_characters: [], content_style: [], active_hours: [], social_platforms: [] });
   const aspirations = readJSON<Aspirations>(PATHS.aspirations, { aspirations: [] });
@@ -51,7 +81,7 @@ export async function runNightReflect(): Promise<void> {
   const prompt = template
     .replace('{current_time}', formatLocalTime(now))
     .replace('{today_diary}', todayDiary || '今天似乎没写什么日记。')
-    .replace('{today_heartbeat_summary}', logSummary || '没有心跳记录。')
+    .replace('{today_heartbeat_summary}', [logSummary, flowSummary, procrastinationSummary].filter(Boolean).join('\n') || '没有心跳记录。')
     .replace('{core_wisdom}', wisdom.wisdom.length > 0
       ? wisdom.wisdom.map(w => `- ${w.lesson} (重要性: ${w.importance})`).join('\n')
       : '还没有积累人生教训。')
@@ -214,14 +244,36 @@ export async function runNightReflect(): Promise<void> {
   }
   writeJSON(PATHS.socialMeta, updateMetaStats(socialMeta, socialRelations));
 
-  // Reset emotion for sleep
-  const sleepEmotion: EmotionState = {
+  // Reset emotion for sleep — set tomorrow's undertone from today's experience
+  const defaultSleepEmotion: EmotionState = {
     mood: { valence: 0.2, arousal: 0.1, description: '准备睡觉了' },
     energy: 0.3, stress: 0.1, creativity: 0.2, sociability: 0.1,
     last_updated: now.toISOString(),
     recent_cause: '睡前反思完毕',
+    momentum: { ...DEFAULT_MOMENTUM },
+    undertone: { ...DEFAULT_UNDERTONE },
+    impulse_history: [],
+    consecutive_high_stress: 0,
+    threshold_break_cooldown: 0,
+  };
+  const todayEmotionAvg = readJSON<EmotionState>(PATHS.emotionState, defaultSleepEmotion);
+  const tomorrowUndertone = {
+    valence: (todayEmotionAvg.mood.valence + DEFAULT_UNDERTONE.valence) / 2,
+    arousal: DEFAULT_UNDERTONE.arousal,
+    energy: DEFAULT_UNDERTONE.energy,
+    stress: Math.max(0, (todayEmotionAvg.stress + DEFAULT_UNDERTONE.stress) / 2),
+    creativity: (todayEmotionAvg.creativity + DEFAULT_UNDERTONE.creativity) / 2,
+    sociability: DEFAULT_UNDERTONE.sociability,
+  };
+  const sleepEmotion: EmotionState = {
+    ...defaultSleepEmotion,
+    undertone: tomorrowUndertone,
   };
   writeJSON(PATHS.emotionState, sleepEmotion);
+
+  // Reset flow state and clean up chain events for new day
+  writeJSON(PATHS.flowState, { ...DEFAULT_FLOW_STATE });
+  writeJSON(PATHS.pendingChains, chainState);
 
   console.log(`Night reflection complete. +${decision.new_wisdom.length} wisdom, ${decision.preference_updates.length} pref updates, ${decision.aspiration_updates.length} aspiration updates.`);
 }

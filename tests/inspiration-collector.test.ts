@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock all dependencies before importing
-vi.mock('../skill/scripts/xhs-mcp-client', () => ({
-  isXhsMcpAvailable: vi.fn(),
+vi.mock('../skill/scripts/xhs-bridge-client', () => ({
+  isXhsAvailable: vi.fn(),
   listXhsFeed: vi.fn(),
   searchXhsNotes: vi.fn(),
   getXhsNoteDetail: vi.fn(),
@@ -38,8 +38,8 @@ describe('collectXiaohongshuTrends', () => {
   });
 
   it('should return empty data when MCP is unavailable', async () => {
-    const { isXhsMcpAvailable } = await import('../skill/scripts/xhs-mcp-client');
-    (isXhsMcpAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    const { isXhsAvailable } = await import('../skill/scripts/xhs-bridge-client');
+    (isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(false);
 
     const { collectXiaohongshuTrends } = await import('../skill/scripts/inspiration-collector');
     const result = await collectXiaohongshuTrends();
@@ -48,8 +48,8 @@ describe('collectXiaohongshuTrends', () => {
   });
 
   it('should collect feed + search data and call LLM', async () => {
-    const xhsMock = await import('../skill/scripts/xhs-mcp-client');
-    (xhsMock.isXhsMcpAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    const xhsMock = await import('../skill/scripts/xhs-bridge-client');
+    (xhsMock.isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
     (xhsMock.listXhsFeed as ReturnType<typeof vi.fn>).mockResolvedValue([
       { id: 'n1', xsec_token: 't1', title: 'Feed Post', description: 'desc', likes: 100, user: 'u1', tags: [] },
     ]);
@@ -74,8 +74,8 @@ describe('collectXiaohongshuTrends', () => {
   });
 
   it('should merge saved_inspirations with existing ones and cap at 20', async () => {
-    const xhsMock = await import('../skill/scripts/xhs-mcp-client');
-    (xhsMock.isXhsMcpAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    const xhsMock = await import('../skill/scripts/xhs-bridge-client');
+    (xhsMock.isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
     (xhsMock.listXhsFeed as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
@@ -121,8 +121,8 @@ describe('collectXiaohongshuTrends', () => {
   });
 
   it('should prefer new entries over old ones with same source_note_id', async () => {
-    const xhsMock = await import('../skill/scripts/xhs-mcp-client');
-    (xhsMock.isXhsMcpAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    const xhsMock = await import('../skill/scripts/xhs-bridge-client');
+    (xhsMock.isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
     (xhsMock.listXhsFeed as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 

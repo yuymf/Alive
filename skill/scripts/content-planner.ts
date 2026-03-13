@@ -10,6 +10,7 @@ import * as path from 'path';
 import {
   ContentStyle, PhotoIntent, PostIntent, PostHistory, PostRecord,
   InspirationData, EmotionState, ScheduleToday,
+  DEFAULT_MOMENTUM, DEFAULT_UNDERTONE,
 } from './types';
 import { PATHS, readJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
@@ -27,6 +28,11 @@ const DEFAULT_EMOTION: EmotionState = {
   mood: { valence: 0.3, arousal: 0.5, description: '普通' },
   energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
   last_updated: null, recent_cause: '',
+  momentum: { ...DEFAULT_MOMENTUM },
+  undertone: { ...DEFAULT_UNDERTONE },
+  impulse_history: [],
+  consecutive_high_stress: 0,
+  threshold_break_cooldown: 0,
 };
 
 // Phase 1 ratios from instagram.md (authority source)

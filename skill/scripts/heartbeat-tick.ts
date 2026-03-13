@@ -12,12 +12,21 @@ import {
   HeartbeatLog, HeartbeatLogEntry, ActionOutput, RigidSchedule, WisdomStore,
   SocialRelation, SocialMeta, VitalityState, ConfidenceState, PostHistory,
   CronSchedule, PostImpulseState, DEFAULT_POST_IMPULSE,
+  DEFAULT_MOMENTUM, DEFAULT_UNDERTONE,
+  FlowState, DEFAULT_FLOW_STATE,
+  ChainAndCooldownState, DEFAULT_CHAIN_STATE,
+  hydrateEmotionState, hydrateIntent,
 } from './types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from './file-utils';
-import { decayTowardBaseline, applyDelta, computeEmotionIntentCoupling, intentSatisfactionFeedback } from './emotion-engine';
+import {
+  decayTowardBaseline, applyDelta, computeEmotionIntentCoupling,
+  intentSatisfactionFeedback, decayThreeLayer, applyImpulse,
+  rollRumination, checkThresholdBreak,
+} from './emotion-engine';
 import {
   decaySatisfied, accumulateIntents, applyEventBoosts,
-  injectScheduleIntents, getTopIntents, satisfyIntent, addIntent,
+  injectScheduleIntents, getTopIntents, getTopIntentsRaw, satisfyIntent, addIntent,
+  applyResistanceToPool, checkImpulseBreakthrough, processProcrastination,
 } from './intent-engine';
 import { callLLMJSON } from './llm-client';
 import { runMorningPlan } from './morning-plan';
@@ -29,16 +38,26 @@ import {
 import { spawn } from 'child_process';
 import { drainVitality, applyActionCost, replenishVitality, getVitalityConstraints, DEFAULT_VITALITY } from './vitality-engine';
 import { updateConfidence, decayConfidence, getCreationRateMultiplier, getConfidenceMoodHint, DEFAULT_CONFIDENCE } from './confidence-engine';
-import { rollRandomEvent } from './random-events';
+import { rollContextAwareEvent, processChainEvents, EventContext } from './random-events';
 import { isActiveHeartbeatHour } from './heartbeat-gate';
 import { accumulateImpulse, decayImpulse, shouldInjectPostDesire, checkDormancy } from './post-impulse';
 import { getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
+import {
+  checkFlowEntry, checkDriftEntry, checkFlowExit, checkDriftExit,
+  tickFlow, resetFlow, generateFlowDiary, generateDriftDiary,
+  computeVoiceDirective, LastAction,
+} from './flow-engine';
 
 // Default initial states (Spec §16)
 const DEFAULT_EMOTION: EmotionState = {
   mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
   energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
   last_updated: null, recent_cause: '初始化',
+  momentum: { ...DEFAULT_MOMENTUM },
+  undertone: { ...DEFAULT_UNDERTONE },
+  impulse_history: [],
+  consecutive_high_stress: 0,
+  threshold_break_cooldown: 0,
 };
 const DEFAULT_INTENT_POOL: IntentPool = { intents: [], last_updated: null };
 const DEFAULT_SCHEDULE: ScheduleToday = { date: null, rigid: [], flexible: [], generated_by: null };
@@ -133,13 +152,15 @@ async function executeSimulatedAction(
   actionDesc: string,
   emotion: EmotionState,
   scheduleContext: string,
+  voiceDirective: string = '',
 ): Promise<ActionOutput> {
   const template = readTemplate('simulated-action.md');
   const prompt = template
     .replace('{action_description}', actionDesc)
     .replace('{emotion_summary}', `${emotion.mood.description} (valence: ${emotion.mood.valence.toFixed(1)})`)
     .replace('{current_time}', formatTime())
-    .replace('{schedule_context}', scheduleContext);
+    .replace('{schedule_context}', scheduleContext)
+    .replace('{voice_directive}', voiceDirective || '正常叙事语气。');
 
   return callLLMJSON<ActionOutput>(prompt, 800);
 }
@@ -154,9 +175,13 @@ async function regularTick(): Promise<void> {
   const todayStr = getLocalDate(now);
   const timeStr = getLocalTimeHHMM(now);
 
-  // 1. Read state
-  let emotion = readJSON<EmotionState>(PATHS.emotionState, DEFAULT_EMOTION);
-  let intentPool = readJSON<IntentPool>(PATHS.intentPool, DEFAULT_INTENT_POOL);
+  // 1. Read state (+ hydration for backward compat)
+  let emotion = hydrateEmotionState(readJSON(PATHS.emotionState, DEFAULT_EMOTION) as unknown as Record<string, unknown>);
+  let intentPool: IntentPool = readJSON<IntentPool>(PATHS.intentPool, DEFAULT_INTENT_POOL);
+  intentPool = {
+    ...intentPool,
+    intents: intentPool.intents.map(i => hydrateIntent(i as unknown as Record<string, unknown>)),
+  };
   const schedule = readJSON<ScheduleToday>(PATHS.scheduleToday, DEFAULT_SCHEDULE);
   const events = readJSON<EventQueue>(PATHS.eventQueue, DEFAULT_EVENT_QUEUE);
   const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, DEFAULT_HEARTBEAT_LOG);
@@ -165,6 +190,8 @@ async function regularTick(): Promise<void> {
   const worldContext = readText(PATHS.world).split('\n').slice(-10).join('\n');
   let vitality = readJSON<VitalityState>(PATHS.vitalityState, DEFAULT_VITALITY);
   let confidence = readJSON<ConfidenceState>(PATHS.confidenceState, DEFAULT_CONFIDENCE);
+  let flowState = readJSON<FlowState>(PATHS.flowState, DEFAULT_FLOW_STATE);
+  let chainState = readJSON<ChainAndCooldownState>(PATHS.pendingChains, DEFAULT_CHAIN_STATE);
 
   // 1b. Read and update impulse state
   let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
@@ -181,20 +208,51 @@ async function regularTick(): Promise<void> {
     impulse = accumulateImpulse(impulse, emotionBoost);
   }
 
-  // 2. Perception: decay emotion + drain vitality
-  emotion = decayTowardBaseline(emotion);
-  vitality = drainVitality(vitality, emotion);
+  // 2. Perception: three-layer emotion decay + rumination + threshold break
+  emotion = decayThreeLayer(emotion);
+  const flowDrainModifier = flowState.status === 'flow' ? 0.7 : 1.0;
+  vitality = drainVitality(vitality, emotion, flowDrainModifier);
   confidence = decayConfidence(confidence);
 
-  // 2b. Social graph: decay relations, process dormancy, generate social intents
+  // Rumination check
+  const ruminationResult = rollRumination(emotion);
+  emotion = ruminationResult.state;
+  if (ruminationResult.diaryEntry) {
+    appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${ruminationResult.diaryEntry}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: 反刍\n`);
+    console.log(`Rumination: ${ruminationResult.diaryEntry}`);
+  }
+
+  // Threshold break check
+  const thresholdResult = checkThresholdBreak(emotion);
+  emotion = thresholdResult.state;
+  const thresholdBroke = thresholdResult.diaryEntry !== null;
+  if (thresholdResult.diaryEntry) {
+    appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${thresholdResult.diaryEntry}\n情绪: ${emotion.mood.description} | 重要性: 8\n标签: 情绪爆发\n`);
+    console.log(`Threshold break: ${thresholdResult.diaryEntry}`);
+  }
+
+  // 2b. Process pending chain events
+  const chainResult = processChainEvents(chainState);
+  chainState = chainResult.remaining;
+  for (const triggered of chainResult.triggered) {
+    emotion = applyDelta(emotion, triggered.event.emotion_delta, triggered.event.description);
+    for (const boost of triggered.event.intent_boosts) {
+      intentPool = addIntent(intentPool, boost.category, triggered.event.description, boost.boost, 'event');
+    }
+    appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${triggered.event.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: 连锁事件\n`);
+    console.log(`Chain event: ${triggered.event.description}`);
+  }
+
+  // 2c. Social graph: decay relations, process dormancy, generate social intents
   const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { instagram_following: [], xiaohongshu_following: [], stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
   let socialRelations = readAllJSON<SocialRelation>(PATHS.socialInstagramDir);
   socialRelations = decayAllRelations(socialRelations, now);
   const dormancyResult = processDormancy(socialRelations, now);
   socialRelations = dormancyResult.active;
 
-  // 2c. Reactivate dormant relations with new interactions
+  // 2d. Reactivate dormant relations with new interactions
   const unprocessedEvents = events.events.filter(e => !e.processed);
+  const hasNewEvent = unprocessedEvents.length > 0;
   for (const event of unprocessedEvents) {
     const eventUserId = (event.data as { user_id?: string }).user_id;
     if (!eventUserId) continue;
@@ -213,26 +271,100 @@ async function regularTick(): Promise<void> {
   const updatedMeta = updateMetaStats(socialMeta, socialRelations);
   writeJSON(PATHS.socialMeta, updatedMeta);
 
+  // 3. Narrative continuity: build recent tick summaries and last inner monologue
+  const recentLogs = heartbeatLog.logs.filter(l => l.status === 'completed').slice(-3);
+  const recentTickSummaries = recentLogs
+    .map(l => l.tick_summary || (l.chosen_actions ? `做了: ${l.chosen_actions.join(', ')}` : '(无摘要)'))
+    .map((s, i) => `- ${recentLogs.length - i}小时前: ${s}`)
+    .join('\n') || '（还没有之前的记录）';
+
+  const lastLog = heartbeatLog.logs.filter(l => l.status === 'completed').slice(-1)[0];
+  const lastInnerMonologue = lastLog?.inner_monologue
+    ? `> 你上一个小时的内心独白是：「${lastLog.inner_monologue}」\n> 现在请接着你的思绪继续。`
+    : '';
+
+  // 3b. Voice directive
+  const voiceDirective = computeVoiceDirective(flowState.status, emotion, thresholdBroke);
+
+  // 4. Flow state judgment
+  const rigidNow = getActiveRigidSchedule(schedule, hour, weekday);
+  const scheduleContext = rigidNow
+    ? `${rigidNow.activity}中，可做: ${rigidNow.allowed_actions.join(', ')}`
+    : '自由时段';
+
+  // Path A: currently in flow
+  if (flowState.status === 'flow') {
+    const exitCheck = checkFlowExit(flowState, intentPool, vitality.vitality, rigidNow, hasNewEvent);
+    if (!exitCheck.shouldExit) {
+      // Continue flow — no LLM call
+      flowState = tickFlow(flowState);
+      const flowDiary = generateFlowDiary(flowState, emotion);
+      appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${flowDiary}\n情绪: ${emotion.mood.description} | 重要性: 7\n标签: flow, ${flowState.category}\n`);
+
+      // Write state and return early
+      writeFlowTickState(now, emotion, intentPool, events, vitality, confidence, impulse, flowState, chainState, heartbeatLog, {
+        tickSummary: `flow中: ${flowState.activity}`,
+        innerMonologue: null,
+        actions: [`[flow] ${flowState.activity}`],
+        importance: 7,
+        voiceDirective,
+      });
+      console.log(`Flow tick #${flowState.duration_ticks}: ${flowState.activity}`);
+      return;
+    }
+    // Exit flow
+    console.log(`Flow exit: ${exitCheck.reason}`);
+    appendText(PATHS.diary, `\n> 💭 ${exitCheck.reason}...从${flowState.activity}中回过神来\n`);
+    flowState = resetFlow();
+  }
+
+  // Path B: currently in drift
+  if (flowState.status === 'drift') {
+    const exitCheck = checkDriftExit(flowState, intentPool, vitality.vitality, hasNewEvent);
+    if (!exitCheck.shouldExit) {
+      // Continue drift — no LLM call
+      flowState = tickFlow(flowState);
+      vitality = replenishVitality(vitality, 'browsing_light');
+      const driftDiary = generateDriftDiary(flowState);
+      appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${driftDiary}\n情绪: ${emotion.mood.description} | 重要性: 2\n标签: drift\n`);
+
+      // Write state and return early
+      writeFlowTickState(now, emotion, intentPool, events, vitality, confidence, impulse, flowState, chainState, heartbeatLog, {
+        tickSummary: 'drift中: 刷手机/发呆',
+        innerMonologue: null,
+        actions: ['[drift] 刷手机'],
+        importance: 2,
+        voiceDirective,
+      });
+      console.log(`Drift tick #${flowState.duration_ticks}`);
+      return;
+    }
+    // Exit drift
+    console.log(`Drift exit: ${exitCheck.reason}`);
+    appendText(PATHS.diary, `\n> 💭 ${exitCheck.reason}...不再发呆了\n`);
+    flowState = resetFlow();
+  }
+
+  // Path C: normal tick
   // Count consecutive active heartbeats for rest calculation
-  const recentLogs = heartbeatLog.logs.filter(l => l.status === 'completed').slice(-10);
-  const consecutiveActive = recentLogs.length;
+  const consecutiveActive = heartbeatLog.logs.filter(l => l.status === 'completed').slice(-10).length;
 
-  // Hours since last post (scan diary for post entries)
+  // Hours since last post
   const lastPostMatch = diary.match(/发了新 Instagram 帖子/g);
-  const lastPostHoursAgo = lastPostMatch ? 24 : 72; // Simplified: check diary more thoroughly in production
+  const lastPostHoursAgo = lastPostMatch ? 24 : 72;
 
-  // 3. Intent phase: rule engine
+  // 5. Intent phase: rule engine
   intentPool = decaySatisfied(intentPool);
-  intentPool = accumulateIntents(intentPool, hour, lastPostHoursAgo, consecutiveActive, events.events.some(e => !e.processed));
+  intentPool = accumulateIntents(intentPool, hour, lastPostHoursAgo, consecutiveActive, hasNewEvent);
   intentPool = applyEventBoosts(intentPool, events);
   intentPool = injectScheduleIntents(intentPool, schedule, hour);
 
-  // 3b. Inject social graph intents
+  // 5b. Inject social graph intents
   for (const si of socialIntents) {
     intentPool = addIntent(intentPool, si.category, si.description, si.intensity, 'accumulation');
   }
 
-  // 3c. Apply emotion→intent coupling (non-linear dimension interaction)
+  // 5c. Apply emotion→intent coupling
   const couplingMultipliers = computeEmotionIntentCoupling(emotion);
   const vitalityConstraints = getVitalityConstraints(vitality.vitality);
   const creationMultiplier = getCreationRateMultiplier(confidence.confidence);
@@ -248,50 +380,84 @@ async function regularTick(): Promise<void> {
     }),
   };
 
-  // 3d. Random perturbation: "life happens"
-  const randomEvent = rollRandomEvent();
-  if (randomEvent) {
-    emotion = applyDelta(emotion, randomEvent.emotion_delta, randomEvent.description);
-    for (const boost of randomEvent.intent_boosts) {
-      intentPool = addIntent(intentPool, boost.category, randomEvent.description, boost.boost, 'event');
-    }
-    appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${randomEvent.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: 随机事件\n`);
-    console.log(`Random event: ${randomEvent.description}`);
+  // 5d. Apply dynamic resistance
+  intentPool = applyResistanceToPool(
+    intentPool, vitality.vitality, confidence.confidence,
+    false, null, rigidNow,
+  );
+
+  // 5e. Check impulse breakthrough
+  const breakthrough = checkImpulseBreakthrough(intentPool, vitality.vitality, false);
+  if (breakthrough) {
+    console.log(`Impulse breakthrough: ${breakthrough.description}`);
   }
 
-  // 4. Build perception summary
-  const rigidNow = getActiveRigidSchedule(schedule, hour, weekday);
+  // 5f. Context-aware random event
+  const eventCtx: EventContext = {
+    emotion,
+    vitality,
+    flow: flowState,
+    currentSchedule: rigidNow?.activity ?? null,
+    recentActions: recentLogs.flatMap(l => l.chosen_actions ?? []),
+    cooldowns: chainState.cooldowns,
+  };
+  const randomResult = rollContextAwareEvent(eventCtx);
+  if (randomResult.event) {
+    emotion = applyImpulse(emotion, randomResult.event.emotion_delta, randomResult.event.description, 3);
+    for (const boost of randomResult.event.intent_boosts) {
+      intentPool = addIntent(intentPool, boost.category, randomResult.event.description, boost.boost, 'event');
+    }
+    appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${randomResult.event.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: 随机事件\n`);
+    console.log(`Random event: ${randomResult.event.description}`);
+
+    // Record cooldown
+    chainState = {
+      ...chainState,
+      cooldowns: {
+        ...chainState.cooldowns,
+        [randomResult.event.description]: now.toISOString(),
+      },
+    };
+  }
+  // Add chain events from random event
+  chainState = {
+    ...chainState,
+    pending: [...chainState.pending, ...randomResult.newChainEvents],
+  };
+
+  // 6. Build perception summary + LLM decision
   const perceptionSummary = buildPerceptionSummary(emotion, schedule, events, hour, weekday, worldContext, impulse);
 
-  // 5. Intent phase: LLM decision
   const template = readTemplate('heartbeat-prompt.md');
-  const intentSummary = getTopIntents(intentPool, 7)
-    .map(i => `- [${i.category}] ${i.description} (强度: ${i.intensity.toFixed(1)}) id=${i.id}`)
+  // Use getTopIntentsRaw for LLM display (show all intents including below resistance)
+  const intentSummary = getTopIntentsRaw(intentPool, 7)
+    .map(i => {
+      const net = i.intensity - i.resistance;
+      const skippedInfo = i.skipped_count > 0 ? `, 拖延: ${i.skipped_count}次` : '';
+      return `- [${i.category}] ${i.description} (强度: ${i.intensity.toFixed(1)}, 门槛: ${i.resistance.toFixed(1)}, 净值: ${net.toFixed(1)}${skippedInfo}) id=${i.id}`;
+    })
     .join('\n');
 
   const personalityDrift = readJSON(PATHS.personalityDrift, { base: 'ESTP', modifiers: [] });
   const personalityContext = `ESTP基底。${personalityDrift.modifiers.map((m: { effect: string }) => m.effect).join('；')}`;
 
-  const scheduleContext = rigidNow
-    ? `${rigidNow.activity}中，可做: ${rigidNow.allowed_actions.join(', ')}`
-    : '自由时段';
-
   const prompt = template
     .replace('{current_time}', formatTime())
     .replace('{emotion_summary}', `${emotion.mood.description} (v:${emotion.mood.valence.toFixed(1)} a:${emotion.mood.arousal.toFixed(1)} e:${emotion.energy.toFixed(1)})`)
     .replace('{schedule_context}', scheduleContext)
-    .replace('{recent_diary}', recentDiary)
+    .replace('{recent_tick_summaries}', recentTickSummaries)
+    .replace('{last_inner_monologue}', lastInnerMonologue)
     .replace('{perception_summary}', perceptionSummary)
     .replace('{intent_pool_summary}', intentSummary || '（空）')
     .replace('{personality_context}', personalityContext)
     .replace('{vitality_context}', `活力: ${Math.round(vitality.vitality)}/100${vitalityConstraints.moodModifier ? ` (${vitalityConstraints.moodModifier})` : ''}`)
-    .replace('{confidence_context}', getConfidenceMoodHint(confidence.confidence));
+    .replace('{confidence_context}', getConfidenceMoodHint(confidence.confidence))
+    .replace('{voice_directive}', voiceDirective);
 
   let decision: HeartbeatDecision;
   try {
     decision = await callLLMJSON<HeartbeatDecision>(prompt, 1024);
   } catch (err) {
-    // LLM failed — log and skip (Spec §13)
     const logEntry: HeartbeatLogEntry = {
       timestamp: now.toISOString(),
       type: 'regular',
@@ -300,24 +466,27 @@ async function regularTick(): Promise<void> {
     };
     const updatedLog = { ...heartbeatLog, logs: [...heartbeatLog.logs, logEntry] };
     writeJSON(PATHS.heartbeatLog, updatedLog);
+    writeJSON(PATHS.flowState, flowState);
+    writeJSON(PATHS.pendingChains, chainState);
     console.error(`Heartbeat skipped: ${(err as Error).message}`);
     return;
   }
 
-  // 6. Apply LLM decisions to intent pool
+  // 7. Apply LLM decisions to intent pool
   for (const newImpulse of decision.new_impulses) {
     intentPool = addIntent(intentPool, toIntentCategory(newImpulse.category), newImpulse.description, newImpulse.intensity, 'llm');
   }
 
-  // 7. Execute actions
+  // 8. Execute actions
   let totalImportance = 0;
   const actionResults: string[] = [];
+  const chosenIntentIds = new Set<string>();
 
   for (const action of decision.chosen_actions) {
     if (action.satisfies_intent) {
+      chosenIntentIds.add(action.satisfies_intent);
       const satisfiedIntent = intentPool.intents.find(i => i.id === action.satisfies_intent);
       intentPool = satisfyIntent(intentPool, action.satisfies_intent);
-      // Intent satisfaction → emotion feedback (dimension coupling)
       if (satisfiedIntent) {
         emotion = intentSatisfactionFeedback(emotion, satisfiedIntent.category);
       }
@@ -325,10 +494,9 @@ async function regularTick(): Promise<void> {
 
     if (action.type === 'simulated' || action.type === 'inner') {
       try {
-        const result = await executeSimulatedAction(action.action, emotion, scheduleContext);
+        const result = await executeSimulatedAction(action.action, emotion, scheduleContext, voiceDirective);
         emotion = applyDelta(emotion, result.emotion_delta, result.narrative.slice(0, 50));
 
-        // Vitality: replenish from rest actions, drain from intense actions
         if (action.action.includes('休息') || action.action.includes('摸鱼') || action.action.includes('追番')) {
           vitality = replenishVitality(vitality, 'rest');
         } else if (action.action.includes('刷') || action.action.includes('看手机')) {
@@ -339,7 +507,6 @@ async function regularTick(): Promise<void> {
         totalImportance += 4;
         actionResults.push(action.action);
 
-        // Trigger inspiration refresh on browsing actions
         if (action.action.includes('刷') || action.action.includes('看手机') || action.action.includes('窥屏')) {
           try {
             const { refreshInspiration } = await import('./inspiration-collector');
@@ -352,9 +519,7 @@ async function regularTick(): Promise<void> {
         console.error(`Action failed: ${action.action}: ${(err as Error).message}`);
       }
     } else if (action.type === 'real' && action.skill) {
-      // Real actions — spawn detached child process
       if (action.skill === 'post-pipeline' || action.skill === 'auto-photo') {
-        // Vitality gate: cannot post when vitality is low
         if (!vitalityConstraints.canPost) {
           console.log(`[REAL ACTION] Skipped post-pipeline — vitality too low (${Math.round(vitality.vitality)})`);
           actionResults.push(`[skipped:low-vitality] ${action.action}`);
@@ -376,33 +541,58 @@ async function regularTick(): Promise<void> {
     }
   }
 
-  // 8. Write inner monologue to diary
+  // 8b. Procrastination tracking
+  const procResult = processProcrastination(intentPool, chosenIntentIds);
+  intentPool = procResult.pool;
+  if (procResult.stressDelta > 0) {
+    emotion = applyDelta(emotion, { stress: procResult.stressDelta }, '拖延压力');
+  }
+  for (const entry of procResult.diaryEntries) {
+    appendText(PATHS.diary, `\n> 💭 ${entry}\n`);
+  }
+
+  // 9. Write inner monologue to diary
   if (decision.inner_monologue) {
     appendText(PATHS.diary, `\n> 💭 ${decision.inner_monologue}\n`);
   }
 
-  // 8b. Check post stats for 24h-old posts (lightweight, runs each heartbeat)
+  // 9b. Check post stats for 24h-old posts
   try {
     const { checkPostStats } = await import('./post-pipeline');
     await checkPostStats();
-    // Update confidence based on latest stats
     const postHistory = readJSON<PostHistory>(PATHS.postHistory, { posts: [] });
     confidence = updateConfidence(confidence, postHistory);
   } catch (err) {
     console.error(`Stats check failed: ${(err as Error).message}`);
   }
 
-  // 9. Mark events as processed and enforce max_size (Spec §13)
+  // 10. Check flow/drift entry after action execution
+  const lastAction: LastAction | null = actionResults.length > 0
+    ? { category: toIntentCategory(decision.chosen_actions[0]?.action?.split(' ')[0] ?? ''), activity: actionResults[0] }
+    : null;
+
+  // Try to infer last action category from the satisfied intent
+  const lastSatisfiedIntent = decision.chosen_actions.find(a => a.satisfies_intent);
+  const lastActionForFlow: LastAction | null = lastSatisfiedIntent
+    ? (() => {
+        const intent = intentPool.intents.find(i => i.id === lastSatisfiedIntent.satisfies_intent);
+        return intent ? { category: intent.category, activity: lastSatisfiedIntent.action } : lastAction;
+      })()
+    : lastAction;
+
+  flowState = checkFlowEntry(flowState, lastActionForFlow, intentPool);
+  if (flowState.status === 'none') {
+    flowState = checkDriftEntry(flowState, vitality.vitality, intentPool, emotion.stress);
+  }
+
+  // 11. Mark events as processed
   const processedEvents = events.events.map(e => ({ ...e, processed: true }));
   const trimmedEvents = processedEvents.length > events.max_size
     ? processedEvents.slice(-events.max_size)
     : processedEvents;
-  const updatedEvents: EventQueue = {
-    ...events,
-    events: trimmedEvents,
-  };
+  const updatedEvents: EventQueue = { ...events, events: trimmedEvents };
 
-  // 10. Update reflection counter (immutable)
+  // 12. Update reflection counter
   const wisdom = readJSON<WisdomStore>(PATHS.coreWisdom, { version: 1, wisdom: [], total_importance_since_reflection: 0 });
   const updatedWisdom: WisdomStore = {
     ...wisdom,
@@ -410,36 +600,78 @@ async function regularTick(): Promise<void> {
   };
   writeJSON(PATHS.coreWisdom, updatedWisdom);
 
-  // 11. Write all state
+  // 13. Write all state
+  const tickSummary = actionResults.length > 0
+    ? actionResults.join(', ')
+    : decision.inner_monologue?.slice(0, 50) || '(无动作)';
+
+  writeFlowTickState(now, emotion, intentPool, updatedEvents, vitality, confidence, impulse, flowState, chainState, heartbeatLog, {
+    tickSummary,
+    innerMonologue: decision.inner_monologue || null,
+    actions: actionResults,
+    importance: totalImportance,
+    voiceDirective,
+  });
+
+  console.log(`Heartbeat completed at ${formatTime()}. Actions: ${actionResults.join(', ') || 'none'}`);
+}
+
+/**
+ * Helper to write all state at end of a tick (normal, flow, or drift).
+ */
+function writeFlowTickState(
+  now: Date,
+  emotion: EmotionState,
+  intentPool: IntentPool,
+  events: EventQueue,
+  vitality: VitalityState,
+  confidence: ConfidenceState,
+  impulse: PostImpulseState,
+  flowState: FlowState,
+  chainState: ChainAndCooldownState,
+  heartbeatLog: HeartbeatLog,
+  tick: {
+    tickSummary: string;
+    innerMonologue: string | null;
+    actions: string[];
+    importance: number;
+    voiceDirective: string;
+  },
+): void {
   emotion = { ...emotion, last_updated: now.toISOString() };
   intentPool = { ...intentPool, last_updated: now.toISOString() };
   vitality = { ...vitality, last_updated: now.toISOString() };
   confidence = { ...confidence, last_updated: now.toISOString() };
+
   writeJSON(PATHS.emotionState, emotion);
   writeJSON(PATHS.intentPool, intentPool);
-  writeJSON(PATHS.eventQueue, updatedEvents);
+  writeJSON(PATHS.eventQueue, events);
   writeJSON(PATHS.vitalityState, vitality);
   writeJSON(PATHS.confidenceState, confidence);
   writeJSON(PATHS.postImpulse, impulse);
+  writeJSON(PATHS.flowState, flowState);
+  writeJSON(PATHS.pendingChains, chainState);
 
   const logEntry: HeartbeatLogEntry = {
     timestamp: now.toISOString(),
     type: 'regular',
     status: 'completed',
-    perception_summary: perceptionSummary.slice(0, 200),
-    chosen_actions: actionResults,
+    perception_summary: '',
+    chosen_actions: tick.actions,
     emotion_after: { mood: emotion.mood, energy: emotion.energy },
-    importance_added: totalImportance,
+    importance_added: tick.importance,
+    tick_summary: tick.tickSummary,
+    inner_monologue: tick.innerMonologue ?? undefined,
+    flow_state: flowState.status,
+    voice_directive: tick.voiceDirective,
   };
+
   let updatedLog = { ...heartbeatLog, logs: [...heartbeatLog.logs, logEntry] };
-  // Enforce 100KB size limit (Spec §13)
   const logJson = JSON.stringify(updatedLog);
   if (logJson.length > 100_000) {
     updatedLog = { ...updatedLog, logs: updatedLog.logs.slice(-50) };
   }
   writeJSON(PATHS.heartbeatLog, updatedLog);
-
-  console.log(`Heartbeat completed at ${formatTime()}. Actions: ${actionResults.join(', ') || 'none'}`);
 }
 
 // Entry point: route to the right handler

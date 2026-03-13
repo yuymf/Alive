@@ -38,6 +38,8 @@ export const PATHS = {
   postImpulse: path.join(MEMORY_BASE, 'post-impulse.json'),
   inspirationRefs: path.join(MEMORY_BASE, 'inspiration-refs'),
   references: path.join(SKILL_BASE, 'assets', 'references'),
+  flowState: path.join(MEMORY_BASE, 'flow-state.json'),
+  pendingChains: path.join(MEMORY_BASE, 'pending-chains.json'),
 } as const;
 
 /**

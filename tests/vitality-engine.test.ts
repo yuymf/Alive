@@ -8,7 +8,7 @@ import {
   getVitalityConstraints,
   DEFAULT_VITALITY,
 } from '../skill/scripts/vitality-engine';
-import { VitalityState, EmotionState } from '../skill/scripts/types';
+import { VitalityState, EmotionState, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../skill/scripts/types';
 
 // === Test helpers ===
 
@@ -37,6 +37,11 @@ function makeEmotion(overrides?: {
     sociability: 0.5,
     last_updated: null,
     recent_cause: 'init',
+    momentum: { ...DEFAULT_MOMENTUM },
+    undertone: { ...DEFAULT_UNDERTONE },
+    impulse_history: [],
+    consecutive_high_stress: 0,
+    threshold_break_cooldown: 0,
   };
 }
 
@@ -124,6 +129,31 @@ describe('drainVitality', () => {
     // stressMultiplier = 1.5, arousalDiscount = 0.8
     // drain = 3 * 1.5 * 0.8 = 3.6
     expect(result.vitality).toBeCloseTo(46.4);
+  });
+
+  it('should apply flowModifier to reduce drain when in flow (×0.7)', () => {
+    const state = makeVitality({ vitality: 50 });
+    const emotion = makeEmotion({ stress: 0, arousal: 0.5 });
+    const result = drainVitality(state, emotion, 0.7);
+    // drain = 3 * 1.0 * 1.0 * 0.7 = 2.1
+    expect(result.vitality).toBeCloseTo(47.9);
+  });
+
+  it('should default flowModifier to 1.0 when not provided', () => {
+    const state = makeVitality({ vitality: 50 });
+    const emotion = makeEmotion({ stress: 0, arousal: 0.5 });
+    const withDefault = drainVitality(state, emotion);
+    const withExplicit = drainVitality(state, emotion, 1.0);
+    expect(withDefault.vitality).toBeCloseTo(withExplicit.vitality);
+  });
+
+  it('should combine flowModifier with stress and arousal', () => {
+    const state = makeVitality({ vitality: 50 });
+    const emotion = makeEmotion({ stress: 1, arousal: 0.2 });
+    const result = drainVitality(state, emotion, 0.7);
+    // stressMultiplier = 1.5, arousalDiscount = 0.8, flowModifier = 0.7
+    // drain = 3 * 1.5 * 0.8 * 0.7 = 2.52
+    expect(result.vitality).toBeCloseTo(47.48);
   });
 });
 
