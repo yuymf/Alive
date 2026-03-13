@@ -8,7 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  ContentStyle, PhotoIntent, PostIntent, PostHistory,
+  ContentStyle, PhotoIntent, PostIntent, PostHistory, PostRecord,
   InspirationData, EmotionState, ScheduleToday,
 } from './types';
 import { PATHS, readJSON, readTemplate } from './file-utils';
@@ -36,7 +36,14 @@ const PHASE_RATIOS: Record<number, Record<ContentStyle, number>> = {
   3: { cos: 0.4, daily: 0.2, behind_scenes: 0.15, travel: 0.25 },
 };
 
-const MIN_POST_INTERVAL_MS = 16 * 60 * 60 * 1000; // 16 hours
+const MAX_POSTS_PER_DAY = 3;
+
+/**
+ * Backward-compat helper: get the first image path from a post record.
+ */
+function getFirstImagePath(post: PostRecord): string {
+  return post.image_local_paths?.[0] ?? (post as any).image_local_path ?? '';
+}
 
 /**
  * Determine current phase based on follower count.
@@ -52,32 +59,17 @@ function getCurrentPhase(): number {
 
 /**
  * Rule-based filter: should we even consider posting?
+ * Caps at MAX_POSTS_PER_DAY posts per calendar day.
  */
 export function shouldConsiderPosting(history: PostHistory): { allowed: boolean; reason: string } {
-  const now = Date.now();
-
-  if (history.posts.length === 0) {
-    return { allowed: true, reason: '还没发过帖子' };
+  const today = getLocalDate();
+  const todayStart = new Date(today).getTime();
+  const todayEnd = todayStart + 24 * 60 * 60 * 1000;
+  const postsToday = history.posts.filter(p => p.timestamp >= todayStart && p.timestamp < todayEnd).length;
+  if (postsToday >= MAX_POSTS_PER_DAY) {
+    return { allowed: false, reason: `今天已经发了${postsToday}条，达到每日上限${MAX_POSTS_PER_DAY}条` };
   }
-
-  const lastPost = history.posts[history.posts.length - 1];
-  const timeSince = now - lastPost.timestamp;
-
-  if (timeSince < MIN_POST_INTERVAL_MS) {
-    const hoursAgo = Math.round(timeSince / (60 * 60 * 1000));
-    return { allowed: false, reason: `上次发帖才${hoursAgo}小时前` };
-  }
-
-  // Check if already posted today
-  const todayStr = getLocalDate();
-  const postedToday = history.posts.some(p =>
-    getLocalDate(new Date(p.timestamp)) === todayStr
-  );
-  if (postedToday) {
-    return { allowed: false, reason: '今天已经发过了' };
-  }
-
-  return { allowed: true, reason: '可以发' };
+  return { allowed: true, reason: `今天已发${postsToday}条，还可以发${MAX_POSTS_PER_DAY - postsToday}条` };
 }
 
 /**
@@ -152,7 +144,19 @@ export async function planPhoto(): Promise<PhotoIntent> {
     .replace('{xhs_cosplay_insights}', xhsCosInsights)
     .replace('{saved_inspirations}', inspoText);
 
-  return callLLMJSON<PhotoIntent>(prompt, 512);
+  const parsed = await callLLMJSON<PhotoIntent>(prompt, 512);
+
+  const intent: PhotoIntent = {
+    ...parsed,
+    imageCount: parsed.imageCount ?? 1,
+    shots: parsed.shots ?? (parsed.wantToShoot ? [{
+      description: parsed.sceneDescription,
+      angle: '正面',
+      variation: '主图',
+    }] : []),
+  };
+
+  return intent;
 }
 
 /**
@@ -167,6 +171,7 @@ export async function planPost(): Promise<PostIntent> {
   if (photoList.length === 0) {
     return {
       wantToPost: false,
+      selectedPhotos: [],
       caption: '',
       hashtags: [],
       reason: '相册里没有照片可以发',
@@ -182,15 +187,16 @@ export async function planPost(): Promise<PostIntent> {
     .replace('{best_hashtag_combos}', inspiration.self_performance.best_hashtag_combos.map(c => c.join(', ')).join(' | ') || '暂无数据')
     .replace('{trending_hashtags}', inspiration.instagram_trends.trending_hashtags.join(', ') || '暂无数据');
 
-  const intent = await callLLMJSON<PostIntent>(prompt, 512);
+  const parsed = await callLLMJSON<PostIntent>(prompt, 512);
 
-  // Resolve selectedPhoto to full path (immutable — create new object)
-  if (intent.selectedPhoto && !path.isAbsolute(intent.selectedPhoto)) {
-    const match = photoList.find(p => path.basename(p) === intent.selectedPhoto || p.includes(intent.selectedPhoto!));
-    if (match) {
-      return { ...intent, selectedPhoto: match };
-    }
-  }
+  // Resolve selectedPhotos to full paths (immutable — create new object)
+  const selectedPhotos = (parsed.selectedPhotos ?? ((parsed as any).selectedPhoto ? [(parsed as any).selectedPhoto] : []))
+    .map((name: string) => photoList.find(p => path.basename(p) === name) ?? name);
+
+  const intent: PostIntent = {
+    ...parsed,
+    selectedPhotos,
+  };
 
   return intent;
 }
