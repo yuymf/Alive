@@ -99,12 +99,13 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<string>
 export async function callLLMJSON<T>(prompt: string, maxTokens = 1024): Promise<T> {
   const raw = await callLLM(prompt, maxTokens);
   // Strip <think>...</think> blocks (some models output reasoning before JSON)
-  // Handle both closed tags and unclosed tags (strip from <think> to </think> or to first JSON-like content)
-  const text = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-  // If still starts with <think> (unclosed tag), strip everything before first { or [
-  const cleaned = text.startsWith('<think>') ? text.replace(/^<think>[\s\S]*?(?=[\[{])/, '') : text;
+  let text = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  // If still starts with <think> (unclosed tag), strip the tag itself and search the whole content
+  if (text.startsWith('<think>')) {
+    text = text.slice('<think>'.length);
+  }
   // Try to extract JSON from code block or raw text
-  const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
   if (!jsonMatch) {
     debugLog('JSON_PARSE_FAIL', `raw response:\n${raw}`);
     throw new Error(`Could not parse JSON from LLM response: ${raw.slice(0, 200)}`);
