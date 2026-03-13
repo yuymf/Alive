@@ -178,7 +178,7 @@ export async function postProcessImage(
     const cx = width / 2;
     const cy = height / 2;
     const maxDist = Math.sqrt(cx * cx + cy * cy);
-    image.scan(0, 0, width, height, (x, y, idx) => {
+    image.scan(0, 0, width, height, (x: number, y: number, idx: number) => {
       const dx = x - cx;
       const dy = y - cy;
       const dist = Math.sqrt(dx * dx + dy * dy) / maxDist;
