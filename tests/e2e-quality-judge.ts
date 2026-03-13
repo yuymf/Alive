@@ -120,13 +120,20 @@ async function callGeminiVision(
 }
 
 function parseJSONFromResponse<T>(text: string): T {
+  // Strip <think>...</think> blocks (some models output reasoning before JSON)
+  const cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
   // Try to extract JSON from markdown code blocks
-  const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  const codeBlockMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (codeBlockMatch) {
     return JSON.parse(codeBlockMatch[1].trim());
   }
+  // Try to find JSON object or array
+  const jsonMatch = cleaned.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+  if (jsonMatch) {
+    return JSON.parse(jsonMatch[1]);
+  }
   // Try direct parse
-  return JSON.parse(text.trim());
+  return JSON.parse(cleaned);
 }
 
 function readImageAsBase64(filePath: string): { base64: string; mimeType: string } {

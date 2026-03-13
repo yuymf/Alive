@@ -97,12 +97,14 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<string>
  * Extracts JSON from markdown code blocks if present.
  */
 export async function callLLMJSON<T>(prompt: string, maxTokens = 1024): Promise<T> {
-  const text = await callLLM(prompt, maxTokens);
+  const raw = await callLLM(prompt, maxTokens);
+  // Strip <think>...</think> blocks (some models output reasoning before JSON)
+  const text = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
   // Try to extract JSON from code block or raw text
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
   if (!jsonMatch) {
-    debugLog('JSON_PARSE_FAIL', `raw response:\n${text}`);
-    throw new Error(`Could not parse JSON from LLM response: ${text.slice(0, 200)}`);
+    debugLog('JSON_PARSE_FAIL', `raw response:\n${raw}`);
+    throw new Error(`Could not parse JSON from LLM response: ${raw.slice(0, 200)}`);
   }
   debugLog('JSON_PARSED', jsonMatch[1]);
   return JSON.parse(jsonMatch[1]);
