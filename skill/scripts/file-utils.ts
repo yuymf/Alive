@@ -4,43 +4,65 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const MEMORY_BASE = path.join(
-  process.env.HOME!,
-  '.openclaw', 'workspace', 'memory', 'minase'
-);
+let _memoryBaseOverride: string | null = null;
+let _skillBaseOverride: string | null = null;
 
-export const SKILL_BASE = path.join(
-  process.env.HOME!,
-  '.openclaw', 'skills', 'minase'
-);
+function getMemoryBase(): string {
+  return _memoryBaseOverride ?? path.join(process.env.HOME!, '.openclaw', 'workspace', 'memory', 'minase');
+}
+
+function getSkillBase(): string {
+  return _skillBaseOverride ?? path.join(process.env.HOME!, '.openclaw', 'skills', 'minase');
+}
+
+/** Override base paths for testing (sandbox isolation). */
+export function setBasePaths(memoryBase: string, skillBase: string): void {
+  _memoryBaseOverride = memoryBase;
+  _skillBaseOverride = skillBase;
+}
+
+/** Clear base path overrides, restoring defaults. */
+export function resetBasePaths(): void {
+  _memoryBaseOverride = null;
+  _skillBaseOverride = null;
+}
+
+/** @deprecated Use PATHS getters directly. Kept for backward compatibility. */
+export const MEMORY_BASE = undefined as unknown as string;
+/** @deprecated Use PATHS getters directly. Kept for backward compatibility. */
+export const SKILL_BASE = undefined as unknown as string;
+
+// Redefine as getters on module.exports for CJS compatibility
+Object.defineProperty(exports, 'MEMORY_BASE', { get: getMemoryBase, enumerable: true });
+Object.defineProperty(exports, 'SKILL_BASE', { get: getSkillBase, enumerable: true });
 
 export const PATHS = {
-  emotionState: path.join(MEMORY_BASE, 'emotion-state.json'),
-  intentPool: path.join(MEMORY_BASE, 'intent-pool.json'),
-  scheduleToday: path.join(MEMORY_BASE, 'schedule-today.json'),
-  eventQueue: path.join(MEMORY_BASE, 'event-queue.json'),
-  preferences: path.join(MEMORY_BASE, 'preferences.json'),
-  aspirations: path.join(MEMORY_BASE, 'aspirations.json'),
-  personalityDrift: path.join(MEMORY_BASE, 'personality-drift.json'),
-  heartbeatLog: path.join(MEMORY_BASE, 'heartbeat-log.json'),
-  diary: path.join(MEMORY_BASE, 'diary.md'),
-  coreWisdom: path.join(MEMORY_BASE, 'core-wisdom.json'),
-  world: path.join(MEMORY_BASE, 'world.md'),
-  socialMeta: path.join(MEMORY_BASE, 'relations', 'social', 'meta.json'),
-  socialInstagramDir: path.join(MEMORY_BASE, 'relations', 'social', 'instagram'),
-  cronSchedule: path.join(SKILL_BASE, 'cron-schedule.json'),
-  inspiration: path.join(MEMORY_BASE, 'inspiration.json'),
-  postHistory: path.join(MEMORY_BASE, 'post-history.json'),
-  vitalityState: path.join(MEMORY_BASE, 'vitality-state.json'),
-  confidenceState: path.join(MEMORY_BASE, 'confidence-state.json'),
-  photoRoll: path.join(MEMORY_BASE, 'photo-roll'),
-  referenceImage: path.join(SKILL_BASE, 'assets', 'references', 'minase-reference.png'),
-  postImpulse: path.join(MEMORY_BASE, 'post-impulse.json'),
-  inspirationRefs: path.join(MEMORY_BASE, 'inspiration-refs'),
-  references: path.join(SKILL_BASE, 'assets', 'references'),
-  flowState: path.join(MEMORY_BASE, 'flow-state.json'),
-  pendingChains: path.join(MEMORY_BASE, 'pending-chains.json'),
-} as const;
+  get emotionState() { return path.join(getMemoryBase(), 'emotion-state.json'); },
+  get intentPool() { return path.join(getMemoryBase(), 'intent-pool.json'); },
+  get scheduleToday() { return path.join(getMemoryBase(), 'schedule-today.json'); },
+  get eventQueue() { return path.join(getMemoryBase(), 'event-queue.json'); },
+  get preferences() { return path.join(getMemoryBase(), 'preferences.json'); },
+  get aspirations() { return path.join(getMemoryBase(), 'aspirations.json'); },
+  get personalityDrift() { return path.join(getMemoryBase(), 'personality-drift.json'); },
+  get heartbeatLog() { return path.join(getMemoryBase(), 'heartbeat-log.json'); },
+  get diary() { return path.join(getMemoryBase(), 'diary.md'); },
+  get coreWisdom() { return path.join(getMemoryBase(), 'core-wisdom.json'); },
+  get world() { return path.join(getMemoryBase(), 'world.md'); },
+  get socialMeta() { return path.join(getMemoryBase(), 'relations', 'social', 'meta.json'); },
+  get socialInstagramDir() { return path.join(getMemoryBase(), 'relations', 'social', 'instagram'); },
+  get cronSchedule() { return path.join(getSkillBase(), 'cron-schedule.json'); },
+  get inspiration() { return path.join(getMemoryBase(), 'inspiration.json'); },
+  get postHistory() { return path.join(getMemoryBase(), 'post-history.json'); },
+  get vitalityState() { return path.join(getMemoryBase(), 'vitality-state.json'); },
+  get confidenceState() { return path.join(getMemoryBase(), 'confidence-state.json'); },
+  get photoRoll() { return path.join(getMemoryBase(), 'photo-roll'); },
+  get referenceImage() { return path.join(getSkillBase(), 'assets', 'references', 'minase-reference.png'); },
+  get postImpulse() { return path.join(getMemoryBase(), 'post-impulse.json'); },
+  get inspirationRefs() { return path.join(getMemoryBase(), 'inspiration-refs'); },
+  get references() { return path.join(getSkillBase(), 'assets', 'references'); },
+  get flowState() { return path.join(getMemoryBase(), 'flow-state.json'); },
+  get pendingChains() { return path.join(getMemoryBase(), 'pending-chains.json'); },
+};
 
 /**
  * Read JSON file with backup fallback (Spec §13 file corruption).
