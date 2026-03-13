@@ -122,9 +122,9 @@ async function callGeminiVision(
 function parseJSONFromResponse<T>(text: string): T {
   // Strip <think>...</think> blocks (some models output reasoning before JSON)
   let cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-  // Handle unclosed <think> tag — strip from <think> to first JSON-like content
+  // If still starts with <think> (unclosed tag), strip the tag itself and search the whole content
   if (cleaned.startsWith('<think>')) {
-    cleaned = cleaned.replace(/^<think>[\s\S]*?(?=[\[{])/, '');
+    cleaned = cleaned.slice('<think>'.length);
   }
   // Try to extract JSON from markdown code blocks
   const codeBlockMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
