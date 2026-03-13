@@ -168,7 +168,7 @@ async function executeSimulatedAction(
 /**
  * Regular heartbeat tick (Spec §10).
  */
-async function regularTick(): Promise<void> {
+export async function regularTick(): Promise<void> {
   const currentTime = now();
   const hour = getLocalHour(currentTime);
   const weekday = getLocalWeekday(currentTime);
@@ -526,14 +526,24 @@ async function regularTick(): Promise<void> {
           continue;
         }
         vitality = applyActionCost(vitality, 'post-pipeline');
-        const scriptPath = require.resolve('./post-pipeline');
-        const child = spawn('node', [scriptPath], {
-          detached: true,
-          stdio: 'ignore',
-          env: process.env,
-        });
-        child.unref();
-        console.log(`[REAL ACTION] Spawned post-pipeline (pid: ${child.pid}) for: ${action.action}`);
+        if (process.env.E2E_INLINE_PIPELINE === '1') {
+          try {
+            const { runPipeline } = await import('./post-pipeline');
+            console.log(`[REAL ACTION] Running post-pipeline inline for: ${action.action}`);
+            await runPipeline();
+          } catch (pipeErr) {
+            console.error(`[REAL ACTION] Inline post-pipeline failed: ${(pipeErr as Error).message}`);
+          }
+        } else {
+          const scriptPath = require.resolve('./post-pipeline');
+          const child = spawn('node', [scriptPath], {
+            detached: true,
+            stdio: 'ignore',
+            env: process.env,
+          });
+          child.unref();
+          console.log(`[REAL ACTION] Spawned post-pipeline (pid: ${child.pid}) for: ${action.action}`);
+        }
       } else {
         console.log(`[REAL ACTION] Unknown skill: ${action.skill} for: ${action.action}`);
       }
