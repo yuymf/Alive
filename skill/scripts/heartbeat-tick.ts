@@ -11,7 +11,7 @@ import {
   EmotionState, IntentPool, IntentCategory, ScheduleToday, EventQueue,
   HeartbeatLog, HeartbeatLogEntry, ActionOutput, RigidSchedule, WisdomStore,
   SocialRelation, SocialMeta, VitalityState, ConfidenceState, PostHistory,
-  CronSchedule,
+  CronSchedule, PostImpulseState, DEFAULT_POST_IMPULSE,
 } from './types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from './file-utils';
 import { decayTowardBaseline, applyDelta, computeEmotionIntentCoupling, intentSatisfactionFeedback } from './emotion-engine';
@@ -31,6 +31,7 @@ import { drainVitality, applyActionCost, replenishVitality, getVitalityConstrain
 import { updateConfidence, decayConfidence, getCreationRateMultiplier, getConfidenceMoodHint, DEFAULT_CONFIDENCE } from './confidence-engine';
 import { rollRandomEvent } from './random-events';
 import { isActiveHeartbeatHour } from './heartbeat-gate';
+import { accumulateImpulse, decayImpulse, shouldInjectPostDesire, checkDormancy } from './post-impulse';
 import { getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
 
 // Default initial states (Spec §16)
@@ -89,6 +90,7 @@ function buildPerceptionSummary(
   hour: number,
   weekday: number,
   worldContext: string,
+  impulse?: PostImpulseState,
 ): string {
   const rigidNow = getActiveRigidSchedule(schedule, hour, weekday);
   const unprocessedEvents = events.events.filter(e => !e.processed);
@@ -115,6 +117,10 @@ function buildPerceptionSummary(
 
   if (worldContext) {
     parts.push(`世界动态: ${worldContext}`);
+  }
+
+  if (impulse && shouldInjectPostDesire(impulse)) {
+    parts.push(`\n【发帖冲动】想发帖的冲动很强（冲动值：${Math.round(impulse.value)}/100），考虑一下要不要去拍照发帖`);
   }
 
   return parts.join('\n');
@@ -159,6 +165,21 @@ async function regularTick(): Promise<void> {
   const worldContext = readText(PATHS.world).split('\n').slice(-10).join('\n');
   let vitality = readJSON<VitalityState>(PATHS.vitalityState, DEFAULT_VITALITY);
   let confidence = readJSON<ConfidenceState>(PATHS.confidenceState, DEFAULT_CONFIDENCE);
+
+  // 1b. Read and update impulse state
+  let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
+  impulse = decayImpulse(impulse);
+
+  const dormancyBoost = checkDormancy(impulse);
+  if (dormancyBoost > 0) {
+    impulse = accumulateImpulse(impulse, dormancyBoost);
+    console.log(`Dormancy boost applied: +${dormancyBoost}`);
+  }
+
+  if (emotion.mood.valence > 0.6 && emotion.mood.arousal > 0.5) {
+    const emotionBoost = 5 + Math.random() * 5; // +5~10
+    impulse = accumulateImpulse(impulse, emotionBoost);
+  }
 
   // 2. Perception: decay emotion + drain vitality
   emotion = decayTowardBaseline(emotion);
@@ -240,7 +261,7 @@ async function regularTick(): Promise<void> {
 
   // 4. Build perception summary
   const rigidNow = getActiveRigidSchedule(schedule, hour, weekday);
-  const perceptionSummary = buildPerceptionSummary(emotion, schedule, events, hour, weekday, worldContext);
+  const perceptionSummary = buildPerceptionSummary(emotion, schedule, events, hour, weekday, worldContext, impulse);
 
   // 5. Intent phase: LLM decision
   const template = readTemplate('heartbeat-prompt.md');
@@ -284,8 +305,8 @@ async function regularTick(): Promise<void> {
   }
 
   // 6. Apply LLM decisions to intent pool
-  for (const impulse of decision.new_impulses) {
-    intentPool = addIntent(intentPool, toIntentCategory(impulse.category), impulse.description, impulse.intensity, 'llm');
+  for (const newImpulse of decision.new_impulses) {
+    intentPool = addIntent(intentPool, toIntentCategory(newImpulse.category), newImpulse.description, newImpulse.intensity, 'llm');
   }
 
   // 7. Execute actions
@@ -399,6 +420,7 @@ async function regularTick(): Promise<void> {
   writeJSON(PATHS.eventQueue, updatedEvents);
   writeJSON(PATHS.vitalityState, vitality);
   writeJSON(PATHS.confidenceState, confidence);
+  writeJSON(PATHS.postImpulse, impulse);
 
   const logEntry: HeartbeatLogEntry = {
     timestamp: now.toISOString(),
