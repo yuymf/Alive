@@ -8,10 +8,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { InspirationData, PostHistory, SavedReference } from './types';
+import { InspirationData, PostHistory, SavedReference, PostImpulseState, DEFAULT_POST_IMPULSE } from './types';
 import { PATHS, readJSON, writeJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
 import { callInstagramBridge } from './instagram-bridge-client';
+import { accumulateImpulse } from './post-impulse';
 import { isXhsAvailable, listXhsFeed, searchXhsNotes, getXhsNoteDetail } from './xhs-bridge-client';
 
 const DOWNLOAD_TIMEOUT_MS = 10_000;
@@ -446,6 +447,11 @@ export async function refreshInspiration(forceAll = false): Promise<InspirationD
       const cleaned = cleanupExpiredRefs(existing);
       const merged = [...cleaned, ...newRefs].slice(-MAX_SAVED_REFS);
       updated = { ...updated, saved_references: merged };
+      const impulseBoost = 10 + Math.random() * 5;
+      let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
+      impulse = accumulateImpulse(impulse, impulseBoost);
+      writeJSON(PATHS.postImpulse, impulse);
+      console.log(`Inspiration saved ${newRefs.length} refs, impulse +${impulseBoost.toFixed(1)}`);
     }
   }
 
