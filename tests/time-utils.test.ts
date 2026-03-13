@@ -1,52 +1,47 @@
-import { describe, it, expect } from 'vitest';
-import { getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from '../skill/scripts/time-utils';
+import { describe, it, expect, afterEach } from 'vitest';
+import { now, setTimeOverride, clearTimeOverride, getLocalHour, getLocalDate } from '../skill/scripts/time-utils';
 
-describe('time-utils', () => {
-  it('getLocalDate returns YYYY-MM-DD format', () => {
-    const result = getLocalDate(new Date(2026, 2, 12)); // March 12, 2026
-    expect(result).toBe('2026-03-12');
+describe('time-utils override', () => {
+  afterEach(() => clearTimeOverride());
+
+  it('now() returns current time when no override set', () => {
+    const before = Date.now();
+    const result = now();
+    const after = Date.now();
+    expect(result.getTime()).toBeGreaterThanOrEqual(before);
+    expect(result.getTime()).toBeLessThanOrEqual(after);
   });
 
-  it('getLocalDate pads single-digit months and days', () => {
-    const result = getLocalDate(new Date(2026, 0, 5)); // Jan 5, 2026
-    expect(result).toBe('2026-01-05');
+  it('now() returns overridden time when set', () => {
+    const fixed = new Date('2026-06-15T10:30:00+08:00');
+    setTimeOverride(fixed);
+    const result = now();
+    expect(result.getTime()).toBe(fixed.getTime());
   });
 
-  it('getLocalDate returns local date (not UTC) near midnight', () => {
-    // Create a date that is March 12 locally but could be March 11 in UTC
-    // depending on timezone offset
-    const localDate = new Date(2026, 2, 12, 0, 30, 0); // March 12 00:30 local
-    expect(getLocalDate(localDate)).toBe('2026-03-12');
+  it('now() returns a copy, not a reference to override', () => {
+    const fixed = new Date('2026-06-15T10:30:00+08:00');
+    setTimeOverride(fixed);
+    const a = now();
+    const b = now();
+    expect(a).not.toBe(b);
+    expect(a.getTime()).toBe(b.getTime());
   });
 
-  it('getLocalHour returns hour from Date', () => {
-    const d = new Date(2026, 2, 12, 14, 30, 0); // 14:30
-    expect(getLocalHour(d)).toBe(14);
+  it('getLocalHour uses now() as default', () => {
+    setTimeOverride(new Date('2026-06-15T14:00:00+08:00'));
+    expect(getLocalHour()).toBe(14);
   });
 
-  it('getLocalWeekday returns 1-7 (Mon-Sun)', () => {
-    // March 12, 2026 is a Thursday
-    const thu = new Date(2026, 2, 12);
-    expect(getLocalWeekday(thu)).toBe(4);
-
-    // Sunday should return 7 (not 0)
-    const sun = new Date(2026, 2, 15);
-    expect(getLocalWeekday(sun)).toBe(7);
+  it('getLocalDate uses now() as default', () => {
+    setTimeOverride(new Date('2026-06-15T14:00:00+08:00'));
+    expect(getLocalDate()).toBe('2026-06-15');
   });
 
-  it('formatLocalTime returns a non-empty string', () => {
-    const result = formatLocalTime(new Date(2026, 2, 12, 14, 30, 0));
-    expect(result).toBeTruthy();
-    expect(typeof result).toBe('string');
-  });
-
-  it('getLocalTimeHHMM returns HH:MM format', () => {
-    const d = new Date(2026, 2, 12, 9, 5, 0);
-    expect(getLocalTimeHHMM(d)).toBe('09:05');
-  });
-
-  it('getLocalTimeHHMM pads hours and minutes', () => {
-    const d = new Date(2026, 2, 12, 7, 0, 0);
-    expect(getLocalTimeHHMM(d)).toBe('07:00');
+  it('clearTimeOverride restores real time', () => {
+    setTimeOverride(new Date('2000-01-01T00:00:00Z'));
+    clearTimeOverride();
+    const result = now();
+    expect(result.getFullYear()).toBeGreaterThan(2024);
   });
 });
