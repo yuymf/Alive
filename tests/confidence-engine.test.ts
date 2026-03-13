@@ -28,7 +28,7 @@ function makeHistory(posts: Array<{ likes: number; comments: number; daysAgo?: n
       style: 'cute' as any,
       caption: '',
       hashtags: [],
-      image_local_path: '',
+      image_local_paths: [''],
       stats: {
         likes: p.likes,
         comments: p.comments,
