@@ -8,10 +8,7 @@
     "strict": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true,
-    "paths": {
-      "jimp": ["./node_modules/jimp/dist/commonjs/index.d.ts"]
-    }
+    "skipLibCheck": true
   },
   "include": ["skill/scripts/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "vitest.config.ts"]
