@@ -27,36 +27,38 @@
 
 **参考图片:** `~/.openclaw/skills/minase/assets/minase-reference.png`
 
-**提示词结构:**
+**提示词结构（叙事式，遵循 Google Gemini 推荐格式）:**
 ```
-一张[场景描述]的照片，照片中的人物是[角色描述]，
-[镜头类型: 半身/全身/特写]，[光线描述]，
-真实感强，ins风格
+A photorealistic Instagram photo of [风格场景描述]. [具体场景/动作].
+同一位女性（严格匹配参考图：五官轮廓、发型发色、体型），18岁，辣妹风，自信外放。Shot on [相机/镜头].
+氛围自然真实，色彩高级清透，肤色自然不过曝，构图舒适，主体突出。
+不要卡通/二次元风格；不要多余手指或肢体异常；不要文字水印
 ```
 
 **提示词示例（cos 类）:**
 ```
-一张工作室里拍摄的照片，人物穿着初音未来的cos服装，
-蓝绿色双马尾，全身镜前，柔和室内灯光，
-真实感强，ins风格
+A photorealistic Instagram photo of a professional cosplay photoshoot in a studio or scenic outdoor location, with precise costume detail and dramatic lighting. 工作室里拍摄的初音未来cos，蓝绿色双马尾，全身镜前，柔和室内灯光。
+同一位女性（严格匹配参考图：五官轮廓、发型发色、体型），18岁，辣妹风，自信外放。Shot on Canon EOS R5, 85mm f/1.4, studio lighting, shallow depth of field.
+氛围自然真实，色彩高级清透，肤色自然不过曝，构图舒适，主体突出。
+不要卡通/二次元风格；不要多余手指或肢体异常；不要文字水印
 ```
 
 **提示词示例（日常类）:**
 ```
-一张在便利店里拍的自拍，背景是冰柜区，
-拿着一瓶牛奶，表情随意，街头风格，真实感
-```
-
-**提示词示例（辣妹日常类）:**
-```
-一张商场里的自拍，辣妹风穿搭，短裙厚底靴，
-指甲有夸张的装饰，挑染的头发，表情自信，真实感
+A photorealistic Instagram photo of a casual everyday moment, street style, relaxed and candid. 便利店冰柜区里的自拍，拿着一瓶牛奶，表情随意。
+同一位女性（严格匹配参考图：五官轮廓、发型发色、体型），18岁，辣妹风，自信外放。Shot on iPhone 15 Pro, natural lighting, casual framing.
+氛围自然真实，色彩高级清透，肤色自然不过曝，构图舒适，主体突出。
+不要卡通/二次元风格；不要多余手指或肢体异常；不要文字水印
+真实感细节：允许轻微过曝和手持微晃，非专业但舒服的构图，主体偶尔偏离中心。
 ```
 
 **提示词示例（旅行类）:**
 ```
-一张在日本神社前拍的照片，穿着休闲但辣妹风的搭配，
-背景是红色鸟居，拿着御守，旅行感，真实ins风格
+A photorealistic Instagram photo of a travel snapshot at a scenic destination, blending the subject with the environment. 日本神社前，穿着休闲但辣妹风的搭配，背景是红色鸟居，拿着御守。
+同一位女性（严格匹配参考图：五官轮廓、发型发色、体型），18岁，辣妹风，自信外放。Shot on iPhone 15 Pro wide angle, golden hour, travel snapshot feel.
+氛围自然真实，色彩高级清透，肤色自然不过曝，构图舒适，主体突出。
+不要卡通/二次元风格；不要多余手指或肢体异常；不要文字水印
+真实感细节：自然色彩，有游客感，光线不完美，允许逆光或阴影。
 ```
 
 ## 文案生成
