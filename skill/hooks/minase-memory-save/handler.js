@@ -13,6 +13,14 @@ const handler = async (event) => {
   // Only trigger if minase is installed
   if (!fs.existsSync(MEMORY_BASE)) return;
 
+  // Clean up active-session.json for minase-world dashboard
+  try {
+    const sessionPath = path.join(MEMORY_BASE, 'active-session.json');
+    if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+  } catch {
+    // Non-critical
+  }
+
   const reminder = [
     '[Minase Memory Save — session ending]',
     '水瀬，这次对话要结束了。请完成以下操作：',

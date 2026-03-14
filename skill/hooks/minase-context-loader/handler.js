@@ -65,6 +65,15 @@ const handler = async (event) => {
     return;
   }
 
+  // Write active-session.json for minase-world dashboard
+  try {
+    const sessionPath = path.join(MEMORY_BASE, 'active-session.json');
+    const sessionData = { userId: (event.context && event.context.userId) || 'unknown', startedAt: new Date().toISOString() };
+    fs.writeFileSync(sessionPath, JSON.stringify(sessionData, null, 2));
+  } catch {
+    // Non-critical — dashboard feature only
+  }
+
   const parts = [];
 
   // 1. Core wisdom
