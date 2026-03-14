@@ -42,7 +42,7 @@
 ```json
 {
   "new_wisdom": [
-    {"lesson": "string", "importance": 1-10, "tags": ["string"]}
+    {"lesson": "具体情境 + 原因 + 下一步行动（如：'发现X时应该Y，因为Z'）", "importance": 1-10, "tags": ["string"]}
   ],
   "preference_updates": [
     {"type": "cos_characters|content_style|social_platforms", "name": "string", "affinity_delta": -5 to 5, "reason": "string"}

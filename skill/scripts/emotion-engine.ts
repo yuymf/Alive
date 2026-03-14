@@ -25,7 +25,11 @@ export function describeMood(valence: number, arousal: number): string {
   if (valence > 0.5 && arousal > 0.6) return '超开心';
   if (valence > 0.5 && arousal > 0.3) return '开心';
   if (valence > 0.2 && arousal > 0.6) return '兴奋';
-  if (valence > 0.2 && arousal > 0.3) return '不错';
+  if (valence > 0.35 && arousal > 0.45) return '挺好的';
+  if (valence > 0.35 && arousal > 0.3) return '心情还行';
+  if (valence > 0.2 && arousal > 0.45) return '还不错';
+  if (valence > 0.2 && arousal > 0.3) return '一般般';
+  if (valence > 0.1 && arousal > 0.3) return '凑合';
   if (valence > 0.0 && arousal <= 0.3) return '平静';
   if (valence > -0.2) return '普通';
   if (valence > -0.5 && arousal > 0.6) return '焦虑';
@@ -187,7 +191,7 @@ export function scaleByCloseness(delta: EmotionDelta, closeness: number): Emotio
 
 // === Three-Layer Emotion Model (Verisimilitude §1) ===
 
-const IMPULSE_DECAY = 0.12;
+const IMPULSE_DECAY = 0.20;
 const MAX_IMPULSE_HISTORY = 50;
 
 /** Dimension keys for iterating. */
