@@ -6,6 +6,7 @@ import { now } from './time-utils';
 
 const DEFAULT_API_BASE = 'https://aihubmix.com/v1';
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
+const MAX_RETRY_TOKENS = 16384;
 
 const isDebug = () => process.env.LLM_DEBUG === '1' || process.env.LLM_DEBUG === 'true';
 
@@ -32,16 +33,23 @@ interface OpenAIChatResponse {
   }>;
 }
 
+export interface LLMResult {
+  content: string;
+  finishReason: string;
+}
+
 /**
  * Call LLM via OpenAI-compatible API with structured JSON output expected.
  * Retries once on failure (Spec §13).
+ *
+ * Returns { content, finishReason } so callers can detect truncation.
  *
  * Env:
  *   LLM_API_KEY   — required
  *   LLM_API_BASE  — default: https://aihubmix.com/v1
  *   LLM_MODEL     — default: claude-sonnet-4-20250514
  */
-export async function callLLM(prompt: string, maxTokens = 1024): Promise<string> {
+export async function callLLM(prompt: string, maxTokens = 1024): Promise<LLMResult> {
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) throw new Error('LLM_API_KEY not set');
 
@@ -74,9 +82,10 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<string>
 
       const data = await res.json() as OpenAIChatResponse;
       const content = data.choices?.[0]?.message?.content ?? '';
+      const finishReason = data.choices?.[0]?.finish_reason ?? 'unknown';
       const elapsed = now().getTime() - startTime;
-      debugLog('RESPONSE', `elapsed: ${elapsed}ms | attempt: ${attempt + 1}\n\n${content}`);
-      return content;
+      debugLog('RESPONSE', `elapsed: ${elapsed}ms | attempt: ${attempt + 1} | finish_reason: ${finishReason}\n\n${content}`);
+      return { content, finishReason };
     } catch (err) {
       if (attempt === 0) {
         debugLog('RETRY', `attempt 1 failed: ${(err as Error).message}`);
@@ -93,11 +102,10 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<string>
 }
 
 /**
- * Call LLM and parse response as JSON.
- * Extracts JSON from markdown code blocks if present.
+ * Extract JSON from LLM response text.
+ * Strips <think> tags and searches for JSON in code blocks or raw text.
  */
-export async function callLLMJSON<T>(prompt: string, maxTokens = 1024): Promise<T> {
-  const raw = await callLLM(prompt, maxTokens);
+function extractJSON<T>(raw: string): T {
   // Strip <think>...</think> blocks (some models output reasoning before JSON)
   let text = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
   // If still starts with <think> (unclosed tag), strip the tag itself and search the whole content
@@ -112,4 +120,28 @@ export async function callLLMJSON<T>(prompt: string, maxTokens = 1024): Promise<
   }
   debugLog('JSON_PARSED', jsonMatch[1]);
   return JSON.parse(jsonMatch[1]);
+}
+
+/**
+ * Call LLM and parse response as JSON.
+ * Extracts JSON from markdown code blocks if present.
+ * Auto-retries with doubled maxTokens if response was truncated (finishReason === 'length').
+ */
+export async function callLLMJSON<T>(prompt: string, maxTokens = 1024): Promise<T> {
+  const result = await callLLM(prompt, maxTokens);
+
+  // If truncated due to token limit, retry with doubled budget (capped at MAX_RETRY_TOKENS)
+  if (result.finishReason === 'length' && maxTokens < MAX_RETRY_TOKENS) {
+    const retryTokens = Math.min(maxTokens * 2, MAX_RETRY_TOKENS);
+    console.warn(`[llm-client] Response truncated (finish_reason=length), retrying with maxTokens=${retryTokens}`);
+    const retryResult = await callLLM(prompt, retryTokens);
+
+    if (retryResult.finishReason === 'length') {
+      console.warn(`[llm-client] Retry still truncated (maxTokens=${retryTokens}), attempting parse anyway`);
+    }
+
+    return extractJSON<T>(retryResult.content);
+  }
+
+  return extractJSON<T>(result.content);
 }

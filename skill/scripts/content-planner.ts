@@ -24,6 +24,19 @@ const DEFAULT_INSPIRATION: InspirationData = {
   self_performance: { best_style: 'cos', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: 0 },
   xiaohongshu_trends: { feed_highlights: [], cosplay_notes: [], trending_topics: [], cosplay_insights: [], saved_inspirations: [], updated_at: 0 },
 };
+
+/**
+ * List inspiration reference images in the inspiration-refs directory.
+ */
+function formatInspirationRefs(): string {
+  const dir = PATHS.inspirationRefs;
+  if (!fs.existsSync(dir)) return '没有灵感参考图';
+  const files = fs.readdirSync(dir).filter(f =>
+    f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp'),
+  );
+  if (files.length === 0) return '没有灵感参考图';
+  return files.map(f => `- ${f}`).join('\n');
+}
 const DEFAULT_EMOTION: EmotionState = {
   mood: { valence: 0.3, arousal: 0.5, description: '普通' },
   energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
@@ -141,9 +154,10 @@ export async function planPhoto(): Promise<PhotoIntent> {
     .replace('{target_ratios}', formatTargetRatios())
     .replace('{xhs_trends}', xhsTrends)
     .replace('{xhs_cosplay_insights}', xhsCosInsights)
-    .replace('{saved_inspirations}', inspoText);
+    .replace('{saved_inspirations}', inspoText)
+    .replace('{inspiration_refs}', formatInspirationRefs());
 
-  const parsed = await callLLMJSON<PhotoIntent>(prompt, 512);
+  const parsed = await callLLMJSON<PhotoIntent>(prompt, 2048);
 
   const intent: PhotoIntent = {
     ...parsed,
@@ -186,7 +200,7 @@ export async function planPost(): Promise<PostIntent> {
     .replace('{best_hashtag_combos}', inspiration.self_performance.best_hashtag_combos.map(c => c.join(', ')).join(' | ') || '暂无数据')
     .replace('{trending_hashtags}', inspiration.instagram_trends.trending_hashtags.join(', ') || '暂无数据');
 
-  const parsed = await callLLMJSON<PostIntent>(prompt, 512);
+  const parsed = await callLLMJSON<PostIntent>(prompt, 2048);
 
   // Resolve selectedPhotos to full paths (immutable — create new object)
   const selectedPhotos = (parsed.selectedPhotos ?? ((parsed as any).selectedPhoto ? [(parsed as any).selectedPhoto] : []))

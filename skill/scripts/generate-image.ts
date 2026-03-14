@@ -88,7 +88,7 @@ export function buildRealisticPrompt(sceneDescription: string, style: ContentSty
 /**
  * Call AIHubMix Gemini API to generate an image.
  */
-async function callAIHubMix(
+export async function callAIHubMix(
   prompt: string,
   referenceImagesBase64: string[],
   aspectRatio: string,
@@ -269,7 +269,7 @@ async function checkQuality(generatedImagePath: string, referenceImagePath: stri
  * Load reference image as base64, compressing with sips if it exceeds MAX_REFERENCE_BYTES.
  * Caches the compressed version next to the original as .compressed.jpg.
  */
-function loadReferenceBase64(imagePath: string): string {
+export function loadReferenceBase64(imagePath: string): string {
   const raw = fs.readFileSync(imagePath);
   if (raw.length <= MAX_REFERENCE_BYTES) {
     return raw.toString('base64');
@@ -417,9 +417,14 @@ export async function generateImageSet(options: GenerateSetOptions): Promise<Gen
     const prompt = buildRealisticPrompt(shot.description, style);
 
     const refFileNames = selectReferences(style, shot.description);
-    const referenceImages = refFileNames
+    let referenceImages = refFileNames
       .map(f => path.join(baseReferenceDir, f))
       .filter(f => fs.existsSync(f));
+
+    // Fallback to main reference image if specific angle references don't exist
+    if (referenceImages.length === 0 && fs.existsSync(PATHS.referenceImage)) {
+      referenceImages = [PATHS.referenceImage];
+    }
 
     if (referenceImages.length === 0) {
       console.error(`No reference images found for shot: "${shot.description}"`);

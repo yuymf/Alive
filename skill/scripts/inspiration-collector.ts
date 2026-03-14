@@ -149,8 +149,7 @@ async function collectInstagramTrends(): Promise<{
       hot_styles: string[];
       high_engagement_patterns: string[];
       trending_hashtags: string[];
-    }>(prompt, 512);
-
+    }>(prompt, 2048);
     trends = { ...result, updated_at: now().getTime() };
   } catch {
     trends = { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: now().getTime() };
@@ -168,7 +167,7 @@ ${allPostsWithImages.map(({ post }, i) => `${i + 1}. [${(post.caption_text ?? ''
 返回JSON：{"selected": [序号], "reasons": {"序号": "原因"}}`;
 
     try {
-      const filterResult = await callLLMJSON<{ selected: number[]; reasons: Record<string, string> }>(selectionPrompt, 256);
+      const filterResult = await callLLMJSON<{ selected: number[]; reasons: Record<string, string> }>(selectionPrompt, 1024);
       const selected = filterResult.selected ?? [];
 
       const refsDir = PATHS.inspirationRefs;
@@ -226,8 +225,7 @@ async function collectACGHotspots(): Promise<InspirationData['acg_hotspots']> {
       trending_characters: string[];
       upcoming_events: string[];
       seasonal_themes: string[];
-    }>(prompt, 512);
-
+    }>(prompt, 2048);
     return { ...result, updated_at: now().getTime() };
   } catch {
     return { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: now().getTime() };
@@ -258,8 +256,7 @@ async function collectVisualTrends(): Promise<InspirationData['visual_trends']> 
       composition_styles: string[];
       color_palettes: string[];
       scene_ideas: string[];
-    }>(prompt, 512);
-
+    }>(prompt, 2048);
     return { ...result, updated_at: now().getTime() };
   } catch {
     return { composition_styles: [], color_palettes: [], scene_ideas: [], updated_at: now().getTime() };

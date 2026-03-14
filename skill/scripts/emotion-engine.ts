@@ -187,7 +187,7 @@ export function scaleByCloseness(delta: EmotionDelta, closeness: number): Emotio
 
 // === Three-Layer Emotion Model (Verisimilitude §1) ===
 
-const IMPULSE_DECAY = 0.20;
+const IMPULSE_DECAY = 0.12;
 const MAX_IMPULSE_HISTORY = 50;
 
 /** Dimension keys for iterating. */
