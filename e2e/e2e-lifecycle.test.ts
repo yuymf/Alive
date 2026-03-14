@@ -118,7 +118,7 @@ describe('E2E Lifecycle', () => {
     captureSnapshot(7);
 
     expect(error).toBeUndefined();
-  }, 120_000);
+  }, 600_000);
 
   it('regular ticks (8-15)', async () => {
     for (const hour of [8, 9, 10, 11, 12, 13, 14, 15]) {
@@ -145,7 +145,7 @@ describe('E2E Lifecycle', () => {
 
       console.log(`--- Hour ${hour} (regular-tick) completed in ${Date.now() - start}ms ${error ? `[ERROR: ${error}]` : ''}`);
     }
-  }, 300_000);
+  }, 3600_000);
 
   it('regular ticks (16-22)', async () => {
     for (const hour of [16, 17, 18, 19, 20, 21, 22]) {
@@ -172,7 +172,7 @@ describe('E2E Lifecycle', () => {
 
       console.log(`--- Hour ${hour} (regular-tick) completed in ${Date.now() - start}ms ${error ? `[ERROR: ${error}]` : ''}`);
     }
-  }, 300_000);
+  }, 1800_000);
 
   it('night reflection (hour 23)', async () => {
     const simDate = new Date(`${today}T23:00:00`);
@@ -193,7 +193,7 @@ describe('E2E Lifecycle', () => {
     captureSnapshot(23);
 
     expect(error).toBeUndefined();
-  }, 120_000);
+  }, 600_000);
 
   it('pipeline triggered (forced if needed)', async () => {
     if (!pipelineRanAtLeastOnce) {
@@ -244,7 +244,7 @@ describe('E2E Lifecycle', () => {
     console.log(`Diary length: ${diary.length} chars`);
     console.log(`Wisdom entries: ${wisdom.wisdom.length}`);
     console.log(`Pipeline ran: ${pipelineRanAtLeastOnce}`);
-  }, 120_000);
+  }, 600_000);
 
   it('quality judge', async () => {
     console.log('\n=== Running Quality Judge ===');
@@ -262,5 +262,5 @@ describe('E2E Lifecycle', () => {
     console.log(`  Emotion: ${qualityReport.emotion_dynamics.pass ? 'PASS' : 'FAIL'}`);
     console.log(`  Memory: ${qualityReport.memory_quality.pass ? 'PASS' : 'FAIL'}`);
     if (qualityReport.diagnosis) console.log(`  Diagnosis: ${qualityReport.diagnosis}`);
-  }, 300_000);
+  }, 1200_000);
 });

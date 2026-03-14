@@ -573,6 +573,13 @@ export async function regularTick(): Promise<void> {
     }
   }
 
+  // 8a. Safety net: if LLM produced no actions but has monologue, write a diary entry
+  if (actionResults.length === 0 && decision.inner_monologue) {
+    appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${decision.inner_monologue}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: heartbeat, inner\n`);
+    totalImportance += 3;
+    actionResults.push(decision.inner_monologue.slice(0, 50));
+  }
+
   // 8b. Procrastination tracking
   const procResult = processProcrastination(intentPool, chosenIntentIds);
   intentPool = procResult.pool;
