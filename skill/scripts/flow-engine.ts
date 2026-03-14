@@ -240,6 +240,11 @@ export function generateDriftDiary(
 
 // === Voice Directive ===
 
+const CHARACTER_VOICE_SIGNATURE = `
+你是18岁ESTP coser水瀬。口语化、带日语口癖：sugoi/すごい、kawaii/かわいい、yabai/やばい、maji/まじ、nani/なに、ganba/がんば。
+常用：哈哈哈哈（兴奋）、等等（反应不过来）、对对对（共鸣）、啊啊啊（崩溃或激动）。感叹号随便用但不是每句。偶尔自我吐槽。
+禁止：客服腔（"当然！""好的！"）、AI腔（"我理解您的..."）、过于正式的书面语。`;
+
 /**
  * Compute the voice directive string that controls diary writing style.
  * Used as a template parameter in simulated-action.md.
@@ -250,28 +255,28 @@ export function computeVoiceDirective(
   thresholdBroke: boolean,
 ): string {
   if (thresholdBroke) {
-    return '用长句、情绪化的语气写。可以用语气词和感叹号。像是情绪积压后的爆发。';
+    return '用长句、情绪化的语气写。可以用语气词和感叹号。像是情绪积压后的爆发。' + CHARACTER_VOICE_SIGNATURE;
   }
 
   switch (flowStatus) {
     case 'flow':
-      return '用简短、碎片化的句子。像是沉浸在做事中偶尔抬头记录一下。不需要完整叙事。';
+      return '用简短、碎片化的句子。像是沉浸在做事中偶尔抬头记录一下。不需要完整叙事。' + CHARACTER_VOICE_SIGNATURE;
     case 'drift':
-      return '用意识流、散漫的语气。句子可以不完整，像是无聊时随手记的。多用省略号。';
+      return '用意识流、散漫的语气。句子可以不完整，像是无聊时随手记的。多用省略号。' + CHARACTER_VOICE_SIGNATURE;
     default:
       break;
   }
 
   // Normal state: adjust by emotion
   if (emotion.mood.valence > 0.5 && emotion.mood.arousal > 0.5) {
-    return '语气轻快、积极。用短句和感叹。';
+    return '语气轻快、积极。用短句和感叹。' + CHARACTER_VOICE_SIGNATURE;
   }
   if (emotion.mood.valence < -0.3) {
-    return '语气低落、安静。句子可以简短。';
+    return '语气低落、安静。句子可以简短。' + CHARACTER_VOICE_SIGNATURE;
   }
   if (emotion.stress > 0.5) {
-    return '语气有些焦虑。句子之间可以有跳跃感。';
+    return '语气有些焦虑。句子之间可以有跳跃感。' + CHARACTER_VOICE_SIGNATURE;
   }
 
-  return '正常叙事语气。像是在自言自语记录一天的事。';
+  return '正常叙事语气。像是在自言自语记录一天的事。' + CHARACTER_VOICE_SIGNATURE;
 }

@@ -41,6 +41,19 @@ export interface UploadResult {
  * Upload a local image file to ImgURL and return the public URL.
  */
 export async function uploadToImgURL(localPath: string): Promise<UploadResult> {
+  // E2E mock: return fake result without network call
+  if (process.env.E2E_MOCK_IMGURL === '1') {
+    const filename = path.basename(localPath);
+    return {
+      url: `https://mock.imgurl.org/i/${filename}`,
+      thumbnailUrl: `https://mock.imgurl.org/t/${filename}`,
+      imgid: `mock_${Date.now()}`,
+      width: 1024,
+      height: 1365,
+      size: fs.existsSync(localPath) ? fs.statSync(localPath).size : 0,
+    };
+  }
+
   const token = process.env.IMGURL_TOKEN;
   if (!token) throw new Error('IMGURL_TOKEN not set');
 

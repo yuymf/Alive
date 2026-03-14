@@ -1,9 +1,17 @@
 {
-  "date": "2026-03-14",
+  "date": "2026-06-15",
   "heartbeats": [
     {
-      "time": "09:30",
+      "time": "07:00",
       "type": "morning"
+    },
+    {
+      "time": "08:00",
+      "type": "regular"
+    },
+    {
+      "time": "09:00",
+      "type": "regular"
     },
     {
       "time": "10:00",
@@ -58,7 +66,7 @@
       "type": "regular"
     },
     {
-      "time": "23:30",
+      "time": "23:00",
       "type": "night"
     }
   ]

@@ -139,7 +139,7 @@ function buildPerceptionSummary(
   }
 
   if (impulse && shouldInjectPostDesire(impulse)) {
-    parts.push(`\n【发帖冲动】想发帖的冲动很强（冲动值：${Math.round(impulse.value)}/100），考虑一下要不要去拍照发帖`);
+    parts.push(`\n【发帖冲动】想发帖的冲动很强（冲动值：${Math.round(impulse.value)}/100）。如果决定发帖，请在 chosen_actions 中使用 type: "real", skill: "post-pipeline"。`);
   }
 
   return parts.join('\n');
@@ -163,6 +163,43 @@ async function executeSimulatedAction(
     .replace('{voice_directive}', voiceDirective || '正常叙事语气。');
 
   return callLLMJSON<ActionOutput>(prompt, 800);
+}
+
+/**
+ * Execute the post-pipeline action (extract to avoid duplication between exact and fuzzy match).
+ */
+async function executePostPipeline(
+  action: { action: string; skill: string | null },
+  vitalityState: VitalityState,
+  actionResults: string[],
+  canPost: boolean,
+): Promise<VitalityState> {
+  if (!canPost) {
+    console.log(`[REAL ACTION] Skipped post-pipeline — vitality too low (${Math.round(vitalityState.vitality)})`);
+    actionResults.push(`[skipped:low-vitality] ${action.action}`);
+    return vitalityState;
+  }
+  const updatedVitality = applyActionCost(vitalityState, 'post-pipeline');
+  if (process.env.E2E_INLINE_PIPELINE === '1') {
+    try {
+      const { runPipeline } = await import('./post-pipeline');
+      console.log(`[REAL ACTION] Running post-pipeline inline for: ${action.action}`);
+      await runPipeline();
+    } catch (pipeErr) {
+      console.error(`[REAL ACTION] Inline post-pipeline failed: ${(pipeErr as Error).message}`);
+    }
+  } else {
+    const scriptPath = require.resolve('./post-pipeline');
+    const child = spawn('node', [scriptPath], {
+      detached: true,
+      stdio: 'ignore',
+      env: process.env,
+    });
+    child.unref();
+    console.log(`[REAL ACTION] Spawned post-pipeline (pid: ${child.pid}) for: ${action.action}`);
+  }
+  actionResults.push(`[real] ${action.action}`);
+  return updatedVitality;
 }
 
 /**
@@ -520,33 +557,18 @@ export async function regularTick(): Promise<void> {
       }
     } else if (action.type === 'real' && action.skill) {
       if (action.skill === 'post-pipeline' || action.skill === 'auto-photo') {
-        if (!vitalityConstraints.canPost) {
-          console.log(`[REAL ACTION] Skipped post-pipeline — vitality too low (${Math.round(vitality.vitality)})`);
-          actionResults.push(`[skipped:low-vitality] ${action.action}`);
-          continue;
-        }
-        vitality = applyActionCost(vitality, 'post-pipeline');
-        if (process.env.E2E_INLINE_PIPELINE === '1') {
-          try {
-            const { runPipeline } = await import('./post-pipeline');
-            console.log(`[REAL ACTION] Running post-pipeline inline for: ${action.action}`);
-            await runPipeline();
-          } catch (pipeErr) {
-            console.error(`[REAL ACTION] Inline post-pipeline failed: ${(pipeErr as Error).message}`);
-          }
-        } else {
-          const scriptPath = require.resolve('./post-pipeline');
-          const child = spawn('node', [scriptPath], {
-            detached: true,
-            stdio: 'ignore',
-            env: process.env,
-          });
-          child.unref();
-          console.log(`[REAL ACTION] Spawned post-pipeline (pid: ${child.pid}) for: ${action.action}`);
-        }
-      } else {
-        console.log(`[REAL ACTION] Unknown skill: ${action.skill} for: ${action.action}`);
+        vitality = await executePostPipeline(action, vitality, actionResults, vitalityConstraints.canPost);
+        continue;
       }
+      // Fuzzy match: if skill name contains posting-related keywords, treat as post-pipeline
+      const lowerSkill = (action.skill || '').toLowerCase();
+      const isPostIntent = /post|发帖|拍照|摄影|photo|selfie|cos.*拍|自拍/.test(lowerSkill);
+      if (isPostIntent) {
+        console.log(`[REAL ACTION] Fuzzy-matched skill "${action.skill}" → post-pipeline for: ${action.action}`);
+        vitality = await executePostPipeline(action, vitality, actionResults, vitalityConstraints.canPost);
+        continue;
+      }
+      console.log(`[REAL ACTION] Unknown skill: ${action.skill} for: ${action.action}`);
       actionResults.push(`[real] ${action.action}`);
     }
   }

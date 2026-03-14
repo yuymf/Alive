@@ -9,5 +9,4 @@ __pycache__/
 .superpowers/
 .DS_Store
 e2e/e2e-output/
-tests/e2e-sandbox/
-tests/e2e-output/
+e2e/sandbox/

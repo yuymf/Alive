@@ -1,7 +1,7 @@
 /**
  * e2e-quality-judge.ts
  * 3-dimension quality assessment for E2E lifecycle output.
- * Reads artifacts from tests/e2e-output/ and produces a structured report.
+ * Reads artifacts from e2e/e2e-output/ and produces a structured report.
  */
 
 import * as fs from 'fs';
@@ -503,12 +503,55 @@ IMPORTANT: Do NOT use <think> tags or any reasoning preamble. Output ONLY the JS
 
 // ─── Diagnosis & Suggestions ───────────────────────────────
 
-function buildDiagnosis(report: QualityReport): string {
+/**
+ * Extract pipeline-related errors from lifecycle-log.json.
+ * Parses tick logs for error messages and pipeline failure patterns.
+ */
+function extractPipelineErrors(outputDir: string): string[] {
+  const errors: string[] = [];
+  try {
+    const logPath = path.join(outputDir, 'lifecycle-log.json');
+    if (!fs.existsSync(logPath)) return ['lifecycle-log.json not found'];
+
+    const log = JSON.parse(fs.readFileSync(logPath, 'utf8'));
+    const tickLogs = log.tickLogs ?? [];
+
+    for (const tick of tickLogs) {
+      // Collect explicit errors
+      if (tick.error) {
+        errors.push(`Hour ${tick.hour} (${tick.module}): ${tick.error}`);
+      }
+
+      // Search logs for pipeline-specific failures
+      for (const line of (tick.logs ?? []) as string[]) {
+        if (line.includes('[ERR]') && (
+          line.includes('pipeline') || line.includes('AIHUBMIX') ||
+          line.includes('IMGURL') || line.includes('reference') ||
+          line.includes('quality check') || line.includes('No valid reference') ||
+          line.includes('Shot failed') || line.includes('truncated')
+        )) {
+          errors.push(`Hour ${tick.hour}: ${line.replace(/^\[ERR\]\s*/, '')}`);
+        }
+      }
+    }
+  } catch (err) {
+    errors.push(`Failed to parse lifecycle-log: ${(err as Error).message}`);
+  }
+
+  return errors;
+}
+
+function buildDiagnosis(report: QualityReport, outputDir: string): string {
   const parts: string[] = [];
 
   if (!report.image_consistency.pass) {
     if (report.images_generated === 0) {
-      parts.push('No images generated — check if post-pipeline runs and image generation API is accessible.');
+      const pipelineErrors = extractPipelineErrors(outputDir);
+      if (pipelineErrors.length > 0) {
+        parts.push(`No images generated. Pipeline errors: ${pipelineErrors.slice(0, 5).join('; ')}`);
+      } else {
+        parts.push('No images generated — check if post-pipeline runs and image generation API is accessible.');
+      }
     } else {
       parts.push(`Image quality issues: ${report.image_consistency.issues.join('; ')}`);
     }
@@ -614,7 +657,7 @@ export async function runQualityJudge(outputDir: string): Promise<QualityReport>
     suggested_fixes: [],
   };
 
-  report.diagnosis = buildDiagnosis(report);
+  report.diagnosis = buildDiagnosis(report, outputDir);
   report.suggested_fixes = buildSuggestions(report);
 
   return report;

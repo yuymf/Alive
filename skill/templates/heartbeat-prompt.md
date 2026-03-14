@@ -53,7 +53,7 @@
     {
       "action": "行动描述",
       "type": "real|simulated|inner",
-      "skill": "skill名称或null",
+      "skill": "post-pipeline（拍照发帖）| null（其他所有行动）",
       "satisfies_intent": "意图id或null"
     }
   ]
