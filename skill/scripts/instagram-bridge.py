@@ -23,9 +23,17 @@ All output is JSON on stdout; errors go to stderr.
 import argparse
 import json
 import os
+import socket
 import sys
 import time
 from pathlib import Path
+
+# Force IPv4: urllib3 tries IPv6 first which is extremely slow to Instagram's
+# servers in some network environments, causing login timeouts.
+_orig_getaddrinfo = socket.getaddrinfo
+socket.getaddrinfo = lambda *args, **kwargs: [
+    r for r in _orig_getaddrinfo(*args, **kwargs) if r[0] == socket.AF_INET
+]
 
 try:
     from instagrapi import Client

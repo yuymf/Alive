@@ -86,7 +86,7 @@ describe('fetch-trends', () => {
     });
   });
 
-  describe('fetchPostComments', () => {
+  describe('fetchPostComments (Reddit fallback)', () => {
     beforeEach(() => {
       vi.restoreAllMocks();
     });
@@ -126,6 +126,93 @@ describe('fetch-trends', () => {
 
       const { fetchPostComments } = await import('../skill/scripts/fetch-trends');
       const comments = await fetchPostComments('/r/cosplay/comments/abc123/title/', 3);
+      expect(comments).toEqual([]);
+    });
+  });
+
+  describe('fetchArcticShiftComments', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('should extract and filter comments from Arctic Shift API', async () => {
+      const mockResponse = {
+        ok: true,
+        json: () => Promise.resolve({
+          data: [
+            { body: 'Amazing work!', score: 50, author: 'user1' },
+            { body: 'Your thread has been removed because...', score: 10, author: 'AutoMod' },
+            { body: 'Nice details', score: 20, author: 'user2' },
+            { body: 'meh', score: 2, author: 'user3' }, // below threshold
+          ],
+        }),
+      };
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
+
+      const { fetchArcticShiftComments } = await import('../skill/scripts/fetch-trends');
+      const comments = await fetchArcticShiftComments('abc123', 3);
+      expect(comments).toHaveLength(2);
+      expect(comments[0]).toBe('Amazing work!');
+      expect(comments[1]).toBe('Nice details');
+    });
+
+    it('should prepend t3_ to post IDs without prefix', async () => {
+      const mockResponse = {
+        ok: true,
+        json: () => Promise.resolve({ data: [] }),
+      };
+      const mockFetch = vi.fn().mockResolvedValue(mockResponse);
+      vi.stubGlobal('fetch', mockFetch);
+
+      const { fetchArcticShiftComments } = await import('../skill/scripts/fetch-trends');
+      await fetchArcticShiftComments('xyz789', 3);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('link_id=t3_xyz789'),
+        expect.any(Object),
+      );
+    });
+
+    it('should not double-prepend t3_ if already present', async () => {
+      const mockResponse = {
+        ok: true,
+        json: () => Promise.resolve({ data: [] }),
+      };
+      const mockFetch = vi.fn().mockResolvedValue(mockResponse);
+      vi.stubGlobal('fetch', mockFetch);
+
+      const { fetchArcticShiftComments } = await import('../skill/scripts/fetch-trends');
+      await fetchArcticShiftComments('t3_xyz789', 3);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('link_id=t3_xyz789'),
+        expect.any(Object),
+      );
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('t3_t3_'),
+        expect.any(Object),
+      );
+    });
+
+    it('should return empty array on fetch failure', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Timeout')));
+
+      const { fetchArcticShiftComments } = await import('../skill/scripts/fetch-trends');
+      const comments = await fetchArcticShiftComments('abc123', 3);
+      expect(comments).toEqual([]);
+    });
+
+    it('should return empty array when data is null', async () => {
+      const mockResponse = {
+        ok: true,
+        json: () => Promise.resolve({ data: null }),
+      };
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(mockResponse));
+
+      const { fetchArcticShiftComments } = await import('../skill/scripts/fetch-trends');
+      const comments = await fetchArcticShiftComments('abc123', 3);
       expect(comments).toEqual([]);
     });
   });

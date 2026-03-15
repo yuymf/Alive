@@ -3,6 +3,10 @@
  * fetch-trends.ts
  * Fetches trending cosplay hashtags/topics for Instagram content planning.
  * Writes findings to world.md memory file.
+ *
+ * Primary source: Arctic Shift API (free, no auth, mirrors Reddit data).
+ * Fallback: Reddit public .json endpoints (currently blocked by Reddit as of 2025).
+ *
  * Usage: node fetch-trends.js [--query "keyword"]
  */
 
@@ -13,11 +17,28 @@ import { getLocalDate } from './time-utils';
 const MEMORY_BASE = path.join(process.env.HOME!, '.openclaw', 'workspace', 'memory', 'minase');
 const WORLD_PATH = path.join(MEMORY_BASE, 'world.md');
 
-// Curated sources for cos trend discovery (public, no auth required)
-const TREND_SOURCES = [
-  'https://www.reddit.com/r/cosplay/top.json?t=week&limit=5',
-  'https://www.reddit.com/r/Animecosplay/top.json?t=week&limit=5',
-];
+const ARCTIC_SHIFT_BASE = 'https://arctic-shift.photon-reddit.com/api';
+const USER_AGENT = 'minase-digital-life/0.1';
+
+const SUBREDDITS = ['cosplay', 'Animecosplay'];
+
+interface ArcticShiftPost {
+  id: string;
+  title: string;
+  score: number;
+  selftext: string;
+  subreddit: string;
+  permalink: string;
+  num_comments: number;
+  name: string;        // e.g. "t3_abc123"
+  created_utc: number;
+}
+
+interface ArcticShiftComment {
+  body: string;
+  score: number;
+  author: string;
+}
 
 interface RedditPost {
   data: {
@@ -83,11 +104,76 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ---------------------------------------------------------------------------
+// Arctic Shift API (primary source)
+// ---------------------------------------------------------------------------
+
+export async function fetchArcticShiftComments(postId: string, limit: number): Promise<string[]> {
+  try {
+    const linkId = postId.startsWith('t3_') ? postId : `t3_${postId}`;
+    const url = `${ARCTIC_SHIFT_BASE}/comments/search?link_id=${linkId}&limit=20&sort=desc&sort_type=created_utc`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json() as { data: ArcticShiftComment[] | null };
+    if (!json.data) return [];
+    return json.data
+      .filter(c => c.score > 5 && c.body && !c.body.startsWith('Your thread has been removed'))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(c => c.body);
+  } catch (err) {
+    console.warn(`Failed to fetch Arctic Shift comments for ${postId}: ${(err as Error).message}`);
+    return [];
+  }
+}
+
+async function fetchArcticShiftTrends(subreddit: string): Promise<TrendPost[]> {
+  // Fetch 25 recent posts, then sort by score client-side
+  // (Arctic Shift only supports sort by created_utc, not score)
+  const url = `${ARCTIC_SHIFT_BASE}/posts/search?subreddit=${subreddit}&after=7d&limit=25`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`Arctic Shift HTTP ${res.status}`);
+  const json = await res.json() as { data: ArcticShiftPost[] | null };
+  if (!json.data || json.data.length === 0) throw new Error('No posts returned');
+
+  const topPosts = [...json.data]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  const results: TrendPost[] = [];
+  for (const post of topPosts) {
+    const topComments: string[] = [];
+    if (post.num_comments > 0) {
+      await delay(500);
+      const comments = await fetchArcticShiftComments(post.id, 3);
+      topComments.push(...comments);
+    }
+    results.push({
+      title: post.title,
+      score: post.score,
+      selftext: post.selftext ?? '',
+      subreddit: post.subreddit,
+      topComments,
+    });
+  }
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Reddit .json fallback (kept for when/if Reddit re-enables public API)
+// ---------------------------------------------------------------------------
+
 export async function fetchPostComments(permalink: string, limit: number): Promise<RedditComment[]> {
   try {
     const url = `https://www.reddit.com${permalink}.json?limit=${limit}&sort=top`;
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'minase-digital-life/0.1' },
+      headers: { 'User-Agent': USER_AGENT },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -104,9 +190,10 @@ export async function fetchPostComments(permalink: string, limit: number): Promi
   }
 }
 
-async function fetchRedditTrends(url: string): Promise<TrendPost[]> {
+async function fetchRedditTrends(subreddit: string): Promise<TrendPost[]> {
+  const url = `https://www.reddit.com/r/${subreddit}/top.json?t=week&limit=5`;
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'minase-digital-life/0.1' },
+    headers: { 'User-Agent': USER_AGENT },
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -134,18 +221,31 @@ async function fetchRedditTrends(url: string): Promise<TrendPost[]> {
   return results;
 }
 
+// ---------------------------------------------------------------------------
+// Main: try Arctic Shift first, fall back to Reddit .json
+// ---------------------------------------------------------------------------
+
+async function fetchSubredditTrends(subreddit: string): Promise<TrendPost[]> {
+  try {
+    return await fetchArcticShiftTrends(subreddit);
+  } catch (e) {
+    console.warn(`Arctic Shift failed for r/${subreddit}: ${(e as Error).message}, trying Reddit fallback`);
+  }
+  try {
+    return await fetchRedditTrends(subreddit);
+  } catch (e) {
+    console.warn(`Reddit fallback also failed for r/${subreddit}: ${(e as Error).message}`);
+  }
+  return [];
+}
+
 async function fetchTrends(query?: string): Promise<void> {
   const allPosts: Map<string, TrendPost[]> = new Map();
 
-  for (const source of TREND_SOURCES) {
-    try {
-      const posts = await fetchRedditTrends(source);
-      if (posts.length > 0) {
-        const sub = posts[0].subreddit;
-        allPosts.set(sub, [...(allPosts.get(sub) ?? []), ...posts]);
-      }
-    } catch (e) {
-      // Silently skip failed sources
+  for (const sub of SUBREDDITS) {
+    const posts = await fetchSubredditTrends(sub);
+    if (posts.length > 0) {
+      allPosts.set(sub, [...(allPosts.get(sub) ?? []), ...posts]);
     }
   }
 
