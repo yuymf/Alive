@@ -19,9 +19,9 @@ const MAX_REFERENCE_BYTES = 500_000; // 500KB — avoid oversized API payloads
 
 // Per-style camera/lens anchors — Google recommends specifying camera model for photorealism
 const CAMERA_ANCHORS: Record<ContentStyle, string> = {
-  cos: 'Canon EOS R5, 85mm f/1.4, studio lighting, shallow depth of field',
+  cos: 'Canon EOS R5, 85mm f/1.4, shallow depth of field',
   daily: 'iPhone 15 Pro, natural lighting, casual framing',
-  behind_scenes: 'iPhone handheld, overhead fluorescent, slightly messy',
+  behind_scenes: 'iPhone handheld, ambient room lighting, slightly messy',
   travel: 'iPhone 15 Pro wide angle, golden hour, travel snapshot feel',
 };
 
@@ -56,10 +56,10 @@ export interface GenerateImageResult {
  */
 export function buildImagePrompt(sceneDescription: string, style: ContentStyle): string {
   const styleContext: Record<ContentStyle, string> = {
-    cos: 'a professional cosplay photoshoot in a studio or scenic outdoor location, with precise costume detail and dramatic lighting',
-    daily: 'a casual everyday moment, street style, relaxed and candid',
-    behind_scenes: 'a behind-the-scenes glimpse of cosplay preparation, with an unfinished and authentic feel',
-    travel: 'a travel snapshot at a scenic destination, blending the subject with the environment',
+    cos: 'a professional cosplay photoshoot with precise costume detail and dramatic lighting, emphasizing the character costume fit and body silhouette',
+    daily: 'a casual everyday fashion moment, form-fitting stylish clothing with visible fabric texture and draping, relaxed and alluring candid pose',
+    behind_scenes: 'a behind-the-scenes glimpse of cosplay preparation, with an unfinished and authentic feel, showing natural body language',
+    travel: 'a travel fashion snapshot at a scenic destination, showing outfit details and body proportions in the environment',
   };
 
   const camera = CAMERA_ANCHORS[style];
@@ -67,17 +67,18 @@ export function buildImagePrompt(sceneDescription: string, style: ContentStyle):
 
   return [
     `A photorealistic Instagram photo of ${context}. ${sceneDescription}`,
-    `同一位女性（严格匹配参考图：五官轮廓、发型发色、体型），18岁，辣妹风，自信外放。Shot on ${camera}.`,
-    `氛围自然真实，色彩高级清透，肤色自然不过曝，构图舒适，主体突出。`,
+    `同一位女性（严格匹配参考图：五官轮廓、发型发色、体型），18岁，辣妹风，身材匀称有曲线。Shot on ${camera}.`,
+    `表情要求：不要呆板的正面微笑！表情要有故事感和情绪——可以是慵懒的半睁眼、微微挑眉的得意、嘴角轻扬的暧昧笑意、眼神带着一丝挑逗的侧目、低头时眼睛往上看的清纯感、或者不看镜头的自然随性状态。眼神是关键：要有"在看你"或"故意不看你"的张力，不是空洞地盯着镜头。`,
+    `氛围自然真实，色彩高级清透，肤色自然不过曝有质感，构图舒适主体突出。注重面料质感渲染（光泽/透明度/褶皱）和身体曲线的自然表现。`,
     NEGATIVE_CONSTRAINTS,
   ].join('\n');
 }
 
 export function buildRealisticPrompt(sceneDescription: string, style: ContentStyle): string {
   const realisticHints: Record<string, string> = {
-    daily: '允许轻微过曝和手持微晃，非专业但舒服的构图，主体偶尔偏离中心',
-    behind_scenes: '光线一般，有工作台杂物，未完成感，不是摆拍',
-    travel: '自然色彩，有游客感，光线不完美，允许逆光或阴影',
+    daily: '允许轻微过曝和手持微晃，非专业但舒服的构图，主体偶尔偏离中心，衣服面料的褶皱和光泽要真实自然',
+    behind_scenes: '光线一般，有工作台杂物，未完成感，不是摆拍，展示自然放松的身体姿态',
+    travel: '自然色彩，有游客感，光线不完美，允许逆光或阴影，衣服随风的动态感',
   };
 
   const base = buildImagePrompt(sceneDescription, style);
@@ -234,7 +235,7 @@ async function checkQuality(generatedImagePath: string, referenceImagePath: stri
       {
         role: 'user',
         content: [
-          { type: 'text', text: '对比这两张图。评估：1. 人脸相似度（五官、轮廓是否像同一人）2. 照片自然度（是否像真实照片而非AI生成）3. 整体质量（清晰度、构图、光线）。只返回一个1-10的综合评分数字，不要其他文字。7分以上=可用。' },
+          { type: 'text', text: '对比这两张图。评估：1. 人脸相似度（五官、轮廓是否像同一人）2. 照片自然度（是否像真实照片而非AI生成）3. 表情生动度（表情是否有情绪和故事感，不是呆板的正面微笑）4. 整体质量（清晰度、构图、光线、场景合理性）。只返回一个1-10的综合评分数字，不要其他文字。7分以上=可用。表情呆板或场景明显不真实的扣2-3分。' },
           { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${referenceBase64}` } },
           { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${generatedBase64}` } },
         ],
@@ -355,7 +356,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
           return { localPath, textResponse, timestamp };
         }
 
-        const correctionPrompt = `${prompt}\n请特别注意让人物面部特征与参考图完全一致，这是最重要的要求。五官轮廓、发型发色、体型比例必须匹配参考图。`;
+        const correctionPrompt = `${prompt}\n请特别注意：1. 人物面部特征与参考图完全一致（五官轮廓、发型发色、体型比例）。2. 表情要生动有情绪——不要呆板的正面微笑，要有眼神的张力和情绪表达（慵懒/挑逗/清纯/得意/随性中的一种）。3. 场景光线要符合实际环境（室内用自然窗光或灯光，不要凭空出现影棚光）。`;
 
         // Re-generate
         console.log(`Quality score ${score} < ${qualityThreshold}, retrying (${qAttempt + 1}/${maxQualityRetries})...`);
@@ -376,14 +377,24 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
       throw new Error(`Quality check failed after ${maxQualityRetries} retries (final score: ${finalScore})`);
     } catch (err) {
       lastError = err as Error;
+      const cause = lastError.cause as NodeJS.ErrnoException | undefined;
+      const detail = cause ? ` (${cause.code ?? cause.message})` : '';
       if (attempt < MAX_RETRIES) {
-        console.error(`Image generation failed, retrying: ${lastError.message}`);
+        console.error(`Image generation failed, retrying: ${lastError.message}${detail}`);
         await new Promise(r => setTimeout(r, 5000));
       }
     }
   }
 
-  throw lastError ?? new Error('Image generation failed');
+  if (lastError) {
+    const cause = lastError.cause as NodeJS.ErrnoException | undefined;
+    const hint = cause?.code === 'ENOTFOUND' ? ' — 检查 DNS/网络是否可访问 aihubmix.com'
+      : cause?.code === 'ECONNREFUSED' ? ' — 目标服务未响应，可能暂时不可用'
+      : cause?.code === 'ETIMEDOUT' ? ' — 请求超时，可检查网络或稍后重试'
+      : '';
+    throw new Error(`${lastError.message}${hint}`, { cause: lastError });
+  }
+  throw new Error('Image generation failed');
 }
 
 export interface GenerateSetOptions {
