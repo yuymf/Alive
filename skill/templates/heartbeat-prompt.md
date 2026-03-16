@@ -89,7 +89,7 @@
     {
       "action": "具体行动描述（要有细节！在哪、做什么、怎么做）",
       "type": "real|simulated|inner",
-      "skill": "post-pipeline（拍照发帖）| null（其他所有行动）",
+      "skill": "post-pipeline（拍照发帖）| search-pipeline（搜索）| null（其他所有行动）",
       "satisfies_intent": "意图id或null"
     }
   ]
