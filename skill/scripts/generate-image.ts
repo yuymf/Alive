@@ -9,8 +9,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { ContentStyle, ShotDescription } from './types';
-import { PATHS } from './file-utils';
+import { ContentStyle, ShotDescription, TravelState, DEFAULT_TRAVEL_STATE } from './types';
+import { PATHS, readJSON } from './file-utils';
 import { now, getLocalDate, getLocalHour } from './time-utils';
 import { isSelfieType, selectReferences } from './reference-selector';
 import { postProcessImage } from './image-post-process';
@@ -23,6 +23,9 @@ const CAMERA_ANCHORS: Record<ContentStyle, string> = {
   daily: 'iPhone 15 Pro, natural lighting, casual framing',
   behind_scenes: 'iPhone handheld, ambient room lighting, slightly messy',
   travel: 'iPhone 15 Pro wide angle, golden hour, travel snapshot feel',
+  travel_portrait: 'iPhone 15 Pro wide angle, golden hour, natural travel snapshot, subject in foreground with landmark',
+  travel_food:     'iPhone overhead flat lay, warm color grading, food details sharp, bokeh background',
+  travel_street:   'Fujifilm X100V 35mm, natural light, film grain, candid street moment',
 };
 
 const NEGATIVE_CONSTRAINTS = '不要卡通/二次元风格；不要多余手指或肢体异常；不要文字水印';
@@ -60,6 +63,9 @@ export function buildImagePrompt(sceneDescription: string, style: ContentStyle):
     daily: 'a casual everyday fashion moment, form-fitting stylish clothing with visible fabric texture and draping, relaxed and alluring candid pose',
     behind_scenes: 'a behind-the-scenes glimpse of cosplay preparation, with an unfinished and authentic feel, showing natural body language',
     travel: 'a travel fashion snapshot at a scenic destination, showing outfit details and body proportions in the environment',
+    travel_portrait: 'a natural travel portrait at a scenic destination — person in the foreground, landmark or scenery framing behind, casual pose, authentic travel feel',
+    travel_food:     'a travel food photography shot at a local restaurant or café — dish centered, warm tones, lifestyle feel, slightly messy table context',
+    travel_street:   'a candid street photography moment in an urban travel destination — person walking or looking around, environment tells the story',
   };
 
   const camera = CAMERA_ANCHORS[style];
@@ -74,16 +80,41 @@ export function buildImagePrompt(sceneDescription: string, style: ContentStyle):
   ].join('\n');
 }
 
-export function buildRealisticPrompt(sceneDescription: string, style: ContentStyle): string {
-  const realisticHints: Record<string, string> = {
-    daily: '允许轻微过曝和手持微晃，非专业但舒服的构图，主体偶尔偏离中心，衣服面料的褶皱和光泽要真实自然',
-    behind_scenes: '光线一般，有工作台杂物，未完成感，不是摆拍，展示自然放松的身体姿态',
-    travel: '自然色彩，有游客感，光线不完美，允许逆光或阴影，衣服随风的动态感',
-  };
+// Helper to read current city from travel-state (non-critical)
+function getTravelCity(): string {
+  try {
+    const ts = readJSON<TravelState>(PATHS.travelState, DEFAULT_TRAVEL_STATE);
+    return ts.current_city ? `${ts.current_city}，${ts.country}` : '';
+  } catch { return ''; }
+}
 
+export function buildRealisticPrompt(sceneDescription: string, style: ContentStyle): string {
   const base = buildImagePrompt(sceneDescription, style);
-  const hint = realisticHints[style];
-  return hint ? `${base}\n真实感细节：${hint}。` : base;
+
+  function hint(): string {
+    switch (style) {
+      case 'cos':
+        return '使用专业摄影师风格的精致构图，色彩准确，细节清晰';
+      case 'daily':
+        return '自然光线，随性构图，生活感强，不要过度修图';
+      case 'behind_scenes':
+        return '环境感强，可以有一定杂乱感，真实感优先';
+      case 'travel':
+      case 'travel_portrait': {
+        const city = getTravelCity();
+        return `自然色彩，有游客感，光线不完美，允许逆光或阴影，衣服随风的动态感。${city ? `当前目的地：${city}，融入当地环境元素和氛围。` : ''}`;
+      }
+      case 'travel_food':
+        return '食物色彩饱满，温暖色调，有生活感，桌面环境自然';
+      case 'travel_street': {
+        const city = getTravelCity();
+        return `胶片感，自然光，有故事感，街头随拍风格。${city ? `当前城市：${city}。` : ''}`;
+      }
+    }
+  }
+
+  const h = hint();
+  return h ? `${base}\n真实感细节：${h}。` : base;
 }
 
 /**
@@ -416,6 +447,9 @@ const MIN_IMAGES: Record<ContentStyle, number> = {
   daily: 1,
   behind_scenes: 2,
   travel: 4,
+  travel_portrait: 2,
+  travel_food: 1,
+  travel_street: 2,
 };
 
 export async function generateImageSet(options: GenerateSetOptions): Promise<GenerateSetResult> {
