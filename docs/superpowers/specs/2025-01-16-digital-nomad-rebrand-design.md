@@ -49,19 +49,25 @@
 
 **层 2：21:00 硬兜底**
 
-`heartbeat-tick.ts` 的 `regularTick()` 入口增加前置检查：
+`heartbeat-tick.ts` 的 `regularTick()` 入口增加前置检查。检查在 `decayImpulse()` 调用**之后**执行（避免日期滚动将 `posts_today` 误归零）：
 
 ```typescript
+// decayImpulse 先执行（含日期滚动）
+impulse = decayImpulse(impulse)
+
 // KPI 兜底：21:00 后如果当天还没发帖，强制触发
-if (hour >= 21 && impulseState.posts_today === 0) {
-  await executePostPipeline(vitality, { forced: true, reason: 'daily_kpi' })
+if (hour >= 21 && impulse.posts_today === 0) {
+  // 新增包装函数 triggerForcedPost()，不依赖 LLM chosen_actions
+  await triggerForcedPost(vitality, impulse, { reason: 'daily_kpi' })
   return
 }
 ```
 
-`forced: true` 的效果：
+新增 `triggerForcedPost(vitality, impulse, opts)` 包装函数（位于 `heartbeat-tick.ts`），它直接调用 `executePostPipeline()` 并传入正确的现有参数签名，同时设置 `canPost = true`（绕过 vitality 门槛检查）。`executePostPipeline()` 现有签名不需要修改。
+
+`forced` 标记传递方式：通过 `post-pipeline.ts` 接受的环境变量 `FORCED_POST=1`（由 `triggerForcedPost` 在 spawn 时注入），pipeline 读取后：
 - 跳过 `vitality < 30` 的早退逻辑
-- post-pipeline 在 diary 记录特殊条目：「今天差点忘了发帖，赶紧补上」
+- diary 写入特殊条目：「今天差点忘了发帖，赶紧补上」
 - 不影响正常的 impulse 积累和 posts_today 计数
 
 ### 1.3 文件变更清单
@@ -71,7 +77,8 @@ if (hour >= 21 && impulseState.posts_today === 0) {
 | `skill/scripts/morning-plan.ts` | 替换 `WEEKDAY_RIGID` 为基于 `travel-state.json` phase 的动态生成函数 |
 | `skill/scripts/heartbeat-tick.ts` | 在 `regularTick()` 入口增加 KPI 兜底检查 |
 | `skill/scripts/post-pipeline.ts` | 支持 `forced: true` 参数，调整 vitality 门槛逻辑，diary 写入特殊条目 |
-| `skill/scripts/types.ts` | `PostPipelineOptions` 增加 `forced?: boolean; reason?: string` |
+| `skill/scripts/heartbeat-tick.ts` | 新增 `triggerForcedPost()` 包装函数 |
+| `skill/scripts/types.ts` | 新增 `TravelState`、`TravelPhase`、`TravelSpot` 类型（模块三共用，此处仅列出关联） |
 
 ---
 
@@ -137,12 +144,29 @@ advisorAdvice 摘要写入当天 diary，Minase 的内心活动可以引用：
 **社交图集成**
 
 小慧作为 `core` 层关系节点加入 `social-graph`：
-- `relations/lin-hui.json` 初始化（intimacy: 0.85，category: core）
-- 每次咨询后 closeness 微增（+0.01），长期未互动则缓慢衰减
+- 运行时路径：`~/.openclaw/workspace/memory/minase/relations/social/instagram/lin-hui.json`（与其他社交关系文件同目录，被 `readAllJSON()` 扫描到）
+- 初始化值：`intimacy: 0.85`，`category: core`，`min_closeness: 0.5`
+- 每次咨询后 closeness 微增（+0.01），`min_closeness` 设为下限防止 dormant
+- `SocialRelation` 类型扩展：在 `types.ts` 新增可选字段 `min_closeness?: number`，`social-graph-engine.ts` 衰减逻辑在 `processDormancy()` 前检查此字段
 
-**用户直接对话**
+**advisor 错误处理**
 
-用户可在 OpenClaw 中直接与小慧对话，她以闺密语气响应，并会主动引用 Minase 近期数据。
+`consultAdvisor()` 是非关键路径调用，失败不应阻断发帖。错误处理策略：
+- 网络错误 / 超时（>10s）→ 返回空字符串，`{advisor_suggestion}` 占位符替换为空
+- `planPost()` 对空建议静默处理，正常继续
+- 失败记录到 diary：「今天没联系到小慧，自己决定了」
+
+**forced 发帖时是否咨询小慧**
+
+`triggerForcedPost()` 触发的 pipeline（`FORCED_POST=1`）**跳过** `consultAdvisor()` 调用——强制补帖场景时间紧迫，不等 advisor LLM 响应。
+
+**`FORCED_POST` 对每日发帖上限的处理**
+
+`shouldConsiderPosting()` 的 3 帖/天硬上限在 `FORCED_POST=1` 时**同样绕过**。原因：KPI 兜底只在 `posts_today === 0` 时才触发（heartbeat-tick 的前置检查），因此触发时当天发帖数必然为 0，永远不会与上限冲突。`FORCED_POST` 流程中直接跳过 `shouldConsiderPosting()` 调用，进入 `planPost()`。
+
+**小慧社交图节点的衰减豁免**
+
+`lin-hui` 节点的 `closeness` 设置 `min_closeness: 0.5` 下限（在 `social-graph-engine.ts` 的衰减逻辑中对 core 层节点检查此字段）——即使多天未发帖也不会进入 dormant 状态。
 
 ### 2.4 文件变更清单
 
@@ -154,8 +178,8 @@ advisorAdvice 摘要写入当天 diary，Minase 的内心活动可以引用：
 | `skill/scripts/advisor-client.ts` | 新建：调用 ins-advisor LLM 的客户端函数 |
 | `skill/scripts/post-pipeline.ts` | `planPost()` 前插入 `consultAdvisor()` 调用，新增 `{advisor_suggestion}` 占位符 |
 | `skill/scripts/social-graph-engine.ts` | 初始化 lin-hui 社交图节点，每次咨询后更新 closeness |
-| `skill/templates/plan-post-prompt.md` | 新增 `{advisor_suggestion}` 占位符 |
-| `data/relations/lin-hui.json` | 新建：小慧的关系文件初始值 |
+| `skill/templates/post-intent-prompt.md` | 新增 `{advisor_suggestion}` 占位符（注意：模板文件名为 post-intent-prompt.md，非 plan-post-prompt.md） |
+| `~/.openclaw/workspace/memory/minase/relations/social/instagram/lin-hui.json` | 运行时路径（与其他社交关系同目录，被 `readAllJSON()` 扫描到），由 installer 在 `bin/cli.js` 安装时写入初始值；源码中不存放此文件 |
 
 ---
 
@@ -180,9 +204,25 @@ advisorAdvice 摘要写入当天 diary，Minase 的内心活动可以引用：
 ```
 
 **Phase 状态转换：**
+
+Phase 由 `arrived_at` 和 `planned_departure`（均为 `YYYY-MM-DD` 日期字符串）计算得出，`morning-plan.ts` 每天运行时用日期差推算：
+
 ```
-arriving (day 1) → exploring (day 2) → shooting (day 3..N-1) → departing (最后一天)
+total_days = daysBetween(arrived_at, planned_departure)  // 含首尾
+travel_day = daysBetween(arrived_at, today) + 1          // 从 1 开始
+
+phase 规则（按优先级顺序评估）：
+  travel_day === 1                         → arriving
+  travel_day === total_days                → departing
+  travel_day <= 2                          → exploring   （2 天以内的旅行直接跳到 departing，此规则不触发）
+  travel_day > 2 && < total_days           → shooting
 ```
+
+**边界说明：**
+- 2 天行程（total_days = 2）：day 1 = arriving，day 2 = departing，exploring/shooting 均不出现。这是预期行为。
+- 3 天行程（total_days = 3）：day 1 = arriving，day 2 = exploring，day 3 = departing。
+
+`travel_day` 字段仅作缓存，真正的 source of truth 是 `arrived_at` + `planned_departure` 两个日期字段。
 
 `morning-plan.ts` 每天运行时：
 1. 读取 `travel-state.json`
@@ -192,7 +232,7 @@ arriving (day 1) → exploring (day 2) → shooting (day 3..N-1) → departing (
 5. 基于 phase 生成当天的 rigid 日程
 
 **目的地切换：**
-当 `travel_day` 超过 `planned_departure` 对应天数时，morning-plan 触发「出发到下一目的地」逻辑：将 `next_destination` 提升为 `current_city`，重置 `travel_day = 1`，phase 回到 `arriving`。
+当 `today >= planned_departure` 时（日期比较），morning-plan 触发「出发到下一目的地」逻辑：将 `next_destination` 提升为 `current_city`，`arrived_at` 更新为 today，`planned_departure` 更新为 today + 3（默认 3 天，用户可手动覆盖），phase 回到 `arriving`。若 `next_destination` 为空，保持当前城市不切换，phase 设为 `shooting`。
 
 ### 3.2 目的地攻略抓取
 
@@ -208,7 +248,7 @@ async function collectTravelInspo(city: string, country: string): Promise<Travel
 
 结果写入 `inspiration-refs/travel-spots.json`（按城市 key 存储，7 天过期）。
 
-在 `refreshInspiration()` 中调用，结果注入 `planPhoto()` 的 `{travel_spots}` 占位符：
+在 `refreshInspiration()` 中调用，调用顺序为：先读取并推进 `travel-state`（phase 计算完成），再调用 `refreshInspiration()` → `collectTravelInspo()`，确保 `collectTravelInspo` 使用的是更新后的 `current_city`。结果注入 `planPhoto()` 的 `{travel_spots}` 占位符：
 ```
 当前城市可拍摄地点：
 - 岚山竹林（已去）：早晨光线最佳，竹林背景
@@ -287,15 +327,18 @@ PHASE_RATIOS = {
 
 | 文件 | 变更内容 |
 |------|---------|
-| `skill/scripts/types.ts` | 新增 `TravelState`、`TravelPhase`、`TravelSpot` 类型 |
-| `skill/scripts/morning-plan.ts` | 替换刚性日程生成逻辑，读取 travel-state，按 phase 生成 rigid 条目，推进 phase |
-| `skill/scripts/inspiration-collector.ts` | 新增 `collectTravelInspo()` 函数，写入 `travel-spots.json` |
-| `skill/scripts/generate-image.ts` | 扩展 travel 子风格，注入目的地关键词到 prompt |
-| `skill/scripts/post-pipeline.ts` | `planPhoto()` 的 prompt 注入 `{travel_spots}` |
+| `skill/scripts/types.ts` | 新增 `TravelState`、`TravelPhase`、`TravelSpot` 类型；`SocialRelation` 接口新增可选字段 `min_closeness?: number` |
+| `skill/scripts/morning-plan.ts` | 替换刚性日程生成逻辑；读取 travel-state，按 phase 生成 rigid 条目；推进 phase；`refreshInspiration()` 调用移至 travel-state 更新之后 |
+| `skill/scripts/inspiration-collector.ts` | 新增 `collectTravelInspo()` 函数，写入 `inspiration-refs/travel-spots.json` |
+| `skill/scripts/generate-image.ts` | 扩展 travel 子风格（travel_portrait / travel_food / travel_street），注入目的地关键词到 prompt |
+| `skill/scripts/post-pipeline.ts` | `planPhoto()` 的 prompt 注入 `{travel_spots}`；`FORCED_POST` 环境变量处理；跳过 advisor 咨询和 vitality 门槛 |
+| `skill/scripts/file-utils.ts` | 新增 `PATHS.travelState` 路径常量（`~/.openclaw/workspace/memory/minase/travel-state.json`） |
 | `skill/templates/photo-intent-prompt.md` | 新增 `{travel_spots}` 占位符 |
 | `skill/personality.md` | 重写：删除上班人设，新增数字游民/旅游博主身份 |
-| `data/travel-state.json` | 新建：旅行状态初始值 |
 | `bin/cli.js` | 安装向导新增 travel-state 和 lin-hui 初始化步骤 |
+| `skill/scripts/content-planner.ts` | 更新 `PHASE_RATIOS`，travel 占比提升至 40–50% |
+| `tests/morning-plan.test.ts` | 新建：phase 推进逻辑、刚性日程生成、目的地切换的单元测试 |
+| `tests/advisor-client.test.ts` | 新建：consultAdvisor 成功/失败降级场景测试 |
 
 ---
 
