@@ -100,11 +100,11 @@ export async function callLLM(prompt: string, maxTokens = 1024, caller?: string)
 
   debugLog('REQUEST', `model: ${model} | maxTokens: ${maxTokens}\n\n${prompt}`);
 
-  const totalStart = now().getTime();
+  const totalStart = Date.now();
   let startTime = totalStart;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      startTime = now().getTime();
+      startTime = Date.now();
       const res = await fetch(`${apiBase}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -127,11 +127,11 @@ export async function callLLM(prompt: string, maxTokens = 1024, caller?: string)
       const data = await res.json() as OpenAIChatResponse;
       const content = data.choices?.[0]?.message?.content ?? '';
       const finishReason = data.choices?.[0]?.finish_reason ?? 'unknown';
-      const elapsed = now().getTime() - startTime;
+      const elapsed = Date.now() - startTime;
       debugLog('RESPONSE', `elapsed: ${elapsed}ms | attempt: ${attempt + 1} | finish_reason: ${finishReason}\n\n${content}`);
       appendLlmLog({
         id: crypto.randomUUID(),
-        timestamp: now().toISOString(),
+        timestamp: new Date().toISOString(),
         caller: caller ?? autoDetectCaller(),
         prompt,
         response: stripThinkBlocks(content),
@@ -152,11 +152,11 @@ export async function callLLM(prompt: string, maxTokens = 1024, caller?: string)
         debugLog('FAIL', `attempt 2 failed: ${(err as Error).message}`);
         appendLlmLog({
           id: crypto.randomUUID(),
-          timestamp: now().toISOString(),
+          timestamp: new Date().toISOString(),
           caller: caller ?? autoDetectCaller(),
           prompt,
           response: null,
-          elapsed_ms: now().getTime() - totalStart,
+          elapsed_ms: Date.now() - totalStart,
           input_tokens: null,
           output_tokens: null,
           finish_reason: 'error',
