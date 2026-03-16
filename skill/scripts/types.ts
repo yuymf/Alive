@@ -202,7 +202,43 @@ export interface SocialRelation {
   }>;
   last_interaction: string;
   created_at: string;
+  min_closeness?: number;   // optional floor; prevents dormancy decay below this value
 }
+
+// === Travel State Machine ===
+export type TravelPhase = 'arriving' | 'exploring' | 'shooting' | 'departing';
+
+export interface TravelSpot {
+  name: string;
+  description: string;
+  best_time: string;       // e.g. "傍晚 golden hour"
+  style_tags: string[];    // e.g. ["travel_portrait", "scenic"]
+  visited: boolean;
+}
+
+export interface TravelState {
+  current_city: string;
+  country: string;
+  arrived_at: string;          // YYYY-MM-DD
+  travel_day: number;          // cached; source of truth is arrived_at + planned_departure
+  planned_departure: string;   // YYYY-MM-DD
+  phase: TravelPhase;
+  visited_spots: string[];
+  next_destination: string;
+  travel_mode: 'solo' | 'group';
+}
+
+export const DEFAULT_TRAVEL_STATE: TravelState = {
+  current_city: '东京',
+  country: '日本',
+  arrived_at: '',
+  travel_day: 1,
+  planned_departure: '',
+  phase: 'arriving',
+  visited_spots: [],
+  next_destination: '',
+  travel_mode: 'solo',
+};
 
 export interface SocialMeta {
   instagram_following: string[];
