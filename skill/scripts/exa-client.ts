@@ -28,7 +28,7 @@ export interface SearchResult {
 export const EXA_MCP_ENDPOINT = 'https://mcp.exa.ai/mcp';
 
 /** Timeout covering full round-trip: connect + server search (~10–12s from Asia) */
-export const SEARCH_TIMEOUT_MS = 25_000;
+const SEARCH_TIMEOUT_MS = 25_000;
 
 export async function exaWebSearch(
   query: string,

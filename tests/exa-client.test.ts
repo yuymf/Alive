@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { exaWebSearch, parseSearchResults, EXA_MCP_ENDPOINT, SEARCH_TIMEOUT_MS } from '../skill/scripts/exa-client';
+import { exaWebSearch, parseSearchResults, EXA_MCP_ENDPOINT } from '../skill/scripts/exa-client';
 
 // ---------------------------------------------------------------------------
 // Helpers — build realistic SSE response bodies
