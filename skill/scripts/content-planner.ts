@@ -79,7 +79,8 @@ function getCurrentPhase(): number {
  */
 export function shouldConsiderPosting(history: PostHistory): { allowed: boolean; reason: string } {
   const today = getLocalDate();
-  const todayStart = new Date(today).getTime();
+  const [y, m, d] = today.split('-').map(Number);
+  const todayStart = new Date(y, m - 1, d).getTime();   // Local midnight
   const todayEnd = todayStart + 24 * 60 * 60 * 1000;
   const postsToday = history.posts.filter(p => p.timestamp >= todayStart && p.timestamp < todayEnd).length;
   if (postsToday >= MAX_POSTS_PER_DAY) {
