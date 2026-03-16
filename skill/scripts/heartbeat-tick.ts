@@ -204,6 +204,33 @@ async function executePostPipeline(
 }
 
 /**
+ * Force-trigger the post pipeline regardless of LLM action choice.
+ * Used for the daily KPI guarantee. Spawns pipeline with FORCED_POST=1
+ * which bypasses vitality gate and shouldConsiderPosting() limit.
+ *
+ * Returns updated VitalityState so the caller can persist the cost deduction.
+ */
+async function triggerForcedPost(
+  vitalityState: VitalityState,
+  opts: { reason: string }
+): Promise<VitalityState> {
+  console.log(`[KPI] 强制发帖触发 reason=${opts.reason}`);
+
+  // executePostPipeline expects: action: { action: string; skill: string | null }
+  const fakeAction = {
+    action: '【KPI兜底】今天还没发帖，强制触发',
+    skill: 'post-pipeline' as string | null,
+  };
+
+  // canPost=true bypasses the vitality < 30 gate in executePostPipeline
+  // FORCED_POST env is read by post-pipeline process (handled in Task 5)
+  process.env.FORCED_POST = '1';
+  const updatedVitality = await executePostPipeline(fakeAction, vitalityState, [], true);
+  delete process.env.FORCED_POST;
+  return updatedVitality;
+}
+
+/**
  * Regular heartbeat tick (Spec §10).
  */
 export async function regularTick(): Promise<void> {
@@ -234,6 +261,14 @@ export async function regularTick(): Promise<void> {
   // 1b. Read and update impulse state
   let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
   impulse = decayImpulse(impulse);
+
+  // KPI 兜底：21:00 后如果当天还没发帖，强制触发
+  if (hour >= 21 && impulse.posts_today === 0) {
+    vitality = await triggerForcedPost(vitality, { reason: 'daily_kpi' });
+    writeJSON(PATHS.postImpulse, impulse);
+    writeJSON(PATHS.vitalityState, vitality);
+    return;
+  }
 
   const dormancyBoost = checkDormancy(impulse);
   if (dormancyBoost > 0) {
