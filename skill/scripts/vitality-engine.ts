@@ -22,6 +22,7 @@ const ACTION_COSTS: Record<string, number> = {
   'browsing': 2,
   'creative_work': 8,
   'learning': 4,
+  'search': 4,
 };
 
 // === Replenishment Rules ===
@@ -131,6 +132,7 @@ export function getVitalityConstraints(vitality: number): {
   canPost: boolean;
   canDoHeavySocial: boolean;
   canCreateContent: boolean;
+  canSearch: boolean;
   moodModifier: string;
   intentMultiplier: number;
 } {
@@ -142,6 +144,7 @@ export function getVitalityConstraints(vitality: number): {
         canPost: true,
         canDoHeavySocial: true,
         canCreateContent: true,
+        canSearch: true,
         moodModifier: '精力充沛',
         intentMultiplier: 1.2,
       };
@@ -150,6 +153,7 @@ export function getVitalityConstraints(vitality: number): {
         canPost: true,
         canDoHeavySocial: true,
         canCreateContent: true,
+        canSearch: true,
         moodModifier: '',
         intentMultiplier: 1.0,
       };
@@ -158,6 +162,7 @@ export function getVitalityConstraints(vitality: number): {
         canPost: false,
         canDoHeavySocial: false,
         canCreateContent: true,
+        canSearch: vitality > 20,
         moodModifier: '有点累了',
         intentMultiplier: 0.6,
       };
@@ -166,6 +171,7 @@ export function getVitalityConstraints(vitality: number): {
         canPost: false,
         canDoHeavySocial: false,
         canCreateContent: false,
+        canSearch: false,
         moodModifier: '好累...需要休息',
         intentMultiplier: 0.3,
       };
