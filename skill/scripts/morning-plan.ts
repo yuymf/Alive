@@ -71,14 +71,6 @@ export async function runMorningPlan(): Promise<void> {
   const weekday = getLocalWeekday(currentTime);
   const todayStr = getLocalDate(currentTime);
 
-  // Refresh expired inspiration data at the start of each day
-  try {
-    const { refreshInspiration } = await import('./inspiration-collector');
-    await refreshInspiration();
-  } catch (err) {
-    console.error(`Inspiration refresh failed: ${(err as Error).message}`);
-  }
-
   // Read yesterday's log
   const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
   const yesterday = getLocalDate(new Date(currentTime.getTime() - 86400000));
@@ -105,6 +97,14 @@ export async function runMorningPlan(): Promise<void> {
   let travelState: TravelState = readJSON<TravelState>(PATHS.travelState, DEFAULT_TRAVEL_STATE);
   travelState = advanceTravelState(travelState, today);
   writeJSON(PATHS.travelState, travelState);
+
+  // Refresh expired inspiration data at the start of each day (after travel state updated)
+  try {
+    const { refreshInspiration } = await import('./inspiration-collector');
+    await refreshInspiration();
+  } catch (err) {
+    console.error(`Inspiration refresh failed: ${(err as Error).message}`);
+  }
 
   // 2. Generate rigid schedule from phase
   const rigidSchedule = buildRigidFromTravelPhase(travelState.phase);
