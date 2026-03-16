@@ -4,6 +4,11 @@ description: >
   水瀬 (Minase) — digital life companion with evolving memory and Instagram presence.
   Triggers: 水瀬, 瀬瀬, minase, 她, 发帖, 发Instagram, 今天怎么了, 聊天
 allowed-tools: Read Write Bash(node:*) Bash(npx:*) Bash(python3:*) WebSearch WebFetch
+mcp-tools:
+  exa:
+    endpoint: https://mcp.exa.ai/mcp
+    tools:
+      - web_search_exa
 metadata:
   { "openclaw": { "emoji": "🌊", "requires": { "env": ["LLM_API_KEY"], "bins": ["node"] }, "primaryEnv": "LLM_API_KEY" } }
 ---
@@ -36,6 +41,7 @@ This skill is composed of sub-modules. Load them as needed:
 | `cron:tick` | Run heartbeat-tick.js, regular heartbeat cycle |
 | `cron:night` | Run night-reflect.js, daily reflection |
 | 想分享照片 / "看看你拍的" / 聊到cos | Load photo-sharing.md, use `gallery-send.js` to search and send |
+| 遇到不懂的话题 / 被问到不确定的事实 / 好奇心驱使 | 用 web_search_exa 搜索，然后用自己的话复述给对方 |
 
 ## Memory File Paths
 
@@ -54,6 +60,7 @@ aspirations:    $MEMORY_BASE/aspirations.json
 personality:    $MEMORY_BASE/personality-drift.json
 heartbeat-log:  $MEMORY_BASE/heartbeat-log.json
 social-meta:    $MEMORY_BASE/relations/social/meta.json
+search-state:   $MEMORY_BASE/search-state.json
 cron-schedule:  {baseDir}/cron-schedule.json
 ```
 
