@@ -8,7 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-import { InspirationData, PostHistory, SavedReference, PostImpulseState, DEFAULT_POST_IMPULSE } from './types';
+import { InspirationData, PostHistory, SavedReference, PostImpulseState, DEFAULT_POST_IMPULSE, TravelState, TravelSpot, DEFAULT_TRAVEL_STATE } from './types';
 import { PATHS, readJSON, writeJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
 import { callInstagramBridge } from './instagram-bridge-client';
@@ -430,6 +430,62 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
 }
 
 /**
+ * Collect photography spots for the current city using LLM knowledge.
+ * Results cached for 7 days per city key in inspiration-refs/travel-spots.json.
+ */
+export async function collectTravelInspo(city: string, country: string): Promise<TravelSpot[]> {
+  const travelSpotsPath = path.join(PATHS.inspirationRefs, 'travel-spots.json');
+
+  // Load cache
+  let cache: Record<string, { spots: TravelSpot[]; fetched_at: string }> = {};
+  try {
+    cache = JSON.parse(fs.readFileSync(travelSpotsPath, 'utf-8'));
+  } catch { /* first run */ }
+
+  const cacheKey = `${city}_${country}`;
+  const cached = cache[cacheKey];
+  if (cached) {
+    const ageMs = Date.now() - new Date(cached.fetched_at).getTime();
+    if (ageMs < 7 * 24 * 60 * 60 * 1000) {
+      return cached.spots;
+    }
+  }
+
+  // Use LLM to get local photography knowledge
+  const prompt = `你是一个了解${country}各城市的旅行摄影专家。
+请列出${city}最适合 Instagram 拍摄的 5 个地点，每个地点给出：名称、一句话描述、最佳拍摄时间。
+
+以 JSON 数组格式返回，每项包含字段：name, description, best_time, style_tags（数组，从 ["travel_portrait","travel_food","travel_street"] 中选）。
+
+\`\`\`json
+[{"name":"...","description":"...","best_time":"...","style_tags":["travel_portrait"]}]
+\`\`\``;
+
+  let spots: TravelSpot[] = [];
+  try {
+    const raw = await callLLMJSON<Array<{ name: string; description: string; best_time: string; style_tags: string[] }>>(
+      prompt, 512, 'travel-inspo'
+    );
+    spots = (raw ?? []).map(r => ({
+      name: r.name ?? '',
+      description: r.description ?? '',
+      best_time: r.best_time ?? '傍晚',
+      style_tags: r.style_tags ?? ['travel_portrait'],
+      visited: false,
+    }));
+  } catch { /* LLM call failed — return empty */ }
+
+  // Save cache
+  cache[cacheKey] = { spots, fetched_at: new Date().toISOString() };
+  try {
+    fs.mkdirSync(path.dirname(travelSpotsPath), { recursive: true });
+    fs.writeFileSync(travelSpotsPath, JSON.stringify(cache, null, 2));
+  } catch { /* non-critical */ }
+
+  return spots;
+}
+
+/**
  * Main entry: refresh expired inspiration sections.
  */
 export async function refreshInspiration(forceAll = false): Promise<InspirationData> {
@@ -471,6 +527,12 @@ export async function refreshInspiration(forceAll = false): Promise<InspirationD
   if (forceAll || isExpired(current.xiaohongshu_trends?.updated_at ?? 0, TTL.xiaohongshu_trends)) {
     console.log('Refreshing XiaoHongShu trends...');
     updated = { ...updated, xiaohongshu_trends: await collectXiaohongshuTrends() };
+  }
+
+  // Collect travel spots for current city
+  const travelStateData = readJSON<TravelState>(PATHS.travelState, DEFAULT_TRAVEL_STATE);
+  if (travelStateData.current_city) {
+    await collectTravelInspo(travelStateData.current_city, travelStateData.country).catch(() => {});
   }
 
   writeJSON(PATHS.inspiration, updated);
