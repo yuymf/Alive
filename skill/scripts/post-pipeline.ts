@@ -234,6 +234,7 @@ export function markPhotosAsPosted(localPaths: string[]): void {
  * Main pipeline entry point.
  */
 async function runPipeline(): Promise<void> {
+  const isForced = process.env.FORCED_POST === '1';
   console.log('Post pipeline started.');
 
   // 0. Cleanup old photos
@@ -308,11 +309,13 @@ async function runPipeline(): Promise<void> {
   // 3. Post phase: does Minase want to share on Instagram?
   const history = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
   const normalizedHistory: PostHistory = { posts: history.posts.map(normalizePostRecord) };
-  const postCheck = shouldConsiderPosting(normalizedHistory);
 
-  if (!postCheck.allowed) {
-    console.log(`Post skipped: ${postCheck.reason}`);
-    return;
+  if (!isForced) {
+    const postCheck = shouldConsiderPosting(normalizedHistory);
+    if (!postCheck.allowed) {
+      console.log(`[pipeline] shouldConsiderPosting blocked: ${postCheck.reason}`);
+      return;
+    }
   }
 
   try {
@@ -385,6 +388,14 @@ async function runPipeline(): Promise<void> {
 
     // Diary entry in Minase's voice
     writeDiary(postIntent.reason, 6, ['instagram', 'post']);
+    if (isForced) {
+      const todayStr = new Date().toLocaleDateString('zh-CN');
+      const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      appendText(
+        PATHS.diary,
+        `\n## ${todayStr} ${timeStr}\n今天差点忘了发帖，赶紧补上了。以后不能这样，发帖是我的工作。\n情绪: 懊悔 | 重要性: 3\n标签: kpi兜底\n`
+      );
+    }
     console.log(`Posted! Media ID: ${mediaPk}`);
   } catch (err) {
     writeDiary('发ins的时候出了点问题...好烦', 2, ['instagram', '失败']);
