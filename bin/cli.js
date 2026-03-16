@@ -432,6 +432,24 @@ async function reinstall() {
   }, null, 2));
   fs.writeFileSync(path.join(MEMORY_DIR, 'post-history.json'), JSON.stringify({ "posts": [] }, null, 2));
   fs.writeFileSync(path.join(MEMORY_DIR, 'post-impulse.json'), JSON.stringify({ value: 0, last_post_at: 0, posts_today_date: '', posts_today: 0 }, null, 2));
+  // Initialize travel-state.json
+  const travelStatePathReinstall = path.join(MEMORY_DIR, 'travel-state.json');
+  if (!fs.existsSync(travelStatePathReinstall)) {
+    const startCity = process.env.TRAVEL_HOME_CITY || '东京';
+    const today = new Date().toISOString().slice(0, 10);
+    const departure = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+    fs.writeFileSync(travelStatePathReinstall, JSON.stringify({
+      current_city: startCity,
+      country: '日本',
+      arrived_at: today,
+      travel_day: 1,
+      planned_departure: departure,
+      phase: 'arriving',
+      visited_spots: [],
+      next_destination: '',
+      travel_mode: 'solo',
+    }, null, 2));
+  }
   fs.writeFileSync(path.join(MEMORY_DIR, 'photo-gallery.json'), JSON.stringify({ "photos": [] }, null, 2));
   fs.mkdirSync(path.join(MEMORY_DIR, 'inspiration-refs'), { recursive: true });
   const srcRefs = path.join(__dirname, '..', 'skill', 'assets', 'references');
@@ -894,6 +912,25 @@ async function main() {
       count: 0,
     }, null, 2));
     console.log('  ✓ search-state.json');
+  }
+  // travel-state.json
+  const travelStatePath = path.join(MEMORY_DIR, 'travel-state.json');
+  if (!fs.existsSync(travelStatePath)) {
+    const startCity = process.env.TRAVEL_HOME_CITY || '东京';
+    const today = new Date().toISOString().slice(0, 10);
+    const departure = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+    fs.writeFileSync(travelStatePath, JSON.stringify({
+      current_city: startCity,
+      country: '日本',
+      arrived_at: today,
+      travel_day: 1,
+      planned_departure: departure,
+      phase: 'arriving',
+      visited_spots: [],
+      next_destination: '',
+      travel_mode: 'solo',
+    }, null, 2));
+    console.log('  ✓ travel-state.json');
   }
   // photo-gallery.json
   const photoGalleryPath = path.join(MEMORY_DIR, 'photo-gallery.json');
