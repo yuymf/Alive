@@ -63,6 +63,7 @@ export const PATHS = {
   get references() { return path.join(getSkillBase(), 'assets', 'references'); },
   get flowState() { return path.join(getMemoryBase(), 'flow-state.json'); },
   get pendingChains() { return path.join(getMemoryBase(), 'pending-chains.json'); },
+  get searchState() { return path.join(getMemoryBase(), 'search-state.json'); },
 };
 
 /**
