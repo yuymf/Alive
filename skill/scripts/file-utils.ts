@@ -64,6 +64,7 @@ export const PATHS = {
   get flowState() { return path.join(getMemoryBase(), 'flow-state.json'); },
   get pendingChains() { return path.join(getMemoryBase(), 'pending-chains.json'); },
   get searchState() { return path.join(getMemoryBase(), 'search-state.json'); },
+  get travelState() { return path.join(getMemoryBase(), 'travel-state.json'); },
 };
 
 /**
