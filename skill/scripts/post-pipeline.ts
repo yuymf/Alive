@@ -319,7 +319,7 @@ async function runPipeline(): Promise<void> {
   }
 
   try {
-    const postIntent = await planPost();
+    const postIntent = await planPost({ skipAdvisor: isForced });
 
     if (!postIntent.wantToPost || postIntent.selectedPhotos.length === 0) {
       console.log(`No post intent: ${postIntent.reason}`);

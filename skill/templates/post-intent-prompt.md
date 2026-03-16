@@ -11,6 +11,9 @@
 - 最佳hashtag组合: {best_hashtag_combos}
 - 热门hashtag: {trending_hashtags}
 
+**闺密小慧的建议：**
+{advisor_suggestion}
+
 ## Instagram 发帖策略
 
 **首图决定一切**——ins feed 里只能看到第一张图，所以：
