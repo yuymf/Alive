@@ -149,7 +149,7 @@ async function collectInstagramTrends(): Promise<{
       hot_styles: string[];
       high_engagement_patterns: string[];
       trending_hashtags: string[];
-    }>(prompt, 2048);
+    }>(prompt, 2048, 'inspiration-collector');
     trends = { ...result, updated_at: now().getTime() };
   } catch {
     trends = { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: now().getTime() };
@@ -167,7 +167,7 @@ ${allPostsWithImages.map(({ post }, i) => `${i + 1}. [${(post.caption_text ?? ''
 返回JSON：{"selected": [序号], "reasons": {"序号": "原因"}}`;
 
     try {
-      const filterResult = await callLLMJSON<{ selected: number[]; reasons: Record<string, string> }>(selectionPrompt, 1024);
+      const filterResult = await callLLMJSON<{ selected: number[]; reasons: Record<string, string> }>(selectionPrompt, 1024, 'inspiration-collector');
       const selected = filterResult.selected ?? [];
 
       const refsDir = PATHS.inspirationRefs;
@@ -225,7 +225,7 @@ async function collectACGHotspots(): Promise<InspirationData['acg_hotspots']> {
       trending_characters: string[];
       upcoming_events: string[];
       seasonal_themes: string[];
-    }>(prompt, 2048);
+    }>(prompt, 2048, 'inspiration-collector');
     return { ...result, updated_at: now().getTime() };
   } catch {
     return { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: now().getTime() };
@@ -256,7 +256,7 @@ async function collectVisualTrends(): Promise<InspirationData['visual_trends']> 
       composition_styles: string[];
       color_palettes: string[];
       scene_ideas: string[];
-    }>(prompt, 2048);
+    }>(prompt, 2048, 'inspiration-collector');
     return { ...result, updated_at: now().getTime() };
   } catch {
     return { composition_styles: [], color_palettes: [], scene_ideas: [], updated_at: now().getTime() };
@@ -401,7 +401,7 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
         visual_description: string;
         style_tags: string[];
       }>;
-    }>(prompt, 1024);
+    }>(prompt, 1024, 'inspiration-collector');
 
     // Merge saved_inspirations with existing (persists across refreshes)
     const current = readJSON<InspirationData>(PATHS.inspiration, DEFAULT_INSPIRATION);

@@ -67,7 +67,7 @@ export async function digestResults(
     .replace('{voice_directive}', voiceDirective)
     .replace('{search_results}', formattedResults);
 
-  const response = await callLLM(prompt, 512);
+  const response = await callLLM(prompt, 512, 'search-pipeline');
   return response.content;
 }
 

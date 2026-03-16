@@ -85,7 +85,7 @@ async function reflect(force = false): Promise<void> {
     .replace(/```[\s\S]*?```/g, match => match.slice(3, -3).trim());
 
   console.log('Running reflection...');
-  const newLessons = await callLLMJSON<WisdomEntry[]>(prompt);
+  const newLessons = await callLLMJSON<WisdomEntry[]>(prompt, 1024, 'memory-reflect');
 
   // Add new wisdom (immutable — build new array)
   const todayStr = getLocalDate();
