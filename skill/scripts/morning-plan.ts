@@ -13,7 +13,9 @@ import {
   DEFAULT_MOMENTUM, DEFAULT_UNDERTONE, BASE_RESISTANCE,
   FlowState, DEFAULT_FLOW_STATE,
   ChainAndCooldownState, DEFAULT_CHAIN_STATE,
+  TravelState, DEFAULT_TRAVEL_STATE,
 } from './types';
+import { advanceTravelState } from './travel-state';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
 import { callInstagramBridge } from './instagram-bridge-client';
@@ -28,25 +30,32 @@ function toIntentCategory(s: string): IntentCategory {
   return VALID_CATEGORIES.has(s) ? s as IntentCategory : '表达';
 }
 
-// Default rigid schedule template (Spec §3)
-const WEEKDAY_RIGID: RigidSchedule[] = [
-  {
-    type: 'rigid',
-    activity: '上班',
-    start: '09:00',
-    end: '18:00',
-    weekdays: [1, 2, 3, 4, 5],
-    allowed_actions: ['内心活动', '偷看手机', '回消息', '摸鱼'],
-  },
-  {
-    type: 'rigid',
-    activity: '健身',
-    start: '19:00',
-    end: '20:30',
-    weekdays: [2, 4],
-    allowed_actions: ['健身', '拍照', '内心活动'],
-  },
-];
+/**
+ * Generate today's rigid schedule based on the current travel phase.
+ * Replaces the old weekday-based WEEKDAY_RIGID constant.
+ */
+function buildRigidFromTravelPhase(phase: TravelState['phase']): RigidSchedule[] {
+  switch (phase) {
+    case 'arriving':
+      return [
+        { type: 'rigid', activity: '到达探索', start: '09:00', end: '12:00', weekdays: [1,2,3,4,5,6,7], allowed_actions: ['内心活动', '拍摄环境', '找外景', '搜攻略'] },
+        { type: 'rigid', activity: '踩点拍摄', start: '14:00', end: '18:00', weekdays: [1,2,3,4,5,6,7], allowed_actions: ['拍摄', '生成图片', '找参考', '搜攻略'] },
+        { type: 'rigid', activity: '整理发帖', start: '20:00', end: '21:00', weekdays: [1,2,3,4,5,6,7], allowed_actions: ['发帖', '写文案', '回评论'] },
+      ];
+    case 'exploring':
+    case 'shooting':
+      return [
+        { type: 'rigid', activity: '外景拍摄', start: '09:00', end: '12:00', weekdays: [1,2,3,4,5,6,7], allowed_actions: ['拍摄', '生成图片', '找外景', '搜攻略'] },
+        { type: 'rigid', activity: '探店游览', start: '14:00', end: '17:00', weekdays: [1,2,3,4,5,6,7], allowed_actions: ['拍摄', '内心活动', '搜攻略'] },
+        { type: 'rigid', activity: '发帖时间', start: '19:30', end: '21:00', weekdays: [1,2,3,4,5,6,7], allowed_actions: ['发帖', '写文案', '回评论'] },
+      ];
+    case 'departing':
+      return [
+        { type: 'rigid', activity: '打包出发', start: '10:00', end: '12:00', weekdays: [1,2,3,4,5,6,7], allowed_actions: ['内心活动', '搜索下一目的地'] },
+        { type: 'rigid', activity: '发帖总结', start: '20:00', end: '21:00', weekdays: [1,2,3,4,5,6,7], allowed_actions: ['发帖', '写文案', '回评论'] },
+      ];
+  }
+}
 
 interface MorningPlanDecision {
   mood_description: string;
@@ -91,8 +100,14 @@ export async function runMorningPlan(): Promise<void> {
   const events = readJSON<EventQueue>(PATHS.eventQueue, { events: [], max_size: 50 });
   const overnightEvents = events.events.filter(e => !e.processed);
 
-  // Build rigid schedule for today
-  const todayRigid = WEEKDAY_RIGID.filter(r => r.weekdays.includes(weekday));
+  // 1. Read and advance travel state
+  const today = new Date().toISOString().slice(0, 10);
+  let travelState: TravelState = readJSON<TravelState>(PATHS.travelState, DEFAULT_TRAVEL_STATE);
+  travelState = advanceTravelState(travelState, today);
+  writeJSON(PATHS.travelState, travelState);
+
+  // 2. Generate rigid schedule from phase
+  const rigidSchedule = buildRigidFromTravelPhase(travelState.phase);
 
   // Sync follower count from Instagram (non-fatal if it fails)
   try {
@@ -140,8 +155,8 @@ export async function runMorningPlan(): Promise<void> {
     .replace('{overnight_events}', overnightEvents.length > 0
       ? overnightEvents.map(e => `- [${e.type}] ${JSON.stringify(e.data).slice(0, 100)}`).join('\n')
       : '平静的夜晚，没有新消息。')
-    .replace('{rigid_schedule_template}', todayRigid.length > 0
-      ? todayRigid.map(r => `- ${r.start}-${r.end} ${r.activity}`).join('\n')
+    .replace('{rigid_schedule_template}', rigidSchedule.length > 0
+      ? rigidSchedule.map(r => `- ${r.start}-${r.end} ${r.activity}`).join('\n')
       : '今天没有固定日程（周末）');
 
   const decision = await callLLMJSON<MorningPlanDecision>(prompt, undefined, 'morning-plan');
@@ -149,7 +164,7 @@ export async function runMorningPlan(): Promise<void> {
   // Build schedule-today.json
   const scheduleToday: ScheduleToday = {
     date: todayStr,
-    rigid: todayRigid,
+    rigid: rigidSchedule,
     flexible: decision.flexible_schedule.map(f => ({
       type: 'flexible' as const,
       activity: f.activity,
