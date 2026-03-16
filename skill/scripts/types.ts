@@ -317,12 +317,14 @@ export interface WisdomStore {
 
 // === Auto-Photo System (Spec: 2026-03-11-auto-photo-instagram) ===
 
-export type ContentStyle = 'cos' | 'daily' | 'behind_scenes' | 'travel';
+export type ContentStyle = 'cos' | 'daily' | 'behind_scenes' | 'travel'
+  | 'travel_portrait' | 'travel_food' | 'travel_street';
 
 export interface ShotDescription {
   description: string;
   angle: string;
   variation: string;
+  style?: ContentStyle;
 }
 
 export interface PostRecord {

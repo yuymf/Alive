@@ -51,10 +51,11 @@ const DEFAULT_EMOTION: EmotionState = {
 };
 
 // Phase 1 ratios from instagram.md (authority source)
+// travel sub-styles share the same bucket as 'travel' for ratio accounting
 const PHASE_RATIOS: Record<number, Record<ContentStyle, number>> = {
-  1: { cos: 0.8, daily: 0.1, behind_scenes: 0, travel: 0.1 },
-  2: { cos: 0.5, daily: 0.2, behind_scenes: 0.1, travel: 0.2 },
-  3: { cos: 0.4, daily: 0.2, behind_scenes: 0.15, travel: 0.25 },
+  1: { cos: 0.8, daily: 0.1, behind_scenes: 0, travel: 0.1, travel_portrait: 0, travel_food: 0, travel_street: 0 },
+  2: { cos: 0.5, daily: 0.2, behind_scenes: 0.1, travel: 0.2, travel_portrait: 0, travel_food: 0, travel_street: 0 },
+  3: { cos: 0.4, daily: 0.2, behind_scenes: 0.15, travel: 0.25, travel_portrait: 0, travel_food: 0, travel_street: 0 },
 };
 
 const MAX_POSTS_PER_DAY = 3;
@@ -125,6 +126,21 @@ function formatRecentPerformance(history: PostHistory): string {
 }
 
 /**
+ * Refine travel style to a sub-style based on scene description.
+ */
+function refineStyle(style: ContentStyle, sceneDescription: string): ContentStyle {
+  if (style !== 'travel') return style;
+  const desc = sceneDescription.toLowerCase();
+  if (desc.includes('餐厅') || desc.includes('咖啡') || desc.includes('探店') || desc.includes('food')) {
+    return 'travel_food';
+  }
+  if (desc.includes('街') || desc.includes('street') || desc.includes('市场') || desc.includes('alley')) {
+    return 'travel_street';
+  }
+  return 'travel_portrait'; // default travel sub-style
+}
+
+/**
  * Plan a photo: ask Minase if she wants to take a picture.
  */
 export async function planPhoto(): Promise<PhotoIntent> {
@@ -178,14 +194,20 @@ export async function planPhoto(): Promise<PhotoIntent> {
 
   const parsed = await callLLMJSON<PhotoIntent>(prompt, undefined, 'content-planner');
 
+  const style = parsed.style ?? 'daily';
+  const refinedShots = (parsed.shots ?? (parsed.wantToShoot ? [{
+    description: parsed.sceneDescription,
+    angle: '正面',
+    variation: '主图',
+  }] : [])).map(shot => ({
+    ...shot,
+    style: refineStyle(shot.style ?? style, shot.description ?? ''),
+  }));
+
   const intent: PhotoIntent = {
     ...parsed,
     imageCount: parsed.imageCount ?? 1,
-    shots: parsed.shots ?? (parsed.wantToShoot ? [{
-      description: parsed.sceneDescription,
-      angle: '正面',
-      variation: '主图',
-    }] : []),
+    shots: refinedShots,
   };
 
   return intent;
