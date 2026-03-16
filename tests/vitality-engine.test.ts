@@ -525,6 +525,38 @@ describe('getVitalityConstraints', () => {
   });
 });
 
+describe('applyActionCost - search', () => {
+  it('should deduct 4 vitality for search action', () => {
+    const state = makeVitality({ vitality: 50 });
+    const result = applyActionCost(state, 'search');
+    expect(result.vitality).toBe(46);
+    expect(result).not.toBe(state); // immutability
+  });
+
+  it('should clamp vitality to 0 when search cost exceeds remaining', () => {
+    const state = makeVitality({ vitality: 2 });
+    const result = applyActionCost(state, 'search');
+    expect(result.vitality).toBe(0);
+  });
+});
+
+describe('getVitalityConstraints - canSearch', () => {
+  it('should allow search when vitality > 20', () => {
+    const constraints = getVitalityConstraints(50);
+    expect(constraints.canSearch).toBe(true);
+  });
+
+  it('should disallow search when vitality <= 20', () => {
+    const constraints = getVitalityConstraints(20);
+    expect(constraints.canSearch).toBe(false);
+  });
+
+  it('should disallow search in critical zone', () => {
+    const constraints = getVitalityConstraints(5);
+    expect(constraints.canSearch).toBe(false);
+  });
+});
+
 // === DEFAULT_VITALITY ===
 
 describe('DEFAULT_VITALITY', () => {
