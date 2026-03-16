@@ -100,7 +100,8 @@ export async function callLLM(prompt: string, maxTokens = 1024, caller?: string)
 
   debugLog('REQUEST', `model: ${model} | maxTokens: ${maxTokens}\n\n${prompt}`);
 
-  let startTime = now().getTime();
+  const totalStart = now().getTime();
+  let startTime = totalStart;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       startTime = now().getTime();
@@ -155,7 +156,7 @@ export async function callLLM(prompt: string, maxTokens = 1024, caller?: string)
           caller: caller ?? autoDetectCaller(),
           prompt,
           response: null,
-          elapsed_ms: now().getTime() - startTime,
+          elapsed_ms: now().getTime() - totalStart,
           input_tokens: null,
           output_tokens: null,
           finish_reason: 'error',
