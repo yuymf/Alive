@@ -11,8 +11,10 @@ import {
   ContentStyle, PhotoIntent, PostIntent, PostHistory, PostRecord,
   InspirationData, EmotionState, ScheduleToday,
   DEFAULT_MOMENTUM, DEFAULT_UNDERTONE,
+  TravelState, DEFAULT_TRAVEL_STATE,
 } from './types';
-import { PATHS, readJSON, readTemplate } from './file-utils';
+import { PATHS, readJSON, readTemplate, appendText } from './file-utils';
+import { consultAdvisor } from './advisor-client';
 import { callLLMJSON } from './llm-client';
 import { getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime } from './time-utils';
 
@@ -175,7 +177,7 @@ export async function planPhoto(): Promise<PhotoIntent> {
 /**
  * Plan a post: ask Minase if she wants to share a photo on Instagram.
  */
-export async function planPost(): Promise<PostIntent> {
+export async function planPost(options?: { skipAdvisor?: boolean }): Promise<PostIntent> {
   const emotion = readJSON<EmotionState>(PATHS.emotionState, DEFAULT_EMOTION);
   const inspiration = readJSON<InspirationData>(PATHS.inspiration, DEFAULT_INSPIRATION);
 
@@ -191,6 +193,41 @@ export async function planPost(): Promise<PostIntent> {
     };
   }
 
+  // Step A: Read social meta (for follower count)
+  const socialMeta = readJSON<{ follower_count?: number }>(PATHS.socialMeta, {});
+
+  // Step B: Read post history and build summary
+  const postHistory = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
+  const recentPostsSummary = (postHistory.posts ?? [])
+    .slice(-7)
+    .map((p: PostRecord) => `${p.timestamp ? new Date(p.timestamp).toISOString().slice(0, 10) : '?'}: ${p.style ?? '?'} — ${p.caption?.slice(0, 30) ?? '?'}…`)
+    .join('\n');
+
+  // Step C: Consult 小慧 for today's advice (non-blocking, graceful degradation)
+  const travelStateRaw = readJSON<TravelState>(PATHS.travelState, DEFAULT_TRAVEL_STATE);
+  const advisorAdvice = (options?.skipAdvisor)
+    ? ''
+    : await consultAdvisor({
+        currentCity: travelStateRaw.current_city,
+        country: travelStateRaw.country,
+        followerCount: socialMeta?.follower_count ?? 0,
+        recentPostsSummary,
+        trendingTopics: inspiration?.visual_trends?.scene_ideas?.join(', ') ?? '',
+      });
+  const advisorSuggestion = advisorAdvice || '（今天没联系到小慧）';
+
+  // Write advisor result to diary (non-critical)
+  if (advisorAdvice) {
+    const todayStr = new Date().toLocaleDateString('zh-CN');
+    const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    try {
+      appendText(
+        PATHS.diary,
+        `\n## ${todayStr} ${timeStr}\n小慧说：${advisorAdvice.slice(0, 100)}…\n情绪: 参考建议 | 重要性: 2\n标签: 运营建议\n`
+      );
+    } catch { /* diary write is non-critical */ }
+  }
+
   const template = readTemplate('post-intent-prompt.md');
   const prompt = template
     .replace('{photo_list}', photoList.map((p, i) => `${i + 1}. ${path.basename(p)} (${path.basename(path.dirname(p))})`).join('\n'))
@@ -198,7 +235,8 @@ export async function planPost(): Promise<PostIntent> {
     .replace('{mood}', emotion.mood.description)
     .replace('{best_time_slots}', inspiration.self_performance.best_time_slots.join('、') || '暂无数据')
     .replace('{best_hashtag_combos}', inspiration.self_performance.best_hashtag_combos.map(c => c.join(', ')).join(' | ') || '暂无数据')
-    .replace('{trending_hashtags}', inspiration.instagram_trends.trending_hashtags.join(', ') || '暂无数据');
+    .replace('{trending_hashtags}', inspiration.instagram_trends.trending_hashtags.join(', ') || '暂无数据')
+    .replace('{advisor_suggestion}', advisorSuggestion);
 
   const parsed = await callLLMJSON<PostIntent>(prompt, undefined, 'content-planner');
 

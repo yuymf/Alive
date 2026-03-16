@@ -87,11 +87,15 @@ export function decayRelation(relation: SocialRelation, now: Date): SocialRelati
 
   if (decayAmount === 0) return relation;
 
+  const newCloseness = clampCloseness(relation.relationship.closeness - decayAmount);
+  // Respect min_closeness floor if set
+  const minCloseness = relation.min_closeness ?? 0;
+  const clampedCloseness = Math.max(newCloseness, minCloseness);
   return {
     ...relation,
     relationship: {
       ...relation.relationship,
-      closeness: clampCloseness(relation.relationship.closeness - decayAmount),
+      closeness: clampedCloseness,
     },
   };
 }

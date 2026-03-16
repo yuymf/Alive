@@ -404,6 +404,26 @@ async function reinstall() {
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations', 'social', 'instagram'), { recursive: true });
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations', 'social', 'xiaohongshu'), { recursive: true });
   fs.mkdirSync(path.join(MEMORY_DIR, 'photo-roll'), { recursive: true });
+  // Initialize lin-hui advisor relation
+  const linHuiPathReinstall = path.join(MEMORY_DIR, 'relations', 'social', 'instagram', 'lin-hui.json');
+  if (!fs.existsSync(linHuiPathReinstall)) {
+    fs.writeFileSync(linHuiPathReinstall, JSON.stringify({
+      id: 'lin-hui',
+      name: '小慧',
+      platform: 'instagram',
+      type: '同行',
+      relationship: {
+        closeness: 8.5,
+        sentiment: 'positive',
+        tags: ['闺密', '运营顾问', '网红'],
+      },
+      known_info: ['深圳人', '8万粉美妆账号', '擅长INS运营策略'],
+      interaction_history: [],
+      last_interaction: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString().slice(0, 10),
+      min_closeness: 0.5,
+    }, null, 2));
+  }
   fs.writeFileSync(path.join(MEMORY_DIR, 'inspiration.json'), JSON.stringify({
     "instagram_trends": { "hot_styles": [], "high_engagement_patterns": [], "trending_hashtags": [], "updated_at": 0 },
     "acg_hotspots": { "trending_characters": [], "upcoming_events": [], "seasonal_themes": [], "updated_at": 0 },
@@ -822,7 +842,27 @@ async function main() {
   fs.mkdirSync(path.join(MEMORY_DIR, 'relations', 'social', 'xiaohongshu'), { recursive: true });
   // Photo system
   fs.mkdirSync(path.join(MEMORY_DIR, 'photo-roll'), { recursive: true });
-  const inspirationPath = path.join(MEMORY_DIR, 'inspiration.json');
+  // Initialize lin-hui advisor relation
+  const linHuiPath = path.join(MEMORY_DIR, 'relations', 'social', 'instagram', 'lin-hui.json');
+  if (!fs.existsSync(linHuiPath)) {
+    fs.writeFileSync(linHuiPath, JSON.stringify({
+      id: 'lin-hui',
+      name: '小慧',
+      platform: 'instagram',
+      type: '同行',
+      relationship: {
+        closeness: 8.5,
+        sentiment: 'positive',
+        tags: ['闺密', '运营顾问', '网红'],
+      },
+      known_info: ['深圳人', '8万粉美妆账号', '擅长INS运营策略'],
+      interaction_history: [],
+      last_interaction: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString().slice(0, 10),
+      min_closeness: 0.5,
+    }, null, 2));
+    console.log('  ✓ lin-hui.json');
+  }
   if (!fs.existsSync(inspirationPath)) {
     fs.writeFileSync(inspirationPath, JSON.stringify({
       "instagram_trends": { "hot_styles": [], "high_engagement_patterns": [], "trending_hashtags": [], "updated_at": 0 },
