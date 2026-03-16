@@ -10,14 +10,9 @@ export interface SearchResult {
 const EXA_MCP_ENDPOINT = 'https://mcp.exa.ai/mcp';
 const SEARCH_TIMEOUT_MS = 10_000;
 
-// Factory function — separated so tests can indirectly exercise the Client mock
-// without requiring `new` on an arrow-function mock implementation.
+// Factory function — separated so tests can spy on / replace Client construction.
 function createClient(): InstanceType<typeof Client> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (Client as any).call(Object.create(Client.prototype), {
-    name: 'minase',
-    version: '1.0.0',
-  }) as InstanceType<typeof Client>;
+  return new Client({ name: 'minase', version: '1.0.0' });
 }
 
 export async function exaWebSearch(
