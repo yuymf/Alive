@@ -43,23 +43,11 @@ const mockApplyActionCost = vi.mocked(applyActionCost);
 describe('checkSearchBudget', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('should allow search when under daily limit on same day', () => {
-    mockReadJSON.mockReturnValue({ date: '2026-03-16', count: 2 });
+  it('should always allow search (no hard daily limit)', () => {
     expect(checkSearchBudget()).toBe(true);
   });
 
-  it('should deny search when at daily limit', () => {
-    mockReadJSON.mockReturnValue({ date: '2026-03-16', count: 5 });
-    expect(checkSearchBudget()).toBe(false);
-  });
-
-  it('should allow search on new day (reset count)', () => {
-    mockReadJSON.mockReturnValue({ date: '2026-03-15', count: 5 });
-    expect(checkSearchBudget()).toBe(true);
-  });
-
-  it('should allow search with empty state', () => {
-    mockReadJSON.mockReturnValue({ date: '', count: 0 });
+  it('should allow search regardless of count', () => {
     expect(checkSearchBudget()).toBe(true);
   });
 });
@@ -135,22 +123,6 @@ describe('executeSearch', () => {
       'search',
     );
     expect(result.vitality).toBe(46);
-  });
-
-  it('should degrade to simulated when budget exceeded', async () => {
-    mockReadJSON.mockReturnValue({ date: '2026-03-16', count: 5 });
-    const actionResults: string[] = [];
-
-    const result = await executeSearch(
-      { action: '搜索', type: 'real', skill: 'search-pipeline', satisfies_intent: null },
-      { vitality: 50, last_updated: null, consecutive_low_days: 0 },
-      actionResults,
-      '',
-    );
-
-    expect(mockExaWebSearch).not.toHaveBeenCalled();
-    expect(actionResults[0]).toContain('simulated');
-    expect(result.vitality).toBe(50); // no cost when skipped
   });
 
   it('should degrade to simulated when Exa fails', async () => {

@@ -15,8 +15,6 @@ export const DEFAULT_SEARCH_STATE: SearchState = {
   count: 0,
 };
 
-const MAX_SEARCHES_PER_DAY = 5;
-
 interface ActionLike {
   action: string;
   type: string;
@@ -27,15 +25,10 @@ interface ActionLike {
 /**
  * Check if search budget allows another search today.
  * Reads search-state.json; resets count on new day.
+ * No hard daily limit — search is always allowed.
  */
 export function checkSearchBudget(): boolean {
-  const state = readJSON<SearchState>(PATHS.searchState, DEFAULT_SEARCH_STATE);
-  const today = getLocalDate();
-
-  if (state.date !== today) {
-    return true; // new day, budget resets
-  }
-  return state.count < MAX_SEARCHES_PER_DAY;
+  return true;
 }
 
 /**
@@ -67,7 +60,7 @@ export async function digestResults(
     .replace('{voice_directive}', voiceDirective)
     .replace('{search_results}', formattedResults);
 
-  const response = await callLLM(prompt, 512, 'search-pipeline');
+  const response = await callLLM(prompt, undefined, 'search-pipeline');
   return response.content;
 }
 
@@ -85,9 +78,8 @@ export async function executeSearch(
   const today = getLocalDate();
   const timeStr = getLocalTimeHHMM();
 
-  // 1. Budget check
+  // 1. Budget check (no hard limit, always allowed)
   if (!checkSearchBudget()) {
-    console.log(`[SEARCH] Daily search limit reached (${MAX_SEARCHES_PER_DAY}), degrading to simulated`);
     actionResults.push(`[simulated:search-limit] ${action.action}`);
     return vitalityState;
   }
@@ -130,7 +122,7 @@ export async function executeSearch(
   // 6. Apply vitality cost
   const updatedVitality = applyActionCost(vitalityState, 'search');
   actionResults.push(`[real:search] ${action.action}`);
-  console.log(`[SEARCH] Completed search for "${query}" (${results.length} results, budget: ${updatedState.count}/${MAX_SEARCHES_PER_DAY})`);
+  console.log(`[SEARCH] Completed search for "${query}" (${results.length} results, total today: ${updatedState.count})`);
 
   return updatedVitality;
 }

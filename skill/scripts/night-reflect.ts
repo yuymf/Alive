@@ -90,7 +90,7 @@ export async function runNightReflect(): Promise<void> {
       ? aspirations.aspirations.map(a => `- [${a.status}] ${a.content}: ${a.context}`).join('\n')
       : '还没有明确的梦想。');
 
-  const decision = await callLLMJSON<NightReflectDecision>(prompt, 1500, 'night-reflect');
+  const decision = await callLLMJSON<NightReflectDecision>(prompt, undefined, 'night-reflect');
 
   // Apply Core Wisdom updates (immutable)
   let updatedWisdomList = [...wisdom.wisdom];
