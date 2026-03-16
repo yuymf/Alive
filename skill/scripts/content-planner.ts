@@ -50,12 +50,13 @@ const DEFAULT_EMOTION: EmotionState = {
   threshold_break_cooldown: 0,
 };
 
-// Phase 1 ratios from instagram.md (authority source)
+// Phase ratios from instagram.md (authority source)
 // travel sub-styles share the same bucket as 'travel' for ratio accounting
-const PHASE_RATIOS: Record<number, Record<ContentStyle, number>> = {
-  1: { cos: 0.8, daily: 0.1, behind_scenes: 0, travel: 0.1, travel_portrait: 0, travel_food: 0, travel_street: 0 },
-  2: { cos: 0.5, daily: 0.2, behind_scenes: 0.1, travel: 0.2, travel_portrait: 0, travel_food: 0, travel_street: 0 },
-  3: { cos: 0.4, daily: 0.2, behind_scenes: 0.15, travel: 0.25, travel_portrait: 0, travel_food: 0, travel_street: 0 },
+// Uses Partial<Record<ContentStyle, number>> so travel sub-styles don't need explicit 0 entries
+const PHASE_RATIOS: Record<number, Partial<Record<ContentStyle, number>>> = {
+  1: { cos: 0.4, daily: 0.1, behind_scenes: 0.1, travel: 0.4 },
+  2: { cos: 0.3, daily: 0.1, behind_scenes: 0.1, travel: 0.5 },
+  3: { cos: 0.25, daily: 0.1, behind_scenes: 0.15, travel: 0.5 },
 };
 
 const MAX_POSTS_PER_DAY = 3;
