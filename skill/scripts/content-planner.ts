@@ -11,7 +11,7 @@ import {
   ContentStyle, PhotoIntent, PostIntent, PostHistory, PostRecord,
   InspirationData, EmotionState, ScheduleToday,
   DEFAULT_MOMENTUM, DEFAULT_UNDERTONE,
-  TravelState, DEFAULT_TRAVEL_STATE,
+  TravelState, TravelSpot, DEFAULT_TRAVEL_STATE,
 } from './types';
 import { PATHS, readJSON, readTemplate, appendText } from './file-utils';
 import { consultAdvisor } from './advisor-client';
@@ -140,6 +140,22 @@ export async function planPhoto(): Promise<PhotoIntent> {
     : '没有收藏的灵感图';
 
   const template = readTemplate('photo-intent-prompt.md');
+  // Load travel spots for current city
+  const travelStatePlan = readJSON<TravelState>(PATHS.travelState, DEFAULT_TRAVEL_STATE);
+  let travelSpotsStr = '';
+  try {
+    const spotsCache = JSON.parse(
+      fs.readFileSync(path.join(PATHS.inspirationRefs, 'travel-spots.json'), 'utf-8')
+    ) as Record<string, { spots: TravelSpot[] }>;
+    const cityKey = `${travelStatePlan.current_city}_${travelStatePlan.country}`;
+    const citySpots: TravelSpot[] = spotsCache[cityKey]?.spots ?? [];
+    const visitedSet = new Set(travelStatePlan.visited_spots);
+    travelSpotsStr = citySpots
+      .map(s => `- ${s.name}${visitedSet.has(s.name) ? '（已去）' : '（推荐）'}：${s.description}`)
+      .join('\n') || '（暂无攻略数据）';
+  } catch {
+    travelSpotsStr = '（暂无攻略数据）';
+  }
   const prompt = template
     .replace('{current_time}', formatLocalTime())
     .replace('{mood}', `${emotion.mood.description} (energy: ${emotion.energy.toFixed(1)}, creativity: ${emotion.creativity.toFixed(1)})`)
@@ -157,7 +173,8 @@ export async function planPhoto(): Promise<PhotoIntent> {
     .replace('{xhs_trends}', xhsTrends)
     .replace('{xhs_cosplay_insights}', xhsCosInsights)
     .replace('{saved_inspirations}', inspoText)
-    .replace('{inspiration_refs}', formatInspirationRefs());
+    .replace('{inspiration_refs}', formatInspirationRefs())
+    .replace('{travel_spots}', travelSpotsStr);
 
   const parsed = await callLLMJSON<PhotoIntent>(prompt, undefined, 'content-planner');
 
