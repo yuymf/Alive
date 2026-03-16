@@ -42,6 +42,7 @@ import { rollContextAwareEvent, processChainEvents, EventContext } from './rando
 import { isActiveHeartbeatHour } from './heartbeat-gate';
 import { accumulateImpulse, decayImpulse, shouldInjectPostDesire, checkDormancy } from './post-impulse';
 import { now, getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
+import { executeSearch } from './search-pipeline';
 import {
   checkFlowEntry, checkDriftEntry, checkFlowExit, checkDriftExit,
   tickFlow, resetFlow, generateFlowDiary, generateDriftDiary,
@@ -566,6 +567,17 @@ export async function regularTick(): Promise<void> {
       if (isPostIntent) {
         console.log(`[REAL ACTION] Fuzzy-matched skill "${action.skill}" → post-pipeline for: ${action.action}`);
         vitality = await executePostPipeline(action, vitality, actionResults, vitalityConstraints.canPost);
+        continue;
+      }
+      // Search pipeline routing
+      const isSearchIntent = /search|搜|查|学习|研究|了解/.test(lowerSkill);
+      if (isSearchIntent) {
+        if (vitalityConstraints.canSearch) {
+          vitality = await executeSearch(action, vitality, actionResults, voiceDirective);
+        } else {
+          console.log(`[SEARCH] Skipped — vitality too low (${vitality.vitality})`);
+          actionResults.push(`[skipped:low-vitality] ${action.action}`);
+        }
         continue;
       }
       console.log(`[REAL ACTION] Unknown skill: ${action.skill} for: ${action.action}`);
