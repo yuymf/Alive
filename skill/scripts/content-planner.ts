@@ -157,7 +157,7 @@ export async function planPhoto(): Promise<PhotoIntent> {
     .replace('{saved_inspirations}', inspoText)
     .replace('{inspiration_refs}', formatInspirationRefs());
 
-  const parsed = await callLLMJSON<PhotoIntent>(prompt, 2048, 'content-planner');
+  const parsed = await callLLMJSON<PhotoIntent>(prompt, undefined, 'content-planner');
 
   const intent: PhotoIntent = {
     ...parsed,
@@ -200,7 +200,7 @@ export async function planPost(): Promise<PostIntent> {
     .replace('{best_hashtag_combos}', inspiration.self_performance.best_hashtag_combos.map(c => c.join(', ')).join(' | ') || '暂无数据')
     .replace('{trending_hashtags}', inspiration.instagram_trends.trending_hashtags.join(', ') || '暂无数据');
 
-  const parsed = await callLLMJSON<PostIntent>(prompt, 2048, 'content-planner');
+  const parsed = await callLLMJSON<PostIntent>(prompt, undefined, 'content-planner');
 
   // Resolve selectedPhotos to full paths (immutable — create new object)
   const selectedPhotos = (parsed.selectedPhotos ?? ((parsed as any).selectedPhoto ? [(parsed as any).selectedPhoto] : []))

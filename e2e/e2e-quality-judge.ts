@@ -374,7 +374,7 @@ Rate on 1-10 scale:
 2. dimension_coupling: Do the 6 dimensions (valence, arousal, energy, stress, creativity, sociability) show reasonable correlations? E.g., high stress should correlate with lower creativity, high energy with higher arousal, etc.
 
 IMPORTANT: Do NOT use <think> tags or any reasoning preamble. Output ONLY the JSON object immediately:
-{"event_response": N, "event_response_reasoning": "...", "dimension_coupling": N, "dimension_coupling_reasoning": "..."}`, 4096);
+{"event_response": N, "event_response_reasoning": "...", "dimension_coupling": N, "dimension_coupling_reasoning": "..."}`);
     apiCallCounts.llm++;
     eventResponseScore = clamp(emotionJudgment.event_response, 1, 10);
     dimensionCouplingScore = clamp(emotionJudgment.dimension_coupling, 1, 10);
@@ -468,7 +468,7 @@ Rate on 1-10 scale:
 5. character_consistency: Is the overall character portrayal coherent across all outputs?
 
 IMPORTANT: Do NOT use <think> tags or any reasoning preamble. Output ONLY the JSON object immediately:
-{"diary_diversity": N, "diary_voice": N, "wisdom_actionability": N, "wisdom_relevance": N, "character_consistency": N}`, 4096);
+{"diary_diversity": N, "diary_voice": N, "wisdom_actionability": N, "wisdom_relevance": N, "character_consistency": N}`);
     apiCallCounts.llm++;
   } catch (err) {
     issues.push(`LLM memory judgment failed: ${(err as Error).message}`);

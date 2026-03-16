@@ -42,7 +42,7 @@ function appendLlmLog(entry: Record<string, unknown>): void {
 
 const DEFAULT_API_BASE = 'https://aihubmix.com/v1';
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
-const MAX_RETRY_TOKENS = 16384;
+const MAX_RETRY_TOKENS = 32768;
 
 const isDebug = () => process.env.LLM_DEBUG === '1' || process.env.LLM_DEBUG === 'true';
 
@@ -91,7 +91,7 @@ export interface LLMResult {
  *   LLM_API_BASE  — default: https://aihubmix.com/v1
  *   LLM_MODEL     — default: claude-sonnet-4-20250514
  */
-export async function callLLM(prompt: string, maxTokens = 1024, caller?: string): Promise<LLMResult> {
+export async function callLLM(prompt: string, maxTokens = 16384, caller?: string): Promise<LLMResult> {
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) throw new Error('LLM_API_KEY not set');
 
@@ -204,7 +204,7 @@ function extractJSON<T>(raw: string): T {
  * Extracts JSON from markdown code blocks if present.
  * Auto-retries with doubled maxTokens if response was truncated (finishReason === 'length').
  */
-export async function callLLMJSON<T>(prompt: string, maxTokens = 1024, caller?: string): Promise<T> {
+export async function callLLMJSON<T>(prompt: string, maxTokens = 16384, caller?: string): Promise<T> {
   const result = await callLLM(prompt, maxTokens, caller);
 
   // If truncated due to token limit, retry with doubled budget (capped at MAX_RETRY_TOKENS)

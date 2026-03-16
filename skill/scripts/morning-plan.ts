@@ -144,7 +144,7 @@ export async function runMorningPlan(): Promise<void> {
       ? todayRigid.map(r => `- ${r.start}-${r.end} ${r.activity}`).join('\n')
       : '今天没有固定日程（周末）');
 
-  const decision = await callLLMJSON<MorningPlanDecision>(prompt, 1024, 'morning-plan');
+  const decision = await callLLMJSON<MorningPlanDecision>(prompt, undefined, 'morning-plan');
 
   // Build schedule-today.json
   const scheduleToday: ScheduleToday = {
