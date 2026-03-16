@@ -20,6 +20,15 @@ export function now(): Date {
 }
 
 /**
+ * Always returns the real wall-clock time, ignoring any time override.
+ * Use for logging, telemetry, and elapsed time measurement — never for
+ * simulated-time business logic.
+ */
+export function wallNow(): Date {
+  return new Date();
+}
+
+/**
  * Get today's date as YYYY-MM-DD in local timezone.
  * Unlike toISOString().split('T')[0] which returns UTC date,
  * this returns the local date — correct near midnight.
