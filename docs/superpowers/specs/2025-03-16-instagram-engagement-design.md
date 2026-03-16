@@ -61,7 +61,12 @@ post-pipeline.ts (末尾)
 | `~/.openclaw/workspace/memory/minase/pending-engagement.json` | `PATHS.pendingEngagement` | 待回复队列，记录已回复的 comment_id |
 | `~/.openclaw/workspace/memory/minase/outbound-history.json` | `PATHS.outboundHistory` | 主动评论历史，用于去重和限频 |
 
-两个路径需在 `file-utils.ts` 的 `PATHS` 对象里注册，并在 installer (`bin/cli.js`) 的初始化步骤中写入默认值（`{"pending_replies":[]}` 和 `{"commented":[]}`）。installer 改动为**已知 out-of-scope 项**，在实现阶段单独处理。
+两个路径需在 `file-utils.ts` 的 `PATHS` 对象里注册（**必须修改**，不是 out-of-scope）：
+```typescript
+pendingEngagement: basePath('pending-engagement.json'),
+outboundHistory:   basePath('outbound-history.json'),
+```
+并在 installer (`bin/cli.js`) 的初始化步骤中写入默认值（`{"pending_replies":[]}` 和 `{"commented":[]}`）。installer 改动为**已知 out-of-scope 项**，在实现阶段单独处理。
 
 ---
 
@@ -103,9 +108,9 @@ get_user_feed(user_id, amount=5)
 3. 按 `like_count` + 账号亲密度排序，最多取 10 条送给 LLM
 4. 调用 `comment-reply-prompt.md` → LLM 批量生成回复（单次调用，返回 JSON 数组，maxTokens: 600）
 5. 逐条 `reply_comment()`，随后：
-   - 读取 `~/.openclaw/workspace/memory/minase/relations/{userId}.json`（via `readJSON(PATHS.socialRelation(userId))`）
-   - 调用 `applyClosenessChange(relation, 'reply_sent', Date.now())` 获取新关系对象
-   - 调用 `writeSocialRelation(userId, newRelation)` 写回
+   - 读取 `readJSON(PATHS.socialInstagramDir + '/' + userId + '.json')` 获取关系对象
+   - 调用 `applyClosenessChange(relation, 'reply_sent', new Date().toISOString())` 获取新关系对象（注意：函数期望 ISO string，不是 timestamp number）
+   - 调用 `writeSocialRelation(PATHS.socialInstagramDir, newRelation)` 写回（第一个参数是目录路径）
 6. 更新 `pending-engagement.json`（追加到 `replied_comment_ids`），写入 diary
 
 ### `engageOutbound(intentContext)`
@@ -117,7 +122,7 @@ get_user_feed(user_id, amount=5)
 2. 选出 3-5 个候选帖子，摘要（caption 前 100 字 + 数据）送给 LLM
 3. 调用 `outbound-comment-prompt.md` → LLM 为每个帖子生成真实评论（maxTokens: 400）
 4. 逐条 `post_comment()`，随后：
-   - 读取 `PATHS.socialRelation(userId)`，调用 `applyClosenessChange(relation, 'comment_sent', Date.now())`，写回
+   - 读取关系对象，调用 `applyClosenessChange(relation, 'comment_sent', new Date().toISOString())`，调用 `writeSocialRelation(PATHS.socialInstagramDir, newRelation)` 写回
 5. 写入 `outbound-history.json`（追加条目），写入 diary
 6. **`outbound-history.json` 清理策略：** 每次写入时，同步删除 `commented_at` 超过 **30 天**的条目（与 `post-history.json` 保持一致）
 
@@ -179,7 +184,7 @@ get_user_feed(user_id, amount=5)
 **输出格式：**
 ```json
 [
-  { "media_id": "xxx", "username": "yyy", "comment": "评论文本" }
+  { "media_pk": "xxx", "username": "yyy", "comment": "评论文本" }
 ]
 ```
 
@@ -198,7 +203,7 @@ get_user_feed(user_id, amount=5)
 const pendingReplies = getPendingReplies();
 for (const pending of pendingReplies) {
   if (Date.now() > pending.scheduled_after) {
-    await replyToComments(pending.media_id, pending.post_context);
+    await replyToComments(pending.media_pk, pending.post_context);
   }
 }
 ```
@@ -247,7 +252,11 @@ scheduleCommentCheck({
 ## 测试要点
 
 - `comment-engine.ts` 单元测试：过滤逻辑、去重逻辑、状态文件读写、30 天清理逻辑
-- bridge 命令 mock 测试：各命令的入参/出参格式；需在 `instagram-bridge-client.ts` 的 `mockInstagramResponse()` 里为 4 个新命令补充 mock 返回值（`get_comments` → 空数组、`reply_comment`/`post_comment` → `{success:true, comment_pk:"mock_pk"}`、`get_user_feed` → 空数组）
+- bridge 命令 mock 测试：各命令的入参/出参格式；需在 `instagram-bridge-client.ts` 的 `mockInstagramResponse()` 里为 4 个新命令补充 mock 返回值：
+  - `get_comments` → `[]`（数组，不是 `{}`）
+  - `get_user_feed` → `[]`（数组，不是 `{}`）
+  - `reply_comment` → `{ success: true, comment_pk: "mock_pk" }`
+  - `post_comment` → `{ success: true, comment_pk: "mock_pk" }`
 - heartbeat 集成：`canDoHeavySocial` 约束逻辑、action 路由匹配
 - 节流边界：同一帖子不重复评论、24h 内同账号不超过 2 次
 - post-pipeline：仅在发帖成功后写入 `pending-engagement.json`
