@@ -134,7 +134,7 @@ export async function callLLM(prompt: string, maxTokens = 1024, caller?: string)
         timestamp: now().toISOString(),
         caller: caller ?? autoDetectCaller(),
         prompt,
-        response: content,
+        response: stripThinkBlocks(content),
         elapsed_ms: elapsed,
         input_tokens: data.usage?.prompt_tokens ?? null,
         output_tokens: data.usage?.completion_tokens ?? null,
@@ -172,16 +172,23 @@ export async function callLLM(prompt: string, maxTokens = 1024, caller?: string)
 }
 
 /**
+ * Strip <think>...</think> blocks from LLM output.
+ * Used both for JSON extraction and for logging clean responses.
+ */
+function stripThinkBlocks(raw: string): string {
+  let text = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  if (text.startsWith('<think>')) {
+    text = text.slice('<think>'.length);
+  }
+  return text;
+}
+
+/**
  * Extract JSON from LLM response text.
  * Strips <think> tags and searches for JSON in code blocks or raw text.
  */
 function extractJSON<T>(raw: string): T {
-  // Strip <think>...</think> blocks (some models output reasoning before JSON)
-  let text = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-  // If still starts with <think> (unclosed tag), strip the tag itself and search the whole content
-  if (text.startsWith('<think>')) {
-    text = text.slice('<think>'.length);
-  }
+  const text = stripThinkBlocks(raw);
   // Try to extract JSON from code block or raw text
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
   if (!jsonMatch) {

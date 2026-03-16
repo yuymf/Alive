@@ -163,7 +163,7 @@ async function executeSimulatedAction(
     .replace('{schedule_context}', scheduleContext)
     .replace('{voice_directive}', voiceDirective || '正常叙事语气。');
 
-  return callLLMJSON<ActionOutput>(prompt, 800);
+  return callLLMJSON<ActionOutput>(prompt, 800, 'heartbeat-tick');
 }
 
 /**
@@ -494,7 +494,7 @@ export async function regularTick(): Promise<void> {
 
   let decision: HeartbeatDecision;
   try {
-    decision = await callLLMJSON<HeartbeatDecision>(prompt, 1024);
+    decision = await callLLMJSON<HeartbeatDecision>(prompt, 1024, 'heartbeat-tick');
   } catch (err) {
     const logEntry: HeartbeatLogEntry = {
       timestamp: currentTime.toISOString(),
