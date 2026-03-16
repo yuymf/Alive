@@ -143,6 +143,11 @@ function buildPerceptionSummary(
     parts.push(`\n【发帖冲动】想发帖的冲动很强（冲动值：${Math.round(impulse.value)}/100）。如果决定发帖，请在 chosen_actions 中使用 type: "real", skill: "post-pipeline"。`);
   }
 
+  // KPI reminder: inject if no post yet today
+  if (impulse && impulse.posts_today === 0) {
+    parts.push('【今日任务提醒】今天还没发帖，发帖是今天的工作内容之一。');
+  }
+
   return parts.join('\n');
 }
 
