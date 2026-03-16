@@ -846,6 +846,15 @@ async function main() {
     }, null, 2));
     console.log('  ✓ post-impulse.json');
   }
+  // search-state.json
+  const searchStatePath = path.join(MEMORY_DIR, 'search-state.json');
+  if (!fs.existsSync(searchStatePath)) {
+    fs.writeFileSync(searchStatePath, JSON.stringify({
+      date: '',
+      count: 0,
+    }, null, 2));
+    console.log('  ✓ search-state.json');
+  }
   // photo-gallery.json
   const photoGalleryPath = path.join(MEMORY_DIR, 'photo-gallery.json');
   if (!fs.existsSync(photoGalleryPath)) {
