@@ -3,6 +3,42 @@
 // Uses OpenAI-compatible API (works with aihubmix, openrouter, etc.)
 
 import { now } from './time-utils';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
+
+const LLM_LOG_PATH = path.join(
+  process.env.HOME || '~',
+  '.openclaw/workspace/memory/minase/llm-call-log.jsonl'
+);
+const LLM_LOG_MAX_BYTES = 500 * 1024; // 500 KB
+
+function autoDetectCaller(): string {
+  try {
+    const argv1 = process.argv[1] || '';
+    return path.basename(argv1, path.extname(argv1)) || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function appendLlmLog(entry: Record<string, unknown>): void {
+  try {
+    // Rotate if over size limit
+    try {
+      const stat = fs.statSync(LLM_LOG_PATH);
+      if (stat.size > LLM_LOG_MAX_BYTES) {
+        const backupPath = LLM_LOG_PATH.replace('.jsonl', '.1.jsonl');
+        fs.renameSync(LLM_LOG_PATH, backupPath);
+      }
+    } catch {
+      // File may not exist yet — that's fine
+    }
+    fs.appendFileSync(LLM_LOG_PATH, JSON.stringify(entry) + '\n', 'utf8');
+  } catch {
+    // Silently swallow — never disrupt heartbeat
+  }
+}
 
 const DEFAULT_API_BASE = 'https://aihubmix.com/v1';
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
@@ -31,6 +67,12 @@ interface OpenAIChatResponse {
     message: { role: string; content: string };
     finish_reason: string;
   }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+  model?: string;
 }
 
 export interface LLMResult {
@@ -49,7 +91,7 @@ export interface LLMResult {
  *   LLM_API_BASE  — default: https://aihubmix.com/v1
  *   LLM_MODEL     — default: claude-sonnet-4-20250514
  */
-export async function callLLM(prompt: string, maxTokens = 1024): Promise<LLMResult> {
+export async function callLLM(prompt: string, maxTokens = 1024, caller?: string): Promise<LLMResult> {
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) throw new Error('LLM_API_KEY not set');
 
@@ -58,9 +100,10 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<LLMResu
 
   debugLog('REQUEST', `model: ${model} | maxTokens: ${maxTokens}\n\n${prompt}`);
 
+  let startTime = now().getTime();
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const startTime = now().getTime();
+      startTime = now().getTime();
       const res = await fetch(`${apiBase}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -85,6 +128,19 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<LLMResu
       const finishReason = data.choices?.[0]?.finish_reason ?? 'unknown';
       const elapsed = now().getTime() - startTime;
       debugLog('RESPONSE', `elapsed: ${elapsed}ms | attempt: ${attempt + 1} | finish_reason: ${finishReason}\n\n${content}`);
+      appendLlmLog({
+        id: crypto.randomUUID(),
+        timestamp: now().toISOString(),
+        caller: caller ?? autoDetectCaller(),
+        prompt,
+        response: content,
+        elapsed_ms: elapsed,
+        input_tokens: data.usage?.prompt_tokens ?? null,
+        output_tokens: data.usage?.completion_tokens ?? null,
+        finish_reason: finishReason,
+        model: data.model ?? process.env.LLM_MODEL ?? model,
+        error_message: null,
+      });
       return { content, finishReason };
     } catch (err) {
       if (attempt === 0) {
@@ -93,6 +149,19 @@ export async function callLLM(prompt: string, maxTokens = 1024): Promise<LLMResu
         await new Promise(r => setTimeout(r, 10_000));
       } else {
         debugLog('FAIL', `attempt 2 failed: ${(err as Error).message}`);
+        appendLlmLog({
+          id: crypto.randomUUID(),
+          timestamp: now().toISOString(),
+          caller: caller ?? autoDetectCaller(),
+          prompt,
+          response: null,
+          elapsed_ms: now().getTime() - startTime,
+          input_tokens: null,
+          output_tokens: null,
+          finish_reason: 'error',
+          model: process.env.LLM_MODEL ?? model,
+          error_message: (err as Error).message,
+        });
         throw err;
       }
     }
@@ -127,14 +196,14 @@ function extractJSON<T>(raw: string): T {
  * Extracts JSON from markdown code blocks if present.
  * Auto-retries with doubled maxTokens if response was truncated (finishReason === 'length').
  */
-export async function callLLMJSON<T>(prompt: string, maxTokens = 1024): Promise<T> {
-  const result = await callLLM(prompt, maxTokens);
+export async function callLLMJSON<T>(prompt: string, maxTokens = 1024, caller?: string): Promise<T> {
+  const result = await callLLM(prompt, maxTokens, caller);
 
   // If truncated due to token limit, retry with doubled budget (capped at MAX_RETRY_TOKENS)
   if (result.finishReason === 'length' && maxTokens < MAX_RETRY_TOKENS) {
     const retryTokens = Math.min(maxTokens * 2, MAX_RETRY_TOKENS);
     console.warn(`[llm-client] Response truncated (finish_reason=length), retrying with maxTokens=${retryTokens}`);
-    const retryResult = await callLLM(prompt, retryTokens);
+    const retryResult = await callLLM(prompt, retryTokens, caller);
 
     if (retryResult.finishReason === 'length') {
       console.warn(`[llm-client] Retry still truncated (maxTokens=${retryTokens}), attempting parse anyway`);
