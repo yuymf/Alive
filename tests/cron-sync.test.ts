@@ -114,11 +114,11 @@ describe('cron-sync', () => {
         .mockImplementation((cmd, args) => {
           const argsArr = args as string[];
           if (argsArr[1] === 'list') {
-            return JSON.stringify([
-              { id: 'id-m', name: 'minase:morning', cron: '0 7 * * *', enabled: true },
-              { id: 'id-t', name: 'minase:tick', cron: '0 8-22 * * *', enabled: true },
-              { id: 'id-n', name: 'minase:night', cron: '0 23 * * *', enabled: true },
-            ]);
+            return JSON.stringify({ jobs: [
+              { id: 'id-m', name: 'minase:morning', enabled: true, schedule: { kind: 'cron', expr: '0 7 * * *', staggerMs: 0 } },
+              { id: 'id-t', name: 'minase:tick', enabled: true, schedule: { kind: 'cron', expr: '0 8-22 * * *', staggerMs: 0 } },
+              { id: 'id-n', name: 'minase:night', enabled: true, schedule: { kind: 'cron', expr: '0 23 * * *', staggerMs: 0 } },
+            ] });
           }
           return '';
         });
@@ -151,11 +151,11 @@ describe('cron-sync', () => {
         .mockImplementation((cmd, args) => {
           const argsArr = args as string[];
           if (argsArr[1] === 'list') {
-            return JSON.stringify([
-              { id: 'id-m', name: 'minase:morning', cron: '0 7 * * *', enabled: true },
-              { id: 'id-t', name: 'minase:tick', cron: '0 8 * * *', enabled: true },
-              { id: 'id-n', name: 'minase:night', cron: '0 23 * * *', enabled: true },
-            ]);
+            return JSON.stringify({ jobs: [
+              { id: 'id-m', name: 'minase:morning', enabled: true, schedule: { kind: 'cron', expr: '0 7 * * *', staggerMs: 0 } },
+              { id: 'id-t', name: 'minase:tick', enabled: true, schedule: { kind: 'cron', expr: '0 8 * * *', staggerMs: 0 } },
+              { id: 'id-n', name: 'minase:night', enabled: true, schedule: { kind: 'cron', expr: '0 23 * * *', staggerMs: 0 } },
+            ] });
           }
           return '';
         });
@@ -180,11 +180,11 @@ describe('cron-sync', () => {
         .mockImplementation((cmd, args) => {
           const argsArr = args as string[];
           if (argsArr[1] === 'list') {
-            return JSON.stringify([
-              { id: 'id-m', name: 'minase:morning', cron: '0 7 * * *', enabled: true },
-              { id: 'id-t', name: 'minase:tick', cron: '0 8-22 * * *', enabled: true },
-              { id: 'id-n', name: 'minase:night', cron: '0 23 * * *', enabled: true },
-            ]);
+            return JSON.stringify({ jobs: [
+              { id: 'id-m', name: 'minase:morning', enabled: true, schedule: { kind: 'cron', expr: '0 7 * * *', staggerMs: 0 } },
+              { id: 'id-t', name: 'minase:tick', enabled: true, schedule: { kind: 'cron', expr: '0 8-22 * * *', staggerMs: 0 } },
+              { id: 'id-n', name: 'minase:night', enabled: true, schedule: { kind: 'cron', expr: '0 23 * * *', staggerMs: 0 } },
+            ] });
           }
           return '';
         });

@@ -6,9 +6,15 @@
 
 Minase 是一个运行在 **OpenClaw** 平台上的 **Skill**（技能包）。她不是一个独立 App，而是一套 Markdown 行为定义 + TypeScript 后台脚本 + OpenClaw Hooks + Cron Job 的组合体，整体构成一个有自主行为循环的数字生命。
 
-- 角色设定：18 岁辣妹 Coser，ESTP 性格
+- 角色设定：18 岁辣妹 Coser，ESTP 性格，数字游民旅行博主
 - 安装方式：`npx minase@latest`，9 步安装向导自动完成所有配置
-- 核心能力：持久记忆、自主行为循环、Instagram 社交媒体运营
+- 核心能力：持久记忆、自主行为循环、Instagram 社交媒体运营、旅行状态管理
+
+**最新功能 (2026-03-17):**
+- 旅行状态机：4 阶段旅行系统（抵达/探索/拍摄/离开）替代固定工作日日程
+- Instagram 顾问："小慧" 提供实时内容策略建议
+- KPI 发帖保证：每日最低发帖量在 21:00 强制执行
+- 旅行内容子系统：旅行肖像/美食/街头摄影子风格支持
 
 ---
 
@@ -33,6 +39,7 @@ OpenClaw 运行时加载 `SKILL.md` 后，根据 **Behavior Trigger Map** 按需
 | 用户要求发帖 | `instagram.md` |
 | cron:morning/tick/night | `heartbeat.md` + `intent-pool.md` |
 | 社交互动事件 | `social-graph.md` |
+| 发帖策略咨询 | `ins-advisor/` |
 
 **所有行为规范用 Markdown 写，改性格 = 改 Markdown，不需要改代码。**
 
@@ -57,8 +64,8 @@ OpenClaw 运行时加载 `SKILL.md` 后，根据 **Behavior Trigger Map** 按需
 
 | Cron Job | 时间 | 功能 |
 |----------|------|------|
-| `minase:morning` | 每天 7:00 | 晨规划 |
-| `minase:tick` | 每天 8:00-22:00 整点 | 常规心跳 |
+| `minase:morning` | 每天 7:00 | 晨规划 + 旅行状态机推进 |
+| `minase:tick` | 每天 8:00-22:00 整点 | 常规心跳 + KPI 发帖保证 |
 | `minase:night` | 每天 23:00 | 睡前反思 |
 
 每个 cron 触发时，OpenClaw 启动一个 **isolated session**（隔离会话），Agent 读取 Behavior Trigger Map 后调用对应的 Node.js 脚本。每天约 **16 次心跳**，0:00-6:00 睡眠无心跳。
@@ -84,10 +91,15 @@ Minase 不是被动等人聊天的 NPC。她有一个每小时一次的心跳循
 
 | 时段 | 类型 | 说明 |
 |------|------|------|
-| 07:00 | 晨规划 (morning) | 起床、回顾昨天、生成今日意图种子和日程 |
-| 08:00-22:00 | 常规心跳 (regular) | 每小时一次，感知-意图-行动循环 |
+| 07:00 | 晨规划 (morning) | 起床、回顾昨天、生成今日意图种子和日程、推进旅行状态机 |
+| 08:00-22:00 | 常规心跳 (regular) | 每小时一次，感知-意图-行动循环 + Instagram 顾问咨询 + KPI 发帖保证 |
 | 23:00 | 睡前反思 (night) | 日终反思，更新记忆、情绪、偏好、梦想 |
 | 0:00-6:00 | 睡眠 | 无心跳，无活动 |
+
+**新增功能:**
+- **旅行状态机**: 4 阶段系统（抵达/探索/拍摄/离开）根据旅行日期自动计算当前阶段
+- **Instagram 顾问**: "小慧"（8万粉美妆博主）提供实时内容策略建议
+- **KPI 发帖保证**: 21:00 后如果当天未发帖，强制触发发帖流水线
 
 每次心跳三步走：
 
@@ -269,7 +281,41 @@ drift 退出条件：出现强意图（差值 >2.0）、新事件到来、活力
 - **休眠回退**：连续 5 天未发帖 → +50 强制冲动（防止沉默死亡）
 - **注入**：冲动 ≥ 70 时向 LLM 上下文注入「想发帖」的欲望描述
 
-### 5.9 叙事连续性
+### 5.9 网络搜索引擎 (Search Pipeline)
+
+水瀬可以主动上网搜索，每天最多 **5 次**，活力消耗 4 点：
+
+- **`exa-client.ts`**：绕过 MCP SDK 直接 fetch Exa MCP 端点（25s timeout），解析 SSE 响应中的 Title/URL/Text 字段
+- **`search-pipeline.ts`**：执行完整搜索流程——提取查询词（去除中英文前缀）、调用 Exa、LLM 摘要消化、写入日记。无每日次数上限，活力是唯一约束
+- **状态文件**：`search-state.json`（记录当天日期 + 已搜次数，用于统计，不限制搜索）
+- **心跳集成**：action 类型为 `type: "real", skill: "search-pipeline"`，满足「学习」类意图
+
+### 5.10 旅行状态机 (Travel State Machine)
+
+4 阶段旅行系统替代固定工作日日程：
+
+| 阶段 | 触发条件 | 行为特征 |
+|------|----------|----------|
+| 抵达 (arriving) | 旅行第 1 天 | 探索新环境、找拍摄点、发初到帖 |
+| 探索 (exploring) | 旅行第 2 天 | 深度探索、美食探店、街头摄影 |
+| 拍摄 (shooting) | 旅行第 3+ 天 | 专注创作、cos 外景、专业拍摄 |
+| 离开 (departing) | 最后 1 天 | 总结帖、打包、计划下一站 |
+
+- **自动目的地切换**：到达计划离开日期时，自动切换到下一目的地（3 天默认停留）
+- **刚性日程生成**：根据当前阶段生成不同的日程安排（探索期 vs 拍摄期）
+- **旅行景点管理**：收集当地拍摄点，标记已访问地点，防止重复
+
+### 5.11 Instagram 顾问系统 (Instagram Advisor)
+
+"小慧"（林慧）—— 20 岁深圳美妆博主，8 万粉，Minase 的运营闺密：
+
+- **实时内容策略**：基于当前位置、粉丝数、近期表现、热点话题提供建议
+- **Hashtag 优化**：混合大中小标签策略（5 大 + 10 中 + 5 小 = 20 个）
+- **发帖时机建议**：旅行内容最佳发帖时间（傍晚 7-9 点）
+- **内容比例指导**：根据粉丝阶段调整 cos/日常/幕后/旅行内容比例
+- **优雅降级**：顾问不可用时系统继续运行，不影响核心功能
+
+### 5.10 叙事连续性
 
 每次心跳将**最近 3 次 tick 摘要**和**上次内心独白**传入 LLM prompt，实现跨 tick 记忆。同时根据当前状态生成**写作风格指令（voice_directive）**，影响日记口吻：
 
@@ -472,6 +518,9 @@ drift 退出条件：出现强意图（差值 >2.0）、新事件到来、活力
   │       ├── inspiration-refs/      # 灵感参考图（最多 20 张，7 天有效期）
   │       ├── post-history.json      # 发帖历史 + 数据表现
   │       ├── post-impulse.json      # 帖子冲动值
+  │       ├── search-state.json      # 每日搜索预算（日期 + 已搜次数）
+  │       ├── photo-gallery.json     # 照片画廊（已发布照片 + 元数据）
+  │       ├── llm-call-log.jsonl     # LLM 调用日志（500KB 轮转）
   │       ├── world.md               # 世界观察
   │       ├── photo-roll/            # 照片相册
   │       └── relations/             # 关系网
@@ -497,7 +546,7 @@ drift 退出条件：出现强意图（差值 >2.0）、新事件到来、活力
 
 ---
 
-## 十一、23 个脚本职责一览
+## 十一、34 个脚本职责一览
 
 | 脚本 | 职责 |
 |------|------|
@@ -512,19 +561,31 @@ drift 退出条件：出现强意图（差值 >2.0）、新事件到来、活力
 | `random-events.ts` | 随机事件：21 种上下文感知事件、前提过滤、动态权重、连锁 |
 | `social-graph-engine.ts` | 社交图谱：圈层管理、亲密度衰减、社交意图 |
 | `post-impulse.ts` | 帖子冲动：累积/衰减/休眠回退/阈值注入 |
+| `exa-client.ts` | Exa 搜索客户端：直接 fetch MCP 端点（绕过 SDK），SSE 解析 |
+| `search-pipeline.ts` | 搜索流水线：预算检查 → 查询提取 → 搜索 → LLM 摘要 → 日记 |
+| `gallery-send.ts` | 照片画廊：对话中搜索/发送/生成并发送照片 |
 | `content-planner.ts` | 内容决策：拍什么、发什么、风格比例（3 张/天限制） |
 | `post-pipeline.ts` | 发帖流水线：多镜头拍照 → 生图 → 相册上传 → 记录 |
-| `generate-image.ts` | AI 生图：AIHubMix Gemini 多参考图 + 三级降级 + jimp 后处理 |
+| `generate-image.ts` | AI 生图：AIHubMix Gemini 多参考图 + 三级降级 |
+| `generate-references.ts` | 参考图生成辅助工具 |
+| `image-post-process.ts` | jimp 后处理：噪点/模糊/渐晕/色温（按风格配置） |
+| `reference-selector.ts` | 参考图选择：按风格/主题从 inspiration-refs/ 挑选 |
 | `imgurl-upload.ts` | 图片托管上传 |
 | `instagram-bridge-client.ts` | Instagram Python 桥接调用 |
 | `xhs-bridge-client.ts` | 小红书 Python CLI 桥接调用 |
 | `post-instagram.ts` | Instagram 发帖 CLI |
 | `memory-reflect.ts` | 记忆阈值反思（importance 累积 ≥ 100） |
 | `inspiration-collector.ts` | 灵感采集（趋势、角色、视觉参考图下载） |
-| `fetch-trends.ts` | Reddit 热点抓取 |
-| `llm-client.ts` | OpenAI 兼容 LLM 调用封装 |
-| `file-utils.ts` | 安全 JSON 读写（.bak 备份 + 回退） |
+| `fetch-trends.ts` | Reddit 热点抓取（通过 Arctic Shift API） |
+| `heartbeat-gate.ts` | 检查当前小时是否为活跃心跳时段 |
+| `cron-sync.ts` | 动态 cron 时间表同步 |
+| `time-utils.ts` | 时间工具：now()（可覆盖，E2E 用）+ wallNow()（真实时间，用于日志） |
+| `llm-client.ts` | OpenAI 兼容 LLM 调用封装，含调用日志（llm-call-log.jsonl） |
+| `file-utils.ts` | 安全 JSON 读写（.bak 备份 + 回退）、PATHS 常量 |
 | `types.ts` | 40+ 个 TypeScript 类型定义（含 FlowState、ChainAndCooldownState 等） |
+| `travel-state.ts` | 旅行状态机：4 阶段计算、目的地切换、刚性日程生成 |
+| `advisor-client.ts` | Instagram 顾问客户端：咨询小慧获取内容策略建议 |
+| `ins-advisor/` | 顾问技能包：小慧的人格定义和咨询提示模板 |
 
 ---
 
@@ -538,6 +599,7 @@ drift 退出条件：出现强意图（差值 >2.0）、新事件到来、活力
 | 活力死亡螺旋 | 连续 3 天低活力自动恢复到 60 |
 | 事件队列溢出 | 最多 50 个，超出丢弃最旧 |
 | 心跳日志膨胀 | 100KB 上限，超出截断旧条目 |
+| LLM 调用日志膨胀 | 500KB 上限，自动轮转为 `.1.jsonl` |
 | 照片占用空间 | 30 天自动清理未发布照片 |
 
 ---
@@ -556,3 +618,5 @@ drift 退出条件：出现强意图（差值 >2.0）、新事件到来、活力
 ## 十四、一句话总结
 
 **Minase 通过 OpenClaw 的 Skill（行为定义）+ Hooks（记忆注入/保存）+ Cron（心跳时钟）三大机制，构建了一个每小时自主运转的数字生命——她有三层情绪惯性、意图阻力与拖延、沉浸/摆烂状态机、上下文感知随机事件、跨 tick 叙事连续性，能从经验中学习和成长，并独立经营自己的 Instagram。**
+
+**最新进化 (2026-03-17):** 从办公室上班族进化为数字游民旅行博主，新增旅行状态机（4 阶段旅行系统）、Instagram 运营顾问（"小慧" 实时内容策略）、KPI 发帖保证（每日最低发帖量强制执行），实现了更真实的数字生命成长轨迹。

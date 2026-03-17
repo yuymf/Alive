@@ -172,7 +172,7 @@ describe('E2E Lifecycle', () => {
 
       console.log(`--- Hour ${hour} (regular-tick) completed in ${Date.now() - start}ms ${error ? `[ERROR: ${error}]` : ''}`);
     }
-  }, 1800_000);
+  }, 3600_000);
 
   it('night reflection (hour 23)', async () => {
     const simDate = new Date(`${today}T23:00:00`);
