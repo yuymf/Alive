@@ -24,11 +24,20 @@ function mockInstagramResponse(command: string): unknown {
       };
     case 'hashtag_top':
       return {
+        hashtag: 'mock_tag',
         posts: [
-          { caption: 'Amazing cosplay! #cosplay #anime', likes: 500, thumbnail_url: '' },
-          { caption: 'Daily OOTD #fashion #daily', likes: 300, thumbnail_url: '' },
+          { pk: 'mock_pk_1', code: 'mock_code_1', like_count: 500, comment_count: 10, caption_text: 'Amazing cosplay! #cosplay', thumbnail_url: null },
+          { pk: 'mock_pk_2', code: 'mock_code_2', like_count: 300, comment_count: 5, caption_text: 'Daily OOTD #fashion', thumbnail_url: null },
         ],
       };
+    case 'get_comments':
+      return [];
+    case 'get_user_feed':
+      return [];
+    case 'reply_comment':
+      return { success: true, comment_pk: 'mock_reply_pk' };
+    case 'post_comment':
+      return { success: true, comment_pk: 'mock_comment_pk' };
     case 'get_user_info':
       return { follower_count: 150, following_count: 200, media_count: 10 };
     default:
@@ -93,4 +102,67 @@ export async function uploadAlbum(imagePaths: string[], caption: string): Promis
     caption,
   });
   return (result as { media_pk: string }).media_pk;
+}
+
+// ── Types for new engagement commands ──────────────────────────────────────
+
+export interface InstagramComment {
+  comment_pk: string;
+  user_id: string;
+  username: string;
+  text: string;
+  created_at: string | null;
+  like_count: number;
+}
+
+export interface InstagramMediaSummary {
+  media_pk: string;
+  caption: string;
+  like_count: number;
+  comment_count: number;
+  taken_at: string | null;
+}
+
+export interface CommentResult {
+  success: boolean;
+  comment_pk: string;
+}
+
+// ── Wrapper functions ───────────────────────────────────────────────────────
+
+export async function getComments(mediaPk: string, amount = 20): Promise<InstagramComment[]> {
+  const result = await callInstagramBridge('get_comments', {
+    'media-pk': mediaPk,
+    amount: String(amount),
+  });
+  return result as InstagramComment[];
+}
+
+export async function replyComment(mediaPk: string, commentPk: string, text: string): Promise<CommentResult> {
+  const result = await callInstagramBridge('reply_comment', {
+    'media-pk': mediaPk,
+    'comment-pk': commentPk,
+    text,
+  });
+  return result as CommentResult;
+}
+
+export async function postComment(mediaPk: string, text: string): Promise<CommentResult> {
+  const result = await callInstagramBridge('post_comment', {
+    'media-pk': mediaPk,
+    text,
+  });
+  return result as CommentResult;
+}
+
+export async function getUserFeed(userId: string, amount = 5): Promise<InstagramMediaSummary[]> {
+  const result = await callInstagramBridge('get_user_feed', {
+    'user-id': userId,
+    amount: String(amount),
+  });
+  return result as InstagramMediaSummary[];
+}
+
+export async function hashtagTop(name: string, amount = 15): Promise<unknown> {
+  return callInstagramBridge('hashtag_top', { name, amount: String(amount) });
 }
