@@ -184,4 +184,24 @@ describe('engageOutbound', () => {
     await engageOutbound({ socialIntentIntensity: 8, emotionSummary: 'good', hashtags: ['cosplay'] });
     expect(bridgeClient.postComment).not.toHaveBeenCalled();
   });
+
+  it('does not post twice to same user even if LLM returns two plans', async () => {
+    vi.spyOn(bridgeClient, 'hashtagTop').mockResolvedValue({
+      posts: [
+        { pk: 'post_a', code: 'c_a', user_id: 'same_user', username: 'same_user_handle', like_count: 100, comment_count: 5, caption_text: 'post a', thumbnail_url: null },
+        { pk: 'post_b', code: 'c_b', user_id: 'same_user', username: 'same_user_handle', like_count: 80, comment_count: 3, caption_text: 'post b', thumbnail_url: null },
+      ],
+    });
+    vi.spyOn(bridgeClient, 'postComment').mockResolvedValue({ success: true, comment_pk: 'c1' });
+    // LLM returns plans for both posts from same_user
+    vi.spyOn(llmClient, 'callLLMJSON').mockResolvedValue([
+      { media_pk: 'post_a', user_id: 'same_user', username: 'same_user_handle', comment: 'great!' },
+      { media_pk: 'post_b', user_id: 'same_user', username: 'same_user_handle', comment: 'amazing!' },
+    ]);
+
+    await engageOutbound({ socialIntentIntensity: 8, emotionSummary: 'good', hashtags: ['cosplay'] });
+    // Only one comment should be posted (first one wins, second blocked by per-user dedup)
+    expect(bridgeClient.postComment).toHaveBeenCalledTimes(1);
+    expect(bridgeClient.postComment).toHaveBeenCalledWith('post_a', 'great!');
+  });
 });
