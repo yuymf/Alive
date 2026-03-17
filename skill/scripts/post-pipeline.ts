@@ -21,6 +21,7 @@ import { resetImpulseAfterPost, accumulateImpulse } from './post-impulse';
 import type { GalleryPhoto, PhotoGallery } from './types';
 import { DEFAULT_PHOTO_GALLERY } from './types';
 import { addPhotoToGallery, pruneGallery } from './gallery-send';
+import { scheduleCommentCheck } from './comment-engine';
 
 const DEFAULT_POST_HISTORY: PostHistory = { posts: [] };
 const PHOTO_ROLL_RETENTION_DAYS = 30;
@@ -345,6 +346,16 @@ async function runPipeline(): Promise<void> {
     const caption = `${postIntent.caption}\n\n${postIntent.hashtags.map(t => `#${t}`).join(' ')}`;
     console.log(`Posting ${existingPhotos.length} photo(s) to Instagram...`);
     const mediaPk = await postToInstagram(existingPhotos, caption);
+
+    // Schedule comment replies 24h after posting
+    scheduleCommentCheck({
+      media_pk: mediaPk,
+      scheduled_after: Date.now() + 24 * 60 * 60 * 1000,
+      post_context: {
+        caption: postIntent.caption,
+        hashtags: postIntent.hashtags,
+      },
+    });
 
     // Upload first photo to ImgURL for public URL archival (non-blocking, failure is non-fatal)
     let imageUrl: string | undefined;
