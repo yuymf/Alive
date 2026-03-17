@@ -258,10 +258,12 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
 
   // 3. Post comments
   let postedCount = 0;
+  const postedUserIds = new Set<string>(); // dedup within this batch
   for (const plan of planned) {
     if (getTodayOutboundCount() >= MAX_DAILY_OUTBOUND) break;
     if (isAlreadyCommented(plan.media_pk)) continue;
     if (getRecentCommentCountForUser(plan.user_id) >= MAX_COMMENTS_PER_USER_24H) continue;
+    if (postedUserIds.has(plan.user_id)) continue; // already posted to this user in this batch
 
     try {
       await postComment(plan.media_pk, plan.comment);
@@ -278,6 +280,7 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
 
       appendText(PATHS.diary, `\n在 @${plan.username} 的帖子下评论了: 「${plan.comment}」\n`);
       console.log(`[comment-engine] Commented on @${plan.username}`);
+      postedUserIds.add(plan.user_id);
       postedCount++;
     } catch (err) {
       console.error(`[comment-engine] Failed to post on ${plan.media_pk}: ${(err as Error).message}`);
