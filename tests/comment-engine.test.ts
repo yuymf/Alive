@@ -15,6 +15,7 @@ import {
   pruneOutboundHistory,
   isAlreadyCommented,
   replyToComments,
+  getRecentCommentCountForUser,
 } from '../skill/scripts/comment-engine';
 import { engageOutbound } from '../skill/scripts/comment-engine';
 
@@ -136,6 +137,23 @@ describe('replyToComments', () => {
   });
 });
 
+describe('getRecentCommentCountForUser', () => {
+  it('returns 0 for user with no history', () => {
+    expect(getRecentCommentCountForUser('user_xyz')).toBe(0);
+  });
+
+  it('counts only entries within 24h for the specific user', () => {
+    const within24h = Date.now() - 1000;
+    const beyond24h = Date.now() - 25 * 60 * 60 * 1000;
+    appendOutboundHistory({ media_pk: 'm1', user_id: 'user_a', commented_at: within24h });
+    appendOutboundHistory({ media_pk: 'm2', user_id: 'user_a', commented_at: within24h });
+    appendOutboundHistory({ media_pk: 'm3', user_id: 'user_a', commented_at: beyond24h }); // too old
+    appendOutboundHistory({ media_pk: 'm4', user_id: 'user_b', commented_at: within24h }); // different user
+    expect(getRecentCommentCountForUser('user_a')).toBe(2);
+    expect(getRecentCommentCountForUser('user_b')).toBe(1);
+  });
+});
+
 describe('engageOutbound', () => {
   afterEach(() => { vi.restoreAllMocks(); });
 
@@ -148,14 +166,20 @@ describe('engageOutbound', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('skips already-commented posts', async () => {
-    appendOutboundHistory({ media_pk: 'already_done', user_id: 'u1', commented_at: Date.now() });
+  it('skips users already commented on 2+ times today', async () => {
+    // user_123 already has 2 comments today
+    appendOutboundHistory({ media_pk: 'prev_1', user_id: 'user_123', commented_at: Date.now() - 1000 });
+    appendOutboundHistory({ media_pk: 'prev_2', user_id: 'user_123', commented_at: Date.now() - 2000 });
 
     vi.spyOn(bridgeClient, 'hashtagTop').mockResolvedValue({
-      posts: [{ pk: 'already_done', code: 'existing_user', user_id: 'user_123', username: 'existing_user', like_count: 100, comment_count: 5, caption_text: 'great cos', thumbnail_url: null }],
+      posts: [
+        { pk: 'new_post', code: 'some_code', user_id: 'user_123', username: 'target_user', like_count: 100, comment_count: 5, caption_text: 'great cos', thumbnail_url: null },
+      ],
     });
     vi.spyOn(bridgeClient, 'postComment').mockResolvedValue({ success: true, comment_pk: 'c1' });
-    vi.spyOn(llmClient, 'callLLMJSON').mockResolvedValue([]);
+    vi.spyOn(llmClient, 'callLLMJSON').mockResolvedValue([
+      { media_pk: 'new_post', username: 'target_user', comment: 'cool!' }
+    ]);
 
     await engageOutbound({ socialIntentIntensity: 8, emotionSummary: 'good', hashtags: ['cosplay'] });
     expect(bridgeClient.postComment).not.toHaveBeenCalled();
