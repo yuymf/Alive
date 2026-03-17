@@ -261,6 +261,7 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
   for (const plan of planned) {
     if (getTodayOutboundCount() >= MAX_DAILY_OUTBOUND) break;
     if (isAlreadyCommented(plan.media_pk)) continue;
+    if (getRecentCommentCountForUser(plan.user_id) >= MAX_COMMENTS_PER_USER_24H) continue;
 
     try {
       await postComment(plan.media_pk, plan.comment);
