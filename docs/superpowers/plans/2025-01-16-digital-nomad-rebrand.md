@@ -963,8 +963,9 @@ const socialMeta = readJSON<{ follower_count?: number }>(PATHS.socialMeta, {});
 // Step B: Read inspiration data (for trending topics)
 const inspiration = readJSON<InspirationData>(PATHS.inspiration, DEFAULT_INSPIRATION);
 
-// Step C: Build recent posts summary from postHistory
-// (postHistory is already read earlier in planPost — use that variable)
+// Step C: Read post history and build summary
+// Note: planPost() does NOT read postHistory by default — add this explicit readJSON call
+const postHistory = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
 const recentPostsSummary = (postHistory ?? [])
   .slice(-7)
   .map((p: any) => `${p.posted_at?.slice(0, 10) ?? '?'}: ${p.style ?? '?'} — ${p.caption?.slice(0, 30) ?? '?'}…`)
@@ -984,9 +985,9 @@ const advisorAdvice = (options?.skipAdvisor)
 const advisorSuggestion = advisorAdvice || '（今天没联系到小慧）';
 ```
 
-Add `TravelState, DEFAULT_TRAVEL_STATE, InspirationData, DEFAULT_INSPIRATION` to the existing types import from `'./types'` (check which are already imported).
+Add `TravelState, DEFAULT_TRAVEL_STATE, InspirationData` to the existing types import from `'./types'` (check which are already imported).
 
-Note: If `InspirationData` and `DEFAULT_INSPIRATION` are not exported from `types.ts`, check if they live in `inspiration-collector.ts` instead and import from there.
+**Important:** `DEFAULT_INSPIRATION` is **NOT** exported from `types.ts` — it is already defined as a local constant inside `content-planner.ts` (line ~20). Use the existing local constant; do NOT attempt to import it. Similarly, `PostHistory` and `DEFAULT_POST_HISTORY` — check if they exist locally in the file; if not, use `any[]` with an empty array default.
 
 - [ ] **Step 3: Inject advisor suggestion into prompt rendering**
 
@@ -996,26 +997,33 @@ Where the post-intent-prompt template is rendered (the `template.replace(...)` c
 .replace('{advisor_suggestion}', advisorSuggestion)
 ```
 
-- [ ] **Step 5: Update planPost() signature to accept skipAdvisor option**
+- [ ] **Step 5: Update planPost() signature and handle null return in caller**
 
-Add optional param to `planPost()` export signature (backward-compatible):
+Add optional param to `planPost()` export signature (backward-compatible). The return type becomes `Promise<PostIntent | null>` because `consultAdvisor` failure is non-blocking and the function can still return null if photo roll is empty:
+
 ```typescript
 export async function planPost(options?: { skipAdvisor?: boolean }): Promise<PostIntent | null>
 ```
 
-The `consultAdvisor` call in Step 2 already uses `options?.skipAdvisor` — this step just makes the signature explicit.
+The `consultAdvisor` call in Step 2 already uses `options?.skipAdvisor`.
 
-In `post-pipeline.ts`, update the `planPost()` call:
+In `post-pipeline.ts`, update the call and add a null guard:
 ```typescript
 const postIntent = await planPost({ skipAdvisor: isForced });
+if (!postIntent || !postIntent.wantToPost) {
+  log('[pipeline] planPost returned no intent — skipping post');
+  return;
+}
 ```
+
+Note: Check whether the existing `post-pipeline.ts` already has a null/`wantToPost` guard after `planPost()` — if so, just update the function call signature, don't duplicate the guard.
 
 - [ ] **Step 6: Write advisor result to diary**
 
 Inside `content-planner.ts`'s `planPost()`, after getting `advisorAdvice`, write to diary using the project's `appendText` pattern:
 
 ```typescript
-import { appendText, PATHS } from './file-utils';  // add to existing import if not present
+import { appendText, PATHS } from './file-utils';  // add appendText to existing import if not present — do NOT put this inside the function body
 
 if (advisorAdvice) {
   const todayStr = new Date().toLocaleDateString('zh-CN');
@@ -1252,7 +1260,7 @@ try {
 }
 ```
 
-- [ ] **Step 4: Inject advisor suggestion into prompt rendering**
+- [ ] **Step 3: Inject into template rendering**
 
 In the `planPhoto()` template render call, add:
 ```typescript
@@ -1361,7 +1369,11 @@ function getTravelCity(): string {
 }
 ```
 
-Import `TravelState`, `DEFAULT_TRAVEL_STATE` and ensure `readJSON` is available at the top of `generate-image.ts`.
+Import `TravelState`, `DEFAULT_TRAVEL_STATE` from `'./types'`, and add `readJSON` to the existing `file-utils` import at the top of `generate-image.ts`:
+```typescript
+import { PATHS, readJSON } from './file-utils';  // add readJSON to existing import
+import { TravelState, DEFAULT_TRAVEL_STATE } from './types';  // add to existing types import
+```
 
 - [ ] **Step 6: Add sub-style inference in planPhoto()**
 

@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MizuSan (水瀬 / Minase) is an npm-installable OpenClaw skill that creates a digital life companion — an 18-year-old cosplayer character with persistent memory, autonomous behavior loops, and Instagram presence. It is **not** a traditional app; it's a skill system where markdown files define behavior and TypeScript scripts handle background tasks via hourly cron-driven heartbeats.
 
+### Latest Features (2026-03-17)
+
+**Travel State Machine**: Digital nomad rebrand with 4-phase travel system (arriving/exploring/shooting/departing) that replaces rigid weekday schedules with destination-aware behavior patterns.
+
+**Instagram Engagement**: Advisor system with "小慧" (Lin Hui) persona providing real-time posting strategy advice based on current location and trending topics.
+
+**LLM Infrastructure**: Removed all hardcoded token limits, improved logging with wall-clock time separation, and enhanced error handling for production reliability.
+
 ## Commands
 
 ```bash
@@ -13,7 +21,8 @@ npm run build          # Compile TypeScript (skill/scripts/ → dist/)
 npm run typecheck      # Type-check without emitting
 npm run test           # Run all tests (vitest)
 npm run test:watch     # Run tests in watch mode
-npx vitest run tests/emotion-engine.test.ts   # Run a single test file
+npx vitest run tests/travel-state.test.ts   # Run travel state machine tests
+npx vitest run tests/advisor-client.test.ts # Run advisor client tests
 ```
 
 Install the skill locally: `npx minase@latest` (runs `bin/cli.js` 10-step wizard).
@@ -32,15 +41,15 @@ node ~/.openclaw/skills/minase/scripts/memory-reflect.js --force
 
 The skill uses four OpenClaw mechanisms:
 
-1. **Skill system** — `skill/SKILL.md` is the entry point. It declares `allowed-tools` and a Behavior Trigger Map that loads sub-modules (`personality.md`, `memory.md`, `instagram.md`, `heartbeat.md`, `intent-pool.md`, `social-graph.md`) on demand based on triggers.
+1. **Skill system** — `skill/SKILL.md` is the entry point. It declares `allowed-tools` and a Behavior Trigger Map that loads sub-modules (`personality.md`, `memory.md`, `instagram.md`, `heartbeat.md`, `intent-pool.md`, `social-graph.md`, `ins-advisor/`) on demand based on triggers.
 
 2. **Hooks** — Two hooks in `skill/hooks/`:
    - `minase-context-loader` (event: `agent:bootstrap`) — injects core-wisdom + emotion + recent diary into agent context at session start via `event.prependContext()`.
    - `minase-memory-save` (event: `command:new`/`command:reset`) — reminds the agent to persist conversation memories before session ends.
 
 3. **Cron jobs** — Three jobs registered via `openclaw cron add` in the installer:
-   - `minase:morning` (`0 7 * * *`) → `morning-plan.js` — generates daily schedule, intent seeds, cron config.
-   - `minase:tick` (`0 8-22 * * *`) → `heartbeat-tick.js` — hourly perceive-intend-act loop.
+   - `minase:morning` (`0 7 * * *`) → `morning-plan.js` — generates daily schedule, intent seeds, cron config, advances travel state.
+   - `minase:tick` (`0 8-22 * * *`) → `heartbeat-tick.js` — hourly perceive-intend-act loop with KPI posting guarantee.
    - `minase:night` (`0 23 * * *`) → `night-reflect.js` — daily reflection producing wisdom, preferences, aspirations, personality drift.
 
 4. **Environment variables** — stored in `~/.openclaw/openclaw.json` under `skills.entries.minase.env`: `AIHUBMIX_API_KEY` (image gen), `IMGURL_TOKEN` (image hosting), `INSTAGRAM_USERNAME`/`INSTAGRAM_PASSWORD`/`INSTAGRAM_TOTP_SECRET` (posting), `LLM_API_KEY`/`LLM_API_BASE`/`LLM_MODEL` (heartbeat/reflection LLM calls via OpenAI-compatible API), `XHS_SKILLS_DIR` (XiaoHongShu skills directory, default: `~/.openclaw/skills/xiaohongshu-skills`).
@@ -49,7 +58,12 @@ The skill uses four OpenClaw mechanisms:
 
 `heartbeat-tick.ts` is the main entry point, routing by hour to `runMorningPlan()` (7:00), `runNightReflect()` (23:00), or `regularTick()` (8:00-22:00). Sleep hours (0:00-6:00) are skipped.
 
-Each regular tick runs: **Perceive** (read emotion/events/schedule/world) → **Intend** (rule engine + LLM decision) → **Act** (real/simulated/inner actions). The tick orchestrates eight engines:
+**New Features:**
+- **Travel State Machine**: 4-phase system (arriving/exploring/shooting/departing) replaces rigid weekday schedules
+- **KPI Posting Guarantee**: Daily posting minimum enforced at 21:00 if no posts yet
+- **Instagram Advisor**: "小慧" (Lin Hui) persona provides real-time content strategy advice
+
+Each regular tick runs: **Perceive** (read emotion/events/schedule/world/travel-state) → **Intend** (rule engine + LLM decision + advisor input) → **Act** (real/simulated/inner actions). The tick orchestrates ten engines:
 
 - **Emotion engine** (`emotion-engine.ts`) — 6-dimensional state (valence/arousal/energy/stress/creativity/sociability) with a three-layer inertia model: **impulse** (event-driven, 20%/tick decay), **momentum** (exponential moving average, dynamic 3-8%/tick decay based on duration), and **undertone** (daily baseline set by nightly reflection, replaces fixed ESTP baseline as decay target). Includes **rumination** (probability-based recall of past emotional events from `impulse_history`) and **threshold break** (stress >0.6 for 3+ consecutive ticks triggers emotional explosion with cooldown).
 - **Intent engine** (`intent-engine.ts`) — 7 intent categories (创作/社交/窥屏/表达/学习/休息/梦想) with rule-based accumulation, event boosts, schedule injection, and LLM final arbitration. Each intent has a **resistance** threshold (base per category + dynamic modifiers from vitality/flow/schedule/confidence) that must be exceeded by intensity before the intent becomes actionable. Supports **impulse breakthrough** (high-intensity events bypass resistance), **procrastination tracking** (skipped_count increments when chosen but not executed, triggers stress at 3+ and guilt burst/abandonment at 5+).
@@ -59,8 +73,20 @@ Each regular tick runs: **Perceive** (read emotion/events/schedule/world) → **
 - **Random events** (`random-events.ts`) — Context-aware event system with 21 event types, **precondition filtering** (time/schedule/emotion/vitality gates), **dynamic weight modifiers** (emotion dimensions, vitality, schedule boost weights), and **chain events** (triggered events can spawn delayed follow-up events with tick countdowns). Backward-compatible `rollRandomEvent()` wrapper preserved.
 - **Social graph engine** (`social-graph-engine.ts`) — 4-tier relationship system (core/familiar/cognitive/dormant) with closeness decay, dormancy processing, and social intent generation.
 - **Post impulse engine** (`post-impulse.ts`) — 0-100 impulse value that accumulates from photo success (+20-30), inspiration image discovery (+10-15), and high emotion (+5-10/tick), with per-tick decay (-3 base, extra -5/-15 based on daily post count) and 5-day dormancy fallback (+50). When impulse ≥ 70, injects posting desire into LLM context.
+- **Search pipeline** (`search-pipeline.ts` + `exa-client.ts`) — web search action routing: no hard daily limit (vitality cost 4 via `canSearch` constraint is the only gate), query extraction from Chinese/English prefixes, LLM digest written to diary, search count tracked in `search-state.json` for statistics. `exa-client.ts` calls the Exa MCP endpoint directly via `fetch` with `AbortController` (25s timeout), bypassing the MCP SDK 3-way handshake; parses SSE `data:` line and extracts Title/URL/Text fields from plain-text response format.
+
+- **Travel state machine** (`travel-state.ts`) — 4-phase travel system (arriving/exploring/shooting/departing) that replaces rigid weekday schedules with destination-aware behavior patterns. Calculates phase based on arrival/departure dates, handles automatic destination switching, and generates phase-specific rigid schedules.
+
+- **Instagram advisor system** (`advisor-client.ts`) — "小慧" (Lin Hui) persona providing real-time content strategy advice based on current location, follower count, recent post performance, and trending topics. Graceful degradation ensures system continues even if advisor is unavailable.
 
 **Narrative continuity**: Each tick passes the last 3 tick summaries and previous inner monologue to the LLM prompt, plus a **voice directive** that adjusts diary writing style based on flow state and emotion (e.g., terse during flow, fragmented during threshold break). Templates use `{recent_tick_summaries}`, `{last_inner_monologue}`, and `{voice_directive}` placeholders.
+
+### Photo Gallery & Chat Sharing
+
+`gallery-send.ts` is invoked by the agent during conversations via `Bash(node:*)`. Three actions:
+- `--action search --query <text>` — finds matching photos from `photo-gallery.json` (filters by publicUrl, reshare cooldown 24h, matches tags/description/style)
+- `--action send --id <photoId> --channel <ch> --target <tgt>` — sends an existing gallery photo via the appropriate bridge
+- `--action generate-and-send --prompt <text> --style <style> --channel <ch> --target <tgt>` — generates a new photo on demand and sends it immediately
 
 ### Post Pipeline
 
@@ -92,6 +118,10 @@ The nightly reflection (`night-reflect.ts`) produces four types of emergent outp
 - **Aspirations** → `aspirations.json` — dreams that are born from reflection, with status tracking (active/achieved/abandoned)
 - **Personality Drift** → `personality-drift.json` — rare ESTP-base modifiers injected into LLM prompts
 
+### LLM Client Logging
+
+`llm-client.ts` appends every call to `llm-call-log.jsonl` (auto-rotates at 500KB to `.1.jsonl`). Each entry includes: caller tag (12 call sites all have hardcoded strings), prompt/response (with `<think>` blocks stripped), elapsed_ms, model, token counts, and success/error status. **`wallNow()`** (not `now()`) is used for timestamps and elapsed measurement, so E2E time overrides don't corrupt logs.
+
 ### File I/O Pattern
 
 All JSON state reads/writes go through `file-utils.ts` which provides:
@@ -114,7 +144,8 @@ All JSON state reads/writes go through `file-utils.ts` which provides:
 - **Importance scoring (1-10):** Every memory event gets an importance score that drives compression, reflection triggers, and pruning.
 - **LLM calls:** Heartbeat/reflection scripts use their own LLM via `llm-client.ts` (OpenAI-compatible API), independent of the OpenClaw agent model. All LLM outputs are parsed as JSON from code blocks.
 - **TypeScript config:** Strict mode, ES2022 target, CommonJS modules. Source in `skill/scripts/`, output to `dist/`. Tests excluded from compilation.
-- **Testing:** Vitest with `globals: true`. Tests in `tests/`. Engine modules (emotion, intent, vitality, confidence, random-events, social-graph, flow, types-hydration) all have unit tests. Tests import source `.ts` files directly.
-- **Templates:** 10 prompt templates in `skill/templates/` (e.g., `heartbeat-prompt.md`, `morning-plan-prompt.md`). Templates use `{placeholder}` syntax replaced at runtime.
-- **Installer:** `bin/cli.js` is plain Node.js (no build step). It copies skill files, registers cron jobs, deploys hooks, injects persona into `SOUL.md`, and initializes 17+ state files with defaults (including `flow-state.json` and `pending-chains.json` for the verisimilitude system). Subcommands: `--configure`, `--uninstall`.
+- **Testing:** Vitest with `globals: true`. Tests in `tests/`. Engine modules (emotion, intent, vitality, confidence, random-events, social-graph, flow, search-pipeline, exa-client, gallery-send, time-utils, types-hydration) all have unit tests. Tests import source `.ts` files directly. An **E2E lifecycle framework** (`tests/e2e/`) provides sandbox isolation (`setBasePaths()`), time simulation (`setTimeOverride()`), forced pipeline mode, and a 3-dimension quality judge (image quality / emotional coherence / memory consistency).
+- **Templates:** 11 prompt templates in `skill/templates/` (e.g., `heartbeat-prompt.md`, `morning-plan-prompt.md`, `search-digest-prompt.md`). Templates use `{placeholder}` syntax replaced at runtime.
+- **Installer:** `bin/cli.js` is plain Node.js (no build step). It copies skill files, registers cron jobs, deploys hooks, injects persona into `SOUL.md`, and initializes 17+ state files with defaults (including `flow-state.json`, `pending-chains.json`, `search-state.json`, `photo-gallery.json` for new subsystems). Subcommands: `--configure`, `--uninstall`.
+- **Time utilities:** `time-utils.ts` exports two clock functions: `now()` respects `setTimeOverride()` (used by E2E tests for simulated character time), while `wallNow()` always returns real system time. **Always use `wallNow()` for log timestamps and elapsed_ms; use `now()` for all heartbeat business logic.**
 - **XiaoHongShu:** Optional Python CDP-based CLI at `~/.openclaw/skills/xiaohongshu-skills/`. The installer can git clone the repo and run `uv sync`. `xhs-bridge-client.ts` calls it via `child_process.execFile('python3', ['scripts/cli.py', ...])`, following the same subprocess pattern as `instagram-bridge-client.ts`.

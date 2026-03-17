@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     root: '.',
     include: ['e2e/**/*.test.ts'],
+    exclude: ['e2e/playwright-*.test.ts'],
     globals: true,
     testTimeout: 3600000,
   },
