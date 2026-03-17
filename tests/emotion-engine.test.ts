@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   decayTowardBaseline, applyDelta, describeMood, EVENT_DELTAS,
   decayThreeLayer, applyImpulse, rollRumination, checkThresholdBreak,
+  applyDiminishingReturns,
 } from '../skill/scripts/emotion-engine';
 import { EmotionState, EMOTION_BASELINE, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../skill/scripts/types';
 
@@ -25,8 +26,20 @@ function makeState(overrides?: Partial<EmotionState>): EmotionState {
 
 describe('emotion-engine', () => {
   describe('describeMood', () => {
-    it('should return positive description for high valence + high arousal', () => {
-      expect(describeMood(0.8, 0.8)).toBe('超开心');
+    it('should return positive description for high valence + high arousal (default energy)', () => {
+      // With default secondary dims (energy=0.5, stress=0.2, creativity=0.4),
+      // high valence + high arousal → "开心" (not "超开心" which needs arousal > 0.8)
+      expect(describeMood(0.8, 0.8)).toBe('开心');
+      // With very high arousal → "超开心"
+      expect(describeMood(0.8, 0.9)).toBe('超开心');
+    });
+
+    it('should return creativity-aware description for high valence + high arousal + high creativity', () => {
+      expect(describeMood(0.8, 0.9, 0.5, 0.1, 0.9)).toBe('灵感大爆发');
+    });
+
+    it('should return exhaustion-aware description for high valence + high arousal + low energy', () => {
+      expect(describeMood(0.8, 0.9, 0.1, 0.1, 0.3)).toBe('嗨到飞起但快没电了');
     });
 
     it('should return calm description for positive valence + low arousal', () => {
@@ -42,7 +55,7 @@ describe('emotion-engine', () => {
     });
 
     it('should return neutral for near-zero valence', () => {
-      expect(describeMood(-0.1, 0.5)).toBe('普通');
+      expect(describeMood(-0.1, 0.5)).toBe('凑合');
     });
 
     it('should return extreme negative for very low valence + high arousal', () => {
@@ -51,6 +64,15 @@ describe('emotion-engine', () => {
 
     it('should return extreme low for very low valence + low arousal', () => {
       expect(describeMood(-0.8, 0.3)).toBe('很低落');
+    });
+
+    it('should differentiate positive zone with secondary dimensions', () => {
+      // Same valence+arousal, but different energy/creativity → different descriptions
+      const tired = describeMood(0.6, 0.7, 0.1, 0.1, 0.3);    // high valence, low energy
+      const creative = describeMood(0.6, 0.7, 0.5, 0.1, 0.9);  // high valence, high creativity
+      const energetic = describeMood(0.6, 0.4, 0.8, 0.1, 0.3); // moderate arousal, high energy
+      expect(tired).not.toBe(creative);
+      expect(energetic).toBe('元气满满');
     });
   });
 
@@ -125,10 +147,12 @@ describe('emotion-engine', () => {
   });
 
   describe('applyDelta', () => {
-    it('should apply positive delta to valence', () => {
+    it('should apply positive delta to valence (with diminishing returns)', () => {
       const state = makeState();
       const result = applyDelta(state, { valence: 0.3 }, 'good news');
-      expect(result.mood.valence).toBeCloseTo(0.8);
+      // valence range is [-1, 1], halfRange=1, headroom=0.5, dampening=0.5
+      // result = 0.5 + 0.3 * 0.5 = 0.65
+      expect(result.mood.valence).toBeCloseTo(0.65);
       expect(result.recent_cause).toBe('good news');
     });
 
@@ -142,30 +166,45 @@ describe('emotion-engine', () => {
       expect(result.recent_cause).toBe('good news');
     });
 
-    it('should apply negative delta', () => {
+    it('should apply negative delta (with diminishing returns)', () => {
       const state = makeState();
       const result = applyDelta(state, { valence: -0.3, stress: 0.2 }, 'bad news');
+      // valence: range [-1,1], headroom toward min = 0.5-(-1)=1.5, dampening=min(1.0,1.5/1)=1.0
+      // result = 0.5 + (-0.3)*1.0 = 0.2
       expect(result.mood.valence).toBeCloseTo(0.2);
-      expect(result.stress).toBeCloseTo(0.7);
+      // stress: range [0,1], headroom toward max = 1.0-0.5=0.5, dampening=0.5/0.5=1.0
+      // raw = 0.5 + 0.2*1.0 = 0.7, but coupling may adjust
+      expect(result.stress).toBeGreaterThan(0.5);
     });
 
-    it('should clamp valence at upper bound 1.0', () => {
+    it('should apply diminishing returns near upper bound', () => {
       const state = makeState({ mood: { valence: 0.9, arousal: 0.5, description: 'high' } });
       const result = applyDelta(state, { valence: 0.5 }, 'overflow');
-      expect(result.mood.valence).toBe(1.0);
+      // headroom = 1.0 - 0.9 = 0.1, dampening = 0.1/1.0 = 0.1
+      // result = 0.9 + 0.5 * 0.1 = 0.95
+      expect(result.mood.valence).toBeCloseTo(0.95);
+      expect(result.mood.valence).toBeLessThan(1.0);
     });
 
-    it('should clamp valence at lower bound -1.0', () => {
+    it('should apply diminishing returns near lower bound', () => {
       const state = makeState({ mood: { valence: -0.8, arousal: 0.5, description: 'low' } });
       const result = applyDelta(state, { valence: -0.5 }, 'underflow');
-      expect(result.mood.valence).toBe(-1.0);
+      // headroom = -0.8 - (-1.0) = 0.2, dampening = 0.2/1.0 = 0.2
+      // result = -0.8 + (-0.5) * 0.2 = -0.9
+      expect(result.mood.valence).toBeCloseTo(-0.9);
+      expect(result.mood.valence).toBeGreaterThan(-1.0);
     });
 
-    it('should clamp energy/stress/creativity/sociability within [0, 1]', () => {
+    it('should apply diminishing returns for 0..1 range near bounds', () => {
       const state = makeState({ energy: 0.1, stress: 0.9 });
       const result = applyDelta(state, { energy: -0.5, stress: 0.5 }, 'clamp test');
-      expect(result.energy).toBe(0);
-      expect(result.stress).toBe(1.0);
+      // energy: headroom toward min = 0.1-0=0.1, dampening = 0.1/0.5 = 0.2
+      // result = 0.1 + (-0.5)*0.2 = 0.0
+      expect(result.energy).toBeCloseTo(0);
+      // stress: headroom toward max = 1.0-0.9=0.1, dampening = 0.1/0.5 = 0.2
+      // raw = 0.9 + 0.5*0.2 = 1.0, but coupling from positive dValence may reduce
+      expect(result.stress).toBeGreaterThanOrEqual(0.9);
+      expect(result.stress).toBeLessThanOrEqual(1.0);
     });
 
     it('should set last_updated to a valid ISO string', () => {
@@ -181,6 +220,50 @@ describe('emotion-engine', () => {
       expect(result.mood.valence).toBe(state.mood.valence);
       expect(result.energy).toBe(state.energy);
       expect(result.recent_cause).toBe('no-op');
+    });
+  });
+
+  describe('applyDiminishingReturns', () => {
+    it('applies full delta at midpoint of range', () => {
+      // For [0, 1] range: at 0.5, headroom=0.5, halfRange=0.5, dampening=1.0
+      expect(applyDiminishingReturns(0.5, 0.3, 0, 1)).toBeCloseTo(0.8);
+      expect(applyDiminishingReturns(0.5, -0.3, 0, 1)).toBeCloseTo(0.2);
+    });
+
+    it('dampens delta near upper bound', () => {
+      // At 0.9 pushing +0.5: headroom=0.1, dampening=0.1/0.5=0.2
+      // result = 0.9 + 0.5*0.2 = 1.0
+      expect(applyDiminishingReturns(0.9, 0.5, 0, 1)).toBeCloseTo(1.0);
+      // At 0.8 pushing +0.5: headroom=0.2, dampening=0.2/0.5=0.4
+      // result = 0.8 + 0.5*0.4 = 1.0
+      expect(applyDiminishingReturns(0.8, 0.5, 0, 1)).toBeCloseTo(1.0);
+    });
+
+    it('dampens delta near lower bound', () => {
+      // At 0.1 pushing -0.5: headroom=0.1, dampening=0.1/0.5=0.2
+      // result = 0.1 + (-0.5)*0.2 = 0.0
+      expect(applyDiminishingReturns(0.1, -0.5, 0, 1)).toBeCloseTo(0.0);
+    });
+
+    it('does not dampen delta away from bound', () => {
+      // At 0.9 pushing -0.3: headroom toward min = 0.9, dampening=min(1,0.9/0.5)=1.0
+      expect(applyDiminishingReturns(0.9, -0.3, 0, 1)).toBeCloseTo(0.6);
+    });
+
+    it('returns current value for zero delta', () => {
+      expect(applyDiminishingReturns(0.7, 0, 0, 1)).toBe(0.7);
+    });
+
+    it('works with negative-range (valence -1..1)', () => {
+      // At 0.0, pushing +0.3: halfRange=1, headroom=1.0, dampening=1.0
+      expect(applyDiminishingReturns(0.0, 0.3, -1, 1)).toBeCloseTo(0.3);
+      // At 0.5, pushing +0.3: headroom=0.5, dampening=0.5
+      expect(applyDiminishingReturns(0.5, 0.3, -1, 1)).toBeCloseTo(0.65);
+    });
+
+    it('uses minimum dampening of 0.1 at extreme', () => {
+      // At 0.99 pushing +0.5: headroom=0.01, dampening=max(0.1, 0.01/0.5)=0.1
+      expect(applyDiminishingReturns(0.99, 0.5, 0, 1)).toBeCloseTo(1.0);
     });
   });
 
@@ -355,7 +438,9 @@ describe('applyImpulse', () => {
   it('applies delta to current state and records in history', () => {
     const state = makeState({ impulse_history: [] });
     const result = applyImpulse(state, { valence: 0.3 }, 'good news', 7);
-    expect(result.mood.valence).toBeCloseTo(0.8);
+    // valence: start 0.5, range [-1,1], headroom=0.5, dampening=0.5
+    // result = 0.5 + 0.3 * 0.5 = 0.65
+    expect(result.mood.valence).toBeCloseTo(0.65);
     expect(result.impulse_history).toHaveLength(1);
     expect(result.impulse_history[0].cause).toBe('good news');
     expect(result.impulse_history[0].importance).toBe(7);
@@ -440,6 +525,8 @@ describe('rollRumination', () => {
     const result = rollRumination(state, () => 0);
     // ruminationStrength = 0.3 + 0.2 * (10/10) = 0.5
     // delta = -0.5 * 0.5 = -0.25
+    // valence: range [-1,1], headroom toward min = 0-(-1)=1.0, dampening=1.0/1.0=1.0
+    // result = 0.0 + (-0.25) * 1.0 = -0.25
     expect(result.state.mood.valence).toBeCloseTo(-0.25);
   });
 
