@@ -36,6 +36,8 @@ describe('instagram-bridge-client mock mode', () => {
       const p = result.posts[0] as Record<string, unknown>;
       expect(p).toHaveProperty('pk');
       expect(p).toHaveProperty('like_count');
+      expect(p).toHaveProperty('user_id');
+      expect(p).toHaveProperty('username');
     }
   });
 });

@@ -152,7 +152,7 @@ describe('engageOutbound', () => {
     appendOutboundHistory({ media_pk: 'already_done', user_id: 'u1', commented_at: Date.now() });
 
     vi.spyOn(bridgeClient, 'hashtagTop').mockResolvedValue({
-      posts: [{ pk: 'already_done', code: 'existing_user', like_count: 100, comment_count: 5, caption_text: 'great cos', thumbnail_url: null }],
+      posts: [{ pk: 'already_done', code: 'existing_user', user_id: 'user_123', username: 'existing_user', like_count: 100, comment_count: 5, caption_text: 'great cos', thumbnail_url: null }],
     });
     vi.spyOn(bridgeClient, 'postComment').mockResolvedValue({ success: true, comment_pk: 'c1' });
     vi.spyOn(llmClient, 'callLLMJSON').mockResolvedValue([]);
