@@ -10,6 +10,10 @@ Subcommands:
   get_media_insights --media-pk <pk>
   get_media_info   --media-pk <pk>
   hashtag_top      --name <tag> --amount <n>
+  get_comments     --media-pk <pk> --amount <n>
+  reply_comment    --media-pk <pk> --comment-pk <pk> --text <text>
+  post_comment     --media-pk <pk> --text <text>
+  get_user_feed    --user-id <id> --amount <n>
 
 Environment:
   INSTAGRAM_USERNAME   (required)
@@ -228,6 +232,82 @@ def cmd_get_user_info(args):
     print(json.dumps(result))
 
 
+def cmd_get_comments(args):
+    """Get comments for a media post."""
+    media_pk = int(args.media_pk)
+    amount = int(args.amount)
+
+    def do_comments():
+        cl = get_client()
+        comments = cl.media_comments(media_pk, amount=amount)
+        result = []
+        for c in comments:
+            result.append({
+                "comment_pk": str(c.pk),
+                "user_id": str(c.user.pk),
+                "username": c.user.username,
+                "text": c.text,
+                "created_at": c.created_at_utc.isoformat() if c.created_at_utc else None,
+                "like_count": c.like_count,
+            })
+        return result
+
+    result = with_retry(do_comments)
+    print(json.dumps(result))
+
+
+def cmd_reply_comment(args):
+    """Reply to a comment on a media post."""
+    media_pk = int(args.media_pk)
+    comment_pk = int(args.comment_pk)
+
+    def do_reply():
+        cl = get_client()
+        time.sleep(30)  # throttle: min 30s between comment actions
+        comment = cl.media_comment(media_pk, args.text, replied_to_comment_id=comment_pk)
+        return {"success": True, "comment_pk": str(comment.pk)}
+
+    result = with_retry(do_reply)
+    print(json.dumps(result))
+
+
+def cmd_post_comment(args):
+    """Post a new comment on a media post."""
+    media_pk = int(args.media_pk)
+
+    def do_comment():
+        cl = get_client()
+        time.sleep(30)  # throttle: min 30s between comment actions
+        comment = cl.media_comment(media_pk, args.text)
+        return {"success": True, "comment_pk": str(comment.pk)}
+
+    result = with_retry(do_comment)
+    print(json.dumps(result))
+
+
+def cmd_get_user_feed(args):
+    """Get recent media posts for a user."""
+    user_id = int(args.user_id)
+    amount = int(args.amount)
+
+    def do_feed():
+        cl = get_client()
+        medias = cl.user_medias(user_id, amount=amount)
+        result = []
+        for m in medias:
+            result.append({
+                "media_pk": str(m.pk),
+                "caption": (m.caption_text or "")[:300],
+                "like_count": m.like_count,
+                "comment_count": m.comment_count,
+                "taken_at": m.taken_at.isoformat() if m.taken_at else None,
+            })
+        return result
+
+    result = with_retry(do_feed)
+    print(json.dumps(result))
+
+
 def cmd_upload_album(args):
     """Upload a carousel/album post."""
     cl = get_client()
@@ -269,6 +349,27 @@ def main():
     p_album.add_argument("--images", required=True, help="JSON array of image paths")
     p_album.add_argument("--caption", default="", help="Post caption")
 
+    # get_comments
+    p_get_comments = subparsers.add_parser("get_comments")
+    p_get_comments.add_argument("--media-pk", required=True)
+    p_get_comments.add_argument("--amount", default="20")
+
+    # reply_comment
+    p_reply = subparsers.add_parser("reply_comment")
+    p_reply.add_argument("--media-pk", required=True)
+    p_reply.add_argument("--comment-pk", required=True)
+    p_reply.add_argument("--text", required=True)
+
+    # post_comment
+    p_post_comment = subparsers.add_parser("post_comment")
+    p_post_comment.add_argument("--media-pk", required=True)
+    p_post_comment.add_argument("--text", required=True)
+
+    # get_user_feed
+    p_user_feed = subparsers.add_parser("get_user_feed")
+    p_user_feed.add_argument("--user-id", required=True)
+    p_user_feed.add_argument("--amount", default="5")
+
     args = parser.parse_args()
 
     try:
@@ -284,6 +385,14 @@ def main():
             cmd_hashtag_top(args)
         elif args.command == "get_user_info":
             cmd_get_user_info(args)
+        elif args.command == "get_comments":
+            cmd_get_comments(args)
+        elif args.command == "reply_comment":
+            cmd_reply_comment(args)
+        elif args.command == "post_comment":
+            cmd_post_comment(args)
+        elif args.command == "get_user_feed":
+            cmd_get_user_feed(args)
     except Exception as e:
         print(json.dumps({"error": str(e)}), file=sys.stdout)
         print(f"Error: {e}", file=sys.stderr)
