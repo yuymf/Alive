@@ -180,3 +180,103 @@ export async function replyToComments(mediaPk: string, postContext: ReplyContext
     }
   }
 }
+
+// ── Active Outbound Engagement ─────────────────────────────────────────────
+
+export interface OutboundContext {
+  socialIntentIntensity: number;
+  emotionSummary: string;
+  hashtags: string[];
+  followingUserIds?: string[];
+}
+
+export async function engageOutbound(ctx: OutboundContext): Promise<void> {
+  if (getTodayOutboundCount() >= MAX_DAILY_OUTBOUND) {
+    console.log('[comment-engine] Daily outbound quota reached (5), skipping');
+    return;
+  }
+
+  pruneOutboundHistory();
+
+  // 1. Discover candidates
+  type Candidate = { media_pk: string; username: string; caption: string; like_count: number; comment_count: number };
+  const candidates: Candidate[] = [];
+
+  for (const tag of ctx.hashtags.slice(0, 3)) {
+    try {
+      const result = await hashtagTop(tag, 5) as { posts: Array<{ pk: string; code: string; caption_text: string; like_count: number; comment_count: number }> };
+      for (const p of result.posts ?? []) {
+        if (!isAlreadyCommented(p.pk)) {
+          candidates.push({ media_pk: p.pk, username: p.code, caption: (p.caption_text ?? '').slice(0, 100), like_count: p.like_count, comment_count: p.comment_count });
+        }
+      }
+    } catch (err) {
+      console.error(`[comment-engine] hashtagTop failed for ${tag}: ${(err as Error).message}`);
+    }
+  }
+
+  for (const userId of (ctx.followingUserIds ?? []).slice(0, 5)) {
+    try {
+      const feed = await getUserFeed(userId, 3);
+      for (const m of feed) {
+        if (!isAlreadyCommented(m.media_pk)) {
+          candidates.push({ media_pk: m.media_pk, username: userId, caption: m.caption.slice(0, 100), like_count: m.like_count, comment_count: m.comment_count });
+        }
+      }
+    } catch (err) {
+      console.error(`[comment-engine] getUserFeed failed for ${userId}: ${(err as Error).message}`);
+    }
+  }
+
+  if (candidates.length === 0) {
+    console.log('[comment-engine] No candidates for outbound engagement');
+    return;
+  }
+
+  // 2. LLM: select and generate comments
+  const template = readTemplate('outbound-comment-prompt.md');
+  const prompt = template
+    .replace('{emotion_summary}', ctx.emotionSummary)
+    .replace('{social_intent_intensity}', String(Math.round(ctx.socialIntentIntensity)))
+    .replace('{candidates_json}', JSON.stringify(candidates.slice(0, 10)));
+
+  let planned: Array<{ media_pk: string; username: string; comment: string }> = [];
+  try {
+    planned = await callLLMJSON(prompt, 400, 'comment-engine-outbound') as typeof planned;
+  } catch (err) {
+    console.error(`[comment-engine] LLM outbound generation failed: ${(err as Error).message}`);
+    return;
+  }
+
+  // 3. Post comments
+  let postedCount = 0;
+  for (const plan of planned) {
+    if (getTodayOutboundCount() >= MAX_DAILY_OUTBOUND) break;
+    if (isAlreadyCommented(plan.media_pk)) continue;
+
+    try {
+      await postComment(plan.media_pk, plan.comment);
+      appendOutboundHistory({ media_pk: plan.media_pk, user_id: plan.username, commented_at: Date.now() });
+
+      const relationPath = path.join(PATHS.socialInstagramDir, `${plan.username}.json`);
+      if (fs.existsSync(relationPath)) {
+        const relation = readJSON<SocialRelation>(relationPath, null as unknown as SocialRelation);
+        if (relation) {
+          const updated = applyClosenessChange(relation, 'comment_sent', new Date().toISOString());
+          writeSocialRelation(PATHS.socialInstagramDir, updated);
+        }
+      }
+
+      appendText(PATHS.diary, `\n在 @${plan.username} 的帖子下评论了: 「${plan.comment}」\n`);
+      console.log(`[comment-engine] Commented on @${plan.username}`);
+      postedCount++;
+    } catch (err) {
+      console.error(`[comment-engine] Failed to post on ${plan.media_pk}: ${(err as Error).message}`);
+    }
+  }
+
+  if (postedCount > 0) {
+    const todayStr = getLocalDate(new Date());
+    appendText(PATHS.diary, `\n## ${todayStr}\n今天主动去cos圈评论了 ${postedCount} 个帖子～\n情绪: 开心 | 重要性: 3\n标签: 社交, cos圈\n`);
+  }
+}
