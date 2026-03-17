@@ -6,10 +6,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { callLLMJSON } from '../skill/scripts/llm-client';
+import { execFileSync } from 'child_process';
 
 const AIHUBMIX_BASE_URL = 'https://aihubmix.com/v1/chat/completions';
-const AIHUBMIX_MODEL = 'gemini-3-pro-image-preview';
+const AIHUBMIX_MODEL = 'gemini-2.5-flash';
 
 // ─── Types ─────────────────────────────────────────────────
 
@@ -119,6 +119,38 @@ async function callGeminiVision(
   return data.choices[0]?.message?.content ?? '';
 }
 
+/**
+ * Call AIHubMix text model for JSON evaluation (fast, no vision needed).
+ * Replaces callLLMJSON to avoid routing through the slow heartbeat LLM (MiniMax).
+ */
+async function callAIHubMixJSON<T>(prompt: string): Promise<T> {
+  const apiKey = process.env.AIHUBMIX_API_KEY;
+  if (!apiKey) throw new Error('AIHUBMIX_API_KEY not set');
+
+  const body = {
+    model: AIHUBMIX_MODEL,
+    messages: [{ role: 'user', content: prompt }],
+  };
+
+  const res = await fetch(AIHUBMIX_BASE_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`AIHubMix text API error ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const data = await res.json() as { choices: Array<{ message: { content: string } }> };
+  apiCallCounts.llm++;
+  return parseJSONFromResponse<T>(data.choices[0]?.message?.content ?? '');
+}
+
 function parseJSONFromResponse<T>(text: string): T {
   // Strip <think>...</think> blocks (some models output reasoning before JSON)
   let cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
@@ -140,11 +172,39 @@ function parseJSONFromResponse<T>(text: string): T {
   return JSON.parse(cleaned);
 }
 
+const MAX_IMAGE_BYTES = 200_000; // 200KB — keep payloads small for fast API calls
+
 function readImageAsBase64(filePath: string): { base64: string; mimeType: string } {
-  const ext = path.extname(filePath).toLowerCase();
-  const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
-  const base64 = fs.readFileSync(filePath).toString('base64');
-  return { base64, mimeType };
+  const raw = fs.readFileSync(filePath);
+
+  // Small enough — send as-is
+  if (raw.length <= MAX_IMAGE_BYTES) {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+    return { base64: raw.toString('base64'), mimeType };
+  }
+
+  // Compress with sips (macOS) — resize to max 768px, JPEG 80%
+  const cachedPath = filePath.replace(/\.[^.]+$/, '.judge-compressed.jpg');
+  if (fs.existsSync(cachedPath) && fs.statSync(cachedPath).mtimeMs >= fs.statSync(filePath).mtimeMs) {
+    return { base64: fs.readFileSync(cachedPath).toString('base64'), mimeType: 'image/jpeg' };
+  }
+
+  try {
+    execFileSync('sips', [
+      '-s', 'format', 'jpeg',
+      '-s', 'formatOptions', '80',
+      '-Z', '768',
+      filePath,
+      '--out', cachedPath,
+    ], { stdio: 'pipe' });
+    return { base64: fs.readFileSync(cachedPath).toString('base64'), mimeType: 'image/jpeg' };
+  } catch {
+    // Fallback: send original
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+    return { base64: raw.toString('base64'), mimeType };
+  }
 }
 
 // ─── Dimension 1: Image Consistency ────────────────────────
@@ -359,7 +419,7 @@ async function judgeEmotionDynamics(outputDir: string): Promise<QualityReport['e
   let eventResponseScore = 5;
   let dimensionCouplingScore = 5;
   try {
-    const emotionJudgment = await callLLMJSON<{
+    const emotionJudgment = await callAIHubMixJSON<{
       event_response: number;
       event_response_reasoning: string;
       dimension_coupling: number;
@@ -375,7 +435,6 @@ Rate on 1-10 scale:
 
 IMPORTANT: Do NOT use <think> tags or any reasoning preamble. Output ONLY the JSON object immediately:
 {"event_response": N, "event_response_reasoning": "...", "dimension_coupling": N, "dimension_coupling_reasoning": "..."}`);
-    apiCallCounts.llm++;
     eventResponseScore = clamp(emotionJudgment.event_response, 1, 10);
     dimensionCouplingScore = clamp(emotionJudgment.dimension_coupling, 1, 10);
   } catch (err) {
@@ -444,7 +503,7 @@ async function judgeMemoryQuality(outputDir: string): Promise<QualityReport['mem
     const wisdomText = JSON.stringify(wisdom.wisdom?.slice(0, 10) ?? [], null, 2);
     const aspirationsText = JSON.stringify(aspirations.aspirations?.slice(0, 5) ?? [], null, 2);
 
-    scores = await callLLMJSON<typeof scores>(`You are evaluating a digital character's memory output from a simulated day.
+    scores = await callAIHubMixJSON<typeof scores>(`You are evaluating a digital character's memory output from a simulated day.
 
 The character is 水瀬 (Minase), an 18-year-old ESTP cosplayer who speaks Chinese with Japanese loanwords. She is energetic, impulsive, and creative.
 
@@ -469,7 +528,6 @@ Rate on 1-10 scale:
 
 IMPORTANT: Do NOT use <think> tags or any reasoning preamble. Output ONLY the JSON object immediately:
 {"diary_diversity": N, "diary_voice": N, "wisdom_actionability": N, "wisdom_relevance": N, "character_consistency": N}`);
-    apiCallCounts.llm++;
   } catch (err) {
     issues.push(`LLM memory judgment failed: ${(err as Error).message}`);
   }
