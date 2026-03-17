@@ -173,12 +173,22 @@ export async function callLLM(prompt: string, maxTokens = 16384, caller?: string
 
 /**
  * Strip <think>...</think> blocks from LLM output.
+ * Handles both closed blocks and truncated (unclosed) think blocks at the start.
  * Used both for JSON extraction and for logging clean responses.
  */
 function stripThinkBlocks(raw: string): string {
+  // Remove all closed <think>...</think> blocks
   let text = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  // Handle truncated think block: if response starts with <think> but has no closing tag,
+  // the reasoning content was cut off — strip everything from <think> to end of string.
   if (text.startsWith('<think>')) {
-    text = text.slice('<think>'.length);
+    const closeIdx = text.indexOf('</think>');
+    if (closeIdx !== -1) {
+      text = text.slice(closeIdx + '</think>'.length).trim();
+    } else {
+      // Unclosed think block — strip all content after <think>
+      text = '';
+    }
   }
   return text;
 }

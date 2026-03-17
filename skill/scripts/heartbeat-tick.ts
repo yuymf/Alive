@@ -277,7 +277,8 @@ export async function regularTick(): Promise<void> {
   // KPI 兜底：21:00 后如果当天还没发帖，强制触发
   if (hour >= 21 && impulse.posts_today === 0) {
     vitality = await triggerForcedPost(vitality, { reason: 'daily_kpi' });
-    writeJSON(PATHS.postImpulse, impulse);
+    // Do NOT write impulse here — the pipeline (inline or spawned) already updated post-impulse.json
+    // with the incremented posts_today. Writing our stale local impulse would undo that.
     writeJSON(PATHS.vitalityState, vitality);
     return;
   }
@@ -682,6 +683,11 @@ export async function regularTick(): Promise<void> {
     totalImportance += 3;
     actionResults.push(decision.inner_monologue.slice(0, 50));
   }
+
+  // 8a-b. Re-read impulse from disk to pick up any posts_today increment written by inline pipeline.
+  // The inline pipeline (E2E_INLINE_PIPELINE=1) calls resetImpulseAfterPost() and writes post-impulse.json.
+  // Without this re-read, writeFlowTickState() would overwrite that update with the tick's stale local value.
+  impulse = readJSON<PostImpulseState>(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
 
   // 8b. Procrastination tracking
   const procResult = processProcrastination(intentPool, chosenIntentIds);
