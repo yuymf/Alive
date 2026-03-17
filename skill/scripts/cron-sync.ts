@@ -4,8 +4,12 @@ import type { CronSchedule } from './types';
 export interface CronJob {
   id: string;
   name: string;
-  cron: string;
   enabled: boolean;
+  schedule: {
+    kind: string;
+    expr: string;
+    staggerMs: number;
+  };
 }
 
 export interface CronExpressions {
@@ -47,7 +51,9 @@ export function findCronJobByName(name: string): CronJob | null {
       timeout: 10_000,
       encoding: 'utf8',
     });
-    const jobs: CronJob[] = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // Handle both paginated object { jobs: [...] } and legacy bare array
+    const jobs: CronJob[] = Array.isArray(parsed) ? parsed : (parsed?.jobs ?? []);
     return jobs.find(j => j.name === name) ?? null;
   } catch {
     return null;
@@ -106,6 +112,7 @@ export function buildCronExpression(schedule: CronSchedule): CronExpressions {
 /**
  * List all OpenClaw cron jobs (single CLI call).
  * Returns empty array if Gateway is offline.
+ * NOTE: openclaw cron list --json returns { jobs: CronJob[], total, ... }, not a bare array.
  */
 function listAllCronJobs(): CronJob[] {
   try {
@@ -113,7 +120,9 @@ function listAllCronJobs(): CronJob[] {
       timeout: 10_000,
       encoding: 'utf8',
     });
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // Handle both paginated object { jobs: [...] } and legacy bare array
+    return Array.isArray(parsed) ? parsed : (parsed?.jobs ?? []);
   } catch {
     return [];
   }
@@ -135,7 +144,7 @@ export function syncCronSchedule(schedule: CronSchedule): SyncResult {
     if (expr === null) return 'no_regulars';
     const job = allJobs.find(j => j.name === jobName) ?? null;
     if (!job) return 'job_not_found';
-    if (job.cron === expr) return 'synced';
+    if (job.schedule.expr === expr) return 'synced';
     return editCronExpression(job.id, expr) ? 'synced' : 'edit_failed';
   };
 
