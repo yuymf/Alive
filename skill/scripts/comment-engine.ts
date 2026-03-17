@@ -42,6 +42,8 @@ interface OutboundHistory {
 
 const OUTBOUND_RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const MAX_DAILY_OUTBOUND = 5;
+const MAX_COMMENTS_PER_USER_24H = 2;
+const USER_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 // ── Pending Reply State ────────────────────────────────────────────────────
 
@@ -93,6 +95,12 @@ export function getTodayOutboundCount(): number {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   return data.commented.filter(e => e.commented_at >= todayStart.getTime()).length;
+}
+
+export function getRecentCommentCountForUser(userId: string): number {
+  const data = readJSON<OutboundHistory>(PATHS.outboundHistory, { commented: [] });
+  const windowStart = Date.now() - USER_24H_WINDOW_MS;
+  return data.commented.filter(e => e.user_id === userId && e.commented_at > windowStart).length;
 }
 
 // ── Spam Filter ────────────────────────────────────────────────────────────
@@ -206,7 +214,7 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
     try {
       const result = await hashtagTop(tag, 5) as { posts: Array<{ pk: string; code: string; user_id: string; username: string; caption_text: string; like_count: number; comment_count: number }> };
       for (const p of result.posts ?? []) {
-        if (!isAlreadyCommented(p.pk)) {
+        if (!isAlreadyCommented(p.pk) && getRecentCommentCountForUser(p.user_id) < MAX_COMMENTS_PER_USER_24H) {
           candidates.push({ media_pk: p.pk, user_id: p.user_id, username: p.username, caption: (p.caption_text ?? '').slice(0, 100), like_count: p.like_count, comment_count: p.comment_count });
         }
       }
@@ -219,7 +227,7 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
     try {
       const feed = await getUserFeed(userId, 3);
       for (const m of feed) {
-        if (!isAlreadyCommented(m.media_pk)) {
+        if (!isAlreadyCommented(m.media_pk) && getRecentCommentCountForUser(userId) < MAX_COMMENTS_PER_USER_24H) {
           candidates.push({ media_pk: m.media_pk, user_id: userId, username: userId, caption: m.caption.slice(0, 100), like_count: m.like_count, comment_count: m.comment_count });
         }
       }
