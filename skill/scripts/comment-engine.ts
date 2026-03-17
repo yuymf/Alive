@@ -94,3 +94,89 @@ export function getTodayOutboundCount(): number {
   todayStart.setHours(0, 0, 0, 0);
   return data.commented.filter(e => e.commented_at >= todayStart.getTime()).length;
 }
+
+// ── Spam Filter ────────────────────────────────────────────────────────────
+
+const SPAM_PATTERN = /^[\p{Emoji}\p{Emoji_Component}\s]+$/u;
+
+function isSpam(text: string): boolean {
+  return SPAM_PATTERN.test(text.trim()) || text.trim().length < 3;
+}
+
+// ── Passive Reply ──────────────────────────────────────────────────────────
+
+export interface ReplyContext {
+  caption: string;
+  hashtags: string[];
+  emotionSummary?: string;
+  voiceDirective?: string;
+}
+
+export async function replyToComments(mediaPk: string, postContext: ReplyContext): Promise<void> {
+  const pending = readJSON<PendingEngagement>(PATHS.pendingEngagement, { pending_replies: [] });
+  const entry = pending.pending_replies.find(p => p.media_pk === mediaPk);
+  const repliedIds = new Set(entry?.replied_comment_ids ?? []);
+
+  let comments: InstagramComment[];
+  try {
+    comments = await getComments(mediaPk, 20);
+  } catch (err) {
+    console.error(`[comment-engine] getComments failed for ${mediaPk}: ${(err as Error).message}`);
+    return;
+  }
+
+  // Filter: skip already replied + spam, sort by engagement, cap at 10
+  const eligible = comments
+    .filter(c => !repliedIds.has(c.comment_pk))
+    .filter(c => !isSpam(c.text))
+    .sort((a, b) => b.like_count - a.like_count)
+    .slice(0, 10);
+
+  if (eligible.length === 0) {
+    console.log(`[comment-engine] No eligible comments for ${mediaPk}`);
+    return;
+  }
+
+  const commentsJson = JSON.stringify(
+    eligible.map(c => ({ comment_pk: c.comment_pk, username: c.username, text: c.text }))
+  );
+  const template = readTemplate('comment-reply-prompt.md');
+  const prompt = template
+    .replace('{emotion_summary}', postContext.emotionSummary ?? '心情还好')
+    .replace('{voice_directive}', postContext.voiceDirective ?? '')
+    .replace('{post_caption}', postContext.caption)
+    .replace('{comments_json}', commentsJson);
+
+  let replies: Array<{ comment_pk: string; reply: string }> = [];
+  try {
+    replies = await callLLMJSON(prompt, 600, 'comment-engine-reply') as typeof replies;
+  } catch (err) {
+    console.error(`[comment-engine] LLM reply generation failed: ${(err as Error).message}`);
+    return;
+  }
+
+  for (const r of replies) {
+    const comment = eligible.find(c => c.comment_pk === r.comment_pk);
+    if (!comment) continue;
+
+    try {
+      await replyComment(mediaPk, r.comment_pk, r.reply);
+      markReplied(mediaPk, r.comment_pk);
+
+      // Update social graph if relation exists
+      const relationPath = path.join(PATHS.socialInstagramDir, `${comment.user_id}.json`);
+      if (fs.existsSync(relationPath)) {
+        const relation = readJSON<SocialRelation>(relationPath, null as unknown as SocialRelation);
+        if (relation) {
+          const updated = applyClosenessChange(relation, 'reply_sent', new Date().toISOString());
+          writeSocialRelation(PATHS.socialInstagramDir, updated);
+        }
+      }
+
+      appendText(PATHS.diary, `\n回复了 @${comment.username} 的评论: 「${r.reply}」\n`);
+      console.log(`[comment-engine] Replied to @${comment.username}`);
+    } catch (err) {
+      console.error(`[comment-engine] Failed to reply to ${comment.comment_pk}: ${(err as Error).message}`);
+    }
+  }
+}
