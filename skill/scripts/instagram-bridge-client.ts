@@ -26,8 +26,8 @@ function mockInstagramResponse(command: string): unknown {
       return {
         hashtag: 'mock_tag',
         posts: [
-          { pk: 'mock_pk_1', code: 'mock_code_1', like_count: 500, comment_count: 10, caption_text: 'Amazing cosplay! #cosplay', thumbnail_url: null },
-          { pk: 'mock_pk_2', code: 'mock_code_2', like_count: 300, comment_count: 5, caption_text: 'Daily OOTD #fashion', thumbnail_url: null },
+          { pk: 'mock_pk_1', code: 'mock_code_1', user_id: 'mock_user_1', username: 'mock_user_1_handle', like_count: 500, comment_count: 10, caption_text: 'Amazing cosplay! #cosplay', thumbnail_url: null },
+          { pk: 'mock_pk_2', code: 'mock_code_2', user_id: 'mock_user_2', username: 'mock_user_2_handle', like_count: 300, comment_count: 5, caption_text: 'Daily OOTD #fashion', thumbnail_url: null },
         ],
       };
     case 'get_comments':

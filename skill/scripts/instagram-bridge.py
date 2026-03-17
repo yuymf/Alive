@@ -206,6 +206,8 @@ def cmd_hashtag_top(args):
             posts.append({
                 "pk": str(m.pk),
                 "code": m.code,
+                "user_id": str(m.user.pk),
+                "username": m.user.username,
                 "like_count": m.like_count,
                 "comment_count": m.comment_count,
                 "caption_text": (m.caption_text or "")[:200],

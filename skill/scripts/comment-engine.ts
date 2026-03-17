@@ -199,15 +199,15 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
   pruneOutboundHistory();
 
   // 1. Discover candidates
-  type Candidate = { media_pk: string; username: string; caption: string; like_count: number; comment_count: number };
+  type Candidate = { media_pk: string; user_id: string; username: string; caption: string; like_count: number; comment_count: number };
   const candidates: Candidate[] = [];
 
   for (const tag of ctx.hashtags.slice(0, 3)) {
     try {
-      const result = await hashtagTop(tag, 5) as { posts: Array<{ pk: string; code: string; caption_text: string; like_count: number; comment_count: number }> };
+      const result = await hashtagTop(tag, 5) as { posts: Array<{ pk: string; code: string; user_id: string; username: string; caption_text: string; like_count: number; comment_count: number }> };
       for (const p of result.posts ?? []) {
         if (!isAlreadyCommented(p.pk)) {
-          candidates.push({ media_pk: p.pk, username: p.code, caption: (p.caption_text ?? '').slice(0, 100), like_count: p.like_count, comment_count: p.comment_count });
+          candidates.push({ media_pk: p.pk, user_id: p.user_id, username: p.username, caption: (p.caption_text ?? '').slice(0, 100), like_count: p.like_count, comment_count: p.comment_count });
         }
       }
     } catch (err) {
@@ -220,7 +220,7 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
       const feed = await getUserFeed(userId, 3);
       for (const m of feed) {
         if (!isAlreadyCommented(m.media_pk)) {
-          candidates.push({ media_pk: m.media_pk, username: userId, caption: m.caption.slice(0, 100), like_count: m.like_count, comment_count: m.comment_count });
+          candidates.push({ media_pk: m.media_pk, user_id: userId, username: userId, caption: m.caption.slice(0, 100), like_count: m.like_count, comment_count: m.comment_count });
         }
       }
     } catch (err) {
@@ -240,7 +240,7 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
     .replace('{social_intent_intensity}', String(Math.round(ctx.socialIntentIntensity)))
     .replace('{candidates_json}', JSON.stringify(candidates.slice(0, 10)));
 
-  let planned: Array<{ media_pk: string; username: string; comment: string }> = [];
+  let planned: Array<{ media_pk: string; user_id: string; username: string; comment: string }> = [];
   try {
     planned = await callLLMJSON(prompt, 400, 'comment-engine-outbound') as typeof planned;
   } catch (err) {
@@ -256,9 +256,9 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
 
     try {
       await postComment(plan.media_pk, plan.comment);
-      appendOutboundHistory({ media_pk: plan.media_pk, user_id: plan.username, commented_at: Date.now() });
+      appendOutboundHistory({ media_pk: plan.media_pk, user_id: plan.user_id, commented_at: Date.now() });
 
-      const relationPath = path.join(PATHS.socialInstagramDir, `${plan.username}.json`);
+      const relationPath = path.join(PATHS.socialInstagramDir, `${plan.user_id}.json`);
       if (fs.existsSync(relationPath)) {
         const relation = readJSON<SocialRelation>(relationPath, null as unknown as SocialRelation);
         if (relation) {
