@@ -44,5 +44,18 @@ describe('file-utils path override', () => {
   it('PATHS.photoGallery points to photo-gallery.json', () => {
     setBasePaths('/tmp/test-memory', '/tmp/test-skill');
     expect(PATHS.photoGallery).toBe('/tmp/test-memory/photo-gallery.json');
+    resetBasePaths();
+  });
+
+  it('PATHS.pendingEngagement returns path ending in pending-engagement.json', () => {
+    setBasePaths('/tmp/test-memory', '/tmp/test-skill');
+    expect(PATHS.pendingEngagement).toBe('/tmp/test-memory/pending-engagement.json');
+    resetBasePaths();
+  });
+
+  it('PATHS.outboundHistory returns path ending in outbound-history.json', () => {
+    setBasePaths('/tmp/test-memory', '/tmp/test-skill');
+    expect(PATHS.outboundHistory).toBe('/tmp/test-memory/outbound-history.json');
+    resetBasePaths();
   });
 });

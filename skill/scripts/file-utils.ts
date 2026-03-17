@@ -65,6 +65,8 @@ export const PATHS = {
   get pendingChains() { return path.join(getMemoryBase(), 'pending-chains.json'); },
   get searchState() { return path.join(getMemoryBase(), 'search-state.json'); },
   get travelState() { return path.join(getMemoryBase(), 'travel-state.json'); },
+  get pendingEngagement() { return path.join(getMemoryBase(), 'pending-engagement.json'); },
+  get outboundHistory() { return path.join(getMemoryBase(), 'outbound-history.json'); },
 };
 
 /**
