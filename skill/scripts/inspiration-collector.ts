@@ -464,7 +464,7 @@ export async function collectTravelInspo(city: string, country: string): Promise
   let spots: TravelSpot[] = [];
   try {
     const raw = await callLLMJSON<Array<{ name: string; description: string; best_time: string; style_tags: string[] }>>(
-      prompt, 512, 'travel-inspo'
+      prompt, undefined, 'travel-inspo'
     );
     spots = (raw ?? []).map(r => ({
       name: r.name ?? '',
