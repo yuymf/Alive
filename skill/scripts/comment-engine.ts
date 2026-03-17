@@ -157,7 +157,7 @@ export async function replyToComments(mediaPk: string, postContext: ReplyContext
 
   let replies: Array<{ comment_pk: string; reply: string }> = [];
   try {
-    replies = await callLLMJSON(prompt, 600, 'comment-engine-reply') as typeof replies;
+    replies = await callLLMJSON(prompt, undefined, 'comment-engine-reply') as typeof replies;
   } catch (err) {
     console.error(`[comment-engine] LLM reply generation failed: ${(err as Error).message}`);
     return;
@@ -250,7 +250,7 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
 
   let planned: Array<{ media_pk: string; user_id: string; username: string; comment: string }> = [];
   try {
-    planned = await callLLMJSON(prompt, 400, 'comment-engine-outbound') as typeof planned;
+    planned = await callLLMJSON(prompt, undefined, 'comment-engine-outbound') as typeof planned;
   } catch (err) {
     console.error(`[comment-engine] LLM outbound generation failed: ${(err as Error).message}`);
     return;

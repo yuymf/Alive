@@ -46,7 +46,7 @@ export async function consultAdvisor(ctx: AdvisorContext): Promise<string> {
 
   try {
     const result = await Promise.race([
-      callLLM(prompt, 512, 'ins-advisor'),
+      callLLM(prompt, undefined, 'ins-advisor'),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('advisor timeout')), TIMEOUT_MS)
       ),
