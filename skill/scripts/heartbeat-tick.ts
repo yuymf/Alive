@@ -43,6 +43,7 @@ import { isActiveHeartbeatHour } from './heartbeat-gate';
 import { accumulateImpulse, decayImpulse, shouldInjectPostDesire, checkDormancy } from './post-impulse';
 import { now, getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from './time-utils';
 import { executeSearch } from './search-pipeline';
+import { getPendingReplies, replyToComments, engageOutbound } from './comment-engine';
 import {
   checkFlowEntry, checkDriftEntry, checkFlowExit, checkDriftExit,
   tickFlow, resetFlow, generateFlowDiary, generateDriftDiary,
@@ -364,6 +365,22 @@ export async function regularTick(): Promise<void> {
   // 3b. Voice directive
   const voiceDirective = computeVoiceDirective(flowState.status, emotion, thresholdBroke);
 
+  // Check for pending comment replies (posts that are ~24h old)
+  try {
+    const pendingReplies = getPendingReplies();
+    for (const pending of pendingReplies) {
+      console.log(`[heartbeat] Checking comments for post ${pending.media_pk}`);
+      await replyToComments(pending.media_pk, {
+        caption: pending.post_context.caption,
+        hashtags: pending.post_context.hashtags,
+        emotionSummary: `${emotion.mood.description}，valence ${emotion.mood.valence.toFixed(1)}`,
+        voiceDirective,
+      });
+    }
+  } catch (err) {
+    console.error(`[heartbeat] Pending reply check failed: ${(err as Error).message}`);
+  }
+
   // 4. Flow state judgment
   const rigidNow = getActiveRigidSchedule(schedule, hour, weekday);
   const scheduleContext = rigidNow
@@ -618,6 +635,34 @@ export async function regularTick(): Promise<void> {
           console.log(`[SEARCH] Skipped — vitality too low (${vitality.vitality})`);
           actionResults.push(`[skipped:low-vitality] ${action.action}`);
         }
+        continue;
+      }
+      // Social engagement routing
+      const isSocialEngagement = /social.engagement|互动|评论|刷动态|cos圈/.test(lowerSkill);
+      if (isSocialEngagement) {
+        if (vitalityConstraints.canDoHeavySocial) {
+          try {
+            const inspiration = readJSON<{ hashtags?: string[] }>(PATHS.inspiration, {});
+            const hashtags = inspiration.hashtags ?? [];
+            const relationsForEngagement = readAllJSON<SocialRelation>(PATHS.socialInstagramDir);
+            const followingIds = relationsForEngagement
+              .filter(r => classifyTier(r.relationship.closeness) === 'core' || classifyTier(r.relationship.closeness) === 'familiar')
+              .map(r => r.id)
+              .slice(0, 10);
+            await engageOutbound({
+              socialIntentIntensity: getTopIntents(intentPool, 1)[0]?.intensity ?? 5,
+              emotionSummary: `${emotion.mood.description}，valence ${emotion.mood.valence.toFixed(1)}`,
+              hashtags,
+              followingUserIds: followingIds,
+            });
+            vitality = applyActionCost(vitality, 'high_social');
+          } catch (err) {
+            console.error(`[heartbeat] Social engagement failed: ${(err as Error).message}`);
+          }
+        } else {
+          console.log(`[SOCIAL] Skipped — vitality too low (${vitality.vitality})`);
+        }
+        actionResults.push(`[social-engagement] ${action.action}`);
         continue;
       }
       console.log(`[REAL ACTION] Unknown skill: ${action.skill} for: ${action.action}`);
