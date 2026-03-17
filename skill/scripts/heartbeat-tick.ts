@@ -160,13 +160,19 @@ async function executeSimulatedAction(
   emotion: EmotionState,
   scheduleContext: string,
   voiceDirective: string = '',
+  recentDiaryEntries: string = '',
 ): Promise<ActionOutput> {
   const template = readTemplate('simulated-action.md');
+  const emotionSummary = `${emotion.mood.description}（valence=${emotion.mood.valence.toFixed(2)}, arousal=${emotion.mood.arousal.toFixed(2)}, energy=${emotion.energy.toFixed(2)}, stress=${emotion.stress.toFixed(2)}, creativity=${emotion.creativity.toFixed(2)}, sociability=${emotion.sociability.toFixed(2)}）`;
+  const recentDiaryContext = recentDiaryEntries
+    ? `## 最近写过的日记（不要重复类似的内容和句式！）\n\n${recentDiaryEntries}`
+    : '';
   const prompt = template
     .replace('{action_description}', actionDesc)
-    .replace('{emotion_summary}', `${emotion.mood.description} (valence: ${emotion.mood.valence.toFixed(1)})`)
+    .replace('{emotion_summary}', emotionSummary)
     .replace('{current_time}', formatTime())
     .replace('{schedule_context}', scheduleContext)
+    .replace('{recent_diary_context}', recentDiaryContext)
     .replace('{voice_directive}', voiceDirective || '正常叙事语气。');
 
   return callLLMJSON<ActionOutput>(prompt, undefined, 'heartbeat-tick');
@@ -589,7 +595,7 @@ export async function regularTick(): Promise<void> {
 
     if (action.type === 'simulated' || action.type === 'inner') {
       try {
-        const result = await executeSimulatedAction(action.action, emotion, scheduleContext, voiceDirective);
+        const result = await executeSimulatedAction(action.action, emotion, scheduleContext, voiceDirective, recentDiary);
         emotion = applyDelta(emotion, result.emotion_delta, result.narrative.slice(0, 50));
 
         if (action.action.includes('休息') || action.action.includes('摸鱼') || action.action.includes('追番')) {
