@@ -16,6 +16,7 @@ import {
   isAlreadyCommented,
   replyToComments,
 } from '../skill/scripts/comment-engine';
+import { engageOutbound } from '../skill/scripts/comment-engine';
 
 let tmpDir: string;
 
@@ -132,5 +133,31 @@ describe('replyToComments', () => {
     const llmPrompt = (llmClient.callLLMJSON as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
     expect(llmPrompt).not.toContain('spammer');
     expect(llmPrompt).toContain('real');
+  });
+});
+
+describe('engageOutbound', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('skips if today outbound count >= 5', async () => {
+    for (let i = 0; i < 5; i++) {
+      appendOutboundHistory({ media_pk: `m${i}`, user_id: `u${i}`, commented_at: Date.now() });
+    }
+    const spy = vi.spyOn(bridgeClient, 'postComment');
+    await engageOutbound({ socialIntentIntensity: 8, emotionSummary: 'good', hashtags: [] });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('skips already-commented posts', async () => {
+    appendOutboundHistory({ media_pk: 'already_done', user_id: 'u1', commented_at: Date.now() });
+
+    vi.spyOn(bridgeClient, 'hashtagTop').mockResolvedValue({
+      posts: [{ pk: 'already_done', code: 'existing_user', like_count: 100, comment_count: 5, caption_text: 'great cos', thumbnail_url: null }],
+    });
+    vi.spyOn(bridgeClient, 'postComment').mockResolvedValue({ success: true, comment_pk: 'c1' });
+    vi.spyOn(llmClient, 'callLLMJSON').mockResolvedValue([]);
+
+    await engageOutbound({ socialIntentIntensity: 8, emotionSummary: 'good', hashtags: ['cosplay'] });
+    expect(bridgeClient.postComment).not.toHaveBeenCalled();
   });
 });
