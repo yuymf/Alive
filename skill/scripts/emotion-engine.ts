@@ -14,29 +14,71 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Derive a mood description word from valence and arousal.
- * Uses a 2D emotion model (Russell's circumplex):
- *   high arousal + positive valence → 兴奋/开心
- *   low arousal  + positive valence → 放松/满足
- *   high arousal + negative valence → 焦虑/烦躁
- *   low arousal  + negative valence → 低落/疲倦
+ * Derive a mood description from emotion dimensions.
+ * Uses Russell's circumplex (valence × arousal) as the primary axis,
+ * with energy, stress, creativity as secondary modifiers for richer
+ * descriptions in the positive zone (where most daytime hours land).
  */
-export function describeMood(valence: number, arousal: number): string {
-  if (valence > 0.5 && arousal > 0.6) return '超开心';
-  if (valence > 0.5 && arousal > 0.3) return '开心';
-  if (valence > 0.2 && arousal > 0.6) return '兴奋';
-  if (valence > 0.35 && arousal > 0.45) return '挺好的';
-  if (valence > 0.35 && arousal > 0.3) return '心情还行';
-  if (valence > 0.2 && arousal > 0.45) return '还不错';
-  if (valence > 0.2 && arousal > 0.3) return '一般般';
-  if (valence > 0.1 && arousal > 0.3) return '凑合';
-  if (valence > 0.0 && arousal <= 0.3) return '平静';
-  if (valence > -0.2) return '普通';
-  if (valence > -0.5 && arousal > 0.6) return '焦虑';
-  if (valence > -0.5 && arousal > 0.3) return '有点烦';
-  if (valence > -0.5) return '低落';
-  if (arousal > 0.5) return '很烦躁';
-  return '很低落';
+export function describeMood(
+  valence: number,
+  arousal: number,
+  energy?: number,
+  stress?: number,
+  creativity?: number,
+): string {
+  // --- Negative zone (valence <= -0.2): keep original coarse grid ---
+  if (valence <= -0.5 && arousal > 0.5) return '很烦躁';
+  if (valence <= -0.5) return '很低落';
+  if (valence <= -0.2 && arousal > 0.6) return '焦虑';
+  if (valence <= -0.2 && arousal > 0.3) return '有点烦';
+  if (valence <= -0.2) return '低落';
+
+  // --- Neutral zone (valence -0.2 ~ 0.2) ---
+  if (valence <= 0.0 && arousal <= 0.3) return '平静';
+  if (valence <= 0.2 && arousal <= 0.3) return '平静';
+  if (valence <= 0.1 && arousal > 0.3) return '凑合';
+  if (valence <= 0.2 && arousal > 0.6) return '兴奋';
+  if (valence <= 0.2 && arousal > 0.45) return '还不错';
+  if (valence <= 0.2) return '普通';
+
+  // --- Positive zone (valence > 0.2): fine-grained with secondary dims ---
+  const e = energy ?? 0.5;
+  const s = stress ?? 0.2;
+  const c = creativity ?? 0.4;
+
+  // High positive (valence > 0.5)
+  if (valence > 0.5) {
+    if (arousal > 0.8 && c > 0.7) return '灵感大爆发';
+    if (arousal > 0.8 && e < 0.2) return '嗨到飞起但快没电了';
+    if (arousal > 0.8) return '超开心';
+    if (arousal > 0.6 && c > 0.8) return '创作欲爆棚';
+    if (arousal > 0.6 && s > 0.3) return '开心但有点紧张';
+    if (arousal > 0.6 && e < 0.3) return '满足但有点累';
+    if (arousal > 0.6) return '开心';
+    if (arousal > 0.3 && e > 0.6) return '元气满满';
+    if (arousal > 0.3 && e < 0.3) return '慵懒的幸福';
+    if (arousal > 0.3) return '心情很好';
+    return '宁静的满足';
+  }
+
+  // Moderate positive (valence 0.35 ~ 0.5)
+  if (valence > 0.35) {
+    if (arousal > 0.7 && c > 0.6) return '沉浸中';
+    if (arousal > 0.7) return '蛮兴奋的';
+    if (arousal > 0.45 && e < 0.3) return '虽然累但挺开心';
+    if (arousal > 0.45 && s > 0.3) return '有点小紧张但还好';
+    if (arousal > 0.45) return '挺好的';
+    if (arousal > 0.3) return '心情还行';
+    return '淡淡的愉快';
+  }
+
+  // Mild positive (valence 0.2 ~ 0.35)
+  if (arousal > 0.6 && c > 0.6) return '好奇心涌上来了';
+  if (arousal > 0.6) return '兴奋';
+  if (arousal > 0.45 && e < 0.3) return '有点倦但还行';
+  if (arousal > 0.45) return '还不错';
+  if (arousal > 0.3) return '一般般';
+  return '平静';
 }
 
 /**
@@ -49,38 +91,140 @@ export function decayTowardBaseline(state: EmotionState): EmotionState {
 
   const newValence = clamp(decay(state.mood.valence, EMOTION_BASELINE.valence!), -1.0, 1.0);
   const newArousal = clamp(decay(state.mood.arousal, EMOTION_BASELINE.arousal!), 0, 1.0);
+  const newEnergy = clamp(decay(state.energy, EMOTION_BASELINE.energy!), 0, 1.0);
+  const newStress = clamp(decay(state.stress, EMOTION_BASELINE.stress!), 0, 1.0);
+  const newCreativity = clamp(decay(state.creativity, EMOTION_BASELINE.creativity!), 0, 1.0);
+  const newSociability = clamp(decay(state.sociability, EMOTION_BASELINE.sociability!), 0, 1.0);
 
   return {
     ...state,
     mood: {
       valence: newValence,
       arousal: newArousal,
-      description: describeMood(newValence, newArousal),
+      description: describeMood(newValence, newArousal, newEnergy, newStress, newCreativity),
     },
-    energy: clamp(decay(state.energy, EMOTION_BASELINE.energy!), 0, 1.0),
-    stress: clamp(decay(state.stress, EMOTION_BASELINE.stress!), 0, 1.0),
-    creativity: clamp(decay(state.creativity, EMOTION_BASELINE.creativity!), 0, 1.0),
-    sociability: clamp(decay(state.sociability, EMOTION_BASELINE.sociability!), 0, 1.0),
+    energy: newEnergy,
+    stress: newStress,
+    creativity: newCreativity,
+    sociability: newSociability,
   };
 }
 
 /**
+ * Apply cross-dimension coupling as soft constraints.
+ * Ensures emotion dimensions stay realistically correlated rather than
+ * moving independently. Applied as a post-processing step after raw deltas.
+ *
+ * Coupling rules (gentle — 20-30% influence):
+ * - stress↑ → creativity↓, energy↓ (stress inhibits creativity and drains energy)
+ * - energy drops significantly → arousal↓ (hard to be excited when exhausted)
+ * - large positive valence shift → stress↓ (good mood relieves stress)
+ * - creativity↑ → arousal↑ slightly (creative flow increases engagement)
+ * - stress↑ → sociability↓ (stress makes you withdraw)
+ */
+export function applyCoupling(
+  prev: EmotionState,
+  energy: number,
+  stress: number,
+  creativity: number,
+  sociability: number,
+  arousal: number,
+  valence: number,
+): { energy: number; stress: number; creativity: number; sociability: number; arousal: number } {
+  const dStress = stress - prev.stress;
+  const dEnergy = energy - prev.energy;
+  const dValence = valence - prev.mood.valence;
+  const dCreativity = creativity - prev.creativity;
+
+  let cEnergy = energy;
+  let cStress = stress;
+  let cCreativity = creativity;
+  let cSociability = sociability;
+  let cArousal = arousal;
+
+  // Stress inhibits creativity and drains energy
+  if (dStress > 0) {
+    cCreativity = clamp(cCreativity - dStress * 0.3, 0, 1.0);
+    cEnergy = clamp(cEnergy - dStress * 0.2, 0, 1.0);
+    cSociability = clamp(cSociability - dStress * 0.2, 0, 1.0);
+  }
+
+  // Energy crash → arousal drops
+  if (dEnergy < -0.15) {
+    cArousal = clamp(cArousal + dEnergy * 0.3, 0, 1.0); // dEnergy is negative
+  }
+
+  // Positive mood relieves stress
+  if (dValence > 0.1) {
+    cStress = clamp(cStress - dValence * 0.15, 0, 1.0);
+  }
+
+  // Creative surge → slight arousal boost
+  if (dCreativity > 0.1) {
+    cArousal = clamp(cArousal + dCreativity * 0.15, 0, 1.0);
+  }
+
+  return { energy: cEnergy, stress: cStress, creativity: cCreativity, sociability: cSociability, arousal: cArousal };
+}
+
+/**
+ * Apply diminishing returns: as a dimension approaches its bound (0 or 1),
+ * further pushes in that direction are dampened. This prevents saturation
+ * where dimensions get stuck at 0.0 or 1.0.
+ *
+ * Uses a "headroom" approach: dampening = remaining_room / typical_room.
+ * When there's plenty of room, dampening ≈ 1.0 (no effect).
+ * When near the bound, dampening drops to 0.1 minimum.
+ *
+ * "typical_room" is half the total range — the amount of room at the midpoint.
+ */
+export function applyDiminishingReturns(current: number, delta: number, min: number, max: number): number {
+  if (delta === 0) return current;
+  const range = max - min;
+  const halfRange = range / 2;
+
+  let dampening: number;
+  if (delta > 0) {
+    // Pushing toward max: headroom = how far from max
+    const headroom = max - current;
+    dampening = Math.max(0.1, Math.min(1.0, headroom / halfRange));
+  } else {
+    // Pushing toward min: headroom = how far from min
+    const headroom = current - min;
+    dampening = Math.max(0.1, Math.min(1.0, headroom / halfRange));
+  }
+
+  return clamp(current + delta * dampening, min, max);
+}
+
+/**
  * Apply an emotion delta to current state. Clamps all values within valid ranges.
+ * Uses diminishing returns to prevent dimension saturation, plus
+ * cross-dimension coupling for realistic correlation.
  */
 export function applyDelta(state: EmotionState, delta: EmotionDelta, cause: string): EmotionState {
-  const newValence = clamp(state.mood.valence + (delta.valence ?? 0), -1.0, 1.0);
-  const newArousal = clamp(state.mood.arousal + (delta.arousal ?? 0), 0, 1.0);
+  // Apply with diminishing returns to prevent saturation
+  const rawValence = applyDiminishingReturns(state.mood.valence, delta.valence ?? 0, -1.0, 1.0);
+  const rawArousal = applyDiminishingReturns(state.mood.arousal, delta.arousal ?? 0, 0, 1.0);
+  const rawEnergy = applyDiminishingReturns(state.energy, delta.energy ?? 0, 0, 1.0);
+  const rawStress = applyDiminishingReturns(state.stress, delta.stress ?? 0, 0, 1.0);
+  const rawCreativity = applyDiminishingReturns(state.creativity, delta.creativity ?? 0, 0, 1.0);
+  const rawSociability = applyDiminishingReturns(state.sociability, delta.sociability ?? 0, 0, 1.0);
+
+  // Cross-dimension coupling
+  const coupled = applyCoupling(state, rawEnergy, rawStress, rawCreativity, rawSociability, rawArousal, rawValence);
+
   return {
     ...state,
     mood: {
-      valence: newValence,
-      arousal: newArousal,
-      description: describeMood(newValence, newArousal),
+      valence: rawValence,
+      arousal: coupled.arousal,
+      description: describeMood(rawValence, coupled.arousal, coupled.energy, coupled.stress, coupled.creativity),
     },
-    energy: clamp(state.energy + (delta.energy ?? 0), 0, 1.0),
-    stress: clamp(state.stress + (delta.stress ?? 0), 0, 1.0),
-    creativity: clamp(state.creativity + (delta.creativity ?? 0), 0, 1.0),
-    sociability: clamp(state.sociability + (delta.sociability ?? 0), 0, 1.0),
+    energy: coupled.energy,
+    stress: coupled.stress,
+    creativity: coupled.creativity,
+    sociability: coupled.sociability,
     last_updated: now().toISOString(),
     recent_cause: cause,
   };
@@ -261,7 +405,7 @@ export function decayThreeLayer(state: EmotionState): EmotionState {
     mood: {
       valence: newValence,
       arousal: newArousal,
-      description: describeMood(newValence, newArousal),
+      description: describeMood(newValence, newArousal, newEnergy, newStress, newCreativity),
     },
     energy: newEnergy,
     stress: newStress,
@@ -391,7 +535,7 @@ export function checkThresholdBreak(
     mood: {
       valence: newValence,
       arousal: newArousal,
-      description: describeMood(newValence, newArousal),
+      description: describeMood(newValence, newArousal, updatedState.energy, 0.2, updatedState.creativity),
     },
     stress: 0.2,
     consecutive_high_stress: 0,
