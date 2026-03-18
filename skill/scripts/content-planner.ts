@@ -13,8 +13,9 @@ import {
   DEFAULT_MOMENTUM, DEFAULT_UNDERTONE,
   TravelState, TravelSpot, DEFAULT_TRAVEL_STATE,
 } from './types';
-import { PATHS, readJSON, readTemplate, appendText } from './file-utils';
+import { PATHS, readJSON, readTemplate, appendText, writeJSON } from './file-utils';
 import { consultAdvisor } from './advisor-client';
+import { callInstagramBridge } from './instagram-bridge-client';
 import { callLLMJSON } from './llm-client';
 import { getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime } from './time-utils';
 
@@ -60,6 +61,48 @@ const PHASE_RATIOS: Record<number, Partial<Record<ContentStyle, number>>> = {
 };
 
 const MAX_POSTS_PER_DAY = 3;
+
+/**
+ * Read follower count from socialMeta cache.
+ * If missing or zero, attempt a live sync from Instagram (non-blocking, non-fatal).
+ * Returns the follower count (may still be 0 if sync fails).
+ */
+async function syncFollowerCount(): Promise<number> {
+  const meta = readJSON<{ follower_count?: number; follower_synced_at?: string }>(PATHS.socialMeta, {});
+  if (meta.follower_count && meta.follower_count > 0) {
+    return meta.follower_count;
+  }
+
+  // Cache is missing or zero — try a live sync
+  try {
+    const igUser = process.env.INSTAGRAM_USERNAME;
+    if (!igUser) {
+      console.warn('[content-planner] No INSTAGRAM_USERNAME set, cannot sync follower count');
+      return 0;
+    }
+    console.log('[content-planner] follower_count missing from cache, syncing from Instagram...');
+    const userInfo = await callInstagramBridge('get_user_info', {}) as {
+      follower_count?: number;
+      following_count?: number;
+      media_count?: number;
+    };
+    if (userInfo.follower_count !== undefined) {
+      const currentMeta = readJSON<Record<string, unknown>>(PATHS.socialMeta, {});
+      writeJSON(PATHS.socialMeta, {
+        ...currentMeta,
+        follower_count: userInfo.follower_count,
+        following_count: userInfo.following_count,
+        media_count: userInfo.media_count,
+        follower_synced_at: new Date().toISOString(),
+      });
+      console.log(`[content-planner] Follower sync success: ${userInfo.follower_count} followers`);
+      return userInfo.follower_count;
+    }
+  } catch (err) {
+    console.warn(`[content-planner] Live follower sync failed (non-fatal): ${(err as Error).message}`);
+  }
+  return 0;
+}
 
 /**
  * Determine current phase based on follower count.
@@ -234,8 +277,8 @@ export async function planPost(options?: { skipAdvisor?: boolean }): Promise<Pos
     };
   }
 
-  // Step A: Read social meta (for follower count)
-  const socialMeta = readJSON<{ follower_count?: number }>(PATHS.socialMeta, {});
+  // Step A: Sync follower count (live fetch if cache is stale/missing)
+  const followerCount = await syncFollowerCount();
 
   // Step B: Read post history and build summary
   const postHistory = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
@@ -251,7 +294,7 @@ export async function planPost(options?: { skipAdvisor?: boolean }): Promise<Pos
     : await consultAdvisor({
         currentCity: travelStateRaw.current_city,
         country: travelStateRaw.country,
-        followerCount: socialMeta?.follower_count ?? 0,
+        followerCount,
         recentPostsSummary,
         trendingTopics: inspiration?.visual_trends?.scene_ideas?.join(', ') ?? '',
       });
