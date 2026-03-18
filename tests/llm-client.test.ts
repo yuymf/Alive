@@ -287,6 +287,15 @@ describe('callLLM', () => {
 
     vi.useRealTimers();
   });
+
+  it('does not retry when aborted by signal', async () => {
+    const controller = new AbortController();
+    const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
+    fetchSpy.mockRejectedValueOnce(abortError);
+
+    await expect(callLLM('test', 16384, 'test-caller', { signal: controller.signal })).rejects.toThrow('aborted');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('callLLMJSON', () => {

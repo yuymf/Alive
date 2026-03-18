@@ -46,6 +46,10 @@ const MAX_RETRY_TOKENS = 32768;
 
 const isDebug = () => process.env.LLM_DEBUG === '1' || process.env.LLM_DEBUG === 'true';
 
+function isAbortError(err: unknown): boolean {
+  return Boolean(err) && typeof err === 'object' && (err as { name?: string }).name === 'AbortError';
+}
+
 function debugLog(label: string, content: string): void {
   if (!isDebug()) return;
   const ts = now().toISOString();
@@ -89,6 +93,7 @@ export interface LLMResult {
  */
 export interface CallLLMOptions {
   responseFormat?: ResponseFormat;
+  signal?: AbortSignal;
 }
 
 export type ResponseFormat =
@@ -132,6 +137,7 @@ export async function callLLM(prompt: string, maxTokens = 16384, caller?: string
           messages: [{ role: 'user', content: prompt }] as LLMMessage[],
           ...(options?.responseFormat ? { response_format: options.responseFormat } : {}),
         }),
+        signal: options?.signal,
       });
 
       if (!res.ok) {
@@ -160,6 +166,11 @@ export async function callLLM(prompt: string, maxTokens = 16384, caller?: string
       });
       return { content, finishReason };
     } catch (err) {
+      if (options?.signal?.aborted || isAbortError(err)) {
+        debugLog('ABORT', `request aborted: ${(err as Error).message}`);
+        throw err;
+      }
+
       if (attempt === 0) {
         debugLog('RETRY', `attempt 1 failed: ${(err as Error).message}`);
         console.error(`LLM call failed, retrying in 10s: ${(err as Error).message}`);
