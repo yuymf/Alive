@@ -81,7 +81,22 @@ export interface LLMResult {
 }
 
 /**
- * Call LLM via OpenAI-compatible API with structured JSON output expected.
+ * Options for callLLM.
+ * responseFormat maps to the OpenAI `response_format` field.
+ *   - { type: 'json_object' }  — forces the model to output valid JSON
+ *   - { type: 'json_schema', json_schema: { name, schema } } — structured output with a JSON Schema
+ *   - undefined / omitted      — free-form text (default)
+ */
+export interface CallLLMOptions {
+  responseFormat?: ResponseFormat;
+}
+
+export type ResponseFormat =
+  | { type: 'json_object' }
+  | { type: 'json_schema'; json_schema: { name: string; strict?: boolean; schema: Record<string, unknown> } };
+
+/**
+ * Call LLM via OpenAI-compatible API.
  * Retries once on failure (Spec §13).
  *
  * Returns { content, finishReason } so callers can detect truncation.
@@ -91,7 +106,7 @@ export interface LLMResult {
  *   LLM_API_BASE  — default: https://aihubmix.com/v1
  *   LLM_MODEL     — default: claude-sonnet-4-20250514
  */
-export async function callLLM(prompt: string, maxTokens = 16384, caller?: string): Promise<LLMResult> {
+export async function callLLM(prompt: string, maxTokens = 16384, caller?: string, options?: CallLLMOptions): Promise<LLMResult> {
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) throw new Error('LLM_API_KEY not set');
 
@@ -115,6 +130,7 @@ export async function callLLM(prompt: string, maxTokens = 16384, caller?: string
           model,
           max_tokens: maxTokens,
           messages: [{ role: 'user', content: prompt }] as LLMMessage[],
+          ...(options?.responseFormat ? { response_format: options.responseFormat } : {}),
         }),
       });
 
@@ -173,22 +189,19 @@ export async function callLLM(prompt: string, maxTokens = 16384, caller?: string
 
 /**
  * Strip <think>...</think> blocks from LLM output.
- * Handles both closed blocks and truncated (unclosed) think blocks at the start.
+ * Handles closed blocks AND unclosed <think> tags anywhere in the text
+ * (not just at the start — a previous closed block may precede an unclosed one).
  * Used both for JSON extraction and for logging clean responses.
  */
-function stripThinkBlocks(raw: string): string {
-  // Remove all closed <think>...</think> blocks
+export function stripThinkBlocks(raw: string): string {
+  // 1. Remove all closed <think>...</think> blocks
   let text = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-  // Handle truncated think block: if response starts with <think> but has no closing tag,
-  // the reasoning content was cut off — strip everything from <think> to end of string.
-  if (text.startsWith('<think>')) {
-    const closeIdx = text.indexOf('</think>');
-    if (closeIdx !== -1) {
-      text = text.slice(closeIdx + '</think>'.length).trim();
-    } else {
-      // Unclosed think block — strip all content after <think>
-      text = '';
-    }
+  // 2. Handle any remaining unclosed <think> tag (anywhere in the text, not just at start).
+  //    This happens when the model's reasoning is truncated mid-think.
+  const unclosedIdx = text.indexOf('<think>');
+  if (unclosedIdx !== -1) {
+    // Everything from the unclosed <think> onward is reasoning garbage — drop it
+    text = text.slice(0, unclosedIdx).trim();
   }
   return text;
 }
@@ -197,31 +210,75 @@ function stripThinkBlocks(raw: string): string {
  * Extract JSON from LLM response text.
  * Strips <think> tags and searches for JSON in code blocks or raw text.
  */
-function extractJSON<T>(raw: string): T {
+export function extractJSON<T>(raw: string): T {
   const text = stripThinkBlocks(raw);
-  // Try to extract JSON from code block or raw text
-  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ?? text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-  if (!jsonMatch) {
+
+  // 1. Try code block first (non-greedy is safe here — code fences are unambiguous)
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    debugLog('JSON_PARSED', codeBlockMatch[1]);
+    return JSON.parse(codeBlockMatch[1]);
+  }
+
+  // 2. Find the first balanced { ... } or [ ... ] using bracket counting
+  const jsonStr = findBalancedJSON(text);
+  if (!jsonStr) {
     debugLog('JSON_PARSE_FAIL', `raw response:\n${raw}`);
     throw new Error(`Could not parse JSON from LLM response: ${raw.slice(0, 200)}`);
   }
-  debugLog('JSON_PARSED', jsonMatch[1]);
-  return JSON.parse(jsonMatch[1]);
+  debugLog('JSON_PARSED', jsonStr);
+  return JSON.parse(jsonStr);
+}
+
+/**
+ * Find the first balanced JSON object or array in text using bracket counting.
+ * This correctly handles nested braces/brackets unlike regex approaches.
+ */
+export function findBalancedJSON(text: string): string | null {
+  const startIdx = text.search(/[\[{]/);
+  if (startIdx === -1) return null;
+
+  const openChar = text[startIdx];
+  const closeChar = openChar === '{' ? '}' : ']';
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === openChar) depth++;
+    if (ch === closeChar) depth--;
+    if (depth === 0) {
+      return text.slice(startIdx, i + 1);
+    }
+  }
+  return null;  // unbalanced
 }
 
 /**
  * Call LLM and parse response as JSON.
- * Extracts JSON from markdown code blocks if present.
+ * Automatically sets response_format to json_object so the model is
+ * constrained to return valid JSON (OpenAI-compatible API feature).
+ * Still uses extractJSON as a safety net for models that ignore the format.
  * Auto-retries with doubled maxTokens if response was truncated (finishReason === 'length').
  */
-export async function callLLMJSON<T>(prompt: string, maxTokens = 16384, caller?: string): Promise<T> {
-  const result = await callLLM(prompt, maxTokens, caller);
+export async function callLLMJSON<T>(prompt: string, maxTokens = 16384, caller?: string, options?: CallLLMOptions): Promise<T> {
+  // Default to json_object unless caller explicitly provides a responseFormat
+  const effectiveOptions: CallLLMOptions = {
+    responseFormat: { type: 'json_object' },
+    ...options,
+  };
+  const result = await callLLM(prompt, maxTokens, caller, effectiveOptions);
 
   // If truncated due to token limit, retry with doubled budget (capped at MAX_RETRY_TOKENS)
   if (result.finishReason === 'length' && maxTokens < MAX_RETRY_TOKENS) {
     const retryTokens = Math.min(maxTokens * 2, MAX_RETRY_TOKENS);
     console.warn(`[llm-client] Response truncated (finish_reason=length), retrying with maxTokens=${retryTokens}`);
-    const retryResult = await callLLM(prompt, retryTokens, caller);
+    const retryResult = await callLLM(prompt, retryTokens, caller, effectiveOptions);
 
     if (retryResult.finishReason === 'length') {
       console.warn(`[llm-client] Retry still truncated (maxTokens=${retryTokens}), attempting parse anyway`);

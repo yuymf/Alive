@@ -118,20 +118,33 @@ export function callInstagramBridge(command: string, args: Record<string, string
 
     execFile('python3', cliArgs, { timeout: 120_000 }, (error, stdout, stderr) => {
       if (stderr) console.error(`[ig-bridge] ${stderr.trim()}`);
-      if (error) {
+
+      // Parse stdout first — Python bridge always outputs JSON (including error payloads)
+      let parsed: unknown = undefined;
+      if (stdout) {
         try {
-          const parsed = JSON.parse(stdout);
-          if (parsed.error) return reject(new Error(parsed.error));
+          parsed = JSON.parse(stdout);
         } catch {
-          if (stdout) console.error(`[ig-bridge] Unparseable stdout: ${stdout.slice(0, 200)}`);
+          console.error(`[ig-bridge] Unparseable stdout: ${stdout.slice(0, 200)}`);
         }
+      }
+
+      // Check for error payload in parsed JSON — this covers BOTH cases:
+      // 1. error is non-null (process exited with code 1) and stdout has {"error": "..."}
+      // 2. error is null but stdout still contains {"error": "..."} (shouldn't happen but defensive)
+      if (parsed && typeof parsed === 'object' && 'error' in parsed) {
+        return reject(new Error(`instagram-bridge ${command} failed: ${(parsed as { error: string }).error}`));
+      }
+
+      if (error) {
         return reject(new Error(`instagram-bridge ${command} failed: ${error.message}`));
       }
-      try {
-        resolve(JSON.parse(stdout));
-      } catch {
-        reject(new Error(`Failed to parse bridge output: ${stdout.slice(0, 200)}`));
+
+      if (parsed === undefined) {
+        return reject(new Error(`Failed to parse bridge output: ${stdout.slice(0, 200)}`));
       }
+
+      resolve(parsed);
     });
   });
 }
