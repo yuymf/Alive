@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
-  getComments, replyComment, postComment, getUserFeed, hashtagTop,
+  getComments, replyComment, postComment, getUserFeed, hashtagTop, hashtagRecent,
 } from '../skill/scripts/instagram-bridge-client';
 
 describe('instagram-bridge-client mock mode', () => {
@@ -38,6 +38,17 @@ describe('instagram-bridge-client mock mode', () => {
       expect(p).toHaveProperty('like_count');
       expect(p).toHaveProperty('user_id');
       expect(p).toHaveProperty('username');
+      expect(p).toHaveProperty('taken_at');
+    }
+  });
+
+  it('hashtagRecent returns recent posts with taken_at', async () => {
+    const result = await hashtagRecent('cosplay') as { posts: unknown[] };
+    expect(Array.isArray(result.posts)).toBe(true);
+    if (result.posts.length > 0) {
+      const p = result.posts[0] as Record<string, unknown>;
+      expect(p).toHaveProperty('pk');
+      expect(p).toHaveProperty('taken_at');
     }
   });
 });

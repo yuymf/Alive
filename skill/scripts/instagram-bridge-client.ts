@@ -26,8 +26,56 @@ function mockInstagramResponse(command: string): unknown {
       return {
         hashtag: 'mock_tag',
         posts: [
-          { pk: 'mock_pk_1', code: 'mock_code_1', user_id: 'mock_user_1', username: 'mock_user_1_handle', like_count: 500, comment_count: 10, caption_text: 'Amazing cosplay! #cosplay', thumbnail_url: null },
-          { pk: 'mock_pk_2', code: 'mock_code_2', user_id: 'mock_user_2', username: 'mock_user_2_handle', like_count: 300, comment_count: 5, caption_text: 'Daily OOTD #fashion', thumbnail_url: null },
+          {
+            pk: 'mock_pk_1',
+            code: 'mock_code_1',
+            user_id: 'mock_user_1',
+            username: 'mock_user_1_handle',
+            like_count: 500,
+            comment_count: 10,
+            caption_text: 'Amazing cosplay! #cosplay',
+            thumbnail_url: null,
+            taken_at: new Date(ts - 2 * 60 * 60 * 1000).toISOString(),
+          },
+          {
+            pk: 'mock_pk_2',
+            code: 'mock_code_2',
+            user_id: 'mock_user_2',
+            username: 'mock_user_2_handle',
+            like_count: 300,
+            comment_count: 5,
+            caption_text: 'Daily OOTD #fashion',
+            thumbnail_url: null,
+            taken_at: new Date(ts - 5 * 60 * 60 * 1000).toISOString(),
+          },
+        ],
+      };
+    case 'hashtag_recent':
+      return {
+        hashtag: 'mock_tag',
+        posts: [
+          {
+            pk: 'recent_pk_1',
+            code: 'recent_code_1',
+            user_id: 'recent_user_1',
+            username: 'recent_user_1_handle',
+            like_count: 180,
+            comment_count: 12,
+            caption_text: 'Recent cosplay drop #cosplay',
+            thumbnail_url: null,
+            taken_at: new Date(ts - 30 * 60 * 1000).toISOString(),
+          },
+          {
+            pk: 'recent_pk_2',
+            code: 'recent_code_2',
+            user_id: 'recent_user_2',
+            username: 'recent_user_2_handle',
+            like_count: 95,
+            comment_count: 4,
+            caption_text: 'Fresh mirror selfie #jfashion',
+            thumbnail_url: null,
+            taken_at: new Date(ts - 90 * 60 * 1000).toISOString(),
+          },
         ],
       };
     case 'get_comments':
@@ -55,14 +103,12 @@ export function callInstagramBridge(command: string, args: Record<string, string
     return Promise.resolve(mockInstagramResponse(command));
   }
   return new Promise((resolve, reject) => {
-    // Resolve bridge path: works both in installed context (__dirname = scripts/)
-    // and development context (__dirname = dist/, bridge at skill/scripts/)
     let bridgePath = path.join(__dirname, 'instagram-bridge.py');
     if (!fs.existsSync(bridgePath)) {
       bridgePath = path.join(__dirname, '..', 'skill', 'scripts', 'instagram-bridge.py');
     }
     if (!fs.existsSync(bridgePath)) {
-      return reject(new Error(`instagram-bridge.py not found (tried __dirname and skill/scripts/)`));
+      return reject(new Error('instagram-bridge.py not found (tried __dirname and skill/scripts/)'));
     }
 
     const cliArgs = [bridgePath, command];
@@ -104,8 +150,6 @@ export async function uploadAlbum(imagePaths: string[], caption: string): Promis
   return (result as { media_pk: string }).media_pk;
 }
 
-// ── Types for new engagement commands ──────────────────────────────────────
-
 export interface InstagramComment {
   comment_pk: string;
   user_id: string;
@@ -123,12 +167,27 @@ export interface InstagramMediaSummary {
   taken_at: string | null;
 }
 
+export interface InstagramHashtagPost {
+  pk: string;
+  code: string;
+  user_id: string;
+  username: string;
+  like_count: number;
+  comment_count: number;
+  caption_text: string;
+  thumbnail_url?: string | null;
+  taken_at: string | null;
+}
+
+export interface InstagramHashtagResult {
+  hashtag: string;
+  posts: InstagramHashtagPost[];
+}
+
 export interface CommentResult {
   success: boolean;
   comment_pk: string;
 }
-
-// ── Wrapper functions ───────────────────────────────────────────────────────
 
 export async function getComments(mediaPk: string, amount = 20): Promise<InstagramComment[]> {
   const result = await callInstagramBridge('get_comments', {
@@ -163,6 +222,10 @@ export async function getUserFeed(userId: string, amount = 5): Promise<Instagram
   return result as InstagramMediaSummary[];
 }
 
-export async function hashtagTop(name: string, amount = 15): Promise<unknown> {
-  return callInstagramBridge('hashtag_top', { name, amount: String(amount) });
+export async function hashtagTop(name: string, amount = 15): Promise<InstagramHashtagResult> {
+  return callInstagramBridge('hashtag_top', { name, amount: String(amount) }) as Promise<InstagramHashtagResult>;
+}
+
+export async function hashtagRecent(name: string, amount = 15): Promise<InstagramHashtagResult> {
+  return callInstagramBridge('hashtag_recent', { name, amount: String(amount) }) as Promise<InstagramHashtagResult>;
 }
