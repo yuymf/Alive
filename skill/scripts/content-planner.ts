@@ -8,7 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  ContentStyle, PhotoIntent, PostIntent, PostHistory, PostRecord,
+  ContentStyle, PhotoIntent, PostIntent, PostHistory, PostRecord, ShotDescription,
   InspirationData, EmotionState, ScheduleToday,
   DEFAULT_MOMENTUM, DEFAULT_UNDERTONE,
   TravelState, TravelSpot, DEFAULT_TRAVEL_STATE,
@@ -185,6 +185,51 @@ function refineStyle(style: ContentStyle, sceneDescription: string): ContentStyl
   return 'travel_portrait'; // default travel sub-style
 }
 
+function normalizeOutfitLabel(outfit?: string): string | undefined {
+  const normalized = (outfit ?? '').trim().replace(/\s+/g, ' ');
+  return normalized || undefined;
+}
+
+/**
+ * 同一批次（同场景）默认保持一套服装；只有显式 outfitChange=true 才允许换装。
+ */
+export function normalizeBatchOutfits(shots: ShotDescription[]): ShotDescription[] {
+  if (shots.length === 0) return shots;
+
+  let anchorOutfit = normalizeOutfitLabel(shots[0]?.outfit)
+    ?? normalizeOutfitLabel(shots.find(s => normalizeOutfitLabel(s.outfit))?.outfit)
+    ?? '同一套服装';
+
+  return shots.map((shot, idx) => {
+    const explicitChange = shot.outfitChange === true;
+    const shotOutfit = normalizeOutfitLabel(shot.outfit);
+
+    if (idx === 0) {
+      anchorOutfit = shotOutfit ?? anchorOutfit;
+      return {
+        ...shot,
+        outfit: anchorOutfit,
+        outfitChange: false,
+      };
+    }
+
+    if (explicitChange) {
+      const changedOutfit = shotOutfit ?? anchorOutfit;
+      return {
+        ...shot,
+        outfit: changedOutfit,
+        outfitChange: true,
+      };
+    }
+
+    return {
+      ...shot,
+      outfit: anchorOutfit,
+      outfitChange: false,
+    };
+  });
+}
+
 /**
  * Plan a photo: ask Minase if she wants to take a picture.
  */
@@ -244,18 +289,87 @@ export async function planPhoto(): Promise<PhotoIntent> {
     description: parsed.sceneDescription,
     angle: '正面',
     variation: '主图',
+    outfit: '同一套服装',
+    outfitChange: false,
   }] : [])).map(shot => ({
     ...shot,
     style: refineStyle(shot.style ?? style, shot.description ?? ''),
+    outfit: normalizeOutfitLabel(shot.outfit),
+    outfitChange: shot.outfitChange === true,
   }));
+
+  const normalizedShots = normalizeBatchOutfits(refinedShots);
 
   const intent: PhotoIntent = {
     ...parsed,
-    imageCount: parsed.imageCount ?? 1,
-    shots: refinedShots,
+    imageCount: Math.max(1, parsed.imageCount ?? normalizedShots.length),
+    shots: normalizedShots,
   };
 
   return intent;
+}
+
+export function filterAlreadyPostedPhotos(photoList: string[], postHistory: PostHistory): string[] {
+  const postedPathSet = new Set(
+    (postHistory.posts ?? [])
+      .flatMap((p: PostRecord) => {
+        const paths = p.image_local_paths ?? ((p as any).image_local_path ? [(p as any).image_local_path] : []);
+        return paths.map((imgPath: string) => path.resolve(imgPath));
+      })
+  );
+  return photoList.filter(photoPath => !postedPathSet.has(path.resolve(photoPath)));
+}
+
+export function resolvePostSelection(
+  availablePhotos: string[],
+  parsed: Partial<PostIntent> & { selectedPhoto?: string; coverPhoto?: string },
+): { selectedPhotos: string[]; coverPhoto?: string } {
+  const normalizeCandidate = (candidate?: string): string | null => {
+    const normalized = (candidate ?? '').trim();
+    if (!normalized) return null;
+
+    const byBasename = availablePhotos.find(p => path.basename(p) === normalized);
+    if (byBasename) return byBasename;
+
+    const absolute = path.resolve(normalized);
+    const byAbsolute = availablePhotos.find(p => path.resolve(p) === absolute);
+    return byAbsolute ?? null;
+  };
+
+  const selectedCandidates = (parsed.selectedPhotos ?? (parsed.selectedPhoto ? [parsed.selectedPhoto] : []))
+    .map(candidate => normalizeCandidate(candidate))
+    .filter((candidate): candidate is string => Boolean(candidate));
+
+  const selectedPhotos: string[] = [];
+  const seen = new Set<string>();
+  for (const selected of selectedCandidates) {
+    const key = path.resolve(selected);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    selectedPhotos.push(selected);
+  }
+
+  let coverPhoto = normalizeCandidate(parsed.coverPhoto);
+  if (!coverPhoto && selectedPhotos.length > 0) {
+    coverPhoto = selectedPhotos[0];
+  }
+
+  if (coverPhoto) {
+    const coverKey = path.resolve(coverPhoto);
+    const rest = selectedPhotos.filter(p => path.resolve(p) !== coverKey);
+    if (!seen.has(coverKey)) {
+      selectedPhotos.unshift(coverPhoto);
+      seen.add(coverKey);
+    }
+    if (selectedPhotos[0] !== coverPhoto) {
+      selectedPhotos.splice(0, selectedPhotos.length, coverPhoto, ...rest);
+    }
+  }
+
+  return {
+    selectedPhotos,
+    coverPhoto: coverPhoto ?? selectedPhotos[0],
+  };
 }
 
 /**
@@ -271,23 +385,38 @@ export async function planPost(options?: { skipAdvisor?: boolean }): Promise<Pos
     return {
       wantToPost: false,
       selectedPhotos: [],
+      coverPhoto: undefined,
       caption: '',
       hashtags: [],
       reason: '相册里没有照片可以发',
     };
   }
 
-  // Step A: Sync follower count (live fetch if cache is stale/missing)
+  // Step A: Read post history and filter out already-posted photos (hard dedupe rule)
+  const postHistory = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
+  const availablePhotos = filterAlreadyPostedPhotos(photoList, postHistory);
+
+  if (availablePhotos.length === 0) {
+    return {
+      wantToPost: false,
+      selectedPhotos: [],
+      coverPhoto: undefined,
+      caption: '',
+      hashtags: [],
+      reason: '可发照片都已经成功发过了，避免重复发送',
+    };
+  }
+
+  // Step B: Sync follower count (live fetch if cache is stale/missing)
   const followerCount = await syncFollowerCount();
 
-  // Step B: Read post history and build summary
-  const postHistory = readJSON<PostHistory>(PATHS.postHistory, DEFAULT_POST_HISTORY);
+  // Step C: Build summary from recent post history
   const recentPostsSummary = (postHistory.posts ?? [])
     .slice(-7)
     .map((p: PostRecord) => `${p.timestamp ? new Date(p.timestamp).toISOString().slice(0, 10) : '?'}: ${p.style ?? '?'} — ${p.caption?.slice(0, 30) ?? '?'}…`)
     .join('\n');
 
-  // Step C: Consult 小慧 for today's advice (non-blocking, graceful degradation)
+  // Step D: Consult 小慧 for today's advice (non-blocking, graceful degradation)
   const travelStateRaw = readJSON<TravelState>(PATHS.travelState, DEFAULT_TRAVEL_STATE);
   const advisorAdvice = (options?.skipAdvisor)
     ? ''
@@ -314,7 +443,7 @@ export async function planPost(options?: { skipAdvisor?: boolean }): Promise<Pos
 
   const template = readTemplate('post-intent-prompt.md');
   const prompt = template
-    .replace('{photo_list}', photoList.map((p, i) => `${i + 1}. ${path.basename(p)} (${path.basename(path.dirname(p))})`).join('\n'))
+    .replace('{photo_list}', availablePhotos.map((p, i) => `${i + 1}. ${path.basename(p)} (${path.basename(path.dirname(p))})`).join('\n'))
     .replace('{current_time}', formatLocalTime())
     .replace('{mood}', emotion.mood.description)
     .replace('{best_time_slots}', inspiration.self_performance.best_time_slots.join('、') || '暂无数据')
@@ -324,13 +453,42 @@ export async function planPost(options?: { skipAdvisor?: boolean }): Promise<Pos
 
   const parsed = await callLLMJSON<PostIntent>(prompt, undefined, 'content-planner');
 
-  // Resolve selectedPhotos to full paths (immutable — create new object)
-  const selectedPhotos = (parsed.selectedPhotos ?? ((parsed as any).selectedPhoto ? [(parsed as any).selectedPhoto] : []))
-    .map((name: string) => photoList.find(p => path.basename(p) === name) ?? name);
+  if (!parsed.wantToPost) {
+    return {
+      ...parsed,
+      wantToPost: false,
+      selectedPhotos: [],
+      coverPhoto: undefined,
+      caption: parsed.caption ?? '',
+      hashtags: parsed.hashtags ?? [],
+      reason: parsed.reason || '今天不发',
+    };
+  }
+
+  const { selectedPhotos, coverPhoto } = resolvePostSelection(availablePhotos, {
+    ...parsed,
+    coverPhoto: (parsed as any).coverPhoto,
+    selectedPhoto: (parsed as any).selectedPhoto,
+  });
+
+  if (selectedPhotos.length === 0) {
+    return {
+      wantToPost: false,
+      selectedPhotos: [],
+      coverPhoto: undefined,
+      caption: parsed.caption ?? '',
+      hashtags: parsed.hashtags ?? [],
+      reason: '候选图在去重后为空，跳过本次发帖以避免重复发送',
+    };
+  }
 
   const intent: PostIntent = {
     ...parsed,
     selectedPhotos,
+    coverPhoto: coverPhoto ?? selectedPhotos[0],
+    caption: parsed.caption ?? '',
+    hashtags: parsed.hashtags ?? [],
+    reason: parsed.reason || '照片状态不错，想发一组',
   };
 
   return intent;

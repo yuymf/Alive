@@ -18,7 +18,7 @@ import { refreshInspiration } from './inspiration-collector';
 import { planPhoto, planPost, shouldConsiderPosting } from './content-planner';
 import { callInstagramBridge, uploadAlbum } from './instagram-bridge-client';
 import { resetImpulseAfterPost, accumulateImpulse } from './post-impulse';
-import type { GalleryPhoto, PhotoGallery } from './types';
+import type { GalleryPhoto, PhotoGallery, ShotDescription } from './types';
 import { DEFAULT_PHOTO_GALLERY } from './types';
 import { addPhotoToGallery, pruneGallery } from './gallery-send';
 import { scheduleCommentCheck } from './comment-engine';
@@ -179,6 +179,11 @@ export function writePhotosToGallery(
   style: ContentStyle,
   description: string,
   tags: string[],
+  meta?: {
+    batchId?: string;
+    sceneDescription?: string;
+    shots?: ShotDescription[];
+  },
 ): void {
   const emotion = hydrateEmotionState(readJSON<Record<string, unknown>>(PATHS.emotionState, {
     mood: { valence: 0.3, arousal: 0.5, description: '普通' },
@@ -199,6 +204,7 @@ export function writePhotosToGallery(
     const seq = String(Date.now() % 1000).padStart(3, '0');
     const dateStr = getLocalDate(new Date(img.timestamp)).replace(/-/g, '');
 
+    const shotMeta = meta?.shots?.[i];
     const photo: GalleryPhoto = {
       id: `${dateStr}_${style}_${timeOfDay}_${seq}`,
       localPath: img.localPath,
@@ -211,6 +217,11 @@ export function writePhotosToGallery(
       sharedAt: null,
       shareCount: 0,
       postedToInstagram: false,
+      batchId: meta?.batchId,
+      shotIndex: i,
+      outfit: shotMeta?.outfit,
+      outfitChange: shotMeta?.outfitChange,
+      sceneDescription: meta?.sceneDescription,
     };
 
     addPhotoToGallery(photo);
@@ -246,6 +257,8 @@ async function runPipeline(): Promise<void> {
 
   // 2. Photo phase: does Minase want to take a photo?
   let lastPhotoStyle: ContentStyle | null = null;
+  let lastPhotoScene: string | null = null;
+  let lastBatchId: string | null = null;
   let setResult: GenerateSetResult | null = null;
 
   try {
@@ -284,6 +297,8 @@ async function runPipeline(): Promise<void> {
     writeJSON(PATHS.postImpulse, impulse);
 
     lastPhotoStyle = photoIntent.style;
+    lastPhotoScene = photoIntent.sceneDescription;
+    lastBatchId = `${getLocalDate()}_${Date.now()}`;
     writeDiary(photoIntent.reason, 4, ['拍照', photoIntent.style]);
     console.log(`Photos saved: ${setResult.images.length} successful, ${setResult.failed} failed`);
 
@@ -300,7 +315,11 @@ async function runPipeline(): Promise<void> {
     }
 
     const photoTags = [photoIntent.style, ...(photoIntent.sceneDescription.match(/[\u4e00-\u9fff]+/g) ?? []).slice(0, 5)];
-    writePhotosToGallery(setResult.images, uploadResults, photoIntent.style, photoIntent.sceneDescription, photoTags);
+    writePhotosToGallery(setResult.images, uploadResults, photoIntent.style, photoIntent.sceneDescription, photoTags, {
+      batchId: lastBatchId,
+      sceneDescription: photoIntent.sceneDescription,
+      shots: photoIntent.shots,
+    });
   } catch (err) {
     // "拍糊了"
     writeDiary('今天想拍照来着，但是没拍好...手机有点卡', 2, ['拍照', '失败']);
@@ -342,10 +361,17 @@ async function runPipeline(): Promise<void> {
       return;
     }
 
+    const coverPhoto = postIntent.coverPhoto
+      ? existingPhotos.find(p => path.resolve(p) === path.resolve(postIntent.coverPhoto!))
+      : undefined;
+    const orderedPhotos = coverPhoto
+      ? [coverPhoto, ...existingPhotos.filter(p => path.resolve(p) !== path.resolve(coverPhoto))]
+      : existingPhotos;
+
     // Upload and post to Instagram via instagrapi bridge (direct local file upload)
     const caption = `${postIntent.caption}\n\n${postIntent.hashtags.map(t => `#${t}`).join(' ')}`;
-    console.log(`Posting ${existingPhotos.length} photo(s) to Instagram...`);
-    const mediaPk = await postToInstagram(existingPhotos, caption);
+    console.log(`Posting ${orderedPhotos.length} photo(s) to Instagram...`);
+    const mediaPk = await postToInstagram(orderedPhotos, caption);
 
     // Schedule comment replies 24h after posting
     scheduleCommentCheck({
@@ -361,7 +387,7 @@ async function runPipeline(): Promise<void> {
     let imageUrl: string | undefined;
     try {
       console.log('Uploading to ImgURL...');
-      const imgResult = await uploadToImgURL(existingPhotos[0]);
+      const imgResult = await uploadToImgURL(orderedPhotos[0]);
       imageUrl = imgResult.url;
       console.log(`ImgURL: ${imageUrl}`);
     } catch (err) {
@@ -381,7 +407,10 @@ async function runPipeline(): Promise<void> {
       style: inferredStyle,
       caption: postIntent.caption,
       hashtags: postIntent.hashtags,
-      image_local_paths: existingPhotos,
+      image_local_paths: orderedPhotos,
+      cover_local_path: coverPhoto ?? orderedPhotos[0],
+      scene_description: lastPhotoScene ?? undefined,
+      batch_id: lastBatchId ?? undefined,
       ...(imageUrl && { image_url: imageUrl }),
     };
     const updatedHistory: PostHistory = {
@@ -390,7 +419,7 @@ async function runPipeline(): Promise<void> {
     writeJSON(PATHS.postHistory, updatedHistory);
 
     // Mark posted photos in gallery
-    markPhotosAsPosted(existingPhotos);
+    markPhotosAsPosted(orderedPhotos);
 
     // Reset impulse after successful post
     let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
