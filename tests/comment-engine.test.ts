@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import * as bridgeClient from '../skill/scripts/instagram-bridge-client';
 import * as llmClient from '../skill/scripts/llm-client';
 import { setBasePaths, resetBasePaths, PATHS } from '../skill/scripts/file-utils';
+import { setTimeOverride, clearTimeOverride, now } from '../skill/scripts/time-utils';
 import {
   getPendingReplies,
   scheduleCommentCheck,
@@ -28,6 +29,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearTimeOverride();
   resetBasePaths();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
@@ -56,6 +58,23 @@ describe('getPendingReplies', () => {
     expect(due).toHaveLength(1);
     expect(due[0].media_pk).toBe('111');
   });
+
+  it('uses the simulated clock when checking due replies', () => {
+    setTimeOverride(new Date('2026-06-15T10:00:00'));
+    scheduleCommentCheck({
+      media_pk: 'due_with_override',
+      scheduled_after: now().getTime() - 1_000,
+      post_context: { caption: 'old', hashtags: [] },
+    });
+    scheduleCommentCheck({
+      media_pk: 'future_with_override',
+      scheduled_after: now().getTime() + 60_000,
+      post_context: { caption: 'future', hashtags: [] },
+    });
+
+    const due = getPendingReplies();
+    expect(due.map(entry => entry.media_pk)).toEqual(['due_with_override']);
+  });
 });
 
 describe('markReplied', () => {
@@ -76,6 +95,17 @@ describe('outbound history', () => {
     appendOutboundHistory({ media_pk: '111', user_id: 'user1', commented_at: Date.now() });
     appendOutboundHistory({ media_pk: '222', user_id: 'user2', commented_at: Date.now() });
     expect(getTodayOutboundCount()).toBe(2);
+  });
+
+  it('uses the simulated day boundary for today outbound count', () => {
+    setTimeOverride(new Date('2026-06-15T01:00:00'));
+    const justBeforeMidnight = new Date('2026-06-14T23:59:00').getTime();
+    const afterMidnight = now().getTime() - 1_000;
+
+    appendOutboundHistory({ media_pk: 'before_midnight', user_id: 'user1', commented_at: justBeforeMidnight });
+    appendOutboundHistory({ media_pk: 'after_midnight', user_id: 'user2', commented_at: afterMidnight });
+
+    expect(getTodayOutboundCount()).toBe(1);
   });
 
   it('isAlreadyCommented detects existing entry', () => {
@@ -150,6 +180,19 @@ describe('getRecentCommentCountForUser', () => {
     appendOutboundHistory({ media_pk: 'm3', user_id: 'user_a', commented_at: beyond24h }); // too old
     appendOutboundHistory({ media_pk: 'm4', user_id: 'user_b', commented_at: within24h }); // different user
     expect(getRecentCommentCountForUser('user_a')).toBe(2);
+    expect(getRecentCommentCountForUser('user_b')).toBe(1);
+  });
+
+  it('uses the simulated clock for the rolling 24h window', () => {
+    setTimeOverride(new Date('2026-06-15T12:00:00'));
+    const within24h = new Date('2026-06-14T13:00:00').getTime();
+    const beyond24h = new Date('2026-06-14T11:00:00').getTime();
+
+    appendOutboundHistory({ media_pk: 'm1', user_id: 'user_a', commented_at: within24h });
+    appendOutboundHistory({ media_pk: 'm2', user_id: 'user_a', commented_at: beyond24h });
+    appendOutboundHistory({ media_pk: 'm3', user_id: 'user_b', commented_at: within24h });
+
+    expect(getRecentCommentCountForUser('user_a')).toBe(1);
     expect(getRecentCommentCountForUser('user_b')).toBe(1);
   });
 });

@@ -11,7 +11,7 @@ import {
   EmotionState, IntentPool, IntentCategory, ScheduleToday, EventQueue,
   HeartbeatLog, HeartbeatLogEntry, ActionOutput, RigidSchedule, WisdomStore,
   SocialRelation, SocialMeta, VitalityState, ConfidenceState, PostHistory,
-  CronSchedule, PostImpulseState, DEFAULT_POST_IMPULSE,
+  CronSchedule, PostImpulseState, DEFAULT_POST_IMPULSE, InspirationData,
   DEFAULT_MOMENTUM, DEFAULT_UNDERTONE,
   FlowState, DEFAULT_FLOW_STATE,
   ChainAndCooldownState, DEFAULT_CHAIN_STATE,
@@ -67,6 +67,30 @@ const DEFAULT_EVENT_QUEUE: EventQueue = { events: [], max_size: 50 };
 const DEFAULT_HEARTBEAT_LOG: HeartbeatLog = { logs: [], retention_days: 7 };
 
 const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想']);
+
+function normalizeOutboundHashtag(tag: string): string | null {
+  const normalized = tag.trim().replace(/^#+/, '').trim();
+  return normalized || null;
+}
+
+export function getOutboundHashtagsFromInspiration(
+  inspiration: Partial<InspirationData> | null | undefined,
+): string[] {
+  const primary = inspiration?.instagram_trends?.trending_hashtags ?? [];
+  const fallback = inspiration?.self_performance?.best_hashtag_combos?.flat() ?? [];
+  const source = primary.length > 0 ? primary : fallback;
+  const seen = new Set<string>();
+  const hashtags: string[] = [];
+
+  for (const rawTag of source) {
+    const normalized = normalizeOutboundHashtag(String(rawTag ?? ''));
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    hashtags.push(normalized);
+  }
+
+  return hashtags;
+}
 
 function toIntentCategory(s: string): IntentCategory {
   return VALID_CATEGORIES.has(s) ? s as IntentCategory : '表达';
@@ -649,8 +673,8 @@ export async function regularTick(): Promise<void> {
       if (isSocialEngagement) {
         if (vitalityConstraints.canDoHeavySocial) {
           try {
-            const inspiration = readJSON<{ hashtags?: string[] }>(PATHS.inspiration, {});
-            const hashtags = inspiration.hashtags ?? [];
+            const inspiration = readJSON<Partial<InspirationData>>(PATHS.inspiration, {});
+            const hashtags = getOutboundHashtagsFromInspiration(inspiration);
             const relationsForEngagement = readAllJSON<SocialRelation>(PATHS.socialInstagramDir);
             const followingIds = relationsForEngagement
               .filter(r => classifyTier(r.relationship.closeness) === 'core' || classifyTier(r.relationship.closeness) === 'familiar')
@@ -861,21 +885,23 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(err => {
-  console.error('Heartbeat error:', err.message);
-  // Write error to log even on crash
-  try {
-    const log = readJSON<HeartbeatLog>(PATHS.heartbeatLog, DEFAULT_HEARTBEAT_LOG);
-    const errorLog: HeartbeatLog = {
-      ...log,
-      logs: [...log.logs, {
-        timestamp: now().toISOString(),
-        type: 'regular',
-        status: 'skipped',
-        error: err.message,
-      }],
-    };
-    writeJSON(PATHS.heartbeatLog, errorLog);
-  } catch { /* best effort */ }
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error('Heartbeat error:', err.message);
+    // Write error to log even on crash
+    try {
+      const log = readJSON<HeartbeatLog>(PATHS.heartbeatLog, DEFAULT_HEARTBEAT_LOG);
+      const errorLog: HeartbeatLog = {
+        ...log,
+        logs: [...log.logs, {
+          timestamp: now().toISOString(),
+          type: 'regular',
+          status: 'skipped',
+          error: err.message,
+        }],
+      };
+      writeJSON(PATHS.heartbeatLog, errorLog);
+    } catch { /* best effort */ }
+    process.exit(1);
+  });
+}

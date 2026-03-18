@@ -128,10 +128,26 @@ export interface ApiKeys {
   LLM_MODEL?: string;
   AIHUBMIX_API_KEY?: string;
   IMGURL_TOKEN?: string;
+  INSTAGRAM_USERNAME?: string;
+  INSTAGRAM_PASSWORD?: string;
+  INSTAGRAM_TOTP_SECRET?: string;
+  XHS_SKILLS_DIR?: string;
 }
 
+const OPENCLAW_ENV_KEYS: Array<keyof ApiKeys> = [
+  'LLM_API_KEY',
+  'LLM_API_BASE',
+  'LLM_MODEL',
+  'AIHUBMIX_API_KEY',
+  'IMGURL_TOKEN',
+  'INSTAGRAM_USERNAME',
+  'INSTAGRAM_PASSWORD',
+  'INSTAGRAM_TOTP_SECRET',
+  'XHS_SKILLS_DIR',
+];
+
 /**
- * Load API keys from ~/.openclaw/openclaw.json minase skill env.
+ * Load Minase runtime env from ~/.openclaw/openclaw.json.
  * Returns the loaded keys (does NOT set process.env).
  */
 export function loadApiKeys(): ApiKeys {
@@ -140,13 +156,12 @@ export function loadApiKeys(): ApiKeys {
     const configPath = path.join(process.env.HOME!, '.openclaw', 'openclaw.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     const minaseEnv = config?.skills?.entries?.minase?.env ?? {};
-    if (minaseEnv.LLM_API_KEY) keys.LLM_API_KEY = minaseEnv.LLM_API_KEY;
-    if (minaseEnv.LLM_API_BASE) keys.LLM_API_BASE = minaseEnv.LLM_API_BASE;
-    if (minaseEnv.LLM_MODEL) keys.LLM_MODEL = minaseEnv.LLM_MODEL;
-    if (minaseEnv.AIHUBMIX_API_KEY) keys.AIHUBMIX_API_KEY = minaseEnv.AIHUBMIX_API_KEY;
-    if (minaseEnv.IMGURL_TOKEN) keys.IMGURL_TOKEN = minaseEnv.IMGURL_TOKEN;
+    for (const key of OPENCLAW_ENV_KEYS) {
+      const value = minaseEnv[key];
+      if (value) keys[key] = value;
+    }
   } catch {
-    console.error('Warning: Could not load openclaw config for API keys');
+    console.error('Warning: Could not load openclaw config for Minase env');
   }
   return keys;
 }
