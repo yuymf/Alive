@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock all dependencies before importing
 vi.mock('../skill/scripts/xhs-bridge-client', () => ({
   isXhsAvailable: vi.fn(),
   listXhsFeed: vi.fn(),
@@ -10,6 +9,10 @@ vi.mock('../skill/scripts/xhs-bridge-client', () => ({
 
 vi.mock('../skill/scripts/llm-client', () => ({
   callLLMJSON: vi.fn(),
+}));
+
+vi.mock('../skill/scripts/exa-client', () => ({
+  exaWebSearch: vi.fn(),
 }));
 
 vi.mock('../skill/scripts/file-utils', () => ({
@@ -29,8 +32,63 @@ vi.mock('../skill/scripts/file-utils', () => ({
 }));
 
 vi.mock('../skill/scripts/instagram-bridge-client', () => ({
+  hashtagRecent: vi.fn(),
   callInstagramBridge: vi.fn(),
 }));
+
+describe('collectACGHotspots', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should use live web search results before calling LLM', async () => {
+    const { exaWebSearch } = await import('../skill/scripts/exa-client');
+    (exaWebSearch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([
+        { title: '2026春季热门 Cos 角色', url: 'https://example.com/chars', snippet: 'Furina、Frieren、Mavuika 是近期 cosplay 热门角色。' },
+      ])
+      .mockResolvedValueOnce([
+        { title: '上海 COMICUP 31', url: 'https://example.com/cp31', snippet: 'COMICUP 31 将于 2026 年 4 月在上海举办。' },
+      ])
+      .mockResolvedValueOnce([
+        { title: 'AnimeJapan 2026', url: 'https://example.com/aj2026', snippet: 'AnimeJapan 2026 将于东京 Big Sight 举办。' },
+      ])
+      .mockResolvedValueOnce([
+        { title: '2026春季 ACG 审美', url: 'https://example.com/themes', snippet: '学院风、水手服、轻赛博霓虹是春季高频主题。' },
+      ]);
+
+    const { callLLMJSON } = await import('../skill/scripts/llm-client');
+    (callLLMJSON as ReturnType<typeof vi.fn>).mockResolvedValue({
+      trending_characters: ['Furina', 'Frieren'],
+      upcoming_events: ['COMICUP 31 上海', 'AnimeJapan 2026 东京'],
+      seasonal_themes: ['学院风', '轻赛博霓虹'],
+    });
+
+    const { collectACGHotspots } = await import('../skill/scripts/inspiration-collector');
+    const result = await collectACGHotspots();
+
+    expect(exaWebSearch).toHaveBeenCalledTimes(4);
+    expect(callLLMJSON).toHaveBeenCalledTimes(1);
+    expect(result.trending_characters).toContain('Furina');
+    expect(result.upcoming_events).toContain('AnimeJapan 2026 东京');
+    expect(result.updated_at).toBeGreaterThan(0);
+  });
+
+  it('should return empty arrays and skip LLM when live search returns nothing', async () => {
+    const { exaWebSearch } = await import('../skill/scripts/exa-client');
+    (exaWebSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const { callLLMJSON } = await import('../skill/scripts/llm-client');
+    const { collectACGHotspots } = await import('../skill/scripts/inspiration-collector');
+    const result = await collectACGHotspots();
+
+    expect(result.trending_characters).toEqual([]);
+    expect(result.upcoming_events).toEqual([]);
+    expect(result.seasonal_themes).toEqual([]);
+    expect(result.updated_at).toBeGreaterThan(0);
+    expect(callLLMJSON).not.toHaveBeenCalled();
+  });
+});
 
 describe('collectXiaohongshuTrends', () => {
   beforeEach(() => {
@@ -47,20 +105,23 @@ describe('collectXiaohongshuTrends', () => {
     expect(result.updated_at).toBe(0);
   });
 
-  it('should collect feed + search data and call LLM', async () => {
+  it('should collect feed + latest search data and call LLM', async () => {
     const xhsMock = await import('../skill/scripts/xhs-bridge-client');
     (xhsMock.isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
     (xhsMock.listXhsFeed as ReturnType<typeof vi.fn>).mockResolvedValue([
       { id: 'n1', xsec_token: 't1', title: 'Feed Post', description: 'desc', likes: 100, user: 'u1', tags: [] },
     ]);
-    (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'n2', xsec_token: 't2', title: 'Cos Post', description: 'desc', likes: 200, user: 'u2', tags: ['cos'] },
-    ]);
+    (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockImplementation(async (keyword: string) => {
+      if (keyword === 'cosplay') {
+        return [{ id: 'n2', xsec_token: 't2', title: 'Cos Post', description: 'desc', likes: 200, user: 'u2', tags: ['cos'] }];
+      }
+      return [];
+    });
 
     const { callLLMJSON } = await import('../skill/scripts/llm-client');
     (callLLMJSON as ReturnType<typeof vi.fn>).mockResolvedValue({
-      feed_highlights: [{ title: 'Feed Post', likes: 100, topic: 'fashion' }],
-      cosplay_notes: [{ title: 'Cos Post', likes: 200, topic: 'cosplay' }],
+      feed_highlights: [{ title: 'Feed Post', likes: 100, topic: 'fashion', takeaway: '构图干净' }],
+      cosplay_notes: [{ title: 'Cos Post', likes: 200, topic: 'cosplay', takeaway: '妆造完成度高' }],
       trending_topics: ['jk制服'],
       cosplay_insights: ['镜面反射构图很火'],
       saved_inspirations: [],
@@ -71,13 +132,39 @@ describe('collectXiaohongshuTrends', () => {
     expect(result.feed_highlights).toHaveLength(1);
     expect(result.trending_topics).toContain('jk制服');
     expect(result.updated_at).toBeGreaterThan(0);
+    expect(xhsMock.searchXhsNotes).toHaveBeenCalledWith('cosplay', { sortBy: '最新', publishTime: '一周内' });
+  });
+
+  it('should return empty arrays and skip LLM when live data is empty', async () => {
+    const xhsMock = await import('../skill/scripts/xhs-bridge-client');
+    (xhsMock.isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    (xhsMock.listXhsFeed as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const { callLLMJSON } = await import('../skill/scripts/llm-client');
+    const { collectXiaohongshuTrends } = await import('../skill/scripts/inspiration-collector');
+    const result = await collectXiaohongshuTrends();
+
+    expect(result.feed_highlights).toEqual([]);
+    expect(result.cosplay_notes).toEqual([]);
+    expect(result.updated_at).toBeGreaterThan(0);
+    expect(callLLMJSON).not.toHaveBeenCalled();
   });
 
   it('should merge saved_inspirations with existing ones and cap at 20', async () => {
     const xhsMock = await import('../skill/scripts/xhs-bridge-client');
     (xhsMock.isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
     (xhsMock.listXhsFeed as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockImplementation(async (keyword: string) => {
+      if (keyword === 'cosplay') {
+        return [{ id: 'seed_1', xsec_token: 'tok_1', title: 'Seed Note', description: 'desc', likes: 1200, user: 'u1', tags: ['cos'] }];
+      }
+      return [];
+    });
+    (xhsMock.getXhsNoteDetail as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'seed_1', xsec_token: 'tok_1', title: 'Seed Note', description: 'desc', likes: 1200, user: 'u1', tags: ['cos'],
+      comments: [], images: [], collected_count: 0, share_count: 0,
+    });
 
     const { callLLMJSON } = await import('../skill/scripts/llm-client');
     const newInspos = Array.from({ length: 5 }, (_, i) => ({
@@ -92,7 +179,6 @@ describe('collectXiaohongshuTrends', () => {
       saved_inspirations: newInspos,
     });
 
-    // Mock existing inspiration with 18 saved items
     const { readJSON } = await import('../skill/scripts/file-utils');
     const existingInspos = Array.from({ length: 18 }, (_, i) => ({
       source_note_id: `old_${i}`,
@@ -114,9 +200,7 @@ describe('collectXiaohongshuTrends', () => {
 
     const { collectXiaohongshuTrends } = await import('../skill/scripts/inspiration-collector');
     const result = await collectXiaohongshuTrends();
-    // 18 existing + 5 new = 23, capped at 20, oldest removed
     expect(result.saved_inspirations.length).toBeLessThanOrEqual(20);
-    // Should contain the new items (most recent)
     expect(result.saved_inspirations.some(s => s.source_note_id === 'new_0')).toBe(true);
   });
 
@@ -124,7 +208,16 @@ describe('collectXiaohongshuTrends', () => {
     const xhsMock = await import('../skill/scripts/xhs-bridge-client');
     (xhsMock.isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
     (xhsMock.listXhsFeed as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockImplementation(async (keyword: string) => {
+      if (keyword === 'cosplay') {
+        return [{ id: 'seed_1', xsec_token: 'tok_1', title: 'Seed Note', description: 'desc', likes: 900, user: 'u1', tags: ['cos'] }];
+      }
+      return [];
+    });
+    (xhsMock.getXhsNoteDetail as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'seed_1', xsec_token: 'tok_1', title: 'Seed Note', description: 'desc', likes: 900, user: 'u1', tags: ['cos'],
+      comments: [], images: [], collected_count: 0, share_count: 0,
+    });
 
     const { callLLMJSON } = await import('../skill/scripts/llm-client');
     (callLLMJSON as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -158,7 +251,6 @@ describe('collectXiaohongshuTrends', () => {
 
     const { collectXiaohongshuTrends } = await import('../skill/scripts/inspiration-collector');
     const result = await collectXiaohongshuTrends();
-    // Should have exactly 1 entry (not 2) — new replaces old
     const overlapping = result.saved_inspirations.filter(s => s.source_note_id === 'overlap_1');
     expect(overlapping).toHaveLength(1);
     expect(overlapping[0].visual_description).toBe('New description with better detail');

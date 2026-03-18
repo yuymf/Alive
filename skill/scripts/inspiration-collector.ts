@@ -11,9 +11,13 @@ import * as path from 'path';
 import { InspirationData, PostHistory, SavedReference, PostImpulseState, DEFAULT_POST_IMPULSE, TravelState, TravelSpot, DEFAULT_TRAVEL_STATE } from './types';
 import { PATHS, readJSON, writeJSON, readTemplate } from './file-utils';
 import { callLLMJSON } from './llm-client';
-import { callInstagramBridge } from './instagram-bridge-client';
+import { exaWebSearch } from './exa-client';
+import type { SearchResult } from './exa-client';
+import { hashtagRecent } from './instagram-bridge-client';
+import type { InstagramHashtagPost } from './instagram-bridge-client';
 import { accumulateImpulse } from './post-impulse';
 import { isXhsAvailable, listXhsFeed, searchXhsNotes, getXhsNoteDetail } from './xhs-bridge-client';
+import type { XhsNote, XhsSearchOptions } from './xhs-bridge-client';
 import { now } from './time-utils';
 
 const DOWNLOAD_TIMEOUT_MS = 10_000;
@@ -88,9 +92,79 @@ function isExpired(updatedAt: number, ttl: number): boolean {
   return now().getTime() - updatedAt > ttl;
 }
 
+const INSTAGRAM_TREND_HASHTAGS = ['cosplay', 'cosplaygirl', 'animecosplay'];
+const XHS_RECENT_SEARCH_OPTIONS: XhsSearchOptions = {
+  sortBy: '最新',
+  publishTime: '一周内',
+};
+const XHS_SEARCH_KEYWORDS = ['cosplay', 'cos妆造', '漫展'];
+const ACG_SEARCH_RESULT_LIMIT = 5;
+
+function createEmptyInstagramTrends(): InspirationData['instagram_trends'] {
+  return {
+    hot_styles: [],
+    high_engagement_patterns: [],
+    trending_hashtags: [],
+    updated_at: now().getTime(),
+  };
+}
+
+function createEmptyAcgHotspots(): InspirationData['acg_hotspots'] {
+  return {
+    trending_characters: [],
+    upcoming_events: [],
+    seasonal_themes: [],
+    updated_at: now().getTime(),
+  };
+}
+
+function dedupeByKey<T>(items: T[], keyFn: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter(item => {
+    const key = keyFn(item);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function timestampValue(value: string | null | undefined): number {
+  return value ? new Date(value).getTime() : 0;
+}
+
+function formatInstagramPost(entry: { hashtag: string; post: InstagramHashtagPost }): string {
+  const takenAt = entry.post.taken_at ?? 'unknown';
+  return `- [recent][#${entry.hashtag}] ${takenAt} likes:${entry.post.like_count ?? 0} comments:${entry.post.comment_count ?? 0} "${(entry.post.caption_text ?? '').slice(0, 120)}"`;
+}
+
+function formatXhsNote(note: XhsNote): string {
+  return `- ${note.title} (❤️${note.likes}) by ${note.user || 'unknown'} [${note.tags.join(', ')}]`;
+}
+
+function getCurrentSeasonLabel(date: Date = now()): string {
+  const month = date.getMonth() + 1;
+  if (month >= 3 && month <= 5) return '春季';
+  if (month >= 6 && month <= 8) return '夏季';
+  if (month >= 9 && month <= 11) return '秋季';
+  return '冬季';
+}
+
+function formatAcgSearchResult(result: SearchResult): string {
+  return `- ${result.title}\n  URL: ${result.url}\n  摘要: ${result.snippet || '无摘要'}`;
+}
+
+async function searchAcgLive(query: string): Promise<SearchResult[]> {
+  try {
+    return await exaWebSearch(query, ACG_SEARCH_RESULT_LIMIT, 'auto');
+  } catch (err) {
+    console.warn(`ACG live search failed for "${query}": ${(err as Error).message}`);
+    return [];
+  }
+}
+
 /**
- * 2a: Instagram hot post analysis via instagrapi bridge.
- * Falls back to LLM general knowledge if bridge unavailable.
+ * 2a: Instagram latest hashtag analysis via instagrapi bridge.
+ * Requires live recent data; does not fall back to LLM general knowledge.
  * Also downloads "心动" images as saved_references for future photo generation.
  */
 async function collectInstagramTrends(): Promise<{
@@ -98,47 +172,44 @@ async function collectInstagramTrends(): Promise<{
   newRefs: SavedReference[];
 }> {
   const igUser = process.env.INSTAGRAM_USERNAME;
+  if (!igUser) {
+    console.warn('INSTAGRAM_USERNAME not set, skipping Instagram live trend collection.');
+    return { trends: createEmptyInstagramTrends(), newRefs: [] };
+  }
 
-  let rawData = '';
-  // Collect all posts-with-images across hashtags for later image selection
-  const allPostsWithImages: Array<{ post: any; hashtag: string }> = [];
+  const failures: string[] = [];
+  const recentEntries: Array<{ post: InstagramHashtagPost; hashtag: string }> = [];
 
-  if (igUser) {
-    const hashtags = ['cosplay', 'cosplaygirl', 'animecosplay', 'コスプレ', '辣妹', 'jfashion'];
-    const results: string[] = [];
-
-    for (const tag of hashtags.slice(0, 3)) { // Limit API calls
-      try {
-        const data = await callInstagramBridge('hashtag_top', {
-          name: tag,
-          amount: '5',
-        }) as { hashtag: string; posts: Array<{ pk?: string; like_count: number; comment_count: number; caption_text: string; thumbnail_url?: string }>; error?: string };
-
-        if (data.error) {
-          console.error(`Hashtag search failed for #${tag}: ${data.error}`);
-          continue;
-        }
-
-        for (const post of data.posts ?? []) {
-          results.push(`[${tag}] likes:${post.like_count ?? 0} comments:${post.comment_count ?? 0} "${(post.caption_text ?? '').slice(0, 100)}"`);
-          if (post.thumbnail_url) {
-            allPostsWithImages.push({ post, hashtag: tag });
-          }
-        }
-      } catch (err) {
-        console.error(`Hashtag search failed for #${tag}: ${(err as Error).message}`);
+  for (const tag of INSTAGRAM_TREND_HASHTAGS) {
+    try {
+      const data = await hashtagRecent(tag, 5);
+      for (const post of data.posts ?? []) {
+        recentEntries.push({ post, hashtag: tag });
       }
+    } catch (err) {
+      const message = `#${tag}: ${(err as Error).message}`;
+      failures.push(message);
+      console.error(`Recent hashtag search failed for ${message}`);
     }
-
-    rawData = results.length > 0
-      ? results.join('\n')
-      : 'Instagram API 没有返回有效数据，以下是通用cosplay趋势信息。';
   }
 
-  // Fallback / supplement: ask LLM to summarize based on general knowledge
-  if (!rawData || rawData.includes('没有返回有效数据')) {
-    rawData += '\n请基于你对cosplay和Instagram的知识，总结当前热门趋势。';
+  const dedupedEntries = dedupeByKey(recentEntries, entry => entry.post.pk)
+    .sort((a, b) => timestampValue(b.post.taken_at) - timestampValue(a.post.taken_at));
+
+  if (dedupedEntries.length === 0) {
+    if (failures.length > 0) {
+      console.warn(`Instagram recent trend collection returned no live posts. Failures: ${failures.join(' | ')}`);
+    }
+    return { trends: createEmptyInstagramTrends(), newRefs: [] };
   }
+
+  const rawData = [
+    `抓取时间: ${now().toISOString()}`,
+    `数据范围: Instagram hashtag recent（仅分析本次实时抓取到的帖子，不要用通用知识补全）`,
+    `标签: ${INSTAGRAM_TREND_HASHTAGS.map(tag => `#${tag}`).join('、')}`,
+    ...(failures.length > 0 ? [`部分抓取失败: ${failures.join(' | ')}`] : []),
+    ...dedupedEntries.slice(0, 15).map(formatInstagramPost),
+  ].join('\n');
 
   const template = readTemplate('inspiration-summary-prompt.md');
   const prompt = template.replace('{raw_data}', rawData);
@@ -152,17 +223,17 @@ async function collectInstagramTrends(): Promise<{
     }>(prompt, undefined, 'inspiration-collector');
     trends = { ...result, updated_at: now().getTime() };
   } catch {
-    trends = { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: now().getTime() };
+    trends = createEmptyInstagramTrends();
   }
 
-  // Image selection: ask LLM to pick "心动" images (max 5 per refresh)
+  const allPostsWithImages = dedupedEntries.filter(entry => Boolean(entry.post.thumbnail_url));
   const newRefs: SavedReference[] = [];
 
   if (allPostsWithImages.length > 0) {
-    const selectionPrompt = `你是水瀬（Minase），18岁辣妹系coser。从以下Instagram热门帖子中选出最多5张让你"心动"的图片（符合你的审美：辣妹风、cos、街拍、潮流）。
+    const selectionPrompt = `你是水瀬（Minase），18岁辣妹系coser。从以下最近抓到的Instagram帖子中选出最多5张让你"心动"的图片（符合你的审美：辣妹风、cos、街拍、潮流）。
 
 帖子列表：
-${allPostsWithImages.map(({ post }, i) => `${i + 1}. [${(post.caption_text ?? '').slice(0, 50)}] 点赞:${post.like_count}`).join('\n')}
+${allPostsWithImages.map(({ post }, i) => `${i + 1}. [${(post.caption_text ?? '').slice(0, 50)}] 点赞:${post.like_count} 发布时间:${post.taken_at ?? 'unknown'}`).join('\n')}
 
 返回JSON：{"selected": [序号], "reasons": {"序号": "原因"}}`;
 
@@ -174,16 +245,17 @@ ${allPostsWithImages.map(({ post }, i) => `${i + 1}. [${(post.caption_text ?? ''
 
       for (const idx of selected) {
         const entry = allPostsWithImages[idx - 1];
-        if (!entry?.post?.thumbnail_url) continue;
+        const thumbnailUrl = entry?.post?.thumbnail_url;
+        if (!entry || !thumbnailUrl) continue;
 
         const { post, hashtag: currentHashtag } = entry;
         const filename = `ig_${post.pk ?? idx}_${now().getTime()}.jpg`;
         const destPath = path.join(refsDir, filename);
 
-        const ok = await downloadImage(post.thumbnail_url, destPath);
+        const ok = await downloadImage(thumbnailUrl, destPath);
         if (ok) {
           newRefs.push({
-            url: post.thumbnail_url,
+            url: thumbnailUrl,
             local_path: destPath,
             source_hashtag: currentHashtag,
             style_tags: [],
@@ -202,23 +274,59 @@ ${allPostsWithImages.map(({ post }, i) => `${i + 1}. [${(post.caption_text ?? ''
 
 /**
  * 2b: ACG hotspot tracking.
- * Extends fetch-trends.ts pattern — uses LLM general knowledge.
+ * Uses live web search snippets instead of asking an offline LLM to guess “current” trends.
  */
-async function collectACGHotspots(): Promise<InspirationData['acg_hotspots']> {
-  const prompt = `你是一个ACG趋势分析师。请列出：
-1. 当前最热门的适合cosplay的动漫/游戏角色 Top 5
-2. 近期即将举办的漫展或cos活动（中国和日本）
-3. 本季度的热门动漫主题/审美趋势
+export async function collectACGHotspots(): Promise<InspirationData['acg_hotspots']> {
+  const currentDate = now();
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth() + 1;
+  const season = getCurrentSeasonLabel(currentDate);
 
-以 JSON 格式返回：
+  const [characterResults, chinaEventResults, japanEventResults, themeResults] = await Promise.all([
+    searchAcgLive(`${year} 最热门 cosplay 动漫 游戏 角色 ${season}`),
+    searchAcgLive(`${year} ${month}月 中国 漫展 cosplay 活动`),
+    searchAcgLive(`${year} ${month}月 日本 コスプレ イベント anime convention`),
+    searchAcgLive(`${year} ${season} 动漫 审美 趋势 cosplay`),
+  ]);
+
+  const liveCounts = [characterResults, chinaEventResults, japanEventResults, themeResults]
+    .reduce((sum, results) => sum + results.length, 0);
+
+  if (liveCounts === 0) {
+    return createEmptyAcgHotspots();
+  }
+
+  const prompt = `你是一个 ACG 趋势分析师。以下是通过实时网页搜索拿到的最新结果摘要，抓取时间 ${currentDate.toISOString()}。
+
+你只能根据这些搜索结果提取信息，禁止使用常识、训练记忆或过期知识补全“当前”“近期”内容。
+如果某一类证据不足，请直接返回空数组。
+
+【适合 cosplay 的热门角色】
+${characterResults.length > 0 ? characterResults.map(formatAcgSearchResult).join('\n') : '无数据'}
+
+【中国近期漫展 / cos 活动】
+${chinaEventResults.length > 0 ? chinaEventResults.map(formatAcgSearchResult).join('\n') : '无数据'}
+
+【日本近期漫展 / cos 活动】
+${japanEventResults.length > 0 ? japanEventResults.map(formatAcgSearchResult).join('\n') : '无数据'}
+
+【本季度动漫主题 / 审美趋势】
+${themeResults.length > 0 ? themeResults.map(formatAcgSearchResult).join('\n') : '无数据'}
+
+请输出 JSON：
 \`\`\`json
 {
-  "trending_characters": ["角色1", "角色2", ...],
-  "upcoming_events": ["事件1", "事件2", ...],
-  "seasonal_themes": ["主题1", "主题2", ...]
+  "trending_characters": ["角色1", "角色2"],
+  "upcoming_events": ["活动1", "活动2"],
+  "seasonal_themes": ["主题1", "主题2"]
 }
 \`\`\`
-只返回 JSON。`;
+
+要求：
+- trending_characters：仅保留搜索结果中反复出现、且明显适合 cosplay 的角色名，最多 5 个
+- upcoming_events：仅保留从当前时间起近期将举办、且能从搜索结果看出地点或活动名的活动，最多 6 个
+- seasonal_themes：仅总结搜索结果中出现过的视觉主题、题材或审美关键词，最多 5 个
+- 不要输出说明文字，只返回 JSON`; 
 
   try {
     const result = await callLLMJSON<{
@@ -228,7 +336,7 @@ async function collectACGHotspots(): Promise<InspirationData['acg_hotspots']> {
     }>(prompt, undefined, 'inspiration-collector');
     return { ...result, updated_at: now().getTime() };
   } catch {
-    return { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: now().getTime() };
+    return createEmptyAcgHotspots();
   }
 }
 
@@ -345,9 +453,9 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
     return empty;
   }
 
-  // Collect feed and search results
-  let feedNotes: Awaited<ReturnType<typeof listXhsFeed>> = [];
-  let searchNotes: Awaited<ReturnType<typeof searchXhsNotes>> = [];
+  let feedNotes: XhsNote[] = [];
+  const searchNotes: XhsNote[] = [];
+  const searchFailures: string[] = [];
 
   try {
     feedNotes = await listXhsFeed();
@@ -355,17 +463,32 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
     console.warn(`XHS feed fetch failed: ${(err as Error).message}`);
   }
 
-  try {
-    searchNotes = await searchXhsNotes('cosplay');
-  } catch (err) {
-    console.warn(`XHS search failed: ${(err as Error).message}`);
+  for (const keyword of XHS_SEARCH_KEYWORDS) {
+    try {
+      const results = await searchXhsNotes(keyword, XHS_RECENT_SEARCH_OPTIONS);
+      searchNotes.push(...results);
+    } catch (err) {
+      const message = `${keyword}: ${(err as Error).message}`;
+      searchFailures.push(message);
+      console.warn(`XHS search failed for ${message}`);
+    }
   }
 
-  // Fetch details for top 3 high-engagement notes
-  const allNotes = [...feedNotes, ...searchNotes]
-    .filter((note, idx, arr) => arr.findIndex(n => n.id === note.id) === idx)
+  const dedupedFeedNotes = dedupeByKey(feedNotes, note => note.id).slice(0, 10);
+  const dedupedSearchNotes = dedupeByKey(searchNotes, note => note.id).slice(0, 12);
+  const allNotes = dedupeByKey([...dedupedFeedNotes, ...dedupedSearchNotes], note => note.id)
     .sort((a, b) => b.likes - a.likes);
-  const topNotes = allNotes.filter(n => n.likes > 500).slice(0, 3);
+
+  if (allNotes.length === 0) {
+    if (searchFailures.length > 0) {
+      console.warn(`XHS live trend collection returned no notes. Failures: ${searchFailures.join(' | ')}`);
+    }
+    return { ...empty, updated_at: now().getTime() };
+  }
+
+  const topNotes = allNotes
+    .filter(n => n.likes > 500 && n.xsec_token)
+    .slice(0, 3);
 
   const details: string[] = [];
   for (const note of topNotes) {
@@ -378,9 +501,16 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
     }
   }
 
-  // Format raw data for LLM
-  const feedText = feedNotes.slice(0, 10).map(n => `- ${n.title} (❤️${n.likes}) [${n.tags.join(', ')}]`).join('\n') || '无数据';
-  const searchText = searchNotes.slice(0, 10).map(n => `- ${n.title} (❤️${n.likes}) [${n.tags.join(', ')}]`).join('\n') || '无数据';
+  const feedText = [
+    `抓取时间: ${now().toISOString()}`,
+    '数据范围: 小红书首页推荐流实时抓取（本次刷新）',
+    ...(dedupedFeedNotes.length > 0 ? dedupedFeedNotes.map(formatXhsNote) : ['无数据']),
+  ].join('\n');
+  const searchText = [
+    `搜索策略: 关键词=${XHS_SEARCH_KEYWORDS.join(' / ')}；排序=${XHS_RECENT_SEARCH_OPTIONS.sortBy}；时间范围=${XHS_RECENT_SEARCH_OPTIONS.publishTime}`,
+    ...(searchFailures.length > 0 ? [`部分搜索失败: ${searchFailures.join(' | ')}`] : []),
+    ...(dedupedSearchNotes.length > 0 ? dedupedSearchNotes.map(formatXhsNote) : ['无数据']),
+  ].join('\n');
   const detailText = details.join('\n---\n') || '无高互动笔记';
 
   const template = readTemplate('xhs-inspiration-prompt.md');
@@ -391,8 +521,8 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
 
   try {
     const result = await callLLMJSON<{
-      feed_highlights: Array<{ title: string; likes: number; topic: string }>;
-      cosplay_notes: Array<{ title: string; likes: number; topic: string }>;
+      feed_highlights: Array<{ title: string; likes: number; topic: string; takeaway?: string }>;
+      cosplay_notes: Array<{ title: string; likes: number; topic: string; takeaway?: string }>;
       trending_topics: string[];
       cosplay_insights: string[];
       saved_inspirations: Array<{
@@ -403,14 +533,12 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
       }>;
     }>(prompt, undefined, 'inspiration-collector');
 
-    // Merge saved_inspirations with existing (persists across refreshes)
     const current = readJSON<InspirationData>(PATHS.inspiration, DEFAULT_INSPIRATION);
     const existingInspos = current.xiaohongshu_trends?.saved_inspirations ?? [];
     const newInspos = (result.saved_inspirations ?? []).map(s => ({
       ...s,
       saved_at: now().getTime(),
     }));
-    // Prefer new entries over old when source_note_id collides
     const newIds = new Set(newInspos.map(s => s.source_note_id));
     const filteredExisting = existingInspos.filter(s => !newIds.has(s.source_note_id));
     const merged = [...filteredExisting, ...newInspos].slice(-20);

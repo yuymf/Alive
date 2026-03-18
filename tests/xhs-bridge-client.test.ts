@@ -69,13 +69,13 @@ describe('xhs-bridge-client', () => {
   });
 
   describe('searchXhsNotes', () => {
-    it('should pass --keyword arg to CLI', async () => {
+    it('should pass keyword and recency filters to CLI', async () => {
       simulateExecFile(JSON.stringify({ feeds: [], count: 0 }));
       const { searchXhsNotes } = await import('../skill/scripts/xhs-bridge-client');
-      await searchXhsNotes('cosplay');
+      await searchXhsNotes('cosplay', { sortBy: '最新', publishTime: '一周内' });
       expect(mockExecFile).toHaveBeenCalledWith(
         'uv',
-        expect.arrayContaining(['run', 'python', 'search-feeds', '--keyword', 'cosplay']),
+        expect.arrayContaining(['run', 'python', 'search-feeds', '--keyword', 'cosplay', '--sort-by', '最新', '--publish-time', '一周内']),
         expect.any(Object),
         expect.any(Function),
       );

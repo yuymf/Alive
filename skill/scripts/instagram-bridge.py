@@ -10,6 +10,7 @@ Subcommands:
   get_media_insights --media-pk <pk>
   get_media_info   --media-pk <pk>
   hashtag_top      --name <tag> --amount <n>
+  hashtag_recent   --name <tag> --amount <n>
   get_comments     --media-pk <pk> --amount <n>
   reply_comment    --media-pk <pk> --comment-pk <pk> --text <text>
   post_comment     --media-pk <pk> --text <text>
@@ -194,6 +195,23 @@ def cmd_get_media_info(args):
     print(json.dumps(result))
 
 
+def _format_hashtag_posts(name: str, medias):
+    posts = []
+    for m in medias:
+        posts.append({
+            "pk": str(m.pk),
+            "code": m.code,
+            "user_id": str(m.user.pk),
+            "username": m.user.username,
+            "like_count": m.like_count,
+            "comment_count": m.comment_count,
+            "caption_text": (m.caption_text or "")[:200],
+            "thumbnail_url": str(m.thumbnail_url) if m.thumbnail_url else None,
+            "taken_at": m.taken_at.isoformat() if m.taken_at else None,
+        })
+    return {"hashtag": name, "posts": posts}
+
+
 def cmd_hashtag_top(args):
     """Get top media for a hashtag."""
     amount = int(args.amount) if args.amount else 15
@@ -201,19 +219,20 @@ def cmd_hashtag_top(args):
     def do_hashtag():
         cl = get_client()
         medias = cl.hashtag_medias_top(args.name, amount=amount)
-        posts = []
-        for m in medias:
-            posts.append({
-                "pk": str(m.pk),
-                "code": m.code,
-                "user_id": str(m.user.pk),
-                "username": m.user.username,
-                "like_count": m.like_count,
-                "comment_count": m.comment_count,
-                "caption_text": (m.caption_text or "")[:200],
-                "thumbnail_url": str(m.thumbnail_url) if m.thumbnail_url else None,
-            })
-        return {"hashtag": args.name, "posts": posts}
+        return _format_hashtag_posts(args.name, medias)
+
+    result = with_retry(do_hashtag)
+    print(json.dumps(result))
+
+
+def cmd_hashtag_recent(args):
+    """Get recent media for a hashtag."""
+    amount = int(args.amount) if args.amount else 15
+
+    def do_hashtag():
+        cl = get_client()
+        medias = cl.hashtag_medias_recent(args.name, amount=amount)
+        return _format_hashtag_posts(args.name, medias)
 
     result = with_retry(do_hashtag)
     print(json.dumps(result))
@@ -343,6 +362,11 @@ def main():
     p_hashtag.add_argument("--name", required=True, help="Hashtag name (without #)")
     p_hashtag.add_argument("--amount", default="15", help="Number of posts")
 
+    # hashtag_recent
+    p_hashtag_recent = subparsers.add_parser("hashtag_recent")
+    p_hashtag_recent.add_argument("--name", required=True, help="Hashtag name (without #)")
+    p_hashtag_recent.add_argument("--amount", default="15", help="Number of posts")
+
     # get_user_info
     subparsers.add_parser("get_user_info")
 
@@ -385,6 +409,8 @@ def main():
             cmd_get_media_info(args)
         elif args.command == "hashtag_top":
             cmd_hashtag_top(args)
+        elif args.command == "hashtag_recent":
+            cmd_hashtag_recent(args)
         elif args.command == "get_user_info":
             cmd_get_user_info(args)
         elif args.command == "get_comments":

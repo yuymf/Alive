@@ -30,6 +30,14 @@ export interface XhsNoteDetail extends XhsNote {
   share_count: number;
 }
 
+export interface XhsSearchOptions {
+  sortBy?: string;
+  noteType?: string;
+  publishTime?: string;
+  searchScope?: string;
+  location?: string;
+}
+
 function resolveXhsDir(): string {
   const envDir = process.env.XHS_SKILLS_DIR;
   if (envDir) return envDir;
@@ -149,8 +157,15 @@ export async function listXhsFeed(): Promise<XhsNote[]> {
 }
 
 /** Keyword search. */
-export async function searchXhsNotes(keyword: string): Promise<XhsNote[]> {
-  const result = await callXhsCli('search-feeds', ['--keyword', keyword]) as Record<string, unknown>;
+export async function searchXhsNotes(keyword: string, options: XhsSearchOptions = {}): Promise<XhsNote[]> {
+  const args = ['--keyword', keyword];
+  if (options.sortBy) args.push('--sort-by', options.sortBy);
+  if (options.noteType) args.push('--note-type', options.noteType);
+  if (options.publishTime) args.push('--publish-time', options.publishTime);
+  if (options.searchScope) args.push('--search-scope', options.searchScope);
+  if (options.location) args.push('--location', options.location);
+
+  const result = await callXhsCli('search-feeds', args) as Record<string, unknown>;
   const feeds = (result.feeds ?? []) as Array<Record<string, unknown>>;
   return feeds.map(mapFeedToNote);
 }
