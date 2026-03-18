@@ -300,9 +300,14 @@ export async function regularTick(): Promise<void> {
 
   // KPI 兜底：21:00 后如果当天还没发帖，强制触发
   if (hour >= 21 && impulse.posts_today === 0) {
+    // Mark posts_today = 1 BEFORE spawning pipeline to prevent re-triggering
+    // if the spawned process is still running or fails on next tick.
+    // If the pipeline succeeds, it calls resetImpulseAfterPost() which will
+    // correctly set posts_today based on disk state.
+    impulse = { ...impulse, posts_today: 1, posts_today_date: todayStr };
+    writeJSON(PATHS.postImpulse, impulse);
+
     vitality = await triggerForcedPost(vitality, { reason: 'daily_kpi' });
-    // Do NOT write impulse here — the pipeline (inline or spawned) already updated post-impulse.json
-    // with the incremented posts_today. Writing our stale local impulse would undo that.
     writeJSON(PATHS.vitalityState, vitality);
     return;
   }

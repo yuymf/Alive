@@ -62,7 +62,8 @@ export async function exaWebSearch(
   }
 
   if (!response.ok) {
-    throw new Error(`Exa MCP HTTP ${response.status}`);
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`Exa MCP HTTP ${response.status}${errBody ? ': ' + errBody.slice(0, 200) : ''}`);
   }
 
   const body = await response.text();
@@ -100,7 +101,8 @@ export function parseSearchResults(body: string): SearchResult[] {
     return extractResultsFromText(textBlock);
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('Exa error:')) throw err;
-    return [];
+    // JSON parse or structure errors should be visible, not silently swallowed
+    throw new Error(`Exa response parse failed: ${(err as Error).message}`);
   }
 }
 

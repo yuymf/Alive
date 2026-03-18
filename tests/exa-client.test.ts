@@ -179,9 +179,9 @@ describe('parseSearchResults', () => {
     expect(results[0].title).toBe('With Meta');
   });
 
-  it('returns empty array for malformed JSON in data line', () => {
-    const results = parseSearchResults('event: message\ndata: not-json\n\n');
-    expect(results).toEqual([]);
+  it('throws on malformed JSON in data line', () => {
+    expect(() => parseSearchResults('event: message\ndata: not-json\n\n'))
+      .toThrow('Exa response parse failed');
   });
 
   it('returns empty array when no data: line present', () => {

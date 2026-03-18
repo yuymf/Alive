@@ -240,8 +240,8 @@ def cmd_hashtag_recent(args):
 
 def cmd_get_user_info(args):
     """Get current user's profile info (follower count, etc.)."""
-    cl = get_client()
     def do_info():
+        cl = get_client()
         info = cl.user_info(cl.user_id)
         return {
             "follower_count": info.follower_count,
@@ -331,13 +331,18 @@ def cmd_get_user_feed(args):
 
 def cmd_upload_album(args):
     """Upload a carousel/album post."""
-    cl = get_client()
     image_paths = json.loads(args.images)
-    media = with_retry(lambda: cl.album_upload(
-        paths=[Path(p) for p in image_paths],
-        caption=args.caption or ''
-    ))
-    print(json.dumps({"media_pk": str(media.pk)}))
+
+    def do_upload():
+        cl = get_client()
+        media = cl.album_upload(
+            paths=[Path(p) for p in image_paths],
+            caption=args.caption or ''
+        )
+        return {"media_pk": str(media.pk)}
+
+    result = with_retry(do_upload)
+    print(json.dumps(result))
 
 
 def main():
