@@ -33,6 +33,11 @@ import sys
 import time
 from pathlib import Path
 
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+
 # Force IPv4: urllib3 tries IPv6 first which is extremely slow to Instagram's
 # servers in some network environments, causing login timeouts.
 _orig_getaddrinfo = socket.getaddrinfo
@@ -106,7 +111,9 @@ def get_client() -> Client:
 def with_retry(fn):
     """Retry with exponential backoff on RateLimitError, re-login on LoginRequired."""
     last_error = None
+    attempts_made = 0
     for attempt in range(MAX_RETRIES):
+        attempts_made = attempt + 1
         try:
             return fn()
         except LoginRequired:
@@ -122,9 +129,9 @@ def with_retry(fn):
             time.sleep(delay)
             last_error = "RateLimitError"
         except Exception as e:
-            last_error = str(e)
+            last_error = f"{type(e).__name__}: {e}"
             break
-    raise RuntimeError(f"Failed after {MAX_RETRIES} retries: {last_error}")
+    raise RuntimeError(f"Failed after {attempts_made} attempt(s): {last_error}")
 
 
 def cmd_upload_photo(args):
@@ -329,20 +336,65 @@ def cmd_get_user_feed(args):
     print(json.dumps(result))
 
 
+def _normalize_album_paths(image_paths):
+    """Normalize album media list for instagrapi.
+
+    instagrapi album_upload does not accept PNG directly (only jpg/jpeg/webp/mp4).
+    We convert PNG files to temporary JPEGs to preserve current pipeline outputs.
+    """
+    normalized = []
+    temp_files = []
+
+    for raw in image_paths:
+        p = Path(raw)
+        suffix = p.suffix.lower()
+
+        if suffix in (".jpg", ".jpeg", ".webp", ".mp4"):
+            normalized.append(p)
+            continue
+
+        if suffix == ".png":
+            if Image is None:
+                raise RuntimeError("Pillow not installed; cannot convert PNG for album upload")
+            if not p.exists():
+                raise FileNotFoundError(f"Image not found: {p}")
+            converted = p.with_suffix(".ig_album.jpg")
+            with Image.open(p) as img:
+                img.convert("RGB").save(converted, format="JPEG", quality=95)
+            normalized.append(converted)
+            temp_files.append(converted)
+            continue
+
+        raise RuntimeError(
+            f"Unsupported album media format: {p.suffix}. Use jpg/jpeg/webp/mp4 or png (auto-converted)."
+        )
+
+    return normalized, temp_files
+
+
 def cmd_upload_album(args):
     """Upload a carousel/album post."""
     image_paths = json.loads(args.images)
+    normalized_paths, temp_files = _normalize_album_paths(image_paths)
 
-    def do_upload():
-        cl = get_client()
-        media = cl.album_upload(
-            paths=[Path(p) for p in image_paths],
-            caption=args.caption or ''
-        )
-        return {"media_pk": str(media.pk)}
+    try:
+        def do_upload():
+            cl = get_client()
+            media = cl.album_upload(
+                paths=normalized_paths,
+                caption=args.caption or ''
+            )
+            return {"media_pk": str(media.pk)}
 
-    result = with_retry(do_upload)
-    print(json.dumps(result))
+        result = with_retry(do_upload)
+        print(json.dumps(result))
+    finally:
+        for temp in temp_files:
+            try:
+                if temp.exists():
+                    temp.unlink()
+            except Exception:
+                pass
 
 
 def main():
