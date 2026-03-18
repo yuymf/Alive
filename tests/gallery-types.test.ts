@@ -20,6 +20,11 @@ describe('gallery types', () => {
       sharedAt: null,
       shareCount: 0,
       postedToInstagram: false,
+      batchId: 'batch_001',
+      shotIndex: 0,
+      outfit: '黑色皮衣',
+      outfitChange: false,
+      sceneDescription: '天台夕阳',
     };
     expect(photo.id).toBe('20260313_cos_afternoon_001');
     expect(photo.sharedAt).toBeNull();

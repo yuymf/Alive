@@ -54,11 +54,19 @@
 
 选择多张图片时，第一张最重要（决定封面/首图印象），请按重要性排序。
 
+## 结构化硬约束（必须遵守）
+
+- `coverPhoto` 必须从 `selectedPhotos` 中选择。
+- `selectedPhotos[0]` 必须等于 `coverPhoto`（首图强制置顶）。
+- `selectedPhotos` 不要出现重复文件名。
+- 如果不想发帖：`wantToPost=false`，并返回空 `selectedPhotos` 和空 `coverPhoto`。
+
 以 JSON 格式返回：
 ```json
 {
   "wantToPost": true,
   "selectedPhotos": ["photo1.png", "photo2.png"],
+  "coverPhoto": "photo1.png",
   "caption": "ins文案（1-3句话，要有钩子，要让人想评论）",
   "hashtags": ["tag1", "tag2", "...（8-15个，按大中小标签策略组合）"],
   "reason": "为什么想发（是照片拍得好？还是时间点合适？还是好久没发了？）"

@@ -325,6 +325,8 @@ export interface ShotDescription {
   angle: string;
   variation: string;
   style?: ContentStyle;
+  outfit?: string;
+  outfitChange?: boolean;
 }
 
 export interface PostRecord {
@@ -335,6 +337,9 @@ export interface PostRecord {
   hashtags: string[];
   image_local_paths: string[];
   image_url?: string;
+  cover_local_path?: string;
+  scene_description?: string;
+  batch_id?: string;
   stats?: {
     likes: number;
     comments: number;
@@ -405,6 +410,7 @@ export interface PhotoIntent {
 export interface PostIntent {
   wantToPost: boolean;
   selectedPhotos: string[];
+  coverPhoto?: string;
   caption: string;
   hashtags: string[];
   reason: string;
@@ -461,6 +467,11 @@ export interface GalleryPhoto {
   sharedAt: string | null;
   shareCount: number;
   postedToInstagram: boolean;
+  batchId?: string;
+  shotIndex?: number;
+  outfit?: string;
+  outfitChange?: boolean;
+  sceneDescription?: string;
 }
 
 export interface PhotoGallery {

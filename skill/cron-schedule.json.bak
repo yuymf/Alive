@@ -2,8 +2,12 @@
   "date": "2026-06-15",
   "heartbeats": [
     {
-      "time": "07:00",
+      "time": "06:30",
       "type": "morning"
+    },
+    {
+      "time": "07:00",
+      "type": "regular"
     },
     {
       "time": "08:00",
