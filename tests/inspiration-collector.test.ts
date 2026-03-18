@@ -20,12 +20,16 @@ vi.mock('../skill/scripts/file-utils', () => ({
     inspiration: '/tmp/test-inspiration.json',
     postHistory: '/tmp/test-post-history.json',
     socialMeta: '/tmp/test-social-meta.json',
+    travelState: '/tmp/test-travel-state.json',
+    postImpulse: '/tmp/test-post-impulse.json',
+    inspirationRefs: '/tmp/test-inspiration-refs',
   },
   readJSON: vi.fn().mockReturnValue({
     instagram_trends: { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: 0 },
     acg_hotspots: { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: 0 },
     visual_trends: { composition_styles: [], color_palettes: [], scene_ideas: [], updated_at: 0 },
     self_performance: { best_style: 'cos', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: 0 },
+    xiaohongshu_trends: { feed_highlights: [], cosplay_notes: [], trending_topics: [], cosplay_insights: [], saved_inspirations: [], updated_at: 0 },
   }),
   writeJSON: vi.fn(),
   readTemplate: vi.fn().mockReturnValue('template {feed_data} {search_data} {detail_data}'),
@@ -87,6 +91,107 @@ describe('collectACGHotspots', () => {
     expect(result.seasonal_themes).toEqual([]);
     expect(result.updated_at).toBeGreaterThan(0);
     expect(callLLMJSON).not.toHaveBeenCalled();
+  });
+});
+
+describe('refreshInspiration visual trends', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should use live search evidence before summarizing stale visual trends', async () => {
+    const now = Date.now();
+    const { exaWebSearch } = await import('../skill/scripts/exa-client');
+    (exaWebSearch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce([
+        { title: '2026 春季构图趋势', url: 'https://example.com/composition', snippet: '镜面反射、低机位仰拍、居中对称在 cos 拍摄里热度很高。' },
+      ])
+      .mockResolvedValueOnce([
+        { title: '2026 日系写真色调', url: 'https://example.com/colors', snippet: '胶片复古、冷白肤色、轻赛博霓虹是近期高频配色。' },
+      ])
+      .mockResolvedValueOnce([
+        { title: '2026 热门拍照场景', url: 'https://example.com/scenes', snippet: '便利店夜景、天台夕阳、车站月台是近期热门取景。' },
+      ]);
+
+    const { callLLMJSON } = await import('../skill/scripts/llm-client');
+    (callLLMJSON as ReturnType<typeof vi.fn>).mockResolvedValue({
+      composition_styles: ['镜面反射', '低机位仰拍'],
+      color_palettes: ['胶片复古', '轻赛博霓虹'],
+      scene_ideas: ['便利店夜景', '天台夕阳'],
+    });
+
+    const { PATHS, readJSON, writeJSON } = await import('../skill/scripts/file-utils');
+    (readJSON as ReturnType<typeof vi.fn>).mockImplementation((targetPath: string) => {
+      if (targetPath === PATHS.inspiration) {
+        return {
+          instagram_trends: { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: now },
+          acg_hotspots: { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: now },
+          visual_trends: { composition_styles: ['旧构图'], color_palettes: ['旧色调'], scene_ideas: ['旧场景'], updated_at: now - 25 * 60 * 60 * 1000 },
+          self_performance: { best_style: 'cos', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: now },
+          xiaohongshu_trends: { feed_highlights: [], cosplay_notes: [], trending_topics: [], cosplay_insights: [], saved_inspirations: [], updated_at: now },
+        };
+      }
+      if (targetPath === PATHS.travelState) {
+        return { current_city: '', country: '' };
+      }
+      return {};
+    });
+
+    const { refreshInspiration } = await import('../skill/scripts/inspiration-collector');
+    const result = await refreshInspiration();
+
+    expect(exaWebSearch).toHaveBeenCalledTimes(3);
+    expect(callLLMJSON).toHaveBeenCalledTimes(1);
+    expect(result.visual_trends.composition_styles).toEqual(['镜面反射', '低机位仰拍']);
+    expect(writeJSON).toHaveBeenCalledWith(
+      PATHS.inspiration,
+      expect.objectContaining({
+        visual_trends: expect.objectContaining({
+          color_palettes: ['胶片复古', '轻赛博霓虹'],
+          scene_ideas: ['便利店夜景', '天台夕阳'],
+        }),
+      }),
+    );
+  });
+
+  it('should skip LLM and keep visual trends empty when live evidence is missing', async () => {
+    const now = Date.now();
+    const { exaWebSearch } = await import('../skill/scripts/exa-client');
+    (exaWebSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const { callLLMJSON } = await import('../skill/scripts/llm-client');
+    (callLLMJSON as ReturnType<typeof vi.fn>).mockResolvedValue({
+      composition_styles: ['通用构图'],
+      color_palettes: ['通用色调'],
+      scene_ideas: ['通用场景'],
+    });
+
+    const { PATHS, readJSON } = await import('../skill/scripts/file-utils');
+    (readJSON as ReturnType<typeof vi.fn>).mockImplementation((targetPath: string) => {
+      if (targetPath === PATHS.inspiration) {
+        return {
+          instagram_trends: { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: now },
+          acg_hotspots: { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: now },
+          visual_trends: { composition_styles: ['旧构图'], color_palettes: ['旧色调'], scene_ideas: ['旧场景'], updated_at: now - 25 * 60 * 60 * 1000 },
+          self_performance: { best_style: 'cos', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: now },
+          xiaohongshu_trends: { feed_highlights: [], cosplay_notes: [], trending_topics: [], cosplay_insights: [], saved_inspirations: [], updated_at: now },
+        };
+      }
+      if (targetPath === PATHS.travelState) {
+        return { current_city: '', country: '' };
+      }
+      return {};
+    });
+
+    const { refreshInspiration } = await import('../skill/scripts/inspiration-collector');
+    const result = await refreshInspiration();
+
+    expect(exaWebSearch).toHaveBeenCalledTimes(3);
+    expect(callLLMJSON).not.toHaveBeenCalled();
+    expect(result.visual_trends.composition_styles).toEqual([]);
+    expect(result.visual_trends.color_palettes).toEqual([]);
+    expect(result.visual_trends.scene_ideas).toEqual([]);
+    expect(result.visual_trends.updated_at).toBeGreaterThan(0);
   });
 });
 

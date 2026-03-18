@@ -15,7 +15,7 @@ import {
 } from './instagram-bridge-client';
 import { applyClosenessChange, classifyTier } from './social-graph-engine';
 import { SocialRelation } from './types';
-import { getLocalDate } from './time-utils';
+import { getLocalDate, now } from './time-utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -56,7 +56,8 @@ export function scheduleCommentCheck(entry: Omit<PendingReply, 'replied_comment_
 
 export function getPendingReplies(): PendingReply[] {
   const data = readJSON<PendingEngagement>(PATHS.pendingEngagement, { pending_replies: [] });
-  return data.pending_replies.filter(p => Date.now() > p.scheduled_after);
+  const currentMs = now().getTime();
+  return data.pending_replies.filter(p => currentMs > p.scheduled_after);
 }
 
 export function markReplied(mediaPk: string, commentPk: string): void {
@@ -79,7 +80,7 @@ export function appendOutboundHistory(entry: OutboundEntry): void {
 
 export function pruneOutboundHistory(): void {
   const data = readJSON<OutboundHistory>(PATHS.outboundHistory, { commented: [] });
-  const cutoff = Date.now() - OUTBOUND_RETENTION_MS;
+  const cutoff = now().getTime() - OUTBOUND_RETENTION_MS;
   writeJSON(PATHS.outboundHistory, {
     commented: data.commented.filter(e => e.commented_at > cutoff),
   });
@@ -92,14 +93,14 @@ export function isAlreadyCommented(mediaPk: string): boolean {
 
 export function getTodayOutboundCount(): number {
   const data = readJSON<OutboundHistory>(PATHS.outboundHistory, { commented: [] });
-  const todayStart = new Date();
+  const todayStart = now();
   todayStart.setHours(0, 0, 0, 0);
   return data.commented.filter(e => e.commented_at >= todayStart.getTime()).length;
 }
 
 export function getRecentCommentCountForUser(userId: string): number {
   const data = readJSON<OutboundHistory>(PATHS.outboundHistory, { commented: [] });
-  const windowStart = Date.now() - USER_24H_WINDOW_MS;
+  const windowStart = now().getTime() - USER_24H_WINDOW_MS;
   return data.commented.filter(e => e.user_id === userId && e.commented_at > windowStart).length;
 }
 
@@ -176,7 +177,7 @@ export async function replyToComments(mediaPk: string, postContext: ReplyContext
       if (fs.existsSync(relationPath)) {
         const relation = readJSON<SocialRelation>(relationPath, null as unknown as SocialRelation);
         if (relation) {
-          const updated = applyClosenessChange(relation, 'reply_sent', new Date().toISOString());
+          const updated = applyClosenessChange(relation, 'reply_sent', now().toISOString());
           writeSocialRelation(PATHS.socialInstagramDir, updated);
         }
       }
@@ -267,13 +268,13 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
 
     try {
       await postComment(plan.media_pk, plan.comment);
-      appendOutboundHistory({ media_pk: plan.media_pk, user_id: plan.user_id, commented_at: Date.now() });
+      appendOutboundHistory({ media_pk: plan.media_pk, user_id: plan.user_id, commented_at: now().getTime() });
 
       const relationPath = path.join(PATHS.socialInstagramDir, `${plan.user_id}.json`);
       if (fs.existsSync(relationPath)) {
         const relation = readJSON<SocialRelation>(relationPath, null as unknown as SocialRelation);
         if (relation) {
-          const updated = applyClosenessChange(relation, 'comment_sent', new Date().toISOString());
+          const updated = applyClosenessChange(relation, 'comment_sent', now().toISOString());
           writeSocialRelation(PATHS.socialInstagramDir, updated);
         }
       }
@@ -288,7 +289,7 @@ export async function engageOutbound(ctx: OutboundContext): Promise<void> {
   }
 
   if (postedCount > 0) {
-    const todayStr = getLocalDate(new Date());
+    const todayStr = getLocalDate(now());
     appendText(PATHS.diary, `\n## ${todayStr}\n今天主动去cos圈评论了 ${postedCount} 个帖子～\n情绪: 开心 | 重要性: 3\n标签: 社交, cos圈\n`);
   }
 }

@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "vitest run --config vitest.e2e.config.ts",
+    "e2e:real-day": "npx tsx e2e/e2e-real-day.ts",
     "generate-refs": "node dist/generate-references.js",
     "prepack": "npm run build"
   },

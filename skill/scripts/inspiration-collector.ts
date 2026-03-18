@@ -83,7 +83,7 @@ const DEFAULT_INSPIRATION: InspirationData = {
 const TTL = {
   instagram_trends: 24 * 60 * 60 * 1000,       // 24h
   acg_hotspots: 24 * 60 * 60 * 1000,            // 24h
-  visual_trends: 72 * 60 * 60 * 1000,           // 72h
+  visual_trends: 24 * 60 * 60 * 1000,           // 24h
   self_performance: 168 * 60 * 60 * 1000,        // 7 days
   xiaohongshu_trends: 6 * 60 * 60 * 1000,        // 6h — enables 2-4 refreshes/day
 } as const;
@@ -114,6 +114,15 @@ function createEmptyAcgHotspots(): InspirationData['acg_hotspots'] {
     trending_characters: [],
     upcoming_events: [],
     seasonal_themes: [],
+    updated_at: now().getTime(),
+  };
+}
+
+function createEmptyVisualTrends(): InspirationData['visual_trends'] {
+  return {
+    composition_styles: [],
+    color_palettes: [],
+    scene_ideas: [],
     updated_at: now().getTime(),
   };
 }
@@ -342,22 +351,55 @@ ${themeResults.length > 0 ? themeResults.map(formatAcgSearchResult).join('\n') :
 
 /**
  * 2c: Cross-platform visual inspiration.
+ * Uses live web search snippets instead of asking an offline LLM to guess “current” trends.
  */
 async function collectVisualTrends(): Promise<InspirationData['visual_trends']> {
-  const prompt = `你是一个视觉趋势分析师，专注于cosplay和日系穿搭。请分析当前流行的：
-1. 构图方式（如：镜面反射、低角度仰拍、对称构图...）
-2. 色调趋势（如：莫兰迪色系、赛博霓虹、胶片复古...）
-3. 拍照场景创意（如：便利店门口、天台夕阳、废弃工厂...）
+  const currentDate = now();
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth() + 1;
+  const season = getCurrentSeasonLabel(currentDate);
 
-以 JSON 格式返回：
+  const [compositionResults, paletteResults, sceneResults] = await Promise.all([
+    searchAcgLive(`${year} ${month}月 cosplay 写真 构图 趋势 ${season}`),
+    searchAcgLive(`${year} ${month}月 日系穿搭 cosplay 摄影 色调 趋势 ${season}`),
+    searchAcgLive(`${year} ${month}月 cosplay 日系写真 拍照场景 创意 ${season}`),
+  ]);
+
+  const liveCounts = [compositionResults, paletteResults, sceneResults]
+    .reduce((sum, results) => sum + results.length, 0);
+
+  if (liveCounts === 0) {
+    return createEmptyVisualTrends();
+  }
+
+  const prompt = `你是一个视觉趋势分析师。以下是通过实时网页搜索拿到的最新结果摘要，抓取时间 ${currentDate.toISOString()}。
+
+你只能根据这些搜索结果提取信息，禁止使用常识、训练记忆或过期知识补全“当前”“近期”内容。
+如果某一类证据不足，请直接返回空数组。
+
+【构图方式趋势】
+${compositionResults.length > 0 ? compositionResults.map(formatAcgSearchResult).join('\n') : '无数据'}
+
+【色调 / 调色趋势】
+${paletteResults.length > 0 ? paletteResults.map(formatAcgSearchResult).join('\n') : '无数据'}
+
+【拍照场景创意】
+${sceneResults.length > 0 ? sceneResults.map(formatAcgSearchResult).join('\n') : '无数据'}
+
+请输出 JSON：
 \`\`\`json
 {
-  "composition_styles": ["构图方式1", ...],
-  "color_palettes": ["色调1", ...],
-  "scene_ideas": ["场景1", ...]
+  "composition_styles": ["构图方式1", "构图方式2"],
+  "color_palettes": ["色调1", "色调2"],
+  "scene_ideas": ["场景1", "场景2"]
 }
 \`\`\`
-只返回 JSON。`;
+
+要求：
+- composition_styles：仅总结搜索结果中反复出现、可直接指导拍摄的构图方式，最多 5 个
+- color_palettes：仅总结搜索结果中出现过的配色、调色、光影关键词，最多 5 个
+- scene_ideas：仅保留从搜索结果中能看出的场景创意或取景地点类型，最多 5 个
+- 不要输出说明文字，只返回 JSON`;
 
   try {
     const result = await callLLMJSON<{
@@ -367,7 +409,7 @@ async function collectVisualTrends(): Promise<InspirationData['visual_trends']> 
     }>(prompt, undefined, 'inspiration-collector');
     return { ...result, updated_at: now().getTime() };
   } catch {
-    return { composition_styles: [], color_palettes: [], scene_ideas: [], updated_at: now().getTime() };
+    return createEmptyVisualTrends();
   }
 }
 
