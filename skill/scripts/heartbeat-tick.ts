@@ -49,6 +49,7 @@ import {
   tickFlow, resetFlow, generateFlowDiary, generateDriftDiary,
   computeVoiceDirective, LastAction,
 } from './flow-engine';
+import { attemptProactiveOutreach } from './heartbeat-outreach';
 
 // Default initial states (Spec §16)
 const DEFAULT_EMOTION: EmotionState = {
@@ -642,6 +643,7 @@ export async function regularTick(): Promise<void> {
           try {
             const { refreshInspiration } = await import('./inspiration-collector');
             await refreshInspiration();
+            process.env.SKIP_INSPIRATION_REFRESH = '1';
           } catch (inspErr) {
             console.error(`Inspiration refresh failed: ${(inspErr as Error).message}`);
           }
@@ -699,6 +701,28 @@ export async function regularTick(): Promise<void> {
           console.log(`[SOCIAL] Skipped — vitality too low (${vitality.vitality})`);
         }
         actionResults.push(`[social-engagement] ${action.action}`);
+        continue;
+      }
+      // Proactive message routing
+      const isSendMessage = /send.message|发消息|聊天|分享|找.+说/.test(lowerSkill);
+      if (isSendMessage) {
+        try {
+          const outreachResult = await attemptProactiveOutreach({
+            actionDescription: action.action,
+            innerMonologue: decision.inner_monologue || '',
+            emotion,
+            voiceDirective,
+            recentDiary,
+          });
+          if (outreachResult.sent) {
+            actionResults.push(`[send-message] ${outreachResult.message?.slice(0, 50) ?? action.action}`);
+          } else {
+            actionResults.push(`[send-message:skipped] ${outreachResult.reason}`);
+          }
+        } catch (err) {
+          console.error(`[heartbeat] Proactive outreach failed: ${(err as Error).message}`);
+          actionResults.push(`[send-message:error] ${action.action}`);
+        }
         continue;
       }
       console.log(`[REAL ACTION] Unknown skill: ${action.skill} for: ${action.action}`);

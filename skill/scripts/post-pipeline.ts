@@ -253,7 +253,11 @@ async function runPipeline(): Promise<void> {
   cleanupPhotoRoll();
 
   // 1. Refresh expired inspiration
-  await refreshInspiration();
+  if (process.env.SKIP_INSPIRATION_REFRESH === '1') {
+    console.log('Skipping inspiration refresh (already refreshed in heartbeat action).');
+  } else {
+    await refreshInspiration();
+  }
 
   // 2. Photo phase: does Minase want to take a photo?
   let lastPhotoStyle: ContentStyle | null = null;

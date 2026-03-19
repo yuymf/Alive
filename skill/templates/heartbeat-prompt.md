@@ -72,6 +72,7 @@
   - `skill: "post-pipeline"` — 拍照发帖（需体力>30）
   - `skill: "search-pipeline"` — 掏手机搜索/研究某个问题（需体力>20）
   - `skill: "social-engagement"`：去cos圈刷动态，给感兴趣的帖子评论（需社交意图强、活力充足）
+  - `skill: "send-message"`：主动给朋友发消息——**只在你真的忍不住想分享什么、或突然想到某人时才选这个！** 不是每个小时都要发消息。大多数时候你在过自己的生活，不会想到要跟谁说话
 
 搜索使用指引：
 当你对某件事好奇、想学新东西、或者需要了解信息时，可以选择 search-pipeline。
@@ -90,7 +91,7 @@
     {
       "action": "具体行动描述（要有细节！在哪、做什么、怎么做）",
       "type": "real|simulated|inner",
-      "skill": "post-pipeline（拍照发帖）| search-pipeline（搜索）| social-engagement（cos圈互动）| null（其他所有行动）",
+      "skill": "post-pipeline（拍照发帖）| search-pipeline（搜索）| social-engagement（cos圈互动）| send-message（主动给朋友发消息，只在真的想分享时用！）| null（其他所有行动）",
       "satisfies_intent": "意图id或null"
     }
   ]

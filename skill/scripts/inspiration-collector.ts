@@ -661,42 +661,56 @@ export async function collectTravelInspo(city: string, country: string): Promise
 export async function refreshInspiration(forceAll = false): Promise<InspirationData> {
   const current = readJSON<InspirationData>(PATHS.inspiration, DEFAULT_INSPIRATION);
   let updated = { ...current };
+  const refreshTasks: Array<Promise<Partial<InspirationData>>> = [];
 
   if (forceAll || isExpired(current.instagram_trends.updated_at, TTL.instagram_trends)) {
     console.log('Refreshing Instagram trends...');
-    const { trends, newRefs } = await collectInstagramTrends();
-    updated = { ...updated, instagram_trends: trends };
-    if (newRefs.length > 0) {
-      const existing = updated.saved_references ?? [];
-      const cleaned = cleanupExpiredRefs(existing);
-      const merged = [...cleaned, ...newRefs].slice(-MAX_SAVED_REFS);
-      updated = { ...updated, saved_references: merged };
-      const impulseBoost = 10 + Math.random() * 5;
-      let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
-      impulse = accumulateImpulse(impulse, impulseBoost);
-      writeJSON(PATHS.postImpulse, impulse);
-      console.log(`Inspiration saved ${newRefs.length} refs, impulse +${impulseBoost.toFixed(1)}`);
-    }
+    refreshTasks.push((async () => {
+      const { trends, newRefs } = await collectInstagramTrends();
+      const patch: Partial<InspirationData> = { instagram_trends: trends };
+
+      if (newRefs.length > 0) {
+        const existing = current.saved_references ?? [];
+        const cleaned = cleanupExpiredRefs(existing);
+        const merged = [...cleaned, ...newRefs].slice(-MAX_SAVED_REFS);
+        patch.saved_references = merged;
+
+        const impulseBoost = 10 + Math.random() * 5;
+        let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
+        impulse = accumulateImpulse(impulse, impulseBoost);
+        writeJSON(PATHS.postImpulse, impulse);
+        console.log(`Inspiration saved ${newRefs.length} refs, impulse +${impulseBoost.toFixed(1)}`);
+      }
+
+      return patch;
+    })());
   }
 
   if (forceAll || isExpired(current.acg_hotspots.updated_at, TTL.acg_hotspots)) {
     console.log('Refreshing ACG hotspots...');
-    updated = { ...updated, acg_hotspots: await collectACGHotspots() };
+    refreshTasks.push((async () => ({ acg_hotspots: await collectACGHotspots() }))());
   }
 
   if (forceAll || isExpired(current.visual_trends.updated_at, TTL.visual_trends)) {
     console.log('Refreshing visual trends...');
-    updated = { ...updated, visual_trends: await collectVisualTrends() };
+    refreshTasks.push((async () => ({ visual_trends: await collectVisualTrends() }))());
   }
 
   if (forceAll || isExpired(current.self_performance.updated_at, TTL.self_performance)) {
     console.log('Refreshing self performance...');
-    updated = { ...updated, self_performance: collectSelfPerformance() };
+    refreshTasks.push(Promise.resolve({ self_performance: collectSelfPerformance() }));
   }
 
   if (forceAll || isExpired(current.xiaohongshu_trends?.updated_at ?? 0, TTL.xiaohongshu_trends)) {
     console.log('Refreshing XiaoHongShu trends...');
-    updated = { ...updated, xiaohongshu_trends: await collectXiaohongshuTrends() };
+    refreshTasks.push((async () => ({ xiaohongshu_trends: await collectXiaohongshuTrends() }))());
+  }
+
+  const settled = await Promise.allSettled(refreshTasks);
+  for (const result of settled) {
+    if (result.status === 'fulfilled') {
+      updated = { ...updated, ...result.value };
+    }
   }
 
   // Collect travel spots for current city

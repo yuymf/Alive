@@ -72,7 +72,7 @@ describe('E2E Lifecycle', () => {
   let restoreEnv: () => void;
   const tickLogs: TickLog[] = [];
   let pipelineRanAtLeastOnce = false;
-  const today = '2026-06-15'; // Fixed simulated date (a Sunday for free schedule)
+  const today = process.env.E2E_SIM_DATE ?? '2026-06-15'; // Can be overridden by weekly runner
 
   beforeAll(() => {
     // Set mock environment (includes ImgURL mock)

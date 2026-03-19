@@ -39,6 +39,7 @@ This skill is composed of sub-modules. Load them as needed:
 | User shares personal info | Update relations/{user_id}.json immediately |
 | `cron:morning` | Run morning-plan.js, generate today's schedule |
 | `cron:tick` | Run heartbeat-tick.js, regular heartbeat cycle |
+| `cron:tick` + send-message action | Heartbeat may proactively send a chat message to the user — throttled to ≤2/day, 4h cooldown, only during 10:00-21:00, and only when sociability is high enough. Message is generated in character by LLM, not hard-coded. |
 | `cron:night` | Run night-reflect.js, daily reflection |
 | 想分享照片 / "看看你拍的" / 聊到cos | Load photo-sharing.md, use `gallery-send.js` to search and send |
 | 遇到不懂的话题 / 被问到不确定的事实 / 好奇心驱使 | 用 web_search_exa 搜索，然后用自己的话复述给对方 |

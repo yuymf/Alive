@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { exaWebSearch, parseSearchResults, EXA_MCP_ENDPOINT } from '../skill/scripts/exa-client';
+import { exaWebSearch, parseSearchResults, EXA_MCP_ENDPOINT, resetExaRateLimitForTests } from '../skill/scripts/exa-client';
 
 // ---------------------------------------------------------------------------
 // Helpers — build realistic SSE response bodies
@@ -40,6 +40,7 @@ describe('exaWebSearch', () => {
 
   beforeEach(() => {
     fetchSpy = vi.spyOn(globalThis, 'fetch');
+    resetExaRateLimitForTests();
   });
 
   afterEach(() => {
@@ -93,6 +94,24 @@ describe('exaWebSearch', () => {
     fetchSpy.mockResolvedValueOnce(new Response('', { status: 500 }));
 
     await expect(exaWebSearch('test')).rejects.toThrow('Exa MCP HTTP 500');
+  });
+
+  it('retries once on HTTP 429 with retry-after', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchSpy
+        .mockResolvedValueOnce(new Response('rate limited', { status: 429, headers: { 'retry-after': '2' } }))
+        .mockResolvedValueOnce(new Response(makeSseBody(SAMPLE_TEXT), { status: 200 }));
+
+      const pending = exaWebSearch('retry query');
+      await vi.advanceTimersByTimeAsync(2_000);
+      const results = await pending;
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(results).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('throws on Exa-level error in response envelope', async () => {
