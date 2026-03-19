@@ -63,17 +63,13 @@ export function sanitizeForImageGen(description: string): string {
   let result = description;
 
   // Compound phrases (must come before individual terms)
-  result = result.replace(/蕾丝内搭/g, '深色打底');
   result = result.replace(/紧身crop top/gi, '修身短上衣'); // Handle the full phrase first
   result = result.replace(/crop top/gi, '修身短上衣');
-  result = result.replace(/勒出明显的乳沟线条/g, '显出明显的领口'); // Specific pattern for this phrase
+
   result = result.replace(/露出事业线/g, '展示穿搭'); // Specific pattern for this phrase
   result = result.replace(/乳沟/g, '领口');
-  result = result.replace(/事业线/g, '展示穿搭');
-  result = result.replace(/紧紧包裹/g, '贴合');
   result = result.replace(/低腰/g, '休闲腰线');
   result = result.replace(/髋骨/g, '腰部');
-  result = result.replace(/咬唇|咬下唇/g, '微笑');
   result = result.replace(/身体微微前倾/g, '身体微微微微倾身');
   result = result.replace(/胸部轮廓/g, '上身线条');
 
@@ -82,14 +78,6 @@ export function sanitizeForImageGen(description: string): string {
   result = result.replace(/透明[的]?衣服/g, '轻薄衣物');
   result = result.replace(/透视[装效果]?/g, '薄纱质感');
   result = result.replace(/半透明/g, '轻盈');
-  result = result.replace(/若隐若现/g, '朦胧感');
-
-  // Body contour / curves
-  result = result.replace(/身体轮廓/g, '身形线条');
-  result = result.replace(/身材曲线/g, '优美体态');
-  result = result.replace(/胸部/g, '上身');
-  result = result.replace(/臀[部型]/g, '体态');
-  result = result.replace(/大腿/g, '腿部');
 
   // Exposure level
   result = result.replace(/暴露/g, '清凉');
@@ -105,17 +93,6 @@ export function sanitizeForImageGen(description: string): string {
   result = result.replace(/蕾丝/g, '花纹面料');
   result = result.replace(/bra/gi, '内搭');
 
-  // Suggestive poses
-  result = result.replace(/妩媚/g, '优雅');
-  result = result.replace(/撩人/g, '迷人');
-  result = result.replace(/勾引/g, '吸引');
-  result = result.replace(/慵懒/g, '随性');
-
-  // Specific terms from E2E (must come after compound phrases to avoid double replacement)
-  result = result.replace(/紧身/g, '修身');
-  result = result.replace(/勒出/g, '显出');
-  result = result.replace(/腰身/g, '腰线');
-
   return result;
 }
 
@@ -124,8 +101,7 @@ export function sanitizeForImageGen(description: string): string {
  * image generation prompt following Google's recommended Gemini template.
  */
 export function buildImagePrompt(sceneDescription: string, style: ContentStyle): string {
-  // Sanitize to avoid content filter triggers
-  const cleanDescription = sanitizeForImageGen(sceneDescription);
+  // Keep original description on first attempt; only sanitize for retries after content-filter/imagetoken failures.
   const styleContext: Record<ContentStyle, string> = {
     cos: 'a professional cosplay photoshoot with precise costume detail and dramatic lighting, emphasizing the character costume fit and body silhouette',
     daily: 'a casual everyday fashion moment, form-fitting stylish clothing with visible fabric texture and draping, relaxed and alluring candid pose',
@@ -140,7 +116,7 @@ export function buildImagePrompt(sceneDescription: string, style: ContentStyle):
   const context = styleContext[style];
 
   return [
-    `A photorealistic Instagram photo of ${context}. ${cleanDescription}`,
+    `A photorealistic Instagram photo of ${context}. ${sceneDescription}`,
     `同一位女性（严格匹配参考图：五官轮廓、发型发色、体型），18岁，辣妹风，身材匀称有曲线。Shot on ${camera}.`,
     `表情要求：不要呆板的正面微笑！表情要有故事感和情绪——可以是慵懒的半睁眼、微微挑眉的得意、嘴角轻扬的暧昧笑意、眼神带着一丝挑逗的侧目、低头时眼睛往上看的清纯感、或者不看镜头的自然随性状态。眼神是关键：要有"在看你"或"故意不看你"的张力，不是空洞地盯着镜头。`,
     `氛围自然真实，色彩高级清透，肤色自然不过曝有质感，构图舒适主体突出。注重面料质感渲染（光泽/透明度/褶皱）和身体曲线的自然表现。`,
@@ -260,13 +236,24 @@ export async function callAIHubMix(
   }
 
   if (!imageData) {
-    // Check if this is a content filter issue (completion_tokens: 0 or finish_reason: safety)
+    // Check if this is a content filter issue (completion_tokens: 0, finish_reason: safety/content_filter,
+    // or Gemini-style imagetoken exists but is empty).
     const usage = data.usage as Record<string, number> | undefined;
     const choices = data.choices as Array<Record<string, unknown>> | undefined;
     const finishReason = choices?.[0]?.finish_reason as string | undefined;
-    const isContentFiltered = (usage?.completion_tokens === 0) || finishReason === 'safety' || finishReason === 'content_filter';
+    const messageObj = choices?.[0]?.message as Record<string, unknown> | undefined;
+    const choiceImageToken = messageObj?.imagetoken;
+    const topLevelImageToken = (data as { imagetoken?: unknown }).imagetoken;
+    const hasEmptyImageToken = [choiceImageToken, topLevelImageToken]
+      .some(v => typeof v === 'string' && v.trim() === '');
+
+    const isContentFiltered = (usage?.completion_tokens === 0)
+      || finishReason === 'safety'
+      || finishReason === 'content_filter'
+      || hasEmptyImageToken;
+
     const errorMsg = isContentFiltered
-      ? `Content filter triggered — prompt may be too suggestive (finish_reason: ${finishReason ?? 'unknown'}, completion_tokens: ${usage?.completion_tokens ?? 'unknown'})`
+      ? `Content filter triggered — prompt may be too suggestive (finish_reason: ${finishReason ?? 'unknown'}, completion_tokens: ${usage?.completion_tokens ?? 'unknown'}, imagetoken_empty: ${hasEmptyImageToken})`
       : `No image data in AIHubMix response: ${JSON.stringify(data).slice(0, 500)}`;
     throw new Error(errorMsg);
   }
@@ -350,7 +337,6 @@ async function checkQuality(generatedImagePath: string, referenceImagePath: stri
 
   const body = {
     model: AIHUBMIX_QUALITY_MODEL,
-    max_tokens: 16,
     messages: [
       {
         role: 'user',
@@ -501,16 +487,10 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
       const cause = lastError.cause as NodeJS.ErrnoException | undefined;
       const detail = cause ? ` (${cause.code ?? cause.message})` : '';
       if (attempt < MAX_RETRIES) {
-        // If content-filtered, simplify the prompt for the retry
+        // Only sanitize prompt after API indicates content filtering / empty imagetoken.
         if (lastError.message.includes('Content filter triggered')) {
-          console.error(`Content filter triggered, simplifying prompt for retry...`);
-          // Strip the scene description and use a generic version
-          currentPrompt = currentPrompt
-            .replace(/透[明视][\u4e00-\u9fff]*/g, '')
-            .replace(/身体[\u4e00-\u9fff]*/g, '')
-            .replace(/曲线[\u4e00-\u9fff]*/g, '')
-            .replace(/暴露[\u4e00-\u9fff]*/g, '')
-            .replace(/性感[\u4e00-\u9fff]*/g, '时尚');
+          console.error('Content filter triggered, sanitizing prompt for retry...');
+          currentPrompt = sanitizeForImageGen(currentPrompt);
         } else {
           console.error(`Image generation failed, retrying: ${lastError.message}${detail}`);
         }

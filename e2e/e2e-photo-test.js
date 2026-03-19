@@ -36,43 +36,68 @@ async function main() {
   console.log('输出目录:', OUTPUT_DIR);
   console.log('---');
 
-  // Test 1: 日常自拍 (daily selfie)
-  console.log('\n[1/2] 正在生成日常自拍...');
-  const dailyPrompt = buildRealisticPrompt('夜晚街边咖啡店外带后自拍，手里捧着纸杯包装的热拿铁，街边暖黄路灯下，边走边喝，表情放松愉悦', 'daily');
-  console.log('Prompt:', dailyPrompt);
-
-  try {
-    const dailyResult = await generateImage({
-      prompt: dailyPrompt,
-      referenceImages: [REFERENCE_IMAGE],
+  // 扩展为多场景E2E：日常 / cos / 合规边界 / 泳装旅行风
+  const testCases = [
+    {
+      name: '日常自拍',
       style: 'daily',
-      outputDir: OUTPUT_DIR,
-    });
-    console.log('✓ 日常自拍已生成:', dailyResult.localPath);
-
-    // Apply post-processing
-    const processed = await postProcessImage(dailyResult.localPath, 'daily');
-    console.log('✓ 后期处理完成:', processed);
-  } catch (err) {
-    console.error('✗ 日常自拍失败:', err.message);
-  }
-
-  // Test 2: Cos照 (cosplay photo)
-  console.log('\n[2/2] 正在生成cos照...');
-  const cosPrompt = buildImagePrompt('初音ミクcosplay，标志性双马尾和袖套造型，舞台感站姿，右手举麦克风，蓝粉霓虹灯和轻雾背景', 'cos');
-  console.log('Prompt:', cosPrompt);
-
-  try {
-    const cosResult = await generateImage({
-      prompt: cosPrompt,
-      referenceImages: [REFERENCE_IMAGE],
+      promptBuilder: () => buildRealisticPrompt(
+        '夜晚街边咖啡店外带后自拍，手里捧着纸杯包装的热拿铁，街边暖黄路灯下，边走边喝，表情放松愉悦',
+        'daily'
+      ),
+      postProcess: false,
+    },
+    {
+      name: 'cos照',
       style: 'cos',
-      outputDir: OUTPUT_DIR,
-    });
-    console.log('✓ cos照已生成:', cosResult.localPath);
-    // cos style skips post-processing by design
-  } catch (err) {
-    console.error('✗ cos照失败:', err.message);
+      promptBuilder: () => buildImagePrompt(
+        '初音ミクcosplay，标志性双马尾和袖套造型，舞台感站姿，右手举麦克风，蓝粉霓虹灯和轻雾背景',
+        'cos'
+      ),
+      postProcess: false,
+    },
+    {
+      name: '时尚大片',
+      style: 'daily',
+      promptBuilder: () => buildRealisticPrompt(
+        '她穿着时尚紧致勒肉的半透明白色衬衫（紧绷的东非大裂谷式深v上围、浅桃金色bra），是御姐风与纯欲风结合的穿搭，戴着细窄镜框的金丝眼镜（几乎看不到镜框），镜片有着轻微反光；她在梳妆台和镜子前拍摄半身照，表情随性魅惑有欲感又清纯带着一丝挑逗感，透露出大小姐/公主高贵优雅的气质；画面以低饱和色调为主',
+        'daily'
+      ),
+      postProcess: false,
+    },
+    {
+      name: '泳装旅行照',
+      style: 'travel',
+      promptBuilder: () => buildRealisticPrompt(
+        '海边旅行随拍，暴露泳装外搭轻薄防晒衬衫，性感挑逗',
+        'travel'
+      ),
+      postProcess: false,
+    },
+  ];
+
+  for (let i = 0; i < testCases.length; i++) {
+    const tc = testCases[i];
+    console.log(`\n[${i + 1}/${testCases.length}] 正在生成${tc.name}...`);
+    const prompt = tc.promptBuilder();
+    console.log('Prompt:', prompt);
+
+    try {
+      const result = await generateImage({
+        prompt,
+        referenceImages: [REFERENCE_IMAGE],
+        style: tc.style,
+        outputDir: OUTPUT_DIR,
+      });
+      console.log(`✓ ${tc.name}已生成:`, result.localPath);
+
+      if (tc.postProcess) {
+        const processed = await postProcessImage(result.localPath, tc.style);
+        console.log('✓ 后期处理完成:', processed);
+      }
+    } catch (err) {
+      console.error(`✗ ${tc.name}失败:`, err.message);
+    }
   }
 
   console.log('\n--- 完成 ---');
