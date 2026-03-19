@@ -169,6 +169,16 @@ describe('extractJSON', () => {
     expect(() => extractJSON('{invalid json}')).toThrow();
   });
 
+  it('repairs missing comma between properties', () => {
+    const raw = '{"wantToShoot": true\n"sceneDescription": "窗边光线很好"}';
+    expect(extractJSON(raw)).toEqual({ wantToShoot: true, sceneDescription: '窗边光线很好' });
+  });
+
+  it('repairs trailing commas and raw control chars inside string', () => {
+    const raw = '{"reason":"line1\nline2\tOK", "shots": [1,2,],}';
+    expect(extractJSON(raw)).toEqual({ reason: 'line1\nline2\tOK', shots: [1, 2] });
+  });
+
   it('handles unclosed think then JSON', () => {
     // A closed think block, then JSON, then an unclosed think block
     const raw = '<think>ok</think>{"data":true}<think>oops truncated';
@@ -355,6 +365,12 @@ describe('callLLMJSON', () => {
     mockFetchOk('{"count":42,"items":["a","b"]}');
     const result = await callLLMJSON<{ count: number; items: string[] }>('test');
     expect(result).toEqual({ count: 42, items: ['a', 'b'] });
+  });
+
+  it('repairs malformed JSON in response before parsing', async () => {
+    mockFetchOk('{"wantToShoot": true\n"sceneDescription": "窗边自然光"}');
+    const result = await callLLMJSON<{ wantToShoot: boolean; sceneDescription: string }>('test');
+    expect(result).toEqual({ wantToShoot: true, sceneDescription: '窗边自然光' });
   });
 
   it('parses JSON from code block in response', async () => {
