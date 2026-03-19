@@ -29,18 +29,38 @@ export const EXA_MCP_ENDPOINT = 'https://mcp.exa.ai/mcp';
 
 /** Timeout covering full round-trip: connect + server search (~10–12s from Asia) */
 const SEARCH_TIMEOUT_MS = 25_000;
+const EXA_MIN_INTERVAL_MS = 1_500;
+let lastExaCallAtMs = 0;
 
-export async function exaWebSearch(
+export function resetExaRateLimitForTests(): void {
+  lastExaCallAtMs = 0;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(value: string | null): number {
+  const seconds = Number.parseInt(value ?? '5', 10);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 5_000;
+}
+
+async function callExa(
   query: string,
-  numResults = 5,
-  searchType: 'auto' | 'fast' | 'deep' = 'auto',
-): Promise<SearchResult[]> {
+  numResults: number,
+  searchType: 'auto' | 'fast' | 'deep',
+): Promise<Response> {
+  const waitMs = EXA_MIN_INTERVAL_MS - (Date.now() - lastExaCallAtMs);
+  if (waitMs > 0) {
+    await sleep(waitMs);
+  }
+  lastExaCallAtMs = Date.now();
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
 
-  let response: Response;
   try {
-    response = await fetch(EXA_MCP_ENDPOINT, {
+    return await fetch(EXA_MCP_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -59,6 +79,21 @@ export async function exaWebSearch(
     });
   } finally {
     clearTimeout(timer);
+  }
+}
+
+export async function exaWebSearch(
+  query: string,
+  numResults = 5,
+  searchType: 'auto' | 'fast' | 'deep' = 'auto',
+): Promise<SearchResult[]> {
+  let response = await callExa(query, numResults, searchType);
+
+  if (response.status === 429) {
+    const retryAfterMs = parseRetryAfterMs(response.headers.get('retry-after'));
+    await response.text().catch(() => '');
+    await sleep(retryAfterMs);
+    response = await callExa(query, numResults, searchType);
   }
 
   if (!response.ok) {

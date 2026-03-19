@@ -71,7 +71,7 @@ describe('collectACGHotspots', () => {
     const { collectACGHotspots } = await import('../skill/scripts/inspiration-collector');
     const result = await collectACGHotspots();
 
-    expect(exaWebSearch).toHaveBeenCalledTimes(4);
+    expect(exaWebSearch).toHaveBeenCalledTimes(4); // 4 searches: characters, china events, japan events, themes
     expect(callLLMJSON).toHaveBeenCalledTimes(1);
     expect(result.trending_characters).toContain('Furina');
     expect(result.upcoming_events).toContain('AnimeJapan 2026 东京');
