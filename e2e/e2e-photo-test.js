@@ -38,7 +38,7 @@ async function main() {
 
   // Test 1: 日常自拍 (daily selfie)
   console.log('\n[1/2] 正在生成日常自拍...');
-  const dailyPrompt = buildRealisticPrompt('在便利店买零食的自拍，举着一瓶饮料，开心的表情', 'daily');
+  const dailyPrompt = buildRealisticPrompt('夜晚街边咖啡店外带后自拍，手里捧着纸杯包装的热拿铁，街边暖黄路灯下，边走边喝，表情放松愉悦', 'daily');
   console.log('Prompt:', dailyPrompt);
 
   try {
@@ -59,7 +59,7 @@ async function main() {
 
   // Test 2: Cos照 (cosplay photo)
   console.log('\n[2/2] 正在生成cos照...');
-  const cosPrompt = buildImagePrompt('初音ミク的cosplay，双马尾造型，展示舞蹈pose，粉色和蓝色灯光的摄影棚', 'cos');
+  const cosPrompt = buildImagePrompt('初音ミクcosplay，标志性双马尾和袖套造型，舞台感站姿，右手举麦克风，蓝粉霓虹灯和轻雾背景', 'cos');
   console.log('Prompt:', cosPrompt);
 
   try {

@@ -218,6 +218,117 @@ export function stripThinkBlocks(raw: string): string {
 }
 
 /**
+ * Repair common LLM JSON formatting issues while preserving semantics.
+ * Only targets lightweight syntax issues (missing commas, trailing commas,
+ * and raw control characters inside JSON strings).
+ */
+export function repairJSON(input: string): string {
+  if (!input) return input;
+
+  // Pass 1: escape raw control chars inside string literals
+  const escapedControlChars: string[] = [];
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+
+    if (escape) {
+      escapedControlChars.push(ch);
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      escapedControlChars.push(ch);
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      escapedControlChars.push(ch);
+      continue;
+    }
+
+    if (inString && ch === '\n') {
+      escapedControlChars.push('\\n');
+      continue;
+    }
+    if (inString && ch === '\r') {
+      escapedControlChars.push('\\r');
+      continue;
+    }
+    if (inString && ch === '\t') {
+      escapedControlChars.push('\\t');
+      continue;
+    }
+
+    escapedControlChars.push(ch);
+  }
+
+  const escaped = escapedControlChars.join('');
+
+  // Pass 2: remove trailing commas before } or ] (outside string literals)
+  const noTrailingCommas: string[] = [];
+  inString = false;
+  escape = false;
+  for (let i = 0; i < escaped.length; i++) {
+    const ch = escaped[i];
+
+    if (escape) {
+      noTrailingCommas.push(ch);
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      noTrailingCommas.push(ch);
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      noTrailingCommas.push(ch);
+      continue;
+    }
+
+    if (!inString && ch === ',') {
+      let j = i + 1;
+      while (j < escaped.length && /\s/.test(escaped[j])) j++;
+      if (j < escaped.length && (escaped[j] === '}' || escaped[j] === ']')) {
+        continue;
+      }
+    }
+
+    noTrailingCommas.push(ch);
+  }
+
+  // Pass 3: add missing commas between adjacent values/properties split by newline
+  // e.g. {"a": 1\n"b": 2} -> {"a": 1,\n"b": 2}
+  return noTrailingCommas
+    .join('')
+    .replace(
+      /("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|\}|\])(\s*\n\s*)(?=")/g,
+      '$1,$2',
+    );
+}
+
+function parseJSONWithRepair<T>(candidate: string): T {
+  try {
+    return JSON.parse(candidate) as T;
+  } catch (parseErr) {
+    const repaired = repairJSON(candidate);
+    if (repaired === candidate) {
+      throw parseErr;
+    }
+
+    debugLog('JSON_REPAIR_APPLIED', repaired);
+    return JSON.parse(repaired) as T;
+  }
+}
+
+/**
  * Extract JSON from LLM response text.
  * Strips <think> tags and searches for JSON in code blocks or raw text.
  */
@@ -228,7 +339,7 @@ export function extractJSON<T>(raw: string): T {
   const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (codeBlockMatch) {
     debugLog('JSON_PARSED', codeBlockMatch[1]);
-    return JSON.parse(codeBlockMatch[1]);
+    return parseJSONWithRepair<T>(codeBlockMatch[1]);
   }
 
   // 2. Find the first balanced { ... } or [ ... ] using bracket counting
@@ -238,7 +349,7 @@ export function extractJSON<T>(raw: string): T {
     throw new Error(`Could not parse JSON from LLM response: ${raw.slice(0, 200)}`);
   }
   debugLog('JSON_PARSED', jsonStr);
-  return JSON.parse(jsonStr);
+  return parseJSONWithRepair<T>(jsonStr);
 }
 
 /**

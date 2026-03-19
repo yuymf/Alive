@@ -13,7 +13,6 @@ import { ContentStyle, ShotDescription, TravelState, DEFAULT_TRAVEL_STATE } from
 import { PATHS, readJSON } from './file-utils';
 import { now, getLocalDate, getLocalHour } from './time-utils';
 import { isSelfieType, selectReferences } from './reference-selector';
-import { postProcessImage } from './image-post-process';
 
 const MAX_REFERENCE_BYTES = 500_000; // 500KB — avoid oversized API payloads
 
@@ -519,7 +518,6 @@ export async function generateImageSet(options: GenerateSetOptions): Promise<Gen
   const { shots, style, baseReferenceDir, styleReference, aspectRatio, outputDir } = options;
   const results: GenerateImageResult[] = [];
   let failed = 0;
-  const groupSeed = Math.random() * 2 ** 32 | 0;
 
   for (const shot of shots) {
     const prompt = buildRealisticPrompt(shot.description, style);
@@ -550,8 +548,7 @@ export async function generateImageSet(options: GenerateSetOptions): Promise<Gen
         outputDir,
       });
 
-      const processedPath = await postProcessImage(result.localPath, style, groupSeed);
-      results.push({ ...result, localPath: processedPath });
+      results.push(result);
     } catch (err) {
       console.error(`Shot failed: "${shot.description}" — ${(err as Error).message}`);
       failed++;
