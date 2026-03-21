@@ -29,9 +29,12 @@ describe('mulberry32', () => {
 });
 
 describe('getProcessingParams', () => {
-  it('returns no-op params for cos style', () => {
+  it('returns subtle processing params for cos style (no longer skipped)', () => {
     const params = getProcessingParams('cos');
-    expect(params.skip).toBe(true);
+    expect(params.skip).toBe(false);
+    expect(params.noisePercent).toBeGreaterThan(0);
+    expect(params.noisePercent).toBeLessThan(1); // Very light grain
+    expect(params.blurRadius).toBe(0); // No blur — studio shots are sharp
   });
 
   it('returns daily params with noise and blur', () => {

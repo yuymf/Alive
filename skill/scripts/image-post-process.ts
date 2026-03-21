@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * image-post-process.ts
- * 对 AI 生成图片进行后处理，模拟手机拍摄质感。
+ * 对 AI 生成图片进行后处理，模拟手机/相机拍摄质感。
  * 按内容风格应用不同滤镜组合（噪点、模糊、色温、晕影）。
- * cos 风格跳过处理，保留 AI 渲染原图。
+ * 所有风格都会应用处理——cos 使用极轻参数保留质感，travel_street 用强胶片感。
  */
 
 import * as path from 'path';
@@ -40,6 +40,15 @@ interface StylePreset {
 
 // 各风格的基础滤镜参数
 const STYLE_PRESETS: Record<string, StylePreset> = {
+  cos: {
+    // Previously skipped — now apply very subtle realism (studio photo still has minor imperfections)
+    noisePercent: 0.3,        // Very light grain — studio cameras still have some noise
+    blurRadius: 0,            // No blur — studio shots are sharp
+    contrastDelta: 0.02,      // Tiny contrast boost — studio lighting is controlled
+    saturationDelta: 0,
+    colorTempShift: 2,        // Barely noticeable warm shift — studio lights are slightly warm
+    vignetteStrength: 0.05,   // Very subtle lens vignetting
+  },
   daily: {
     noisePercent: 1.5,
     blurRadius: 0.5,
@@ -64,6 +73,30 @@ const STYLE_PRESETS: Record<string, StylePreset> = {
     colorTempShift: 3,
     vignetteStrength: 0.15,
   },
+  travel_portrait: {
+    noisePercent: 0.4,
+    blurRadius: 0,
+    contrastDelta: 0.03,
+    saturationDelta: 0.08,
+    colorTempShift: 4,
+    vignetteStrength: 0.10,
+  },
+  travel_food: {
+    noisePercent: 0.3,
+    blurRadius: 0,
+    contrastDelta: 0.05,
+    saturationDelta: 0.15,     // Extra saturation for food colors
+    colorTempShift: 6,         // Warm restaurant lighting
+    vignetteStrength: 0.08,
+  },
+  travel_street: {
+    noisePercent: 2.0,          // Higher grain — film simulation (Portra 400 feel)
+    blurRadius: 0,
+    contrastDelta: -0.08,       // Slightly lower contrast — film characteristic
+    saturationDelta: -0.10,     // Desaturated — classic chrome / film look
+    colorTempShift: -3,         // Cool shift for teal-orange color grade
+    vignetteStrength: 0.20,     // Stronger vignetting — vintage lens feel
+  },
 };
 
 /**
@@ -86,8 +119,7 @@ export function mulberry32(seed: number): () => number {
  * @param groupSeed 可选种子，使同组图片参数一致（±3% 变化）；不传则 ±10% 随机变化
  */
 export function getProcessingParams(style: ContentStyle, groupSeed?: number): ProcessingParams {
-  if (style === 'cos') return { ...EMPTY_PARAMS };
-
+  // All styles now get some processing — even cos gets subtle realism treatment
   const preset = STYLE_PRESETS[style] ?? STYLE_PRESETS.daily;
   const variationRange = groupSeed !== undefined ? 0.03 : 0.10;
   const rng = groupSeed !== undefined ? mulberry32(groupSeed) : () => Math.random();
@@ -109,12 +141,12 @@ export function getProcessingParams(style: ContentStyle, groupSeed?: number): Pr
 }
 
 /**
- * 对图片应用后处理滤镜，模拟手机拍摄效果。
- * cos 风格直接返回原路径，不做任何修改。
+ * 对图片应用后处理滤镜，模拟真实拍摄效果。
+ * 所有风格都会处理——cos 极轻、travel_street 胶片风、daily 手机感。
  * @param imagePath 输入图片路径
  * @param style 内容风格
  * @param groupSeed 同组图片统一种子
- * @returns 输出图片路径（原路径或新 _processed 路径）
+ * @returns 输出图片路径（新 _processed 路径）
  */
 export async function postProcessImage(
   imagePath: string,
