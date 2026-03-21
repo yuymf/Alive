@@ -227,7 +227,10 @@ async function configure() {
 
   log('Current key status:');
   const keys = [
+    { key: 'IMAGE_ENTRY', label: 'Image provider (FAI or AIHUBMIX)' },
     { key: 'AIHUBMIX_API_KEY', label: 'AIHubMix (image gen)' },
+    { key: 'FAL_KEY', label: 'fal.ai API key' },
+    { key: 'FAL_MODEL', label: 'fal.ai model path (default: xai/grok-imagine-image/edit)' },
     { key: 'IMGURL_TOKEN', label: 'ImgURL (image hosting)' },
     { key: 'INSTAGRAM_USERNAME', label: 'Instagram username' },
     { key: 'INSTAGRAM_PASSWORD', label: 'Instagram password' },
@@ -349,7 +352,9 @@ async function reinstall() {
 
   // Reinstall using existing env (no interactive prompts for API keys)
   const {
+    IMAGE_ENTRY: imageEntry = '',
     AIHUBMIX_API_KEY: aihubmixKey = '',
+    FAL_KEY: falKey = '',
     IMGURL_TOKEN: imgUrlToken = '',
     INSTAGRAM_USERNAME: igUsername = '',
     INSTAGRAM_PASSWORD: igPassword = '',
@@ -632,9 +637,14 @@ async function main() {
 
   log('Step 2/10: API key setup...');
   console.log('  Minase needs image generation to create cos photos.');
-  console.log('  AIHubMix (AIHUBMIX_API_KEY) — https://aihubmix.com\n');
+  console.log('  Choose image provider: AIHUBMIX (default) or FAI (fal.ai)');
+  console.log('  AIHubMix — https://aihubmix.com');
+  console.log('  fal.ai   — https://fal.ai\n');
 
+  const imageEntry = await ask(rl, '  IMAGE_ENTRY (FAI or AIHUBMIX, press Enter for AIHUBMIX): ');
   const aihubmixKey = await ask(rl, '  AIHUBMIX_API_KEY (press Enter to skip): ');
+  const falKey = await ask(rl, '  FAL_KEY (fal.ai API key, press Enter to skip): ');
+  const falModel = await ask(rl, '  FAL_MODEL (fal.ai queue model path, default: xai/grok-imagine-image/edit): ');
   console.log('\n  Image hosting (ImgURL — https://www.imgurl.org):');
   const imgUrlToken = await ask(rl, '  IMGURL_TOKEN (press Enter to skip): ');
   console.log('\n  Instagram login (via instagrapi, uses account credentials):');
@@ -785,7 +795,11 @@ async function main() {
   config.skills.entries[SKILL_NAME] = {
     enabled: true,
     env: {
+      ...(imageEntry && { IMAGE_ENTRY: imageEntry.trim().toUpperCase() }),
       ...(aihubmixKey && { AIHUBMIX_API_KEY: aihubmixKey }),
+      ...(aihubmixModel && { AIHUBMIX_MODEL: aihubmixModel.trim() }),
+      ...(falKey && { FAL_KEY: falKey }),
+      ...(falModel && { FAL_MODEL: falModel.trim().replace(/^\/+/, '') }),
       ...(imgUrlToken && { IMGURL_TOKEN: imgUrlToken }),
       ...(igUsername && { INSTAGRAM_USERNAME: igUsername }),
       ...(igPassword && { INSTAGRAM_PASSWORD: igPassword }),
@@ -1053,9 +1067,17 @@ async function main() {
   console.log('  - Just chat with her naturally. She will remember you.');
   console.log('  - Ask her to post to Instagram when she is excited about something.');
   console.log('  - Her memory lives at: ' + MEMORY_DIR);
-  if (!aihubmixKey) {
-    warn('No image generation key provided — Instagram posts will be text-only until you add one.');
-    warn('Run `minase --configure` to add keys later.');
+  const effectiveEntry = (imageEntry || '').trim().toUpperCase();
+  if (effectiveEntry === 'FAI' || effectiveEntry === 'FAL') {
+    if (!falKey) {
+      warn('IMAGE_ENTRY=FAI but no FAL_KEY provided — image generation will fail.');
+      warn('Run `minase --configure` to add FAL_KEY later.');
+    }
+  } else {
+    if (!aihubmixKey) {
+      warn('No image generation key provided — Instagram posts will be text-only until you add one.');
+      warn('Run `minase --configure` to add keys later.');
+    }
   }
   if (!igUsername || !igPassword) {
     warn('No Instagram credentials provided — posting disabled until you add them.');

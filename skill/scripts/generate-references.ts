@@ -2,7 +2,7 @@
 /**
  * generate-references.ts
  * Generates multi-angle reference images (front, half-body, full-body, left-profile)
- * from the single minase-reference.png using AIHubMix Gemini.
+ * from the single minase-reference.png using the configured image provider (AIHubMix or fal.ai).
  *
  * Idempotent: skips files that already exist.
  * Usage: node dist/generate-references.js
@@ -11,7 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PATHS } from './file-utils';
-import { callAIHubMix, loadReferenceBase64 } from './generate-image';
+import { callImageProvider, getImageEntry, loadReferenceBase64 } from './generate-image';
 
 interface ReferenceSpec {
   filename: string;
@@ -85,9 +85,10 @@ async function generateReferences(): Promise<void> {
       continue;
     }
 
-    console.log(`[gen] ${spec.filename}...`);
+    const entry = getImageEntry();
+    console.log(`[gen] ${spec.filename} (via ${entry === 'FAI' ? 'fal.ai' : 'AIHubMix'})...`);
     try {
-      const { imageData } = await callAIHubMix(
+      const { imageData } = await callImageProvider(
         spec.prompt,
         [sourceBase64],
         spec.aspectRatio,

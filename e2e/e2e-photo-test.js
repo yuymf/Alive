@@ -1,23 +1,52 @@
 #!/usr/bin/env node
 /**
- * E2E photo generation test — generates one selfie and one cos photo.
+ * E2E photo generation test — generates multi-scenario test images.
  * Usage: AIHUBMIX_API_KEY=<key> node e2e-photo-test.js
+ *   or:  IMAGE_ENTRY=FAI FAL_KEY=<key> node e2e-photo-test.js
+ *
+ * Automatically loads all env keys from ~/.openclaw/openclaw.json
+ * and prints the active provider/model configuration before running.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-// Load API key from openclaw config if not in env
-if (!process.env.AIHUBMIX_API_KEY) {
-  const cfgPath = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
-  if (fs.existsSync(cfgPath)) {
+// ── All env keys that can be loaded from openclaw config ──
+const OPENCLAW_ENV_KEYS = [
+  'IMAGE_ENTRY',
+  'LLM_API_KEY',
+  'LLM_API_BASE',
+  'LLM_MODEL',
+  'AIHUBMIX_API_KEY',
+  'AIHUBMIX_MODEL',
+  'FAL_KEY',
+  'FAL_MODEL',
+  'IMGURL_TOKEN',
+  'INSTAGRAM_USERNAME',
+  'INSTAGRAM_PASSWORD',
+  'INSTAGRAM_TOTP_SECRET',
+  'XHS_SKILLS_DIR',
+];
+
+// ── Load env from openclaw config (only fill in if not already in process.env) ──
+const cfgPath = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
+let openclawLoaded = false;
+if (fs.existsSync(cfgPath)) {
+  try {
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
     const env = cfg?.skills?.entries?.minase?.env ?? {};
-    if (env.AIHUBMIX_API_KEY) process.env.AIHUBMIX_API_KEY = env.AIHUBMIX_API_KEY;
+    for (const key of OPENCLAW_ENV_KEYS) {
+      if (env[key]) {
+        process.env[key] = env[key];
+      }
+    }
+    openclawLoaded = true;
+  } catch (err) {
+    console.error('⚠ 读取 openclaw.json 失败:', err.message);
   }
 }
 
-const { generateImage, buildRealisticPrompt, buildImagePrompt } = require('../dist/generate-image');
+const { generateImage, buildRealisticPrompt, buildImagePrompt, getImageEntry, getAIHubMixModel, getFalModel } = require('../dist/generate-image');
 const { postProcessImage } = require('../dist/image-post-process');
 
 const REFERENCE_IMAGE = path.join(
@@ -25,8 +54,38 @@ const REFERENCE_IMAGE = path.join(
 );
 const OUTPUT_DIR = path.join(__dirname, 'e2e-output');
 
+/**
+ * Print the current image generation configuration to the terminal.
+ */
+function printConfig() {
+  const entry = getImageEntry();
+  const providerLabel = entry === 'FAI' ? 'fal.ai' : 'AIHubMix';
+  const model = entry === 'FAI' ? getFalModel() : getAIHubMixModel();
+
+  console.log('╔══════════════════════════════════════════════════════╗');
+  console.log('║           E2E Photo Generation Test                 ║');
+  console.log('╠══════════════════════════════════════════════════════╣');
+  console.log(`║  Config source : ${openclawLoaded ? 'openclaw.json ✓' : 'env vars only'}`);
+  console.log(`║  Provider      : ${providerLabel} (IMAGE_ENTRY=${entry})`);
+  console.log(`║  Model         : ${model}`);
+  if (entry === 'FAI') {
+    console.log(`║  Endpoint      : https://fal.run/${model}`);
+    console.log(`║  FAL_KEY       : ${process.env.FAL_KEY ? '***' + process.env.FAL_KEY.slice(-6) : '(not set ✗)'}`);
+  } else {
+    console.log(`║  Endpoint      : https://aihubmix.com/v1/chat/completions`);
+    console.log(`║  AIHUBMIX_KEY  : ${process.env.AIHUBMIX_API_KEY ? '***' + process.env.AIHUBMIX_API_KEY.slice(-6) : '(not set ✗)'}`);
+  }
+  console.log(`║  LLM_MODEL     : ${process.env.LLM_MODEL || '(not set)'}`);
+  console.log(`║  IMGURL_TOKEN  : ${process.env.IMGURL_TOKEN ? '***' + process.env.IMGURL_TOKEN.slice(-6) : '(not set)'}`);
+  console.log('╚══════════════════════════════════════════════════════╝');
+}
+
 async function main() {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+  // Print configuration summary
+  printConfig();
+  console.log('');
 
   if (!fs.existsSync(REFERENCE_IMAGE)) {
     console.error('参考图不存在:', REFERENCE_IMAGE);
@@ -76,9 +135,18 @@ async function main() {
     },
   ];
 
+  const entry = getImageEntry();
+  const providerLabel = entry === 'FAI' ? 'fal.ai' : 'AIHubMix';
+  const activeModel = entry === 'FAI' ? getFalModel() : getAIHubMixModel();
+  let successCount = 0;
+  let failCount = 0;
+
   for (let i = 0; i < testCases.length; i++) {
     const tc = testCases[i];
-    console.log(`\n[${i + 1}/${testCases.length}] 正在生成${tc.name}...`);
+    const startTime = Date.now();
+    console.log(`\n┌─ [${i + 1}/${testCases.length}] ${tc.name}`);
+    console.log(`AIHUBMIX key: ***${process.env.AIHUBMIX_API_KEY?.slice(-6) || 'not set'}`);
+    console.log(`│  Provider: ${providerLabel}  Model: ${activeModel}`);
     const prompt = tc.promptBuilder();
     console.log('Prompt:', prompt);
 
@@ -89,21 +157,30 @@ async function main() {
         style: tc.style,
         outputDir: OUTPUT_DIR,
       });
-      console.log(`✓ ${tc.name}已生成:`, result.localPath);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      const fileSize = Math.round(fs.statSync(result.localPath).size / 1024);
+      console.log(`│  ✓ 已生成: ${path.basename(result.localPath)} (${fileSize}KB, ${elapsed}s)`);
+      successCount++;
 
       if (tc.postProcess) {
         const processed = await postProcessImage(result.localPath, tc.style);
-        console.log('✓ 后期处理完成:', processed);
+        console.log(`│  ✓ 后期处理: ${path.basename(processed)}`);
       }
     } catch (err) {
-      console.error(`✗ ${tc.name}失败:`, err.message);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.error(`│  ✗ 失败 (${elapsed}s): ${err.message}`);
+      failCount++;
     }
+    console.log('└─');
   }
 
-  console.log('\n--- 完成 ---');
-  console.log('查看输出:', OUTPUT_DIR);
+  console.log('\n══════════════ 结果汇总 ══════════════');
+  console.log(`Provider: ${providerLabel}  Model: ${activeModel}`);
+  console.log(`成功: ${successCount}  失败: ${failCount}  总计: ${testCases.length}`);
+  console.log('输出目录:', OUTPUT_DIR);
   const files = fs.readdirSync(OUTPUT_DIR).filter(f => f.endsWith('.png'));
-  console.log('生成文件:', files.join(', '));
+  console.log('生成文件:', files.length > 0 ? files.join(', ') : '(无)');
+  console.log('══════════════════════════════════════');
 }
 
 main().catch(err => {

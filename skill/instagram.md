@@ -23,7 +23,7 @@
 
 ## 图片生成
 
-使用 `aihubmix-gemini-image` skill（优先）或 AIHubMix OpenAI 兼容接口。
+使用 `generate-image.ts` 统一 provider（AIHubMix 或 fal.ai，由 `IMAGE_ENTRY` env 选择）。
 
 **参考图片:** `~/.openclaw/skills/minase/assets/minase-reference.png`
 
@@ -149,4 +149,6 @@ node ~/.openclaw/skills/minase/scripts/post-instagram.js --check-stats {media_pk
 
 ### 图片生成说明
 
-**已由 `generate-image.ts` 替代 `aihubmix-gemini-image` skill 调用。** 直接使用 AIHubMix OpenAI 兼容接口。
+**已由 `generate-image.ts` 统一调用。** 根据 `IMAGE_ENTRY` 环境变量选择服务商：
+- `IMAGE_ENTRY=AIHUBMIX`（默认）：使用 AIHubMix OpenAI 兼容接口
+- `IMAGE_ENTRY=FAI`：使用 fal.ai Grok Imagine Image Edit API

@@ -36,6 +36,7 @@ global.fetch = vi.fn().mockResolvedValue({
   text: () => Promise.resolve(''),
 }) as any;
 
+process.env.IMAGE_ENTRY = 'AIHUBMIX';
 process.env.AIHUBMIX_API_KEY = 'test-key';
 
 import { generateImageSet } from '../skill/scripts/generate-image';

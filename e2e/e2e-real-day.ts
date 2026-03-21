@@ -131,12 +131,19 @@ function assertInstagramCredentials(): void {
 function buildEnvStatus(): Record<string, boolean> {
   return {
     MINASE_REAL_E2E: process.env.MINASE_REAL_E2E === '1',
+    IMAGE_ENTRY: Boolean(process.env.IMAGE_ENTRY),
+    LLM_API_KEY: Boolean(process.env.LLM_API_KEY),
+    LLM_API_BASE: Boolean(process.env.LLM_API_BASE),
+    LLM_MODEL: Boolean(process.env.LLM_MODEL),
+    AIHUBMIX_API_KEY: Boolean(process.env.AIHUBMIX_API_KEY),
+    AIHUBMIX_MODEL: Boolean(process.env.AIHUBMIX_MODEL),
+    FAL_KEY: Boolean(process.env.FAL_KEY),
+    FAL_MODEL: Boolean(process.env.FAL_MODEL),
+    IMGURL_TOKEN: Boolean(process.env.IMGURL_TOKEN),
     INSTAGRAM_USERNAME: Boolean(process.env.INSTAGRAM_USERNAME),
     INSTAGRAM_PASSWORD: Boolean(process.env.INSTAGRAM_PASSWORD),
     INSTAGRAM_TOTP_SECRET: Boolean(process.env.INSTAGRAM_TOTP_SECRET),
-    LLM_API_KEY: Boolean(process.env.LLM_API_KEY),
-    AIHUBMIX_API_KEY: Boolean(process.env.AIHUBMIX_API_KEY),
-    IMGURL_TOKEN: Boolean(process.env.IMGURL_TOKEN),
+    XHS_SKILLS_DIR: Boolean(process.env.XHS_SKILLS_DIR),
   };
 }
 
