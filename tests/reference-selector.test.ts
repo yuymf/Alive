@@ -56,9 +56,9 @@ describe('selectReferences', () => {
     expect(refs).toEqual(['full-body.png']);
   });
 
-  it('returns front + half-body for cos without specific angle cues', () => {
+  it('returns front + half-body + full-body for cos without specific angle cues', () => {
     const refs = selectReferences('cos', '穿着制服在工作室');
-    expect(refs).toEqual(['front.png', 'half-body.png']);
+    expect(refs).toEqual(['front.png', 'half-body.png', 'full-body.png']);
   });
 
   it('returns filenames only (not full paths)', () => {

@@ -421,7 +421,22 @@ async function checkQuality(generatedImagePath: string, referenceImagePath: stri
       {
         role: 'user',
         content: [
-          { type: 'text', text: '对比这两张图。评估：1. 人脸相似度（五官、轮廓是否像同一人）2. 照片自然度（是否像真实照片而非AI生成）3. 表情生动度（表情是否有情绪和故事感，不是呆板的正面微笑）4. 整体质量（清晰度、构图、光线、场景合理性）。只返回一个1-10的综合评分数字，不要其他文字。5分以上=可用。表情呆板或场景明显不真实的扣2-3分。' },
+          { type: 'text', text: `对比这两张图（第一张=参考图，第二张=生成图）。按以下6个维度严格评估：
+
+1. **人脸相似度**（权重最高）：五官骨骼结构、眼睛形状大小、鼻梁轮廓、唇形、下颌线是否像同一个人？不像同一人直接扣4分。
+2. **姿态自然度**：身体有没有自然的S/C曲线？还是僵直站立？肩线是否自然不对称？手指数量正确吗（每只手5根）？动作有没有被捕捉的瞬间感？
+3. **表情生动度**：表情是否有情绪和故事感？是否有微表情（眉毛、嘴角、眼神细节）？呆板正面微笑扣3分。
+4. **去AI感**：是否像真实照片？检查：皮肤是否有真实毛孔纹理（vs 过度光滑塑料感）？有没有适当的摄影瑕疵（轻微噪点、焦平面偏移、自然色散）？完美无瑕的AI渲染感扣2分。
+5. **服装面料质感**：布料有没有真实褶皱、重力感、织物纹理？还是像画上去的平面贴图？
+6. **整体构图质量**：清晰度、光线合理性、景深过渡、背景与主体的关系。
+
+评分标准：
+- 8-10分=专业摄影级别，可直接发Instagram
+- 6-7分=合格，小问题不影响整体
+- 4-5分=勉强可用，有明显问题
+- 1-3分=不可用，需要重新生成
+
+只返回一个1-10的综合评分数字，不要其他文字。` },
           { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${referenceBase64}` } },
           { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${generatedBase64}` } },
         ],
@@ -543,7 +558,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
           return { localPath, textResponse, timestamp };
         }
 
-        const correctionPrompt = `${prompt}\n请特别注意：1. 人物面部特征与参考图完全一致（五官轮廓、发型发色、体型比例）。2. 表情要生动有情绪——不要呆板的正面微笑，要有眼神的张力和情绪表达（慵懒/挑逗/清纯/得意/随性中的一种）。3. 场景光线要符合实际环境（室内用自然窗光或灯光，不要凭空出现影棚光）。`;
+        const correctionPrompt = `${prompt}\n\n[CRITICAL CORRECTIONS — previous attempt failed quality check]\n1. FACE IDENTITY: The face MUST match the reference image exactly — same bone structure, eye shape, nose profile, lip contour, jawline. This is the #1 priority.\n2. EXPRESSION: Must have emotional depth — NO stiff front-facing smile. Use: dreamy half-closed eyes / smug raised brow / ambiguous smirk / playful side-glance. Micro-expressions matter.\n3. POSE DYNAMICS: Body must have natural S-curve, NOT straight vertical. Shoulders asymmetric, weight on one hip, at least one arm bent naturally. Each hand must have exactly 5 fingers.\n4. ANTI-AI: Add photographic imperfections — subtle noise grain, slight focus plane shift, natural lens vignetting, micro motion blur on hair tips. Skin must show real pore texture, NOT smooth plastic.\n5. LIGHTING: Must match the actual environment (window light for indoor, golden hour for outdoor). No random studio lighting in casual scenes.\n6. FABRIC: Clothing must show real wrinkles, gravity draping, and weave texture — not flat painted-on texture.`;
 
         // Re-generate
         console.log(`Quality score ${score} < ${qualityThreshold}, retrying (${qAttempt + 1}/${maxQualityRetries})...`);
