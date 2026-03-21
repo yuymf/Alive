@@ -123,10 +123,14 @@ export function initSandbox(options: InitSandboxOptions = {}): void {
 }
 
 export interface ApiKeys {
+  IMAGE_ENTRY?: string;
   LLM_API_KEY?: string;
   LLM_API_BASE?: string;
   LLM_MODEL?: string;
   AIHUBMIX_API_KEY?: string;
+  AIHUBMIX_MODEL?: string;
+  FAL_KEY?: string;
+  FAL_MODEL?: string;
   IMGURL_TOKEN?: string;
   INSTAGRAM_USERNAME?: string;
   INSTAGRAM_PASSWORD?: string;
@@ -135,10 +139,14 @@ export interface ApiKeys {
 }
 
 const OPENCLAW_ENV_KEYS: Array<keyof ApiKeys> = [
+  'IMAGE_ENTRY',
   'LLM_API_KEY',
   'LLM_API_BASE',
   'LLM_MODEL',
   'AIHUBMIX_API_KEY',
+  'AIHUBMIX_MODEL',
+  'FAL_KEY',
+  'FAL_MODEL',
   'IMGURL_TOKEN',
   'INSTAGRAM_USERNAME',
   'INSTAGRAM_PASSWORD',

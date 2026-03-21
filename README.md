@@ -108,9 +108,15 @@ node ~/.openclaw/skills/minase/scripts/fetch-trends.js
 
 | 变量 | 用途 | 必须 |
 |------|------|------|
-| `AIHUBMIX_API_KEY` | AI 图片生成（用于 cos 照片） | 建议 |
+| `IMAGE_ENTRY` | 选择图片生成服务商：`AIHUBMIX`（默认）或 `FAI`（fal.ai） | 可选 |
+| `AIHUBMIX_API_KEY` | AIHubMix API Key（当 `IMAGE_ENTRY=AIHUBMIX` 时必须） | 条件 |
+| `AIHUBMIX_MODEL` | AIHubMix 模型名（默认 `gemini-3.1-flash-image-preview`） | 可选 |
+| `FAL_KEY` | fal.ai API Key（当 `IMAGE_ENTRY=FAI` 时必须） | 条件 |
+| `FAL_MODEL` | fal.ai 队列模型路径（默认 `xai/grok-imagine-image/edit`） | 可选 |
 
-- **获取方式**: 注册 [AIHubMix](https://aihubmix.com)，在控制台获取 API Key
+- **IMAGE_ENTRY**: 不设置或设为 `AIHUBMIX` 时走 AIHubMix；设为 `FAI`（或 `FAL`）时走 fal.ai
+- **AIHubMix**: 注册 [AIHubMix](https://aihubmix.com)，在控制台获取 API Key
+- **fal.ai**: 注册 [fal.ai](https://fal.ai)，在 Dashboard 获取 API Key
 - **作用**: 水瀬用它来生成 cosplay 照片。不配置则 Instagram 发帖只能纯文本
 
 ### 图片托管（可选）

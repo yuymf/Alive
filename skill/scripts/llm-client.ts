@@ -41,7 +41,7 @@ function appendLlmLog(entry: Record<string, unknown>): void {
 }
 
 const DEFAULT_API_BASE = 'https://aihubmix.com/v1';
-const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
+const DEFAULT_MODEL = 'minimax-m2.5';
 const MAX_RETRY_TOKENS = 32768;
 
 const isDebug = () => process.env.LLM_DEBUG === '1' || process.env.LLM_DEBUG === 'true';

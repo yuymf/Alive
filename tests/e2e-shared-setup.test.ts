@@ -16,11 +16,19 @@ describe('e2e shared setup env loading', () => {
     }
 
     for (const key of [
+      'IMAGE_ENTRY',
+      'LLM_API_KEY',
+      'LLM_API_BASE',
+      'LLM_MODEL',
+      'AIHUBMIX_API_KEY',
+      'AIHUBMIX_MODEL',
+      'FAL_KEY',
+      'FAL_MODEL',
+      'IMGURL_TOKEN',
       'INSTAGRAM_USERNAME',
       'INSTAGRAM_PASSWORD',
       'INSTAGRAM_TOTP_SECRET',
       'XHS_SKILLS_DIR',
-      'LLM_API_KEY',
     ]) {
       delete process.env[key];
     }
@@ -44,11 +52,19 @@ describe('e2e shared setup env loading', () => {
           entries: {
             minase: {
               env: {
+                IMAGE_ENTRY: 'FAI',
+                LLM_API_KEY: 'llm-key',
+                LLM_API_BASE: 'https://test-llm-base.example.com',
+                LLM_MODEL: 'test-llm-model',
+                AIHUBMIX_API_KEY: 'test-aihubmix-key',
+                AIHUBMIX_MODEL: 'gemini-3.1-flash-image-preview',
+                FAL_KEY: 'test-fal-key',
+                FAL_MODEL: 'xai/grok-imagine-image/edit',
+                IMGURL_TOKEN: 'test-imgurl-token',
                 INSTAGRAM_USERNAME: 'minase_test_user',
                 INSTAGRAM_PASSWORD: 'minase_test_password',
                 INSTAGRAM_TOTP_SECRET: 'minase_test_totp',
                 XHS_SKILLS_DIR: '/tmp/xhs-skills',
-                LLM_API_KEY: 'llm-key',
               },
             },
           },
@@ -58,11 +74,19 @@ describe('e2e shared setup env loading', () => {
 
     const keys = loadApiKeys() as Record<string, string | undefined>;
 
+    expect(keys.IMAGE_ENTRY).toBe('FAI');
+    expect(keys.LLM_API_KEY).toBe('llm-key');
+    expect(keys.LLM_API_BASE).toBe('https://test-llm-base.example.com');
+    expect(keys.LLM_MODEL).toBe('test-llm-model');
+    expect(keys.AIHUBMIX_API_KEY).toBe('test-aihubmix-key');
+    expect(keys.AIHUBMIX_MODEL).toBe('gemini-3.1-flash-image-preview');
+    expect(keys.FAL_KEY).toBe('test-fal-key');
+    expect(keys.FAL_MODEL).toBe('xai/grok-imagine-image/edit');
+    expect(keys.IMGURL_TOKEN).toBe('test-imgurl-token');
     expect(keys.INSTAGRAM_USERNAME).toBe('minase_test_user');
     expect(keys.INSTAGRAM_PASSWORD).toBe('minase_test_password');
     expect(keys.INSTAGRAM_TOTP_SECRET).toBe('minase_test_totp');
     expect(keys.XHS_SKILLS_DIR).toBe('/tmp/xhs-skills');
-    expect(keys.LLM_API_KEY).toBe('llm-key');
   });
 
   it('applies loaded live-run env keys to process.env', () => {

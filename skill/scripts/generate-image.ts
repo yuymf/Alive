@@ -1,37 +1,77 @@
 #!/usr/bin/env node
 /**
  * generate-image.ts
- * "Takes photos" by calling AIHubMix Gemini API with reference images.
+ * "Takes photos" by calling AIHubMix or fal.ai API with reference images.
  * Supports multi-reference with fallback chain and realistic prompt hints.
+ * Use IMAGE_ENTRY env to select provider: "FAI" for fal.ai, "AIHUBMIX" (default) for AIHubMix.
  * Minase doesn't know this is AI — she's just taking photos.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { ContentStyle, ShotDescription, TravelState, DEFAULT_TRAVEL_STATE } from './types';
-import { PATHS, readJSON } from './file-utils';
+import { ContentStyle, ShotDescription } from './types';
+import { PATHS } from './file-utils';
+import {
+  buildRealisticPromptForProvider,
+  buildPromptForProvider,
+  CAMERA_ANCHORS as _CAMERA_ANCHORS,
+  NEGATIVE_CONSTRAINTS as _NEGATIVE_CONSTRAINTS,
+  type ImageEntry,
+} from './prompt-builder';
 import { now, getLocalDate, getLocalHour } from './time-utils';
 import { isSelfieType, selectReferences } from './reference-selector';
 
 const MAX_REFERENCE_BYTES = 500_000; // 500KB — avoid oversized API payloads
 
-// Per-style camera/lens anchors — Google recommends specifying camera model for photorealism
-const CAMERA_ANCHORS: Record<ContentStyle, string> = {
-  cos: 'Canon EOS R5, 85mm f/1.4, shallow depth of field',
-  daily: 'iPhone 15 Pro, natural lighting, casual framing',
-  behind_scenes: 'iPhone handheld, ambient room lighting, slightly messy',
-  travel: 'iPhone 15 Pro wide angle, golden hour, travel snapshot feel',
-  travel_portrait: 'iPhone 15 Pro wide angle, golden hour, natural travel snapshot, subject in foreground with landmark',
-  travel_food:     'iPhone overhead flat lay, warm color grading, food details sharp, bokeh background',
-  travel_street:   'Fujifilm X100V 35mm, natural light, film grain, candid street moment',
-};
+// Per-style camera/lens anchors — now imported from prompt-builder.ts
+// Re-exported for backward compatibility
+const CAMERA_ANCHORS = _CAMERA_ANCHORS;
 
-const NEGATIVE_CONSTRAINTS = '不要卡通/二次元风格；不要多余手指或肢体异常；不要文字水印';
+const NEGATIVE_CONSTRAINTS = _NEGATIVE_CONSTRAINTS;
 
 const AIHUBMIX_BASE_URL = 'https://aihubmix.com/v1/chat/completions';
-const AIHUBMIX_MODEL = 'gemini-3.1-flash-image-preview';
+const AIHUBMIX_DEFAULT_MODEL = 'gemini-3.1-flash-image-preview';
 const AIHUBMIX_QUALITY_MODEL = 'gemini-2.0-flash';
+
+/**
+ * Resolve AIHubMix model from AIHUBMIX_MODEL env.
+ */
+export function getAIHubMixModel(): string {
+  const raw = (process.env.AIHUBMIX_MODEL ?? '').trim();
+  return raw || AIHUBMIX_DEFAULT_MODEL;
+}
+
+// fal.ai constants
+const FAL_RUN_BASE_URL = 'https://fal.run';
+const FAL_DEFAULT_MODEL = 'xai/grok-imagine-image/edit';
+
+/**
+ * Resolve fal.ai model path from FAL_MODEL env.
+ * Accepts either full path (e.g. xai/grok-imagine-image/edit) or with leading slash.
+ */
+export function getFalModel(): string {
+  const raw = (process.env.FAL_MODEL ?? '').trim();
+  if (!raw) return FAL_DEFAULT_MODEL;
+  return raw.replace(/^\/+/, '');
+}
+
+function getFalEndpointUrl(): string {
+  return `${FAL_RUN_BASE_URL}/${getFalModel()}`;
+}
+
+export type { ImageEntry };
+
+/**
+ * Determine the active image provider from IMAGE_ENTRY env.
+ * Accepts "FAI" / "fai" / "fal" for fal.ai, defaults to AIHUBMIX.
+ */
+export function getImageEntry(): ImageEntry {
+  const raw = (process.env.IMAGE_ENTRY ?? '').trim().toUpperCase();
+  if (raw === 'FAI' || raw === 'FAL') return 'FAI';
+  return 'AIHUBMIX';
+}
+
 const DEFAULT_ASPECT_RATIO = '3:4'; // Instagram portrait
 const MAX_RETRIES = 1;
 const QUALITY_THRESHOLD = 4;
@@ -97,68 +137,17 @@ export function sanitizeForImageGen(description: string): string {
 }
 
 /**
- * Convert Minase's natural language scene description into a narrative
- * image generation prompt following Google's recommended Gemini template.
+ * Convert Minase's natural language scene description into a model-optimized
+ * image generation prompt. Routes to Gemini or Grok strategy based on IMAGE_ENTRY.
  */
 export function buildImagePrompt(sceneDescription: string, style: ContentStyle): string {
-  // Keep original description on first attempt; only sanitize for retries after content-filter/imagetoken failures.
-  const styleContext: Record<ContentStyle, string> = {
-    cos: 'a professional cosplay photoshoot with precise costume detail and dramatic lighting, emphasizing the character costume fit and body silhouette',
-    daily: 'a casual everyday fashion moment, form-fitting stylish clothing with visible fabric texture and draping, relaxed and alluring candid pose',
-    behind_scenes: 'a behind-the-scenes glimpse of cosplay preparation, with an unfinished and authentic feel, showing natural body language',
-    travel: 'a travel fashion snapshot at a scenic destination, showing outfit details and body proportions in the environment',
-    travel_portrait: 'a natural travel portrait at a scenic destination — person in the foreground, landmark or scenery framing behind, casual pose, authentic travel feel',
-    travel_food:     'a travel food photography shot at a local restaurant or café — dish centered, warm tones, lifestyle feel, slightly messy table context',
-    travel_street:   'a candid street photography moment in an urban travel destination — person walking or looking around, environment tells the story',
-  };
-
-  const camera = CAMERA_ANCHORS[style];
-  const context = styleContext[style];
-
-  return [
-    `A photorealistic Instagram photo of ${context}. ${sceneDescription}`,
-    `同一位女性（严格匹配参考图：五官轮廓、发型发色、体型），18岁，辣妹风，身材匀称有曲线。Shot on ${camera}.`,
-    `表情要求：不要呆板的正面微笑！表情要有故事感和情绪——可以是慵懒的半睁眼、微微挑眉的得意、嘴角轻扬的暧昧笑意、眼神带着一丝挑逗的侧目、低头时眼睛往上看的清纯感、或者不看镜头的自然随性状态。眼神是关键：要有"在看你"或"故意不看你"的张力，不是空洞地盯着镜头。`,
-    `氛围自然真实，色彩高级清透，肤色自然不过曝有质感，构图舒适主体突出。注重面料质感渲染（光泽/透明度/褶皱）和身体曲线的自然表现。`,
-    NEGATIVE_CONSTRAINTS,
-  ].join('\n');
-}
-
-// Helper to read current city from travel-state (non-critical)
-function getTravelCity(): string {
-  try {
-    const ts = readJSON<TravelState>(PATHS.travelState, DEFAULT_TRAVEL_STATE);
-    return ts.current_city ? `${ts.current_city}，${ts.country}` : '';
-  } catch { return ''; }
+  const entry = getImageEntry();
+  return buildPromptForProvider(sceneDescription, style, entry);
 }
 
 export function buildRealisticPrompt(sceneDescription: string, style: ContentStyle): string {
-  const base = buildImagePrompt(sceneDescription, style);
-
-  function hint(): string {
-    switch (style) {
-      case 'cos':
-        return '使用专业摄影师风格的精致构图，色彩准确，细节清晰';
-      case 'daily':
-        return '自然光线，随性构图，生活感强，不要过度修图';
-      case 'behind_scenes':
-        return '环境感强，可以有一定杂乱感，真实感优先';
-      case 'travel':
-      case 'travel_portrait': {
-        const city = getTravelCity();
-        return `自然色彩，有游客感，光线不完美，允许逆光或阴影，衣服随风的动态感。${city ? `当前目的地：${city}，融入当地环境元素和氛围。` : ''}`;
-      }
-      case 'travel_food':
-        return '食物色彩饱满，温暖色调，有生活感，桌面环境自然';
-      case 'travel_street': {
-        const city = getTravelCity();
-        return `胶片感，自然光，有故事感，街头随拍风格。${city ? `当前城市：${city}。` : ''}`;
-      }
-    }
-  }
-
-  const h = hint();
-  return h ? `${base}\n真实感细节：${h}。` : base;
+  const entry = getImageEntry();
+  return buildRealisticPromptForProvider(sceneDescription, style, entry);
 }
 
 /**
@@ -172,6 +161,9 @@ export async function callAIHubMix(
 ): Promise<{ imageData: Buffer; textResponse?: string }> {
   const apiKey = process.env.AIHUBMIX_API_KEY;
   if (!apiKey) throw new Error('AIHUBMIX_API_KEY not set');
+
+  const model = getAIHubMixModel();
+  console.log(`[AIHubMix] model=${model}, refs=${referenceImagesBase64.length}, ratio=${aspectRatio}`);
 
   const content: Array<Record<string, unknown>> = [
     { type: 'text', text: prompt },
@@ -192,7 +184,7 @@ export async function callAIHubMix(
   }
 
   const body = {
-    model: AIHUBMIX_MODEL,
+    model,
     modalities: ['text', 'image'],
     messages: [
       { role: 'system', content: `aspect_ratio=${aspectRatio}` },
@@ -210,7 +202,7 @@ export async function callAIHubMix(
   });
 
   if (!res.ok) {
-    throw new Error(`AIHubMix API returned ${res.status}: ${await res.text()}`);
+    throw new Error(`AIHubMix API returned ${res.status} (model=${model}): ${await res.text()}`);
   }
 
   const data = await res.json() as Record<string, unknown>;
@@ -261,27 +253,115 @@ export async function callAIHubMix(
   return { imageData, textResponse };
 }
 
-async function callAIHubMixWithFallback(
+/**
+ * Call fal.ai Grok Imagine Image Edit API to generate an image.
+ * Uses synchronous fal.run endpoint — blocks until result.
+ */
+export async function callFalAi(
+  prompt: string,
+  referenceImagesBase64: string[],
+  _aspectRatio: string,
+  _styleReferenceBase64?: string,
+): Promise<{ imageData: Buffer; textResponse?: string }> {
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) throw new Error('FAL_KEY not set');
+
+  const imageUrls = referenceImagesBase64.slice(0, 3).map(
+    b64 => `data:image/jpeg;base64,${b64}`
+  );
+
+  const model = getFalModel();
+  const endpointUrl = getFalEndpointUrl();
+  console.log(`[fal.ai] model=${model}, endpoint=${endpointUrl}, refs=${referenceImagesBase64.length}`);
+
+  const body: Record<string, unknown> = {
+    prompt,
+    num_images: 1,
+    output_format: 'png',
+  };
+  if (imageUrls.length > 0) {
+    body.image_urls = imageUrls;
+  }
+
+  const res = await fetch(endpointUrl, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Key ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw new Error(`fal.ai API returned ${res.status} (model=${model}): ${await res.text()}`);
+  }
+
+  const data = await res.json() as Record<string, unknown>;
+  const images = data.images as Array<Record<string, unknown>> | undefined;
+  const revisedPrompt = data.revised_prompt as string | undefined;
+
+  if (!images || images.length === 0) {
+    throw new Error(`No images in fal.ai response: ${JSON.stringify(data).slice(0, 500)}`);
+  }
+
+  const imageUrl = images[0].url as string;
+  let imageData: Buffer;
+
+  if (imageUrl.startsWith('data:')) {
+    const base64Part = imageUrl.split(',')[1];
+    if (!base64Part) throw new Error('Invalid data URI from fal.ai');
+    imageData = Buffer.from(base64Part, 'base64');
+  } else {
+    const imgRes = await fetch(imageUrl);
+    if (!imgRes.ok) {
+      throw new Error(`Failed to download fal.ai image: ${imgRes.status}`);
+    }
+    const arrayBuffer = await imgRes.arrayBuffer();
+    imageData = Buffer.from(arrayBuffer);
+  }
+
+  return { imageData, textResponse: revisedPrompt };
+}
+
+/**
+ * Unified image provider call — routes to AIHubMix or fal.ai based on IMAGE_ENTRY env.
+ */
+export async function callImageProvider(
   prompt: string,
   referenceImagesBase64: string[],
   aspectRatio: string,
   styleReferenceBase64?: string,
 ): Promise<{ imageData: Buffer; textResponse?: string }> {
+  const entry = getImageEntry();
+  if (entry === 'FAI') {
+    return callFalAi(prompt, referenceImagesBase64, aspectRatio, styleReferenceBase64);
+  }
+  return callAIHubMix(prompt, referenceImagesBase64, aspectRatio, styleReferenceBase64);
+}
+
+async function callWithFallback(
+  prompt: string,
+  referenceImagesBase64: string[],
+  aspectRatio: string,
+  styleReferenceBase64?: string,
+): Promise<{ imageData: Buffer; textResponse?: string }> {
+  const entry = getImageEntry();
+  const providerLabel = entry === 'FAI' ? 'fal.ai' : 'AIHubMix';
   try {
-    return await callAIHubMix(prompt, referenceImagesBase64, aspectRatio, styleReferenceBase64);
+    return await callImageProvider(prompt, referenceImagesBase64, aspectRatio, styleReferenceBase64);
   } catch (err) {
     if (referenceImagesBase64.length <= 1) throw err;
-    console.log('Multi-image reference failed, trying grid composite fallback...');
+    console.log(`[${providerLabel}] Multi-image reference failed, trying grid composite fallback...`);
   }
 
   try {
     const compositeBase64 = await compositeReferences(referenceImagesBase64);
-    return await callAIHubMix(prompt, [compositeBase64], aspectRatio, styleReferenceBase64);
+    return await callImageProvider(prompt, [compositeBase64], aspectRatio, styleReferenceBase64);
   } catch (err) {
-    console.log('Grid composite fallback failed, trying single reference...');
+    console.log(`[${providerLabel}] Grid composite fallback failed, trying single reference...`);
   }
 
-  return await callAIHubMix(prompt, [referenceImagesBase64[0]], aspectRatio, styleReferenceBase64);
+  return await callImageProvider(prompt, [referenceImagesBase64[0]], aspectRatio, styleReferenceBase64);
 }
 
 async function compositeReferences(imagesBase64: string[]): Promise<string> {
@@ -435,7 +515,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
   let currentPrompt = prompt;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const { imageData, textResponse } = await callAIHubMixWithFallback(
+      const { imageData, textResponse } = await callWithFallback(
         currentPrompt, refBase64List, aspectRatio, styleRefBase64
       );
 
@@ -467,7 +547,7 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
 
         // Re-generate
         console.log(`Quality score ${score} < ${qualityThreshold}, retrying (${qAttempt + 1}/${maxQualityRetries})...`);
-        const retry = await callAIHubMixWithFallback(
+        const retry = await callWithFallback(
           correctionPrompt, refBase64List, aspectRatio, styleRefBase64
         );
         fs.writeFileSync(localPath, retry.imageData);
@@ -500,12 +580,14 @@ export async function generateImage(options: GenerateImageOptions): Promise<Gene
   }
 
   if (lastError) {
+    const entry = getImageEntry();
+    const host = entry === 'FAI' ? 'fal.ai' : 'aihubmix.com';
     const cause = lastError.cause as NodeJS.ErrnoException | undefined;
-    const hint = cause?.code === 'ENOTFOUND' ? ' — 检查 DNS/网络是否可访问 aihubmix.com'
+    const hint = cause?.code === 'ENOTFOUND' ? ` — 检查 DNS/网络是否可访问 ${host}`
       : cause?.code === 'ECONNREFUSED' ? ' — 目标服务未响应，可能暂时不可用'
       : cause?.code === 'ETIMEDOUT' ? ' — 请求超时，可检查网络或稍后重试'
       : '';
-    throw new Error(`${lastError.message}${hint}`, { cause: lastError });
+    throw new Error(`[${entry}] ${lastError.message}${hint}`, { cause: lastError });
   }
   throw new Error('Image generation failed');
 }
