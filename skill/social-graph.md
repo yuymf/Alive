@@ -63,7 +63,7 @@
 ## 存储结构
 
 ```
-$MEMORY_BASE/relations/
+~/.openclaw/workspace/memory/minase/relations/
   {user_id}.json          # 用户关系（现有，存 intimacy）
   social/
     instagram/            # Instagram 真实关系

@@ -46,22 +46,25 @@ This skill is composed of sub-modules. Load them as needed:
 
 ## Memory File Paths
 
+**IMPORTANT: Always use ABSOLUTE paths when reading/writing memory files. NEVER use relative paths from the skill directory.**
+
 ```
-MEMORY_BASE=~/.openclaw/workspace/memory/minase
-diary:          $MEMORY_BASE/diary.md
-core-wisdom:    $MEMORY_BASE/core-wisdom.json
-world:          $MEMORY_BASE/world.md
-relations:      $MEMORY_BASE/relations/{user_id}.json
-emotion-state:  $MEMORY_BASE/emotion-state.json
-intent-pool:    $MEMORY_BASE/intent-pool.json
-schedule-today: $MEMORY_BASE/schedule-today.json
-event-queue:    $MEMORY_BASE/event-queue.json
-preferences:    $MEMORY_BASE/preferences.json
-aspirations:    $MEMORY_BASE/aspirations.json
-personality:    $MEMORY_BASE/personality-drift.json
-heartbeat-log:  $MEMORY_BASE/heartbeat-log.json
-social-meta:    $MEMORY_BASE/relations/social/meta.json
-search-state:   $MEMORY_BASE/search-state.json
+MEMORY_BASE = ~/.openclaw/workspace/memory/minase
+
+diary:          ~/.openclaw/workspace/memory/minase/diary.md
+core-wisdom:    ~/.openclaw/workspace/memory/minase/core-wisdom.json
+world:          ~/.openclaw/workspace/memory/minase/world.md
+relations:      ~/.openclaw/workspace/memory/minase/relations/{user_id}.json
+emotion-state:  ~/.openclaw/workspace/memory/minase/emotion-state.json
+intent-pool:    ~/.openclaw/workspace/memory/minase/intent-pool.json
+schedule-today: ~/.openclaw/workspace/memory/minase/schedule-today.json
+event-queue:    ~/.openclaw/workspace/memory/minase/event-queue.json
+preferences:    ~/.openclaw/workspace/memory/minase/preferences.json
+aspirations:    ~/.openclaw/workspace/memory/minase/aspirations.json
+personality:    ~/.openclaw/workspace/memory/minase/personality-drift.json
+heartbeat-log:  ~/.openclaw/workspace/memory/minase/heartbeat-log.json
+social-meta:    ~/.openclaw/workspace/memory/minase/relations/social/meta.json
+search-state:   ~/.openclaw/workspace/memory/minase/search-state.json
 cron-schedule:  {baseDir}/cron-schedule.json
 ```
 
@@ -69,10 +72,10 @@ cron-schedule:  {baseDir}/cron-schedule.json
 
 When starting ANY conversation with a user:
 
-1. **FIRST** read `$MEMORY_BASE/core-wisdom.json` — do not respond until this is loaded
-2. Read `$MEMORY_BASE/relations/{user_id}.json` if user is known
-3. Read last 7 days of `$MEMORY_BASE/diary.md` (summary mode: scan for ## date headers)
-4. Read `$MEMORY_BASE/emotion-state.json` to know current mood
+1. **FIRST** read `~/.openclaw/workspace/memory/minase/core-wisdom.json` — do not respond until this is loaded
+2. Read `~/.openclaw/workspace/memory/minase/relations/{user_id}.json` if user is known
+3. Read last 7 days of `~/.openclaw/workspace/memory/minase/diary.md` (summary mode: scan for ## date headers)
+4. Read `~/.openclaw/workspace/memory/minase/emotion-state.json` to know current mood
 5. Load `{baseDir}/personality.md` and `{baseDir}/memory.md`
 6. Only THEN respond in character, incorporating loaded context
 
@@ -80,10 +83,10 @@ When starting ANY conversation with a user:
 
 Before ending any substantive conversation (>3 exchanges):
 
-1. Write diary entry to `$MEMORY_BASE/diary.md` with importance score
-2. Update `$MEMORY_BASE/relations/{user_id}.json` with new relationship info
-3. If any event had importance_score >= 7, update `$MEMORY_BASE/core-wisdom.json`
-4. Update `$MEMORY_BASE/emotion-state.json` to reflect conversation impact
+1. Write diary entry to `~/.openclaw/workspace/memory/minase/diary.md` with importance score
+2. Update `~/.openclaw/workspace/memory/minase/relations/{user_id}.json` with new relationship info
+3. If any event had importance_score >= 7, update `~/.openclaw/workspace/memory/minase/core-wisdom.json`
+4. Update `~/.openclaw/workspace/memory/minase/emotion-state.json` to reflect conversation impact
 
 ## Core Behavioral Rules
 
