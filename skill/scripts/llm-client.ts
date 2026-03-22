@@ -151,12 +151,13 @@ export async function callLLM(prompt: string, maxTokens = 16384, caller?: string
       const finishReason = data.choices?.[0]?.finish_reason ?? 'unknown';
       const elapsed = wallNow().getTime() - startTime;
       debugLog('RESPONSE', `elapsed: ${elapsed}ms | attempt: ${attempt + 1} | finish_reason: ${finishReason}\n\n${content}`);
+      const cleanContent = stripThinkBlocks(content);
       appendLlmLog({
         id: crypto.randomUUID(),
         timestamp: wallNow().toISOString(),
         caller: caller ?? autoDetectCaller(),
         prompt,
-        response: stripThinkBlocks(content),
+        response: cleanContent,
         elapsed_ms: elapsed,
         input_tokens: data.usage?.prompt_tokens ?? null,
         output_tokens: data.usage?.completion_tokens ?? null,
@@ -164,7 +165,7 @@ export async function callLLM(prompt: string, maxTokens = 16384, caller?: string
         model: data.model ?? process.env.LLM_MODEL ?? model,
         error_message: null,
       });
-      return { content, finishReason };
+      return { content: cleanContent, finishReason };
     } catch (err) {
       if (options?.signal?.aborted || isAbortError(err)) {
         debugLog('ABORT', `request aborted: ${(err as Error).message}`);

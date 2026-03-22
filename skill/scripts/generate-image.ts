@@ -73,7 +73,7 @@ export function getImageEntry(): ImageEntry {
 }
 
 const DEFAULT_ASPECT_RATIO = '3:4'; // Instagram portrait
-const MAX_RETRIES = 1;
+const MAX_RETRIES = 2;
 const QUALITY_THRESHOLD = 4;
 const MAX_QUALITY_RETRIES = 1;
 
@@ -119,6 +119,20 @@ export function sanitizeForImageGen(description: string): string {
   result = result.replace(/透视[装效果]?/g, '薄纱质感');
   result = result.replace(/半透明/g, '轻盈');
 
+  // Body-fit / suggestive fit
+  result = result.replace(/紧致勒肉/g, '修身合体');
+  result = result.replace(/勒肉/g, '修身');
+  result = result.replace(/深[vV]/g, '大领口');
+  result = result.replace(/欲感/g, '魅力感');
+  result = result.replace(/媚态/g, '优雅姿态');
+  result = result.replace(/妩媚/g, '优雅');
+  result = result.replace(/风情/g, '气质');
+  result = result.replace(/撩人/g, '动人');
+  result = result.replace(/肉感/g, '丰盈');
+  result = result.replace(/紧绷/g, '贴合');
+  result = result.replace(/包臀/g, '修身');
+  result = result.replace(/高叉/g, '简约剪裁');
+
   // Exposure level
   result = result.replace(/暴露/g, '清凉');
   result = result.replace(/裸露/g, '露肤');
@@ -126,12 +140,15 @@ export function sanitizeForImageGen(description: string): string {
   result = result.replace(/诱惑/g, '魅力');
   result = result.replace(/挑逗/g, '俏皮');
 
-  // Underwear / lingerie
+  // Underwear / lingerie / swimwear
   result = result.replace(/内衣/g, '贴身衣物');
   result = result.replace(/内裤/g, '衣物');
   result = result.replace(/比基尼/g, '泳装');
+  result = result.replace(/泳装/g, '度假服饰');
   result = result.replace(/蕾丝/g, '花纹面料');
   result = result.replace(/bra/gi, '内搭');
+  result = result.replace(/吊带/g, '细肩带上衣');
+  result = result.replace(/抹胸/g, '平口上衣');
 
   return result;
 }

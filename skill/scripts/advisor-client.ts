@@ -4,7 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { callLLM, stripThinkBlocks } from './llm-client';
+import { callLLM } from './llm-client';
 
 export interface AdvisorContext {
   currentCity: string;
@@ -66,7 +66,7 @@ export async function consultAdvisor(ctx: AdvisorContext): Promise<string> {
 
   try {
     const result = await callLLM(prompt, undefined, 'ins-advisor', { signal: controller.signal });
-    return stripThinkBlocks(result.content ?? '').trim() || '';
+    return (result.content ?? '').trim() || '';
   } catch (err) {
     const message = timedOut ? 'advisor timeout' : (err as Error).message;
     console.warn('[advisor-client] consultAdvisor failed:', message);
