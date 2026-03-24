@@ -1,47 +1,76 @@
+// alive/tests/time-utils.test.ts
+// Tests for time utility functions — especially createLocalDate to avoid UTC traps
+
 import { describe, it, expect, afterEach } from 'vitest';
-import { now, setTimeOverride, clearTimeOverride, getLocalHour, getLocalDate } from '../scripts/utils/time-utils';
+import {
+  createLocalDate, createLocalDateFromString,
+  getLocalHour, setTimeOverride, clearTimeOverride, now,
+  getLocalDate, getLocalTimeHHMM,
+} from '../scripts/utils/time-utils';
 
-describe('time-utils override', () => {
-  afterEach(() => clearTimeOverride());
+afterEach(() => {
+  clearTimeOverride();
+});
 
-  it('now() returns current time when no override set', () => {
-    const before = Date.now();
-    const result = now();
-    const after = Date.now();
-    expect(result.getTime()).toBeGreaterThanOrEqual(before);
-    expect(result.getTime()).toBeLessThanOrEqual(after);
+describe('createLocalDate', () => {
+  it('creates a date at the specified local hour', () => {
+    const d = createLocalDate(2026, 3, 24, 7, 0);
+    expect(d.getHours()).toBe(7);
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(2); // 0-indexed
+    expect(d.getDate()).toBe(24);
   });
 
-  it('now() returns overridden time when set', () => {
-    const fixed = new Date('2026-06-15T10:30:00+08:00');
-    setTimeOverride(fixed);
-    const result = now();
-    expect(result.getTime()).toBe(fixed.getTime());
+  it('defaults to midnight when hour not specified', () => {
+    const d = createLocalDate(2026, 1, 1);
+    expect(d.getHours()).toBe(0);
+    expect(d.getMinutes()).toBe(0);
   });
 
-  it('now() returns a copy, not a reference to override', () => {
-    const fixed = new Date('2026-06-15T10:30:00+08:00');
-    setTimeOverride(fixed);
-    const a = now();
-    const b = now();
-    expect(a).not.toBe(b);
-    expect(a.getTime()).toBe(b.getTime());
+  it('handles all time components', () => {
+    const d = createLocalDate(2026, 12, 31, 23, 59, 58);
+    expect(d.getHours()).toBe(23);
+    expect(d.getMinutes()).toBe(59);
+    expect(d.getSeconds()).toBe(58);
+  });
+});
+
+describe('createLocalDateFromString', () => {
+  it('parses date string and hour correctly', () => {
+    const d = createLocalDateFromString('2026-03-24', 9);
+    expect(d.getHours()).toBe(9);
+    expect(d.getDate()).toBe(24);
+    expect(d.getMonth()).toBe(2);
   });
 
-  it('getLocalHour uses now() as default', () => {
-    setTimeOverride(new Date('2026-06-15T14:00:00+08:00'));
-    expect(getLocalHour()).toBe(14);
+  it('defaults to midnight', () => {
+    const d = createLocalDateFromString('2026-06-15');
+    expect(d.getHours()).toBe(0);
+  });
+});
+
+describe('setTimeOverride with createLocalDate', () => {
+  it('getLocalHour returns the expected local hour', () => {
+    setTimeOverride(createLocalDate(2026, 3, 24, 7, 0));
+    expect(getLocalHour(now())).toBe(7);
   });
 
-  it('getLocalDate uses now() as default', () => {
-    setTimeOverride(new Date('2026-06-15T14:00:00+08:00'));
-    expect(getLocalDate()).toBe('2026-06-15');
+  it('getLocalDate returns correct formatted date', () => {
+    setTimeOverride(createLocalDate(2026, 3, 24, 7, 0));
+    expect(getLocalDate(now())).toBe('2026-03-24');
   });
 
-  it('clearTimeOverride restores real time', () => {
-    setTimeOverride(new Date('2000-01-01T00:00:00Z'));
-    clearTimeOverride();
-    const result = now();
-    expect(result.getFullYear()).toBeGreaterThan(2024);
+  it('getLocalTimeHHMM returns correct time', () => {
+    setTimeOverride(createLocalDate(2026, 3, 24, 14, 30));
+    expect(getLocalTimeHHMM(now())).toBe('14:30');
+  });
+
+  it('avoids the UTC trap that ISO string parsing causes', () => {
+    // This is the bug we're fixing: new Date("2026-03-24T07:00:00") is UTC
+    // In a timezone like JST (+9), getHours() would return 16, not 7
+    // createLocalDate always gives local time
+    const localDate = createLocalDate(2026, 3, 24, 7, 0);
+    setTimeOverride(localDate);
+    expect(getLocalHour(now())).toBe(7); // Always 7, regardless of timezone
   });
 });

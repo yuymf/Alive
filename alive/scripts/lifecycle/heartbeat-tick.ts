@@ -26,7 +26,7 @@ import {
 } from '../engines/emotion';
 import {
   decaySatisfied, accumulateIntents, applyEventBoosts,
-  injectScheduleIntents, getTopIntents, getTopIntentsRaw, satisfyIntent, addIntent,
+  injectScheduleIntents, getTopIntentsRaw, satisfyIntent, addIntent,
   applyResistanceToPool, checkImpulseBreakthrough, processProcrastination,
 } from '../engines/intent';
 import { drainVitality, applyActionCost, replenishVitality, getVitalityConstraints, DEFAULT_VITALITY } from '../engines/vitality';
@@ -34,7 +34,7 @@ import { updateConfidenceFromBatch, decayConfidence, getCreationRateMultiplier, 
 import {
   checkFlowEntry, checkDriftEntry, checkFlowExit, checkDriftExit,
   tickFlow, resetFlow, generateFlowDiary, generateDriftDiary,
-  computeVoiceDirective, LastAction,
+  computeVoiceDirective, LastAction, shouldEvolveFlow, FlowEvolution,
 } from '../engines/flow';
 import { rollContextAwareEvent, processChainEvents, EventContext } from '../world/random-events';
 import {
@@ -42,8 +42,8 @@ import {
   updateMetaStats, reactivateRelation, classifyTier,
 } from '../world/social-graph-engine';
 import { isActiveHeartbeatHour } from '../world/heartbeat-gate';
-import { loadPersona, injectPersona, buildVoiceSignature, getEmotionBaseline } from '../persona/persona-loader';
-import { resolveRoute, resolveRouteBySkillName, buildContext, executeSubSkill, getRouteTable, getRegisteredSkills, collectSubSkillEvents } from '../router/skill-router';
+import { loadPersona, injectPersona, buildVoiceSignature } from '../persona/persona-loader';
+import { resolveRoute, resolveRouteBySkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
 import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
 import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
@@ -333,11 +333,39 @@ export async function regularTick(
     const exitCheck = checkFlowExit(flowState, intentPool, vitality.vitality, rigidNow, hasNewEvent);
     if (!exitCheck.shouldExit) {
       flowState = tickFlow(flowState);
-      const flowDiary = generateFlowDiary(flowState, emotion);
+
+      let flowDiary: string;
+      let tickSummary: string;
+
+      if (shouldEvolveFlow(flowState.duration_ticks)) {
+        // 偶数 tick: 轻量 LLM 调用让活动自然演化（活人感）
+        try {
+          let evoTemplate = readTemplate('flow-evolution-prompt.md');
+          evoTemplate = injectPersona(evoTemplate, persona);
+          evoTemplate = evoTemplate
+            .replace('{activity}', flowState.activity ?? '做事')
+            .replace('{duration}', String(flowState.duration_ticks))
+            .replace('{emotion_summary}', `${emotion.mood.description}`)
+            .replace('{vitality}', `${Math.round(vitality.vitality)}/100`);
+
+          const evolution = await llm.callJSON<FlowEvolution>(evoTemplate);
+          flowDiary = evolution.diary_line;
+          tickSummary = `flow中: ${evolution.micro_activity}`;
+        } catch {
+          // fallback to template on LLM failure
+          flowDiary = generateFlowDiary(flowState, emotion);
+          tickSummary = `flow中: ${flowState.activity}`;
+        }
+      } else {
+        // 奇数 tick: 用模板（效率优先）
+        flowDiary = generateFlowDiary(flowState, emotion);
+        tickSummary = `flow中: ${flowState.activity}`;
+      }
+
       appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${flowDiary}\n情绪: ${emotion.mood.description} | 重要性: 7\n标签: flow, ${flowState.category}\n`);
 
       writeFlowTickState(currentTime, emotion, intentPool, events, vitality, confidence, flowState, chainState, heartbeatLog, {
-        tickSummary: `flow中: ${flowState.activity}`,
+        tickSummary,
         innerMonologue: null,
         actions: [`[flow] ${flowState.activity}`],
         importance: 7,
@@ -466,19 +494,23 @@ export async function regularTick(
   // Build registered skills summary for LLM
   const routeTable = getRouteTable();
   const handledIntents = Object.keys(routeTable);
+
+  // 构建详细的 sub-skill 列表供 LLM 参考（Task 4 核心修复）
+  const subSkillListLines: string[] = [];
+  for (const [intentCat, routes] of Object.entries(routeTable)) {
+    for (const route of routes) {
+      subSkillListLines.push(
+        `  - \`${route.skillName}\`（类别: ${intentCat}）— ${route.manifest.description ?? route.action}`
+      );
+    }
+  }
+  const subSkillList = subSkillListLines.length > 0
+    ? subSkillListLines.join('\n')
+    : '  （当前没有注册的 sub-skill）';
+
   const skillHint = handledIntents.length > 0
     ? `可用技能: ${handledIntents.join(', ')}。在 chosen_actions 中使用 type: "real", skill: "<skill_name>" 来调用。`
     : '';
-
-  // Build sub_skill_list from manifests for prompt template {sub_skill_list}
-  const registeredManifests = getRegisteredSkills();
-  const subSkillListLines = registeredManifests.map(m => {
-    const intents = m.intent_bindings.map(b => b.intent).join('/');
-    return `  - skill: "${m.name}" — ${m.display_name}（${m.description}）触发意图: ${intents}`;
-  });
-  const subSkillList = subSkillListLines.length > 0
-    ? subSkillListLines.join('\n')
-    : '（暂无已注册的 sub-skill）';
 
   const prompt = template
     .replace('{current_time}', formatTime())
@@ -492,8 +524,8 @@ export async function regularTick(
     .replace('{vitality_context}', `活力: ${Math.round(vitality.vitality)}/100${vitalityConstraints.moodModifier ? ` (${vitalityConstraints.moodModifier})` : ''}`)
     .replace('{confidence_context}', getConfidenceMoodHint(confidence.confidence))
     .replace('{voice_directive}', voiceDirective)
-    .replace('{skill_hint}', skillHint)
-    .replace('{sub_skill_list}', subSkillList);
+    .replace('{sub_skill_list}', subSkillList)
+    .replace('{skill_hint}', skillHint);
 
   let decision: HeartbeatDecision;
   try {

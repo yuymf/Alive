@@ -5,9 +5,12 @@ import { FlowState, IntentPool, IntentCategory, EmotionState, DEFAULT_FLOW_STATE
 import { buildVoiceSignature } from '../persona/persona-loader';
 import { now } from '../utils/time-utils';
 
-const INTERRUPT_CHANCE_INITIAL = 0.15;
-const INTERRUPT_CHANCE_INCREMENT = 0.03;
-const INTERRUPT_CHANCE_CAP = 0.40;
+const INTERRUPT_CHANCE_INITIAL = 0.20;
+const INTERRUPT_CHANCE_INCREMENT_EARLY = 0.05;  // 前 2 tick（沉浸初期）
+const INTERRUPT_CHANCE_INCREMENT_LATE = 0.08;   // 2 tick 后（生理需求增长）
+const INTERRUPT_CHANCE_CAP = 0.70;
+const MAX_FLOW_TICKS = 4;   // 真人心流最多 ~4 小时
+const MAX_DRIFT_TICKS = 3;  // 真人摆烂最多 ~3 小时
 
 export interface LastAction {
   category: IntentCategory;
@@ -30,6 +33,8 @@ export function checkDriftEntry(currentFlow: FlowState, vitality: number, pool: 
 
 export function checkFlowExit(flow: FlowState, pool: IntentPool, vitality: number, rigidSchedule: { allowed_actions: string[] } | null, hasNewEvent: boolean, rng = Math.random): { shouldExit: boolean; reason: string | null } {
   if (flow.status !== 'flow') return { shouldExit: false, reason: null };
+  // 硬限制：真人不会连续沉浸超过 4 小时
+  if (flow.duration_ticks >= MAX_FLOW_TICKS) return { shouldExit: true, reason: '沉浸太久了，该换换脑子' };
   if (flow.category) {
     const intent = pool.intents.find(i => i.category === flow.category && i.satisfied_at === null);
     if (intent && intent.intensity - intent.resistance < 0) return { shouldExit: true, reason: '做够了' };
@@ -44,6 +49,8 @@ export function checkFlowExit(flow: FlowState, pool: IntentPool, vitality: numbe
 
 export function checkDriftExit(flow: FlowState, pool: IntentPool, vitality: number, hasNewEvent: boolean): { shouldExit: boolean; reason: string | null } {
   if (flow.status !== 'drift') return { shouldExit: false, reason: null };
+  // 硬限制：真人不会摆烂超过 3 小时
+  if (flow.duration_ticks >= MAX_DRIFT_TICKS) return { shouldExit: true, reason: '摆烂太久了...该起来动动' };
   const strong = pool.intents.find(i => i.satisfied_at === null && (i.intensity - i.resistance) > 2.0);
   if (strong) return { shouldExit: true, reason: `想${strong.description}了` };
   if (hasNewEvent) return { shouldExit: true, reason: '有新消息' };
@@ -53,7 +60,10 @@ export function checkDriftExit(flow: FlowState, pool: IntentPool, vitality: numb
 
 export function tickFlow(flow: FlowState): FlowState {
   if (flow.status === 'none') return flow;
-  return { ...flow, duration_ticks: flow.duration_ticks + 1, interrupt_chance: Math.min(INTERRUPT_CHANCE_CAP, flow.interrupt_chance + INTERRUPT_CHANCE_INCREMENT) };
+  const increment = flow.duration_ticks < 2
+    ? INTERRUPT_CHANCE_INCREMENT_EARLY
+    : INTERRUPT_CHANCE_INCREMENT_LATE;
+  return { ...flow, duration_ticks: flow.duration_ticks + 1, interrupt_chance: Math.min(INTERRUPT_CHANCE_CAP, flow.interrupt_chance + increment) };
 }
 
 export function resetFlow(): FlowState {
@@ -62,12 +72,34 @@ export function resetFlow(): FlowState {
 
 // === Diary Generation ===
 
-const FLOW_DIARY_TEMPLATES = [
-  '还在{activity}。不知不觉又过了一小时。',
-  '{activity}中...时间过得好快。',
-  '专注{activity}的感觉真好。',
-  '继续{activity}。渐入佳境了。',
-  '沉浸在{activity}里出不来了。',
+const FLOW_DIARY_TEMPLATES_BY_PHASE: Record<string, string[]> = {
+  // 前 2 tick（刚进入心流）
+  early: [
+    '开始{activity}了。嗯...先找找感觉。',
+    '{activity}！刚进入状态，不要打断我。',
+    '坐下来开始{activity}。今天感觉不错。',
+    '嗯，{activity}...先从哪里开始好呢。',
+  ],
+  // 3+ tick（深度沉浸）
+  deep: [
+    '完全沉浸在{activity}里了。刚才好像有人叫我来着？',
+    '{activity}中...手停不下来。好久没有这种感觉了。',
+    '不知不觉又过了一小时...{activity}真的很上头。',
+    '专注{activity}的时候时间过得好快。肚子开始叫了但不想停。',
+    '刚才起来倒了杯水又坐回来了。继续{activity}。',
+    '{activity}越做越顺手了。突然有了新想法。',
+  ],
+};
+
+const FLOW_MICRO_DETAILS = [
+  '顺手喝了口水。',
+  '伸了个懒腰。',
+  '猫跳上桌来蹭了一下。',
+  '手机震了一下，没理。',
+  '换了首歌继续。',
+  '站起来活动了一下又坐下。',
+  '',  // 有时候什么都没发生
+  '',
 ];
 
 const DRIFT_DIARY_TEMPLATES = [
@@ -81,8 +113,16 @@ const DRIFT_DIARY_TEMPLATES = [
 ];
 
 export function generateFlowDiary(flow: FlowState, emotion: EmotionState, rng = Math.random): string {
-  const template = FLOW_DIARY_TEMPLATES[Math.floor(rng() * FLOW_DIARY_TEMPLATES.length)];
+  const phase = flow.duration_ticks <= 2 ? 'early' : 'deep';
+  const templates = FLOW_DIARY_TEMPLATES_BY_PHASE[phase];
+  const template = templates[Math.floor(rng() * templates.length)];
   let diary = template.replace(/{activity}/g, flow.activity ?? '做事');
+
+  // 随机添加生活微细节（活人感）
+  const detail = FLOW_MICRO_DETAILS[Math.floor(rng() * FLOW_MICRO_DETAILS.length)];
+  if (detail) diary += ` ${detail}`;
+
+  // 情绪调味
   if (emotion.stress > 0.5) diary += '...虽然有点累。';
   else if (emotion.mood.valence > 0.5) diary += ' 心情很好！';
   return diary;
@@ -106,4 +146,19 @@ export function computeVoiceDirective(flowStatus: FlowState['status'], emotion: 
   if (emotion.mood.valence < -0.3) return '语气低落、安静。句子可以简短。' + sig;
   if (emotion.stress > 0.5) return '语气有些焦虑。句子之间可以有跳跃感。' + sig;
   return '正常叙事语气。像是在自言自语记录一天的事。' + sig;
+}
+
+// === Flow Evolution (Task 2: 让 flow 期间活动有变化) ===
+
+export interface FlowEvolution {
+  micro_activity: string;
+  diary_line: string;
+}
+
+/**
+ * 每 2 个 flow tick 做一次轻量 LLM 调用，让活动自然演化。
+ * 奇数 tick 用模板（效率优先），偶数 tick 调 LLM（活人感）。
+ */
+export function shouldEvolveFlow(durationTicks: number): boolean {
+  return durationTicks > 0 && durationTicks % 2 === 0;
 }

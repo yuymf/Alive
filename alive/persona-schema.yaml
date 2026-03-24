@@ -188,6 +188,16 @@ schema:
         required: false
         properties:
           posting_frequency: { type: string, default: "daily" }
+      voice_tts:
+        type: object
+        required: false
+        description: "语音消息 (voice-tts) 子技能配置"
+        properties:
+          provider: { type: string, default: "noiz", enum: ["noiz", "kokoro"], description: "TTS 后端 (Phase 1: noiz Guest Mode)" }
+          voice_id: { type: string, default: "zf_xiaoni", description: "TTS 音色 ID" }
+          voice_lang: { type: string, default: "zh", description: "语音语言 (zh, en, ja 等)" }
+          voice_speed: { type: number, default: 1.0, description: "语速倍率 (0.5-2.0)" }
+          emotion_auto: { type: boolean, default: true, description: "是否根据情绪自动调节 TTS 参数" }
 
   advisors:
     type: array

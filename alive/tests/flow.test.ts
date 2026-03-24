@@ -12,9 +12,10 @@ import {
   generateFlowDiary,
   generateDriftDiary,
   computeVoiceDirective,
+  shouldEvolveFlow,
 } from '../scripts/engines/flow';
 import { FlowState, IntentPool, DEFAULT_FLOW_STATE, EmotionState, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../scripts/utils/types';
-import { setTimeOverride } from '../scripts/utils/time-utils';
+import { setTimeOverride, createLocalDate } from '../scripts/utils/time-utils';
 
 vi.mock('../scripts/persona/persona-loader', () => ({
   getEmotionBaseline: () => ({ valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 }),
@@ -44,7 +45,7 @@ function makeEmotion(overrides: Partial<EmotionState> = {}): EmotionState {
 }
 
 beforeEach(() => {
-  setTimeOverride(new Date('2026-03-24T14:00:00'));
+  setTimeOverride(createLocalDate(2026, 3, 24, 14, 0));
 });
 
 // ──── checkFlowEntry ────
@@ -118,7 +119,7 @@ describe('checkDriftEntry', () => {
 
 describe('checkFlowExit', () => {
   it('exits flow when intent drops below resistance', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 5, interrupt_chance: 0.2 };
+    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2 };
     const pool = makePool([{ category: '创作', intensity: 2.0, resistance: 4.0 }]); // below resistance
     const { shouldExit, reason } = checkFlowExit(flow, pool, 60, null, false, () => 1);
     expect(shouldExit).toBe(true);
@@ -126,7 +127,7 @@ describe('checkFlowExit', () => {
   });
 
   it('exits flow when vitality is critical', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 5, interrupt_chance: 0.2 };
+    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2 };
     const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
     const { shouldExit, reason } = checkFlowExit(flow, pool, 15, null, false, () => 1);
     expect(shouldExit).toBe(true);
@@ -134,7 +135,7 @@ describe('checkFlowExit', () => {
   });
 
   it('exits flow on random interrupt', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 5, interrupt_chance: 0.5 };
+    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.5 };
     const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
     const { shouldExit } = checkFlowExit(flow, pool, 60, null, false, () => 0.3); // rng < 0.5
     expect(shouldExit).toBe(true);
@@ -146,13 +147,29 @@ describe('checkFlowExit', () => {
     const { shouldExit } = checkFlowExit(flow, pool, 60, null, false, () => 0.99);
     expect(shouldExit).toBe(false);
   });
+
+  it('forces exit when duration_ticks >= MAX_FLOW_TICKS (4)', () => {
+    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 4, interrupt_chance: 0.5 };
+    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    // rng returns 1.0 so random interrupt won't trigger — only max_ticks should catch this
+    const { shouldExit, reason } = checkFlowExit(flow, pool, 60, null, false, () => 1);
+    expect(shouldExit).toBe(true);
+    expect(reason).toBe('沉浸太久了，该换换脑子');
+  });
+
+  it('does not force exit when duration_ticks < MAX_FLOW_TICKS', () => {
+    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.15 };
+    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const { shouldExit } = checkFlowExit(flow, pool, 60, null, false, () => 1);
+    expect(shouldExit).toBe(false);
+  });
 });
 
 // ──── checkDriftExit ────
 
 describe('checkDriftExit', () => {
   it('exits drift when a strong intent appears', () => {
-    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2 };
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 2, interrupt_chance: 0.2 };
     const pool = makePool([{ category: '创作', intensity: 6.0, resistance: 2.0, description: '画画' }]);
     const { shouldExit, reason } = checkDriftExit(flow, pool, 30, false);
     expect(shouldExit).toBe(true);
@@ -160,7 +177,7 @@ describe('checkDriftExit', () => {
   });
 
   it('exits drift on new event', () => {
-    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2 };
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 2, interrupt_chance: 0.2 };
     const pool = makePool([]);
     const { shouldExit, reason } = checkDriftExit(flow, pool, 30, true);
     expect(shouldExit).toBe(true);
@@ -168,28 +185,51 @@ describe('checkDriftExit', () => {
   });
 
   it('exits drift when vitality recovers', () => {
-    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2 };
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 2, interrupt_chance: 0.2 };
     const pool = makePool([]);
     const { shouldExit, reason } = checkDriftExit(flow, pool, 60, false);
     expect(shouldExit).toBe(true);
     expect(reason).toBe('精神恢复了');
+  });
+
+  it('forces exit when duration_ticks >= MAX_DRIFT_TICKS (3)', () => {
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2 };
+    const pool = makePool([]);
+    // vitality low, no events, no strong intents — only max_ticks should catch this
+    const { shouldExit, reason } = checkDriftExit(flow, pool, 30, false);
+    expect(shouldExit).toBe(true);
+    expect(reason).toBe('摆烂太久了...该起来动动');
+  });
+
+  it('does not force exit when duration_ticks < MAX_DRIFT_TICKS', () => {
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 2, interrupt_chance: 0.2 };
+    const pool = makePool([]);
+    const { shouldExit } = checkDriftExit(flow, pool, 30, false);
+    expect(shouldExit).toBe(false);
   });
 });
 
 // ──── tickFlow ────
 
 describe('tickFlow', () => {
-  it('increments duration_ticks and interrupt_chance', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 2, interrupt_chance: 0.15 };
+  it('uses early increment for first 2 ticks', () => {
+    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.20 };
     const ticked = tickFlow(flow);
-    expect(ticked.duration_ticks).toBe(3);
-    expect(ticked.interrupt_chance).toBeCloseTo(0.18);
+    expect(ticked.duration_ticks).toBe(2);
+    expect(ticked.interrupt_chance).toBeCloseTo(0.25); // +0.05 early increment
   });
 
-  it('caps interrupt_chance at 0.40', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 20, interrupt_chance: 0.39 };
+  it('uses late (higher) increment after 2 ticks', () => {
+    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 2, interrupt_chance: 0.25 };
     const ticked = tickFlow(flow);
-    expect(ticked.interrupt_chance).toBeLessThanOrEqual(0.40);
+    expect(ticked.duration_ticks).toBe(3);
+    expect(ticked.interrupt_chance).toBeCloseTo(0.33); // +0.08 late increment
+  });
+
+  it('caps interrupt_chance at 0.70', () => {
+    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 20, interrupt_chance: 0.69 };
+    const ticked = tickFlow(flow);
+    expect(ticked.interrupt_chance).toBeLessThanOrEqual(0.70);
   });
 
   it('does nothing when status is none', () => {
@@ -213,7 +253,13 @@ describe('resetFlow', () => {
 // ──── generateFlowDiary ────
 
 describe('generateFlowDiary', () => {
-  it('generates a diary entry with activity name', () => {
+  it('generates an early-phase diary for low tick count', () => {
+    const flow: FlowState = { status: 'flow', activity: '画COS照', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2 };
+    const diary = generateFlowDiary(flow, makeEmotion(), () => 0);
+    expect(diary).toContain('画COS照');
+  });
+
+  it('generates a deep-phase diary for high tick count', () => {
     const flow: FlowState = { status: 'flow', activity: '画COS照', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2 };
     const diary = generateFlowDiary(flow, makeEmotion(), () => 0);
     expect(diary).toContain('画COS照');
@@ -226,9 +272,21 @@ describe('generateFlowDiary', () => {
   });
 
   it('adds happy note when mood is good', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2 };
+    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2 };
     const diary = generateFlowDiary(flow, makeEmotion({ mood: { valence: 0.6, arousal: 0.5, description: '开心' } }), () => 0);
     expect(diary).toContain('心情很好');
+  });
+
+  it('early and deep templates produce different outputs', () => {
+    const earlyFlow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2 };
+    const deepFlow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2 };
+    const earlyDiary = generateFlowDiary(earlyFlow, makeEmotion(), () => 0);
+    const deepDiary = generateFlowDiary(deepFlow, makeEmotion(), () => 0);
+    // Both contain activity but come from different template sets
+    expect(earlyDiary).toContain('画画');
+    expect(deepDiary).toContain('画画');
+    // The first template from early is different from the first template from deep
+    expect(earlyDiary).not.toBe(deepDiary);
   });
 });
 
@@ -273,5 +331,20 @@ describe('computeVoiceDirective', () => {
       mood: { valence: -0.4, arousal: 0.3, description: '低落' },
     }), false);
     expect(directive).toContain('低落');
+  });
+});
+
+// ──── shouldEvolveFlow ────
+
+describe('shouldEvolveFlow', () => {
+  it('returns true for even ticks > 0', () => {
+    expect(shouldEvolveFlow(2)).toBe(true);
+    expect(shouldEvolveFlow(4)).toBe(true);
+  });
+
+  it('returns false for odd ticks and tick 0', () => {
+    expect(shouldEvolveFlow(0)).toBe(false);
+    expect(shouldEvolveFlow(1)).toBe(false);
+    expect(shouldEvolveFlow(3)).toBe(false);
   });
 });

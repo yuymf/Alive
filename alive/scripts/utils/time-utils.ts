@@ -43,3 +43,22 @@ export function getLocalTimeHHMM(d: Date = now()): string {
   const min = String(d.getMinutes()).padStart(2, '0');
   return `${h}:${min}`;
 }
+
+/**
+ * 创建一个代表本地时间的 Date 对象。
+ * 使用 new Date(year, month-1, day, hour, min) 避免 ISO 字符串的 UTC 陷阱。
+ */
+export function createLocalDate(
+  year: number, month: number, day: number,
+  hour = 0, minute = 0, second = 0
+): Date {
+  return new Date(year, month - 1, day, hour, minute, second);
+}
+
+/**
+ * 从 "YYYY-MM-DD" 和 hour 创建本地时间（用于 E2E 和测试）。
+ */
+export function createLocalDateFromString(dateStr: string, hour = 0): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d, hour, 0, 0);
+}

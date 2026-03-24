@@ -1,0 +1,37 @@
+{
+  "name": "voice-tts",
+  "display_name": "语音消息",
+  "version": "0.1.0",
+  "description": "将角色的话变成语音消息发送——让聊天更像真人朋友",
+  "intent_bindings": [
+    { "intent": "社交", "action": "send-voice", "priority": 5 },
+    { "intent": "表达", "action": "send-voice", "priority": 5 }
+  ],
+  "config_schema": {
+    "tts_provider": {
+      "type": "string",
+      "required": false,
+      "default": "noiz",
+      "description": "TTS provider: 'noiz' (default), 'kokoro' (local)"
+    },
+    "voice_id": {
+      "type": "string",
+      "required": false,
+      "description": "预设 voice ID (provider-specific)"
+    },
+    "voice_lang": {
+      "type": "string",
+      "required": false,
+      "default": "zh",
+      "description": "语音语言代码"
+    },
+    "voice_speed": {
+      "type": "number",
+      "required": false,
+      "default": 1.0,
+      "description": "语速倍率 (0.5-2.0)"
+    }
+  },
+  "vitality_cost": { "base": 8 },
+  "templates": ["voice-message-prompt.md", "voice-enrichment-prompt.md"]
+}

@@ -377,7 +377,7 @@ export const DEFAULT_FLOW_STATE: FlowState = {
   category: null,
   entered_at: null,
   duration_ticks: 0,
-  interrupt_chance: 0.15,
+  interrupt_chance: 0.20,
 };
 
 // === Random Events ===
