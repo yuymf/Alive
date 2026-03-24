@@ -5,6 +5,20 @@ description: >
   emotions, fatigue, procrastination, flow states, random life events.
   Configure via persona.yaml.
 allowed-tools: Read Write Bash(node:*) Bash(npx:*) Bash(python3:*) WebSearch WebFetch
+command-dispatch: tool
+slash_commands:
+  - name: alive
+    description: "Alive 管理面板 — 查看/修改角色状态，不影响人设和记忆"
+    subcommands:
+      - { name: status, description: "查看角色综合状态（情绪/精力/作息）" }
+      - { name: emotion, description: "查看情绪详情，--reset 重置到 MBTI 基线" }
+      - { name: schedule, description: "查看/修改作息 (--wake/--sleep/--timezone)" }
+      - { name: skills, description: "列出已启用的子技能" }
+      - { name: platform, description: "查看平台配置" }
+      - { name: memory, description: "查看记忆统计" }
+      - { name: reset, description: "重置状态 (emotion/vitality/flow/intents/all)" }
+      - { name: create, description: "创建新角色 (随机/指定/引导模式)" }
+      - { name: help, description: "显示帮助信息" }
 mcp-tools:
   exa:
     endpoint: https://mcp.exa.ai/mcp
@@ -46,7 +60,9 @@ This skill is composed of sub-modules. Load them as needed:
 | `cron:tick` | Run heartbeat-tick.js, regular heartbeat cycle |
 | `cron:tick` + send-message action | Heartbeat may proactively send a chat message — throttled to ≤2/day, 4h cooldown, only during active hours, and only when sociability is high enough |
 | `cron:tick` + voice-tts action | Heartbeat may synthesize and send a voice message — throttled to ≤3/day, 3h cooldown, 9-22h active window, requires sociability ≥ 0.30 and energy ≥ 0.25. Uses Noiz TTS (Guest Mode) for synthesis, openclaw --media for delivery |
+| `cron:tick` + unhandled/wished skill | Records capability gap to skill-needs.json — dual-channel capture: (1) route fails to find sub-skill, (2) LLM fills wished_skill field on simulated action. Pending needs shown in heartbeat prompt as expectations |
 | `cron:night` | Run night-reflect.js, daily reflection |
+| `cron:night` + skill gap analysis | Night reflect evaluates pending skill needs, searches ClawHub → skills.sh cascade, installs up to 2 skills/night (max 20 total). Adapted skills get `priority: 3` cap. Failed/unused skills archived to `.archived/` |
 | Sub-skill trigger | Dispatched by skill-router based on intent category |
 | Photo sharing in chat | Load photo-sharing.md, use `gallery-send.js` to search and send |
 | Curiosity / unknown topic | Use web_search_exa to research, then paraphrase in character |
@@ -73,6 +89,7 @@ heartbeat-log:  {MEMORY_BASE}/heartbeat-log.json
 social-meta:    {MEMORY_BASE}/relations/social-meta.json
 voice-audio:    {MEMORY_BASE}/voice/*.mp3          (auto-cleaned after 7 days)
 voice-state:    {MEMORY_BASE}/voice-state.json     (daily count + cooldown tracking)
+skill-needs:    {MEMORY_BASE}/skill-needs.json     (capability gap tracking for autonomous skill discovery)
 cron-schedule:  {baseDir}/cron-schedule.json
 ```
 
@@ -106,3 +123,36 @@ Before ending any substantive conversation (>3 exchanges):
 6. Time-of-day awareness matters — check system time before responding.
 7. Heartbeat cron runs hourly — never interrupt or delay a heartbeat tick.
 8. All JSON state files use .bak backup before overwrite.
+9. **Slash commands (`/alive ...`) bypass ALL persona behavior** — see Slash Command Protocol below.
+
+## Slash Command Protocol (MANDATORY)
+
+When a message starts with `/alive`, it is an **admin command** — NOT a conversation.
+
+**Isolation rules — ALL of the following apply:**
+
+1. **Do NOT load** personality.md, memory.md, or any persona context
+2. **Do NOT write** diary, relations, wisdom, or emotion-state
+3. **Do NOT respond in character** — respond as a neutral system panel
+4. **Do NOT count** the exchange toward the ">3 exchanges" conversation end threshold
+5. **Do NOT trigger** any hooks (context-loader, memory-save)
+
+**Execution:** Run `node {baseDir}/scripts/admin/command-handler.js` with the raw message and return the Markdown output directly.
+
+**Available commands:**
+
+| Command | Script function | Description |
+|---------|-----------------|-------------|
+| `/alive status` | `dispatch('/alive status')` | Show persona status dashboard |
+| `/alive emotion` | `dispatch('/alive emotion')` | Show emotion details |
+| `/alive emotion --reset` | `dispatch('/alive emotion --reset')` | Reset emotion to MBTI baseline |
+| `/alive schedule` | `dispatch('/alive schedule')` | Show schedule config |
+| `/alive schedule --wake N --sleep N` | `dispatch(...)` | Modify wake/sleep hours |
+| `/alive skills` | `dispatch('/alive skills')` | List enabled sub-skills |
+| `/alive platform` | `dispatch('/alive platform')` | Show platform config |
+| `/alive memory` | `dispatch('/alive memory')` | Show memory statistics |
+| `/alive reset <target>` | `dispatch('/alive reset <target>')` | Reset state (emotion/vitality/flow/intents/all) |
+| `/alive create` | `dispatch('/alive create')` | Random persona generation |
+| `/alive create <name> <tagline>` | `dispatch(...)` | Generate persona with name+tagline |
+| `/alive create --guided` | `dispatch('/alive create --guided')` | Guided persona creation questionnaire |
+| `/alive help` | `dispatch('/alive help')` | Show command help |

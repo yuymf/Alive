@@ -13,23 +13,26 @@ import {
   FlowState, DEFAULT_FLOW_STATE,
   ChainAndCooldownState, DEFAULT_CHAIN_STATE,
   IntentPool,
+  isFeatureEnabled,
 } from '../utils/types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from '../utils/file-utils';
 import { now, getLocalDate, formatLocalTime } from '../utils/time-utils';
 import { rebalanceTiers, updateMetaStats } from '../world/social-graph-engine';
 import { processChainEvents } from '../world/random-events';
 import { getDefaultUndertone, loadPersona, injectPersona } from '../persona/persona-loader';
+import { evaluateSkillNeeds, discoverAndInstall, buildSkillNeedsForPrompt } from '../hub/skill-discovery';
 
 interface NightReflectDecision {
   new_wisdom: Array<{ lesson: string; importance: number; tags: string[] }>;
   preference_updates: Array<{ type: string; name: string; affinity_delta: number; reason: string }>;
   aspiration_updates: Array<{ action: 'create' | 'progress' | 'achieve' | 'abandon'; content: string; context: string }>;
   personality_drift: { trait: string; strength: number; origin: string; effect: string } | null;
+  skill_acquisition_plans?: Array<{ need_id: string; search_query: string; priority: number; rationale: string }>;
   diary_entry: string;
 }
 
 export async function runNightReflect(
-  llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T> },
+  llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T>; call(prompt: string, maxTokens?: number): Promise<string> },
 ): Promise<void> {
   const currentTime = now();
   const today = getLocalDate(currentTime);
@@ -91,9 +94,23 @@ export async function runNightReflect(
     .replace('{preferences_summary}', JSON.stringify(preferences, null, 2))
     .replace('{aspirations_summary}', aspirations.aspirations.length > 0
       ? aspirations.aspirations.map(a => `- [${a.status}] ${a.content}: ${a.context}`).join('\n')
-      : '还没有明确的梦想。');
+      : '还没有明确的梦想。')
+    .replace('{skill_needs}', isFeatureEnabled(persona, 'skill_discovery') ? buildSkillNeedsForPrompt() : '');
 
   const decision = await llm.callJSON<NightReflectDecision>(prompt);
+
+  // ── Skill Gap Analysis & Discovery (gated by features.skill_discovery) ──
+  if (isFeatureEnabled(persona, 'skill_discovery')) {
+    try {
+      const plans = decision.skill_acquisition_plans ?? await evaluateSkillNeeds(llm);
+      if (plans.length > 0) {
+        console.log(`[night-reflect] Skill Gap Analysis: ${plans.length} plans to evaluate`);
+        await discoverAndInstall(plans, llm);
+      }
+    } catch (err) {
+      console.error(`[night-reflect] Skill discovery phase failed: ${(err as Error).message}`);
+    }
+  }
 
   // Apply Core Wisdom updates (immutable)
   let updatedWisdomList = [...wisdom.wisdom];
@@ -199,17 +216,19 @@ export async function runNightReflect(
     }
   }
 
-  // Apply personality drift (rare)
-  const personalityDrift = readJSON<PersonalityDrift>(PATHS.personalityDrift, { base: persona.personality.mbti, modifiers: [] });
-  if (decision.personality_drift) {
-    const updatedDrift: PersonalityDrift = {
-      ...personalityDrift,
-      modifiers: [
-        ...personalityDrift.modifiers,
-        decision.personality_drift as PersonalityModifier,
-      ],
-    };
-    writeJSON(PATHS.personalityDrift, updatedDrift);
+  // Apply personality drift (rare, gated by features.personality_drift)
+  if (isFeatureEnabled(persona, 'personality_drift')) {
+    const personalityDrift = readJSON<PersonalityDrift>(PATHS.personalityDrift, { base: persona.personality.mbti, modifiers: [] });
+    if (decision.personality_drift) {
+      const updatedDrift: PersonalityDrift = {
+        ...personalityDrift,
+        modifiers: [
+          ...personalityDrift.modifiers,
+          decision.personality_drift as PersonalityModifier,
+        ],
+      };
+      writeJSON(PATHS.personalityDrift, updatedDrift);
+    }
   }
 
   // Write diary entry

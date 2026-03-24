@@ -167,7 +167,34 @@ function initChainResults(): LiveChainResults {
 }
 
 /**
+ * Extract skill name from a chosen_actions string.
+ * Supports formats:
+ *   "[skillName] description"       → { skill: "skillName", fallback: false, error: false }
+ *   "[fallback:skillName] desc"     → { skill: "skillName", fallback: true,  error: false }
+ *   "[error:skillName] desc"        → { skill: "skillName", fallback: false, error: true  }
+ *   "[mock:skillName] desc"         → { skill: "skillName", fallback: false, error: false }
+ *   "[flow] activity"               → { skill: "flow",      fallback: false, error: false }
+ *   "[drift] activity"              → { skill: "drift",     fallback: false, error: false }
+ *   "plain description"             → null  (no skill tag)
+ */
+export function parseActionTag(action: string): { skill: string; fallback: boolean; error: boolean } | null {
+  const match = action.match(/^\[((?:fallback|error|mock):)?([^\]]+)\]/);
+  if (!match) return null;
+  const prefix = match[1] ?? '';
+  const skill = match[2].trim();
+  return {
+    skill,
+    fallback: prefix === 'fallback:',
+    error: prefix === 'error:',
+  };
+}
+
+/**
  * Detect chain activity by inspecting heartbeat log and post-history changes.
+ * Reads `chosen_actions` from HeartbeatLogEntry, which are strings like:
+ *   "[instagram] 精选了5张照片准备发Instagram carousel"
+ *   "[fallback:instagram] ..."
+ *   "[error:social-engagement] ..."
  */
 function detectChainActivity(
   chains: LiveChainResults,
@@ -179,43 +206,64 @@ function detectChainActivity(
   const newLogs = heartbeatLog.logs.slice(logBefore);
 
   for (const log of newLogs) {
-    const entry = log as Record<string, unknown>;
-    const actions = (entry.actions || entry.action_outputs || []) as Array<Record<string, unknown>>;
-    const route = (entry.route || entry.resolved_route || '') as string;
+    const chosenActions = log.chosen_actions ?? [];
 
-    // Check if any action touched instagram browse
-    for (const action of actions) {
-      const skillId = (action.skill_id || action.sub_skill || route || '') as string;
-      const success = action.success !== false && !action.error;
+    for (const actionStr of chosenActions) {
+      const tag = parseActionTag(actionStr);
+      if (!tag) continue; // plain simulated action, no skill tag
 
-      if (skillId.includes('instagram') && (skillId.includes('browse') || skillId.includes('窥屏'))) {
+      const skillId = tag.skill.toLowerCase();
+      const actionLower = actionStr.toLowerCase();
+      const success = !tag.error;
+
+      // Instagram browse: content-browse skill touching instagram, or explicit browse action
+      if (
+        (skillId.includes('content-browse') && actionLower.includes('instagram')) ||
+        (skillId.includes('instagram') && (actionLower.includes('browse') || actionLower.includes('窥屏') || actionLower.includes('刷')))
+      ) {
         chains.instagramBrowse.triggered = true;
         if (success) chains.instagramBrowse.succeeded = true;
-        if (action.error) chains.instagramBrowse.errors.push(String(action.error));
+        if (tag.error) chains.instagramBrowse.errors.push(`[${tag.skill}] ${actionStr.slice(0, 80)}`);
       }
 
-      if (skillId.includes('xhs') || skillId.includes('小红书') || skillId.includes('xiaohongshu')) {
+      // XHS browse
+      if (skillId.includes('xhs') || skillId.includes('小红书') || skillId.includes('xiaohongshu') ||
+          actionLower.includes('小红书') || actionLower.includes('xhs')) {
         chains.xhsBrowse.triggered = true;
         if (success) chains.xhsBrowse.succeeded = true;
-        if (action.error) chains.xhsBrowse.errors.push(String(action.error));
+        if (tag.error) chains.xhsBrowse.errors.push(`[${tag.skill}] ${actionStr.slice(0, 80)}`);
       }
 
-      if (skillId.includes('post-pipeline') || skillId.includes('instagram') && skillId.includes('post')) {
+      // Instagram post
+      if (
+        (skillId === 'instagram' && !actionLower.includes('browse') && !actionLower.includes('comment') && !actionLower.includes('reply')) ||
+        skillId.includes('post-pipeline') ||
+        (skillId.includes('instagram') && (actionLower.includes('post') || actionLower.includes('发') || actionLower.includes('carousel')))
+      ) {
         chains.instagramPost.triggered = true;
         if (success) chains.instagramPost.succeeded = true;
-        if (action.error) chains.instagramPost.errors.push(String(action.error));
+        if (tag.error) chains.instagramPost.errors.push(`[${tag.skill}] ${actionStr.slice(0, 80)}`);
       }
 
-      if (skillId.includes('comment') && skillId.includes('outbound')) {
+      // Instagram outbound comment (proactive commenting)
+      if (
+        (skillId.includes('social-engagement') || skillId.includes('comment')) &&
+        (actionLower.includes('comment') || actionLower.includes('评论')) &&
+        !actionLower.includes('reply') && !actionLower.includes('回复')
+      ) {
         chains.instagramOutboundComment.triggered = true;
         if (success) chains.instagramOutboundComment.succeeded = true;
-        if (action.error) chains.instagramOutboundComment.errors.push(String(action.error));
+        if (tag.error) chains.instagramOutboundComment.errors.push(`[${tag.skill}] ${actionStr.slice(0, 80)}`);
       }
 
-      if (skillId.includes('comment') && skillId.includes('reply')) {
+      // Instagram reply comment
+      if (
+        (skillId.includes('social-engagement') || skillId.includes('comment')) &&
+        (actionLower.includes('reply') || actionLower.includes('回复') || actionLower.includes('dm'))
+      ) {
         chains.instagramReplyComment.triggered = true;
         if (success) chains.instagramReplyComment.succeeded = true;
-        if (action.error) chains.instagramReplyComment.errors.push(String(action.error));
+        if (tag.error) chains.instagramReplyComment.errors.push(`[${tag.skill}] ${actionStr.slice(0, 80)}`);
       }
     }
   }

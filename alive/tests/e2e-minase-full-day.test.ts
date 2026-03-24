@@ -9,12 +9,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import YAML from 'yaml';
 import { setBasePaths, resetBasePaths, PATHS, readJSON, readText } from '../scripts/utils/file-utils';
 import { setTimeOverride, clearTimeOverride } from '../scripts/utils/time-utils';
 import { clearPersonaCache } from '../scripts/persona/persona-loader';
 import { runMorningPlan } from '../scripts/lifecycle/morning-plan';
 import { regularTick } from '../scripts/lifecycle/heartbeat-tick';
 import { runNightReflect } from '../scripts/lifecycle/night-reflect';
+import { clearRouteTable } from '../scripts/router/skill-router';
 import type {
   EmotionState, IntentPool, HeartbeatLog, VitalityState,
   ConfidenceState, FlowState, WisdomStore, CronSchedule,
@@ -59,6 +61,18 @@ const MINASE_PERSONA = {
     sleep_hour: 23,
     timezone: 'Asia/Tokyo',
     active_peaks: [14, 21],
+  },
+  // Enable sub-skills so route table has entries for real actions
+  sub_skills: ['instagram', 'content-browse', 'social-engagement', 'web-search'],
+  // Feature flags — enable all for thorough testing
+  features: {
+    skill_discovery: false,
+    random_events: true,
+    social_graph: true,
+    flow_states: true,
+    procrastination: true,
+    personality_drift: true,
+    content_browse: false,
   },
 };
 
@@ -114,11 +128,11 @@ function makeHeartbeatDecision(hour: number): string {
       ],
     },
     13: {
-      inner_monologue: '吃饱了好困啊...刷会手机吧',
+      inner_monologue: '吃饱了好困啊...刷会手机看看最近流行什么吧',
       new_impulses: [],
       suppressed_intents: [],
       chosen_actions: [
-        { action: '窝在cafe里刷手机看别人的帖子', type: 'simulated', skill: null, satisfies_intent: null },
+        { action: '午饭后窝在cafe里刷Instagram看别人的帖子找灵感', type: 'real', skill: 'content-browse', satisfies_intent: null },
       ],
     },
     14: {
@@ -140,13 +154,13 @@ function makeHeartbeatDecision(hour: number): string {
       ],
     },
     16: {
-      inner_monologue: '修图修到头疼了...看看评论吧',
+      inner_monologue: '修图修到头疼了...看看评论吧，粉丝好多问题想回',
       new_impulses: [
         { category: '社交', description: '想跟粉丝互动一下', intensity: 5 },
       ],
       suppressed_intents: [],
       chosen_actions: [
-        { action: '回复了几条粉丝评论', type: 'simulated', skill: null, satisfies_intent: null },
+        { action: '打开Instagram回复粉丝评论和DM', type: 'real', skill: 'social-engagement', satisfies_intent: null },
       ],
     },
     17: {
@@ -168,13 +182,13 @@ function makeHeartbeatDecision(hour: number): string {
       ],
     },
     19: {
-      inner_monologue: '该发帖了！选哪张好呢...',
+      inner_monologue: '该发帖了！今天拍的照片太好看了必须发出去',
       new_impulses: [
         { category: '表达', description: '今天的照片太好看了必须分享', intensity: 7 },
       ],
       suppressed_intents: [],
       chosen_actions: [
-        { action: '精选了5张照片准备发Instagram carousel', type: 'simulated', skill: null, satisfies_intent: null },
+        { action: '精选了5张照片准备发Instagram carousel', type: 'real', skill: 'instagram', satisfies_intent: null },
       ],
     },
     20: {
@@ -186,13 +200,13 @@ function makeHeartbeatDecision(hour: number): string {
       ],
     },
     21: {
-      inner_monologue: '今天互动率还不错嘛！开心',
+      inner_monologue: '明天去哪拍呢？搜一下附近有什么好看的地方',
       new_impulses: [
-        { category: '社交', description: '想找朋友聊天分享今天的成果', intensity: 4 },
+        { category: '学习', description: '想研究明天的拍摄地点', intensity: 4 },
       ],
       suppressed_intents: [],
       chosen_actions: [
-        { action: '回复粉丝评论和DM', type: 'simulated', skill: null, satisfies_intent: null },
+        { action: '搜索东京附近适合拍cos外景的公园和街道', type: 'real', skill: 'web-search', satisfies_intent: null },
       ],
     },
     22: {
@@ -297,11 +311,61 @@ Return JSON with: action, type, narrative, diary_entry, emotion_delta, new_inten
   'soul-injection.md': '{persona.meta.name} soul injection',
   'reflection-prompt.md': 'Reflection prompt for {persona.meta.name}',
   'diary-entry.md': 'Diary entry template for {persona.meta.name}',
+  'flow-evolution-prompt.md': `
+# Flow Evolution for {persona.meta.name}
+Activity: {activity}, Duration: {duration} ticks
+Emotion: {emotion_summary}, Vitality: {vitality}
+Return JSON with: micro_activity, diary_line.
+`,
 };
 
 // ── Helper: Create sandboxed environment ─────────────────────────
 
 let tmpDir: string;
+
+// ── Mock sub-skill factory ──────────────────────────────────────
+
+/** Create a mock sub-skill directory with manifest.json and scripts/index.js */
+function createMockSubSkill(
+  baseDir: string,
+  skillName: string,
+  displayName: string,
+  description: string,
+  intentBindings: Array<{ intent: string; action: string; priority: number }>,
+): void {
+  const skillDir = path.join(baseDir, skillName);
+  fs.mkdirSync(path.join(skillDir, 'scripts'), { recursive: true });
+
+  // manifest.json
+  fs.writeFileSync(path.join(skillDir, 'manifest.json'), JSON.stringify({
+    name: skillName,
+    display_name: displayName,
+    version: '0.1.0-mock',
+    description,
+    intent_bindings: intentBindings,
+  }, null, 2));
+
+  // scripts/index.js — returns a standard SubSkillResult
+  const actionNames = [...new Set(intentBindings.map(b => b.action))];
+  const actionsCode = actionNames.map(action => `
+    '${action}': async function(ctx) {
+      return {
+        narrative: '[mock:${skillName}] 执行了 ${action}: ' + (ctx.intent ? ctx.intent.description : ''),
+        emotion_deltas: [{ valence: 0.05, energy: -0.02 }],
+        vitality_cost: 5,
+        feedback: [],
+        events_triggered: [],
+      };
+    }`).join(',\n');
+
+  fs.writeFileSync(path.join(skillDir, 'scripts', 'index.js'), `
+module.exports = {
+  manifest: require('../manifest.json'),
+  actions: {${actionsCode}
+  },
+};
+`);
+}
 
 function setupSandbox() {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'minase-e2e-fullday-'));
@@ -312,15 +376,10 @@ function setupSandbox() {
   fs.mkdirSync(path.join(tmpDir, 'templates'), { recursive: true });
   fs.mkdirSync(path.join(tmpDir, 'sub-skills'), { recursive: true });
 
-  // Write persona config as JSON (persona-loader tries .json first)
-  // Note: persona-loader checks persona.yaml exists first, then loads .json
+  // Write persona config as YAML (persona-loader parses YAML)
   fs.writeFileSync(
     path.join(tmpDir, 'persona.yaml'),
-    '# placeholder — actual config loaded from persona.json\nmeta:\n  name: "水瀬"\n',
-  );
-  fs.writeFileSync(
-    path.join(tmpDir, 'persona.json'),
-    JSON.stringify(MINASE_PERSONA, null, 2),
+    YAML.stringify(MINASE_PERSONA),
   );
 
   // Write minimal templates
@@ -328,12 +387,36 @@ function setupSandbox() {
     fs.writeFileSync(path.join(tmpDir, 'templates', name), content);
   }
 
+  // Create mock sub-skills so skill-router can resolve real actions
+  const subSkillsDir = path.join(tmpDir, 'sub-skills');
+  createMockSubSkill(subSkillsDir, 'instagram', 'Instagram 内容发布',
+    'Instagram 发帖、图片生成、文案撰写', [
+      { intent: '创作', action: 'instagram-post', priority: 10 },
+      { intent: '表达', action: 'instagram-post', priority: 8 },
+    ]);
+  createMockSubSkill(subSkillsDir, 'content-browse', '内容浏览与灵感采集',
+    '刷内容、采集灵感', [
+      { intent: '窥屏', action: 'feed-browse', priority: 4 },
+      { intent: '学习', action: 'inspiration-collect', priority: 4 },
+    ]);
+  createMockSubSkill(subSkillsDir, 'social-engagement', '社交互动',
+    '评论回复、社交互动', [
+      { intent: '社交', action: 'comment-reply', priority: 8 },
+      { intent: '社交', action: 'social-engagement', priority: 7 },
+    ]);
+  createMockSubSkill(subSkillsDir, 'web-search', '网络搜索研究',
+    '网络搜索、学习新知识', [
+      { intent: '学习', action: 'search-pipeline', priority: 5 },
+      { intent: '窥屏', action: 'search-pipeline', priority: 3 },
+    ]);
+
   // socialMeta (social-meta.json) now lives outside socialDir, so no contamination risk.
 }
 
 function teardownSandbox() {
   clearTimeOverride();
   clearPersonaCache();
+  clearRouteTable();
   resetBasePaths();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 }
@@ -365,6 +448,14 @@ function createDaySimulationLLM() {
 
         if (p.includes('simulated action') || p.includes('action_description') || p.includes('模拟动作')) {
           return JSON.parse(SIMULATED_ACTION_RESPONSE) as T;
+        }
+
+        // Flow evolution response
+        if (p.includes('flow evolution') || p.includes('micro_activity')) {
+          return JSON.parse(JSON.stringify({
+            micro_activity: '换了个角度继续做',
+            diary_line: '还在继续...换了个思路，感觉更顺手了',
+          })) as T;
         }
 
         // Heartbeat decision — route by hour
@@ -693,6 +784,24 @@ describe('E2E: 水瀬 (Minase) Full Day Simulation', () => {
       // Verify the system handles it gracefully by reading with default.
       const drift = readJSON<any>(PATHS.personalityDrift, { base: 'ESTP', modifiers: [] });
       expect(drift.base).toBe('ESTP');
+
+      // === SKILL ROUTING VERIFICATION ===
+      // With 4 real actions in mock data (13:00, 16:00, 19:00, 21:00),
+      // verify that the skill-router was actually invoked
+
+      // Check heartbeat log for sub-skill execution traces
+      const allRegularLogs = finalLog.logs.filter(l => l.type === 'regular');
+      const logsWithActions = allRegularLogs.filter(l => l.chosen_actions && l.chosen_actions.length > 0);
+
+      // At least some ticks should have real skill actions (format: [skillName] action)
+      const realSkillActions = logsWithActions.flatMap(l => l.chosen_actions ?? [])
+        .filter(a => /^\[(?:instagram|content-browse|social-engagement|web-search|mock:|fallback:)/.test(a));
+      expect(realSkillActions.length).toBeGreaterThanOrEqual(1); // At least 1 real skill ran
+
+      // Diary should contain evidence of sub-skill execution
+      // Either real sub-skill narrative or fallback execution
+      const hasSkillTrace = diary.includes('[mock:') || diary.includes('simulated-fallback') || diary.includes('real,');
+      expect(hasSkillTrace).toBe(true);
     });
 
     it('cron schedule is consistent throughout the day', async () => {

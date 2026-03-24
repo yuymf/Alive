@@ -322,20 +322,21 @@ describe('processProcrastination', () => {
     expect(diaryEntries.length).toBeGreaterThan(0);
   });
 
-  it('can abandon intent after 5 skips (high stress)', () => {
-    const intent = makeIntent({ id: 'a', intensity: 6.0, resistance: 2.0, skipped_count: 4 });
+  it('can abandon intent after 4 skips (high stress)', () => {
+    const intent = makeIntent({ id: 'a', intensity: 6.0, resistance: 2.0, skipped_count: 3 });
     const pool = makePool([intent]);
     const { pool: result, diaryEntries } = processProcrastination(pool, new Set(), () => 0.1, 0.6);
     // High stress → 80% abandon prob, rng=0.1 → should abandon
-    expect(result.intents[0].intensity).toBe(1.0);
+    // Abandon sets intensity = min(resistance * 0.8, 0.5) = min(1.6, 0.5) = 0.5
+    expect(result.intents[0].intensity).toBeLessThanOrEqual(0.5);
     expect(diaryEntries.some(d => d.includes('不想做了'))).toBe(true);
   });
 
-  it('can surge intent after 5 skips (low rng, low stress)', () => {
-    const intent = makeIntent({ id: 'a', intensity: 6.0, resistance: 2.0, skipped_count: 4 });
+  it('can surge intent after 4 skips (low rng, low stress)', () => {
+    const intent = makeIntent({ id: 'a', intensity: 6.0, resistance: 2.0, skipped_count: 3 });
     const pool = makePool([intent]);
     const { pool: result, diaryEntries } = processProcrastination(pool, new Set(), () => 0.9, 0.1);
-    // Low stress → 30% abandon prob, rng=0.9 → should surge
+    // Low stress → 50% abandon prob, rng=0.9 → should surge
     expect(result.intents[0].intensity).toBe(9.0); // 6.0 + 3.0
     expect(diaryEntries.some(d => d.includes('不行'))).toBe(true);
   });

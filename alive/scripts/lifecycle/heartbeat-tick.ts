@@ -17,6 +17,7 @@ import {
   FlowState, DEFAULT_FLOW_STATE,
   ChainAndCooldownState, DEFAULT_CHAIN_STATE,
   hydrateEmotionState, hydrateIntent,
+  isFeatureEnabled,
 } from '../utils/types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from '../utils/file-utils';
 import {
@@ -43,8 +44,9 @@ import {
 } from '../world/social-graph-engine';
 import { isActiveHeartbeatHour } from '../world/heartbeat-gate';
 import { loadPersona, injectPersona, buildVoiceSignature } from '../persona/persona-loader';
-import { resolveRoute, resolveRouteBySkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
+import { resolveRoute, resolveRouteBySkillName, fuzzyResolveSkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
 import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
+import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
 import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
 import { now, getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from '../utils/time-utils';
@@ -106,6 +108,8 @@ interface HeartbeatDecision {
     type: 'real' | 'simulated' | 'inner';
     skill: string | null;
     satisfies_intent: string | null;
+    /** 技能渴望：当角色想做某事但知道没有对应技能时，填写期望的技能名称 */
+    wished_skill?: string | null;
   }>;
 }
 
@@ -280,32 +284,39 @@ export async function regularTick(
   }
 
   // 2c. Social graph: decay relations, process dormancy, generate social intents
-  const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { following: {}, stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
-  let socialRelations = readAllJSON<SocialRelation>(PATHS.socialDir);
-  socialRelations = decayAllRelations(socialRelations, currentTime);
-  const dormancyResult = processDormancy(socialRelations, currentTime);
-  socialRelations = dormancyResult.active;
-
-  // 2d. Reactivate dormant relations with new interactions
+  //     Gated by features.social_graph (default: true)
+  const socialGraphEnabled = isFeatureEnabled(persona, 'social_graph');
+  let socialRelations: SocialRelation[] = [];
+  let socialIntents: Array<{ category: IntentCategory; description: string; intensity: number }> = [];
   const unprocessedEvents = events.events.filter(e => !e.processed);
   const hasNewEvent = unprocessedEvents.length > 0;
-  for (const event of unprocessedEvents) {
-    const eventUserId = (event.data as { user_id?: string }).user_id;
-    if (!eventUserId) continue;
-    socialRelations = socialRelations.map(r =>
-      r.id === eventUserId && classifyTier(r.relationship.closeness) === 'dormant'
-        ? reactivateRelation(r, currentTime.toISOString())
-        : r,
-    );
-  }
-  const socialIntents = generateSocialIntents(socialRelations, socialMeta, currentTime);
 
-  // Write updated social relations back
-  for (const r of socialRelations) {
-    writeSocialRelation(PATHS.socialDir, r);
+  if (socialGraphEnabled) {
+    const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { following: {}, stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
+    socialRelations = readAllJSON<SocialRelation>(PATHS.socialDir);
+    socialRelations = decayAllRelations(socialRelations, currentTime);
+    const dormancyResult = processDormancy(socialRelations, currentTime);
+    socialRelations = dormancyResult.active;
+
+    // 2d. Reactivate dormant relations with new interactions
+    for (const event of unprocessedEvents) {
+      const eventUserId = (event.data as { user_id?: string }).user_id;
+      if (!eventUserId) continue;
+      socialRelations = socialRelations.map(r =>
+        r.id === eventUserId && classifyTier(r.relationship.closeness) === 'dormant'
+          ? reactivateRelation(r, currentTime.toISOString())
+          : r,
+      );
+    }
+    socialIntents = generateSocialIntents(socialRelations, socialMeta, currentTime);
+
+    // Write updated social relations back
+    for (const r of socialRelations) {
+      writeSocialRelation(PATHS.socialDir, r);
+    }
+    const updatedMeta = updateMetaStats(socialMeta, socialRelations);
+    writeJSON(PATHS.socialMeta, updatedMeta);
   }
-  const updatedMeta = updateMetaStats(socialMeta, socialRelations);
-  writeJSON(PATHS.socialMeta, updatedMeta);
 
   // 3. Narrative continuity: build recent tick summaries and last inner monologue
   const recentLogs = heartbeatLog.logs.filter(l => l.status === 'completed').slice(-3);
@@ -328,11 +339,16 @@ export async function regularTick(
     ? `${rigidNow.activity}中，可做: ${rigidNow.allowed_actions.join(', ')}`
     : '自由时段';
 
-  // Path A: currently in flow
-  if (flowState.status === 'flow') {
+  // Path A: currently in flow (gated by features.flow_states)
+  if (flowState.status === 'flow' && isFeatureEnabled(persona, 'flow_states')) {
     const exitCheck = checkFlowExit(flowState, intentPool, vitality.vitality, rigidNow, hasNewEvent);
     if (!exitCheck.shouldExit) {
       flowState = tickFlow(flowState);
+
+      // P0-2: Flow 期间仍需运行 intent 消化逻辑
+      // 即使在 flow 中，intent 仍然会积累和衰变，避免 intent 堆积
+      intentPool = decaySatisfied(intentPool);
+      intentPool = accumulateIntents(intentPool, hour, 24, heartbeatLog.logs.filter(l => l.status === 'completed').slice(-10).length, hasNewEvent);
 
       let flowDiary: string;
       let tickSummary: string;
@@ -379,8 +395,8 @@ export async function regularTick(
     flowState = resetFlow();
   }
 
-  // Path B: currently in drift
-  if (flowState.status === 'drift') {
+  // Path B: currently in drift (gated by features.flow_states)
+  if (flowState.status === 'drift' && isFeatureEnabled(persona, 'flow_states')) {
     const exitCheck = checkDriftExit(flowState, intentPool, vitality.vitality, hasNewEvent);
     if (!exitCheck.shouldExit) {
       flowState = tickFlow(flowState);
@@ -400,6 +416,11 @@ export async function regularTick(
     }
     console.log(`Drift exit: ${exitCheck.reason}`);
     appendText(PATHS.diary, `\n> 💭 ${exitCheck.reason}...不再发呆了\n`);
+    flowState = resetFlow();
+  }
+
+  // Auto-reset flow/drift if features.flow_states is disabled but state lingers
+  if (!isFeatureEnabled(persona, 'flow_states') && flowState.status !== 'none') {
     flowState = resetFlow();
   }
 
@@ -446,33 +467,35 @@ export async function regularTick(
     console.log(`Impulse breakthrough: ${breakthrough.description}`);
   }
 
-  // 5f. Context-aware random event
-  const eventCtx: EventContext = {
-    emotion,
-    vitality,
-    flow: flowState,
-    currentSchedule: rigidNow?.activity ?? null,
-    recentActions: recentLogs.flatMap(l => l.chosen_actions ?? []),
-    cooldowns: chainState.cooldowns,
-  };
-  const randomResult = rollContextAwareEvent(eventCtx);
-  if (randomResult.event) {
-    emotion = applyImpulse(emotion, randomResult.event.emotion_delta, randomResult.event.description, 3);
-    for (const boost of randomResult.event.intent_boosts) {
-      intentPool = addIntent(intentPool, boost.category, randomResult.event.description, boost.boost, 'event');
-    }
-    appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${randomResult.event.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: 随机事件\n`);
-    console.log(`Random event: ${randomResult.event.description}`);
+  // 5f. Context-aware random event (gated by features.random_events)
+  if (isFeatureEnabled(persona, 'random_events')) {
+    const eventCtx: EventContext = {
+      emotion,
+      vitality,
+      flow: flowState,
+      currentSchedule: rigidNow?.activity ?? null,
+      recentActions: recentLogs.flatMap(l => l.chosen_actions ?? []),
+      cooldowns: chainState.cooldowns,
+    };
+    const randomResult = rollContextAwareEvent(eventCtx);
+    if (randomResult.event) {
+      emotion = applyImpulse(emotion, randomResult.event.emotion_delta, randomResult.event.description, 3);
+      for (const boost of randomResult.event.intent_boosts) {
+        intentPool = addIntent(intentPool, boost.category, randomResult.event.description, boost.boost, 'event');
+      }
+      appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${randomResult.event.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 3\n标签: 随机事件\n`);
+      console.log(`Random event: ${randomResult.event.description}`);
 
+      chainState = {
+        ...chainState,
+        cooldowns: { ...chainState.cooldowns, [randomResult.event.description]: currentTime.toISOString() },
+      };
+    }
     chainState = {
       ...chainState,
-      cooldowns: { ...chainState.cooldowns, [randomResult.event.description]: currentTime.toISOString() },
+      pending: [...chainState.pending, ...randomResult.newChainEvents],
     };
   }
-  chainState = {
-    ...chainState,
-    pending: [...chainState.pending, ...randomResult.newChainEvents],
-  };
 
   // 6. Build perception summary + LLM decision
   const perceptionSummary = buildPerceptionSummary(emotion, schedule, events, hour, weekday, worldContext);
@@ -491,11 +514,11 @@ export async function regularTick(
   const personalityDrift = readJSON(PATHS.personalityDrift, { base: persona.personality.mbti, modifiers: [] });
   const personalityContext = `${persona.personality.mbti}基底。${personalityDrift.modifiers.map((m: { effect: string }) => m.effect).join('；')}`;
 
-  // Build registered skills summary for LLM
-  const routeTable = getRouteTable();
+  // Build registered skills summary for LLM (filtered by persona.sub_skills)
+  const routeTable = getRouteTable(persona);
   const handledIntents = Object.keys(routeTable);
 
-  // 构建详细的 sub-skill 列表供 LLM 参考（Task 4 核心修复）
+  // 构建详细的 sub-skill 列表供 LLM 参考
   const subSkillListLines: string[] = [];
   for (const [intentCat, routes] of Object.entries(routeTable)) {
     for (const route of routes) {
@@ -525,7 +548,8 @@ export async function regularTick(
     .replace('{confidence_context}', getConfidenceMoodHint(confidence.confidence))
     .replace('{voice_directive}', voiceDirective)
     .replace('{sub_skill_list}', subSkillList)
-    .replace('{skill_hint}', skillHint);
+    .replace('{skill_hint}', skillHint)
+    .replace('{pending_skill_needs}', isFeatureEnabled(persona, 'skill_discovery') ? buildPendingNeedsHint() : '');
 
   let decision: HeartbeatDecision;
   try {
@@ -577,6 +601,24 @@ export async function regularTick(
           vitality = replenishVitality(vitality, 'browsing_light');
         }
 
+        // 通道2：隐性渴望 — wished_skill 字段捕获能力缺口 (gated by features.skill_discovery)
+        if (action.wished_skill && isFeatureEnabled(persona, 'skill_discovery')) {
+          try {
+            const satisfiedIntent = intentPool.intents.find(i => i.id === action.satisfies_intent);
+            recordSkillNeed({
+              intent_category: satisfiedIntent?.category ?? toIntentCategory(action.action.split(' ')[0] ?? ''),
+              description: action.action,
+              wished_skill_name: action.wished_skill,
+              source: 'wished',
+              original_action: action.action,
+              intensity: satisfiedIntent?.intensity ?? 5,
+            });
+            console.log(`[skill-discovery] Recorded wished skill: ${action.wished_skill} for "${action.action}"`);
+          } catch (err) {
+            console.error(`[skill-discovery] Failed to record wished skill: ${(err as Error).message}`);
+          }
+        }
+
         appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${result.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 4\n标签: heartbeat, ${action.type}\n`);
         totalImportance += 4;
         actionResults.push(action.action);
@@ -585,8 +627,9 @@ export async function regularTick(
       }
     } else if (action.type === 'real' && action.skill) {
       // Route to sub-skill via skill-router
-      // Try intent category first (e.g. "创作"), then fall back to skill name (e.g. "instagram")
-      const route = resolveRoute(action.skill) ?? resolveRouteBySkillName(action.skill);
+      // Try intent category first (e.g. "创作"), then fall back to skill name (e.g. "instagram"),
+      // then fuzzy-match for LLM hallucinated names (e.g. "social-media-posting" → "instagram")
+      const route = resolveRoute(action.skill) ?? resolveRouteBySkillName(action.skill) ?? fuzzyResolveSkillName(action.skill);
       if (route) {
         try {
           const satisfiedIntent = intentPool.intents.find(i => i.id === action.satisfies_intent);
@@ -622,8 +665,37 @@ export async function regularTick(
           actionResults.push(`[error:${route.skillName}] ${action.action}`);
         }
       } else {
-        console.log(`[router] No sub-skill handles skill="${action.skill}" for: ${action.action}`);
-        actionResults.push(`[unhandled] ${action.action}`);
+        console.log(`[router] No sub-skill handles skill="${action.skill}" for: ${action.action} — falling back to simulated`);
+
+        // Fallback: execute as simulated action instead of leaving as [unhandled]
+        try {
+          const result = await executeSimulatedAction(action.action, emotion, scheduleContext, voiceDirective, recentDiary, llm);
+          emotion = applyDelta(emotion, result.emotion_delta, result.narrative.slice(0, 50));
+          appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${result.diary_entry}\n情绪: ${emotion.mood.description} | 重要性: 4\n标签: heartbeat, simulated-fallback\n`);
+          totalImportance += 4;
+          actionResults.push(`[fallback:${action.skill}] ${action.action}`);
+        } catch (simErr) {
+          console.error(`[router] Simulated fallback also failed: ${(simErr as Error).message}`);
+          actionResults.push(`[unhandled] ${action.action}`);
+        }
+
+        // 通道1：显性失败 — 路由找不到对应 sub-skill，记录能力缺口 (gated by features.skill_discovery)
+        if (isFeatureEnabled(persona, 'skill_discovery')) {
+          try {
+            const satisfiedIntent = intentPool.intents.find(i => i.id === action.satisfies_intent);
+            recordSkillNeed({
+              intent_category: satisfiedIntent?.category ?? toIntentCategory(action.skill ?? ''),
+              description: action.action,
+              wished_skill_name: action.skill,
+              source: 'unhandled',
+              original_action: action.action,
+              intensity: satisfiedIntent?.intensity ?? 5,
+            });
+            console.log(`[skill-discovery] Recorded unhandled skill need: ${action.skill} for "${action.action}"`);
+          } catch (err) {
+            console.error(`[skill-discovery] Failed to record unhandled need: ${(err as Error).message}`);
+          }
+        }
       }
     }
   }
@@ -640,14 +712,16 @@ export async function regularTick(
     confidence = updateConfidenceFromBatch(confidence, collectedFeedback);
   }
 
-  // 8c. Procrastination tracking
-  const procResult = processProcrastination(intentPool, chosenIntentIds);
-  intentPool = procResult.pool;
-  if (procResult.stressDelta > 0) {
-    emotion = applyDelta(emotion, { stress: procResult.stressDelta }, '拖延压力');
-  }
-  for (const entry of procResult.diaryEntries) {
-    appendText(PATHS.diary, `\n> 💭 ${entry}\n`);
+  // 8c. Procrastination tracking (gated by features.procrastination)
+  if (isFeatureEnabled(persona, 'procrastination')) {
+    const procResult = processProcrastination(intentPool, chosenIntentIds, Math.random, emotion.stress);
+    intentPool = procResult.pool;
+    if (procResult.stressDelta > 0) {
+      emotion = applyDelta(emotion, { stress: procResult.stressDelta }, '拖延压力');
+    }
+    for (const entry of procResult.diaryEntries) {
+      appendText(PATHS.diary, `\n> 💭 ${entry}\n`);
+    }
   }
 
   // 9. Write inner monologue to diary
@@ -655,22 +729,28 @@ export async function regularTick(
     appendText(PATHS.diary, `\n> 💭 ${decision.inner_monologue}\n`);
   }
 
-  // 10. Check flow/drift entry after action execution
-  const lastAction: LastAction | null = actionResults.length > 0
-    ? { category: toIntentCategory(decision.chosen_actions[0]?.action?.split(' ')[0] ?? ''), activity: actionResults[0] }
-    : null;
+  // 10. Check flow/drift entry after action execution (gated by features.flow_states)
+  if (isFeatureEnabled(persona, 'flow_states')) {
+    const lastAction: LastAction | null = actionResults.length > 0
+      ? { category: toIntentCategory(decision.chosen_actions[0]?.action?.split(' ')[0] ?? ''), activity: actionResults[0] }
+      : null;
 
-  const lastSatisfiedIntent = decision.chosen_actions.find(a => a.satisfies_intent);
-  const lastActionForFlow: LastAction | null = lastSatisfiedIntent
-    ? (() => {
-        const intent = intentPool.intents.find(i => i.id === lastSatisfiedIntent.satisfies_intent);
-        return intent ? { category: intent.category, activity: lastSatisfiedIntent.action } : lastAction;
-      })()
-    : lastAction;
+    const lastSatisfiedIntent = decision.chosen_actions.find(a => a.satisfies_intent);
+    const lastActionForFlow: LastAction | null = lastSatisfiedIntent
+      ? (() => {
+          const intent = intentPool.intents.find(i => i.id === lastSatisfiedIntent.satisfies_intent);
+          return intent ? { category: intent.category, activity: lastSatisfiedIntent.action } : lastAction;
+        })()
+      : lastAction;
 
-  flowState = checkFlowEntry(flowState, lastActionForFlow, intentPool);
-  if (flowState.status === 'none') {
-    flowState = checkDriftEntry(flowState, vitality.vitality, intentPool, emotion.stress);
+    flowState = checkFlowEntry(flowState, lastActionForFlow, intentPool, emotion.energy, flowState.cooldown_remaining);
+    if (flowState.status === 'none') {
+      flowState = checkDriftEntry(flowState, vitality.vitality, intentPool, emotion.stress);
+      // Decrement cooldown on normal ticks (when not entering flow/drift)
+      if (flowState.status === 'none' && flowState.cooldown_remaining > 0) {
+        flowState = { ...flowState, cooldown_remaining: flowState.cooldown_remaining - 1 };
+      }
+    }
   }
 
   // 11. Mark events as processed

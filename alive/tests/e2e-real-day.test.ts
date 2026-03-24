@@ -34,3 +34,39 @@ describe('e2e real day summary helpers', () => {
     expect(summary.instagramReplyComment.status).toBe('not_triggered');
   });
 });
+
+describe('parseActionTag', () => {
+  it('parses standard skill tag: [instagram] desc', () => {
+    const result = realDay.parseActionTag('[instagram] 精选了5张照片准备发carousel');
+    expect(result).toEqual({ skill: 'instagram', fallback: false, error: false });
+  });
+
+  it('parses fallback tag: [fallback:instagram] desc', () => {
+    const result = realDay.parseActionTag('[fallback:instagram] 发帖失败了');
+    expect(result).toEqual({ skill: 'instagram', fallback: true, error: false });
+  });
+
+  it('parses error tag: [error:social-engagement] desc', () => {
+    const result = realDay.parseActionTag('[error:social-engagement] 评论发送失败');
+    expect(result).toEqual({ skill: 'social-engagement', fallback: false, error: true });
+  });
+
+  it('parses mock tag: [mock:content-browse] desc', () => {
+    const result = realDay.parseActionTag('[mock:content-browse] 执行了 feed-browse');
+    expect(result).toEqual({ skill: 'content-browse', fallback: false, error: false });
+  });
+
+  it('parses flow/drift tags', () => {
+    expect(realDay.parseActionTag('[flow] 拍照修图')).toEqual({ skill: 'flow', fallback: false, error: false });
+    expect(realDay.parseActionTag('[drift] 刷手机')).toEqual({ skill: 'drift', fallback: false, error: false });
+  });
+
+  it('returns null for plain text without tag', () => {
+    expect(realDay.parseActionTag('在公园找角度拍cos外景')).toBeNull();
+    expect(realDay.parseActionTag('继续拍摄，换了个有樱花的位置')).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(realDay.parseActionTag('')).toBeNull();
+  });
+});

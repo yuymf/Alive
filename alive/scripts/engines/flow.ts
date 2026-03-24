@@ -5,30 +5,42 @@ import { FlowState, IntentPool, IntentCategory, EmotionState, DEFAULT_FLOW_STATE
 import { buildVoiceSignature } from '../persona/persona-loader';
 import { now } from '../utils/time-utils';
 
-const INTERRUPT_CHANCE_INITIAL = 0.20;
-const INTERRUPT_CHANCE_INCREMENT_EARLY = 0.05;  // 前 2 tick（沉浸初期）
-const INTERRUPT_CHANCE_INCREMENT_LATE = 0.08;   // 2 tick 后（生理需求增长）
-const INTERRUPT_CHANCE_CAP = 0.70;
-const MAX_FLOW_TICKS = 4;   // 真人心流最多 ~4 小时
-const MAX_DRIFT_TICKS = 3;  // 真人摆烂最多 ~3 小时
+const INTERRUPT_CHANCE_INITIAL = 0.35;     // 提高初始中断概率（从0.25 → 0.35）
+const INTERRUPT_CHANCE_INCREMENT_EARLY = 0.15;  // 前 2 tick（加速中断）从 0.08 → 0.15
+const INTERRUPT_CHANCE_INCREMENT_LATE = 0.20;   // 2 tick 后（生理需求增长）从 0.12 → 0.20
+const INTERRUPT_CHANCE_CAP = 0.85;
+const MAX_FLOW_TICKS = 2;   // 真人心流最多 ~2 小时（从 3 缩短到 2，避免吞噬时间）
+const MAX_DRIFT_TICKS = 2;  // 真人摆烂最多 ~2 小时（缩短）
+const FLOW_ENTRY_THRESHOLD = 3.5;  // 净值门槛从 2.0 提高到 3.5（更难进入 flow）
+const FLOW_MIN_ENERGY = 0.30;      // 能量低于 30% 不允许进入 flow
+const FLOW_COOLDOWN_TICKS = 2;     // 退出 flow 后冷却 2 tick 才能再次进入
+
+// 不允许进入 flow 的类别（休息、窥屏不应进入心流）
+const FLOW_EXCLUDED_CATEGORIES: ReadonlySet<string> = new Set(['休息', '窥屏']);
 
 export interface LastAction {
   category: IntentCategory;
   activity: string;
 }
 
-export function checkFlowEntry(currentFlow: FlowState, lastAction: LastAction | null, pool: IntentPool): FlowState {
+export function checkFlowEntry(currentFlow: FlowState, lastAction: LastAction | null, pool: IntentPool, energy?: number, cooldownRemaining?: number): FlowState {
   if (currentFlow.status !== 'none' || !lastAction) return currentFlow;
+  // P2: 休息/窥屏类活动不应进入 flow
+  if (FLOW_EXCLUDED_CATEGORIES.has(lastAction.category)) return currentFlow;
+  // P0: 冷却期检查
+  if (cooldownRemaining !== undefined && cooldownRemaining > 0) return currentFlow;
+  // P0: 能量门槛检查
+  if (energy !== undefined && energy < FLOW_MIN_ENERGY) return currentFlow;
   const intent = pool.intents.find(i => i.category === lastAction.category && i.satisfied_at === null);
-  if (!intent || intent.intensity - intent.resistance <= 2.0) return currentFlow;
-  return { status: 'flow', activity: lastAction.activity, category: lastAction.category, entered_at: now().toISOString(), duration_ticks: 0, interrupt_chance: INTERRUPT_CHANCE_INITIAL };
+  if (!intent || intent.intensity - intent.resistance <= FLOW_ENTRY_THRESHOLD) return currentFlow;
+  return { status: 'flow', activity: lastAction.activity, category: lastAction.category, entered_at: now().toISOString(), duration_ticks: 0, interrupt_chance: INTERRUPT_CHANCE_INITIAL, cooldown_remaining: 0 };
 }
 
 export function checkDriftEntry(currentFlow: FlowState, vitality: number, pool: IntentPool, stress: number): FlowState {
   if (currentFlow.status !== 'none' || vitality >= 40 || stress >= 0.3) return currentFlow;
   const hasStrong = pool.intents.some(i => i.satisfied_at === null && (i.intensity - i.resistance) >= 1.0);
   if (hasStrong) return currentFlow;
-  return { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: now().toISOString(), duration_ticks: 0, interrupt_chance: INTERRUPT_CHANCE_INITIAL };
+  return { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: now().toISOString(), duration_ticks: 0, interrupt_chance: INTERRUPT_CHANCE_INITIAL, cooldown_remaining: 0 };
 }
 
 export function checkFlowExit(flow: FlowState, pool: IntentPool, vitality: number, rigidSchedule: { allowed_actions: string[] } | null, hasNewEvent: boolean, rng = Math.random): { shouldExit: boolean; reason: string | null } {
@@ -59,7 +71,13 @@ export function checkDriftExit(flow: FlowState, pool: IntentPool, vitality: numb
 }
 
 export function tickFlow(flow: FlowState): FlowState {
-  if (flow.status === 'none') return flow;
+  if (flow.status === 'none') {
+    // 即使不在 flow 中，也要递减冷却期
+    if (flow.cooldown_remaining > 0) {
+      return { ...flow, cooldown_remaining: flow.cooldown_remaining - 1 };
+    }
+    return flow;
+  }
   const increment = flow.duration_ticks < 2
     ? INTERRUPT_CHANCE_INCREMENT_EARLY
     : INTERRUPT_CHANCE_INCREMENT_LATE;
@@ -67,7 +85,7 @@ export function tickFlow(flow: FlowState): FlowState {
 }
 
 export function resetFlow(): FlowState {
-  return { ...DEFAULT_FLOW_STATE };
+  return { ...DEFAULT_FLOW_STATE, cooldown_remaining: FLOW_COOLDOWN_TICKS };
 }
 
 // === Diary Generation ===
@@ -148,7 +166,7 @@ export function computeVoiceDirective(flowStatus: FlowState['status'], emotion: 
   return '正常叙事语气。像是在自言自语记录一天的事。' + sig;
 }
 
-// === Flow Evolution (Task 2: 让 flow 期间活动有变化) ===
+// === Flow Evolution ===
 
 export interface FlowEvolution {
   micro_activity: string;

@@ -72,6 +72,9 @@ export const PATHS = {
   get pendingEngagement() { return path.join(getMemoryBase(), 'pending-engagement.json'); },
   get outboundHistory() { return path.join(getMemoryBase(), 'outbound-history.json'); },
 
+  // === Skill discovery ===
+  get skillNeeds() { return path.join(getMemoryBase(), 'skill-needs.json'); },
+
   // === Skill infra ===
   get cronSchedule() { return path.join(getSkillBase(), 'cron-schedule.json'); },
   get personaConfig() { return path.join(getSkillBase(), 'persona.yaml'); },

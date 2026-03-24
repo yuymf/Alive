@@ -145,19 +145,51 @@ export function checkImpulseBreakthrough(pool: IntentPool, vitality: number, inF
 
 export interface ProcrastinationResult { pool: IntentPool; stressDelta: number; diaryEntries: string[]; }
 
+// Varied procrastination diary templates to avoid repetitive entries
+const PROCRASTINATION_TEMPLATES = [
+  (desc: string) => `一直想${desc}但还没开始...`,
+  (desc: string) => `又拖了一小时...${desc}什么时候才能动手啊`,
+  (desc: string) => `${desc}的事还挂在心上呢...`,
+  (desc: string) => `明明想${desc}，手却不听使唤`,
+  (desc: string) => `脑子里一直转着${desc}，但就是没行动`,
+];
+
 export function processProcrastination(pool: IntentPool, chosenIntentIds: ReadonlySet<string>, rng = Math.random, currentStress = 0): ProcrastinationResult {
   let stressDelta = 0;
   const diaryEntries: string[] = [];
+  // Track which descriptions we've already emitted this tick to avoid duplicates
+  const emittedDescriptions = new Set<string>();
+  // Global cap: max 3 procrastination diary entries per tick to avoid diary bloat
+  const MAX_DIARY_PER_TICK = 3;
+
   const intents = pool.intents.map(intent => {
     if (intent.satisfied_at !== null || intent.intensity <= intent.resistance) return intent;
     if (chosenIntentIds.has(intent.id)) return intent.skipped_count > 0 ? { ...intent, skipped_count: 0, last_attempted: now().toISOString() } : intent;
     const newSkipped = intent.skipped_count + 1;
-    if (newSkipped >= 5) {
-      const abandonProb = currentStress > 0.5 ? 0.8 : (currentStress < 0.3 ? 0.3 : 0.5);
-      if (rng() < abandonProb) { diaryEntries.push(`算了...${intent.description}不想做了`); return { ...intent, intensity: 1.0, skipped_count: 0 }; }
-      else { diaryEntries.push(`不行，${intent.description}再不做真的不行了！`); return { ...intent, intensity: cap(intent.intensity + 3.0), skipped_count: 0 }; }
+    if (newSkipped >= 4) {
+      // Reduced threshold from 5 to 4: resolve sooner (abandon or burst)
+      const abandonProb = currentStress > 0.5 ? 0.8 : (currentStress < 0.3 ? 0.5 : 0.6);
+      if (rng() < abandonProb) {
+        // On abandon: set intensity below resistance so it won't re-trigger the cycle
+        const newIntensity = Math.min(intent.resistance * 0.8, 0.5);
+        if (diaryEntries.length < MAX_DIARY_PER_TICK) {
+          diaryEntries.push(`算了...${intent.description}不想做了`);
+        }
+        return { ...intent, intensity: newIntensity, skipped_count: 0 };
+      } else {
+        if (diaryEntries.length < MAX_DIARY_PER_TICK) {
+          diaryEntries.push(`不行，${intent.description}再不做真的不行了！`);
+        }
+        return { ...intent, intensity: cap(intent.intensity + 3.0), skipped_count: 0 };
+      }
     }
-    if (newSkipped >= 3) { stressDelta += 0.05; diaryEntries.push(`一直想${intent.description}但还没开始...`); }
+    // Only emit diary entry at exactly skipped_count === 3 (not every tick >= 3)
+    if (newSkipped === 3 && !emittedDescriptions.has(intent.description) && diaryEntries.length < MAX_DIARY_PER_TICK) {
+      stressDelta += 0.05;
+      const templateFn = PROCRASTINATION_TEMPLATES[Math.floor(rng() * PROCRASTINATION_TEMPLATES.length)];
+      diaryEntries.push(templateFn(intent.description));
+      emittedDescriptions.add(intent.description);
+    }
     return { ...intent, skipped_count: newSkipped };
   });
   return { pool: { ...pool, intents }, stressDelta, diaryEntries };

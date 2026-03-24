@@ -7,6 +7,7 @@ import {
   SubSkillManifest, SubSkill, SubSkillContext, SubSkillResult,
   IntentCategory, ResolvedIntent, EmotionState, PersonaConfig,
   FeedbackEvent, MemoryAccessor, SocialGraphAccessor, SocialRelation,
+  getEnabledSubSkills,
 } from '../utils/types';
 import { PATHS, readJSON, writeJSON, readText, appendText, readAllJSON, writeSocialRelation } from '../utils/file-utils';
 
@@ -28,9 +29,10 @@ let _loadedSkills: Map<string, SubSkill> = new Map();
 
 /**
  * Load sub-skills from a single directory into the route table.
+ * If allowList is provided, only loads skills whose manifest name is in the list.
  * Returns the number of skills loaded.
  */
-function loadSkillsFromDir(dir: string, table: RouteTable): number {
+function loadSkillsFromDir(dir: string, table: RouteTable, allowList?: Set<string>): number {
   if (!fs.existsSync(dir)) return 0;
 
   let loaded = 0;
@@ -42,6 +44,11 @@ function loadSkillsFromDir(dir: string, table: RouteTable): number {
 
     try {
       const manifest: SubSkillManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+      // Filter: skip skills not in the allow list (if provided)
+      if (allowList && !allowList.has(manifest.name)) {
+        continue;
+      }
 
       // Try to load the skill module
       const indexPath = path.join(dir, entry.name, 'scripts', 'index.js');
@@ -72,17 +79,34 @@ function loadSkillsFromDir(dir: string, table: RouteTable): number {
 /**
  * Scan sub-skills directory and build the route table.
  * Scans both top-level sub-skills and the platform/ subdirectory.
+ *
+ * @param subSkillsDir - Override sub-skills directory (for testing)
+ * @param persona - If provided, only loads sub-skills listed in persona.sub_skills.
+ *                  If persona.sub_skills is undefined/empty, no sub-skills are loaded.
+ *                  If persona is not provided, loads ALL sub-skills (backward compat / testing).
  */
-export function buildRouteTable(subSkillsDir?: string): RouteTable {
+export function buildRouteTable(subSkillsDir?: string, persona?: PersonaConfig): RouteTable {
   const dir = subSkillsDir ?? PATHS.subSkillsDir;
   const table: RouteTable = {};
 
+  // Build allow-list from persona config (if provided)
+  let allowList: Set<string> | undefined;
+  if (persona) {
+    const enabled = getEnabledSubSkills(persona);
+    allowList = new Set(enabled);
+    if (allowList.size === 0) {
+      // No sub-skills enabled — return empty table
+      _routeTable = table;
+      return table;
+    }
+  }
+
   // Load top-level sub-skills (e.g. web-search, send-message, instagram)
-  loadSkillsFromDir(dir, table);
+  loadSkillsFromDir(dir, table, allowList);
 
   // Load platform sub-skills (e.g. platform/generate-image, platform/gallery)
   const platformDir = path.join(dir, 'platform');
-  loadSkillsFromDir(platformDir, table);
+  loadSkillsFromDir(platformDir, table, allowList);
 
   // Sort each intent's routes by priority (descending)
   for (const key of Object.keys(table)) {
@@ -95,9 +119,10 @@ export function buildRouteTable(subSkillsDir?: string): RouteTable {
 
 /**
  * Get the route table (lazy-builds on first call).
+ * Pass persona to enable sub-skill filtering on first build.
  */
-export function getRouteTable(): RouteTable {
-  if (!_routeTable) _routeTable = buildRouteTable();
+export function getRouteTable(persona?: PersonaConfig): RouteTable {
+  if (!_routeTable) _routeTable = buildRouteTable(undefined, persona);
   return _routeTable;
 }
 
@@ -130,6 +155,41 @@ export function resolveRouteBySkillName(skillName: string): RouteEntry | null {
   for (const routes of Object.values(table)) {
     for (const route of routes) {
       if (route.skillName === skillName) return route;
+    }
+  }
+  return null;
+}
+
+// === Fuzzy Skill Name Resolution ===
+
+/**
+ * Keyword → registered skill name mapping for LLM hallucination recovery.
+ * When LLM outputs a non-existent skill name (e.g. "social-media-posting"),
+ * we try to fuzzy-match it to an actual registered skill.
+ */
+const SKILL_ALIAS_KEYWORDS: Record<string, string[]> = {
+  'instagram': ['instagram', 'ig', 'insta', 'post', 'posting', 'photo-post', 'social-media-post', 'photo-share', 'photo-sharing'],
+  'social-engagement': ['social', 'engagement', 'comment', 'reply', 'interact', 'live', 'stream', 'streaming', 'live-stream', 'live-streaming', 'broadcast', 'collab'],
+  'send-message': ['message', 'chat', 'dm', 'send-msg'],
+  'content-browse': ['browse', 'feed', 'scroll', 'inspiration', 'explore', 'discover'],
+  'web-search': ['search', 'research', 'google', 'lookup', 'query'],
+  'voice-tts': ['voice', 'tts', 'audio', 'speak'],
+};
+
+/**
+ * Try to fuzzy-match an unknown skill name to a registered skill.
+ * Only returns a match if the resolved skill is actually in the route table.
+ */
+export function fuzzyResolveSkillName(unknownName: string): RouteEntry | null {
+  const lower = unknownName.toLowerCase().replace(/[_\s]+/g, '-');
+
+  for (const [skillName, keywords] of Object.entries(SKILL_ALIAS_KEYWORDS)) {
+    if (keywords.some(kw => lower.includes(kw) || kw.includes(lower))) {
+      const route = resolveRouteBySkillName(skillName);
+      if (route) {
+        console.log(`[router] Fuzzy-matched "${unknownName}" → "${skillName}"`);
+        return route;
+      }
     }
   }
   return null;

@@ -4,7 +4,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import YAML from 'yaml';
-import { PersonaConfig, EmotionDelta, DEFAULT_EMOTION_BASELINE, EmotionUndertone } from '../utils/types';
+import { PersonaConfig, EmotionDelta, DEFAULT_EMOTION_BASELINE, EmotionUndertone, ContentSourcesConfig } from '../utils/types';
 import { PATHS } from '../utils/file-utils';
 
 // MBTI → Emotion Baseline mapping
@@ -213,6 +213,19 @@ export function getScheduleConfig(persona?: PersonaConfig): Required<NonNullable
     active_peaks: p.schedule?.active_peaks ?? [14, 21],
     time_state_description: p.schedule?.time_state_description ?? '',
     time_descriptions: p.schedule?.time_descriptions ?? '',
+  };
+}
+
+/**
+ * Get content sources config with defaults.
+ */
+export function getContentSourcesConfig(persona?: PersonaConfig): Required<ContentSourcesConfig> {
+  const p = persona ?? loadPersona();
+  return {
+    platforms: p.content_sources?.platforms ?? [],
+    keywords: p.content_sources?.keywords ?? [],
+    dailyhot_platforms: p.content_sources?.dailyhot_platforms ?? [],
+    reddit_subreddits: p.content_sources?.reddit_subreddits ?? [],
   };
 }
 

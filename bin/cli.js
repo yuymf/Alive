@@ -181,10 +181,13 @@ function resolveRefImageFromPersona(persona, personaYamlDir) {
  * Uses a temporary file + execFileSync to avoid shell injection risks with user-supplied paths.
  */
 function runGenerateReferences(sourcePath, outputDir, env) {
-  const tmpScript = path.join(os.tmpdir(), `alive-gen-refs-${Date.now()}.mts`);
+  // Use an absolute import path so the script works from /tmp or any cwd.
+  const projectRoot = path.resolve(__dirname, '..');
+  const importPath = path.join(projectRoot, 'alive/sub-skills/platform/generate-image/scripts/generate-references').replace(/\\/g, '/');
+  const tmpScript = path.join(os.tmpdir(), `alive-gen-refs-${Date.now()}.ts`);
   const scriptContent = [
-    `import { generateReferences } from './alive/sub-skills/platform/generate-image/scripts/generate-references';`,
-    `await generateReferences(${JSON.stringify(sourcePath)}, ${JSON.stringify(outputDir)});`,
+    `const { generateReferences } = require('${importPath}');`,
+    `generateReferences(${JSON.stringify(sourcePath)}, ${JSON.stringify(outputDir)}).then(() => process.exit(0)).catch((e) => { console.error(e); process.exit(1); });`,
   ].join('\n');
   fs.writeFileSync(tmpScript, scriptContent);
   try {
@@ -192,7 +195,7 @@ function runGenerateReferences(sourcePath, outputDir, env) {
       stdio: 'inherit',
       timeout: 5 * 60 * 1000, // 5 minutes
       env: { ...process.env, ...env },
-      cwd: path.join(__dirname, '..'),
+      cwd: projectRoot,
     });
     return true;
   } catch (err) {
@@ -1390,6 +1393,226 @@ async function setupReferencesCommand() {
   }
 }
 
+// ═══════════════════════════════════════════════
+// Create Persona — interactive persona creation from CLI
+// ═══════════════════════════════════════════════
+
+function getFlag(name) {
+  const idx = args.indexOf(`--${name}`);
+  if (idx === -1 || idx + 1 >= args.length) return null;
+  const val = args[idx + 1];
+  if (val && val.startsWith('--')) return null; // next arg is another flag
+  return val;
+}
+
+async function createPersonaCLI() {
+  console.log('\n  Alive Framework — Create New Persona');
+  console.log('  ======================================\n');
+
+  const isGuided = args.includes('--guided');
+
+  // Try to load persona-creator from source tree (TypeScript)
+  // We use a dynamic require through tsx for the TS module
+  let creator;
+  try {
+    // Try compiled JS first
+    const compiledPath = path.join(__dirname, '..', 'dist-alive', 'scripts', 'admin', 'persona-creator.js');
+    if (fs.existsSync(compiledPath)) {
+      creator = require(compiledPath);
+    } else {
+      // Fallback: use inline generation (no tsx dependency needed)
+      creator = null;
+    }
+  } catch {
+    creator = null;
+  }
+
+  if (!isGuided) {
+    // ─── Quick Mode ───
+    const name = getFlag('name');
+    const tagline = getFlag('tagline');
+
+    log('Generating random persona...');
+
+    if (creator) {
+      const persona = creator.generatePersonaQuick({ name: name || undefined, tagline: tagline || undefined });
+      const savedPath = creator.savePersona(persona);
+      const preview = creator.formatPersonaPreview(persona);
+      console.log('\n' + preview + '\n');
+      ok(`角色已保存到: ${savedPath}`);
+      console.log(`\n  安装此角色: alive --persona ${savedPath}`);
+      console.log(`  切换到此角色: alive --switch-persona --persona ${savedPath}\n`);
+    } else {
+      // Inline fallback generation (no compiled TS available)
+      const persona = inlineGeneratePersona(name, tagline);
+      const savedPath = inlineSavePersona(persona);
+      console.log(`\n  🌟 新角色: ${persona.meta.name}`);
+      console.log(`  定位: ${persona.meta.tagline}`);
+      console.log(`  MBTI: ${persona.personality.mbti}`);
+      console.log(`  性格: ${persona.personality.core_traits.join('、')}`);
+      console.log(`  说话风格: ${persona.voice.style}\n`);
+      ok(`角色已保存到: ${savedPath}`);
+      console.log(`\n  安装此角色: alive --persona ${savedPath}`);
+      console.log(`  切换到此角色: alive --switch-persona --persona ${savedPath}\n`);
+    }
+    return;
+  }
+
+  // ─── Guided Mode ───
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  console.log('  📝 引导模式 — 逐步创建角色\n');
+  console.log('  按 Enter 跳过任何问题（将随机生成）\n');
+
+  // Step 1: Name (required)
+  let name = getFlag('name');
+  if (!name) {
+    name = (await ask(rl, '  角色名（中文）: ')).trim();
+    if (!name) {
+      name = null; // will be randomly generated
+      console.log('  → 将随机生成名字');
+    }
+  }
+
+  // Step 2: Tagline (required)
+  let tagline = getFlag('tagline');
+  if (!tagline) {
+    tagline = (await ask(rl, '  一句话定位（如"爱做甜品的大学生"）: ')).trim();
+    if (!tagline) {
+      tagline = null;
+      console.log('  → 将随机生成');
+    }
+  }
+
+  // Step 3: Age
+  let age = getFlag('age');
+  if (!age) {
+    const ageInput = (await ask(rl, '  年龄（可选）: ')).trim();
+    age = ageInput || null;
+  }
+
+  // Step 4: MBTI
+  let mbti = getFlag('mbti');
+  if (!mbti) {
+    console.log('\n  MBTI 可选: ESTP ENFP INTJ INFP ENTP ISFJ ENTJ INTP ESFP ISTJ ENFJ ISTP ESFJ INFJ ISFP ESTJ');
+    const mbtiInput = (await ask(rl, '  MBTI 类型（可选）: ')).trim().toUpperCase();
+    mbti = mbtiInput || null;
+  }
+
+  // Step 5: Core Traits
+  let traits = getFlag('traits');
+  if (!traits) {
+    console.log('\n  性格词参考: 元气满满 / 温柔 / 毒舌 / 社恐 / 佛系 / 行动派 / 拖延症 / 文艺 / 吃货 / 傲娇 ...');
+    const traitsInput = (await ask(rl, '  核心性格词（逗号分隔，2-5个）: ')).trim();
+    traits = traitsInput || null;
+  }
+
+  // Step 6: Occupation
+  let occupation = getFlag('occupation');
+  if (!occupation) {
+    const occInput = (await ask(rl, '  职业（如"咖啡店店员"，可选）: ')).trim();
+    occupation = occInput || null;
+  }
+
+  // Step 7: Schedule type
+  let scheduleType = getFlag('schedule');
+  if (!scheduleType) {
+    console.log('\n  作息类型: early(早起7-23) / normal(正常8-0) / late(晚起10-1) / night(夜猫12-3) / healthy(养生6-22)');
+    const schedInput = (await ask(rl, '  作息类型（可选）: ')).trim();
+    scheduleType = schedInput || null;
+  }
+
+  rl.close();
+
+  log('Generating persona...');
+
+  if (creator) {
+    const options = {
+      name: name || undefined,
+      tagline: tagline || undefined,
+      age: age ? parseInt(age, 10) : undefined,
+      mbti: mbti || undefined,
+      coreTraits: traits ? traits.split(/[,，]/).map(s => s.trim()).filter(Boolean) : undefined,
+      occupation: occupation || undefined,
+      scheduleType: scheduleType || undefined,
+    };
+
+    // Use quick mode if no name/tagline, guided if both present
+    let persona;
+    if (options.name && options.tagline) {
+      persona = creator.generatePersonaGuided(options);
+    } else {
+      persona = creator.generatePersonaQuick(options);
+    }
+
+    const savedPath = creator.savePersona(persona);
+    const preview = creator.formatPersonaPreview(persona);
+    console.log('\n' + preview + '\n');
+    ok(`角色已保存到: ${savedPath}`);
+    console.log(`\n  安装此角色: alive --persona ${savedPath}`);
+    console.log(`  切换到此角色: alive --switch-persona --persona ${savedPath}\n`);
+  } else {
+    // Inline fallback
+    const persona = inlineGeneratePersona(name, tagline);
+    const savedPath = inlineSavePersona(persona);
+    console.log(`\n  🌟 新角色: ${persona.meta.name}`);
+    console.log(`  定位: ${persona.meta.tagline}`);
+    console.log(`  MBTI: ${persona.personality.mbti}`);
+    console.log(`  性格: ${persona.personality.core_traits.join('、')}\n`);
+    ok(`角色已保存到: ${savedPath}`);
+    console.log(`\n  安装此角色: alive --persona ${savedPath}`);
+    console.log(`  切换到此角色: alive --switch-persona --persona ${savedPath}\n`);
+  }
+}
+
+// ── Inline Fallback Generator (no TypeScript dependency) ──────────
+
+function inlinePick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function inlinePickN(arr, n) { return [...arr].sort(() => Math.random() - 0.5).slice(0, n); }
+
+const INLINE_SURNAMES = ['林', '陈', '沈', '苏', '叶', '顾', '白', '秦', '夏', '温', '江', '柳', '宋', '唐'];
+const INLINE_GIVEN = ['雨薇', '诗涵', '子墨', '逸尘', '清川', '小鱼', '半夏', '念念', '向晚', '豆豆', '一一', '若水'];
+const INLINE_MBTI = ['ESTP', 'ENFP', 'INTJ', 'INFP', 'ENTP', 'ISFJ', 'ENTJ', 'INTP', 'ESFP', 'ISTJ', 'ENFJ', 'ISTP', 'ESFJ', 'INFJ', 'ISFP', 'ESTJ'];
+const INLINE_TRAITS = ['元气满满', '温柔', '毒舌', '社恐', '佛系', '行动派', '拖延症', '文艺', '吃货', '傲娇', '好奇心旺盛', '慢热', '话痨', '暖心', '完美主义'];
+const INLINE_OCCS = ['大学生', '自由插画师', '便利店店员', '咖啡店店主', '程序员', '视频博主', '花店学徒', '宠物店员'];
+
+function inlineGeneratePersona(name, tagline) {
+  const resolvedName = name || (inlinePick(INLINE_SURNAMES) + inlinePick(INLINE_GIVEN));
+  const occ = inlinePick(INLINE_OCCS);
+  const resolvedTagline = tagline || occ;
+  const mbti = inlinePick(INLINE_MBTI);
+  const traits = inlinePickN(INLINE_TRAITS, 3);
+  const id = resolvedName.toLowerCase().replace(/[^a-z0-9]/g, '') || `persona-${Date.now().toString(36)}`;
+
+  return {
+    meta: { name: resolvedName, id, tagline: resolvedTagline },
+    personality: { mbti, core_traits: traits, quirks: [], values: [], description: `${resolvedName}，${resolvedTagline}。` },
+    voice: { language: 'zh-CN', style: '口语化、活泼、短句多。', emoji_density: 'medium', sample_lines: ['你好呀！', '哈哈好的～', '嗯嗯！'] },
+    intimacy: { levels: 5, behaviors: { 1: '礼貌有距离', 2: '友善开朗', 3: '放松聊天', 4: '亲近真实', 5: '完全袒露' } },
+    schedule: { wake_hour: 8, sleep_hour: 0, timezone: 'Asia/Shanghai', active_peaks: [14, 21] },
+    sub_skills: [],
+  };
+}
+
+function inlineSavePersona(persona) {
+  const header = `# Alive 角色预设 — ${persona.meta.name}\n# 由 alive --create 自动生成\n# 生成时间: ${new Date().toISOString().slice(0, 19)}\n\n`;
+  const yamlStr = YAML.stringify(persona, { indent: 2 });
+  const filename = `${persona.meta.id || 'new-persona'}.yaml`;
+  const savePath = path.join(PERSONAS_DIR, filename);
+
+  // Don't overwrite
+  let finalPath = savePath;
+  let counter = 1;
+  while (fs.existsSync(finalPath)) {
+    finalPath = path.join(PERSONAS_DIR, `${persona.meta.id || 'new-persona'}-${counter}.yaml`);
+    counter++;
+  }
+
+  fs.mkdirSync(PERSONAS_DIR, { recursive: true });
+  fs.writeFileSync(finalPath, header + yamlStr, 'utf8');
+  return finalPath;
+}
+
 // Entry: route by CLI args
 const args = process.argv.slice(2);
 
@@ -1408,6 +1631,9 @@ if (args.includes('--help') || args.includes('-h')) {
     alive --uninstall --persona <path>           Uninstall a persona
     alive --switch-persona --persona <path>      Switch to a different persona (hot swap)
     alive --setup-references --persona <path>    Generate reference images from source photo
+    alive --create                               Create a new random persona (quick mode)
+    alive --create --name "名字" --tagline "定位"  Create persona with specified name/tagline
+    alive --create --guided                      Create persona with step-by-step guidance
     alive --real-day-test --persona <path>       Uninstall + reinstall + run full day E2E test
     alive --real-day-test --persona <path> --dry-run   Same but skip actual API calls
     alive --help                                 Show this help
@@ -1429,6 +1655,9 @@ if (args.includes('--help') || args.includes('-h')) {
     alive                                          # Interactive selection
     alive --persona ./persona.yaml                 # Custom persona
     alive --switch-persona --persona ./another-persona.yaml
+    alive --create                                 # Random new persona
+    alive --create --name "陈小鱼" --tagline "爱吃甜食的插画师"
+    alive --create --guided                        # Step-by-step guided creation
     alive --update --persona ./persona.yaml
     alive --reinstall --persona ./persona.yaml
     alive --uninstall --persona ./persona.yaml
@@ -1436,6 +1665,11 @@ if (args.includes('--help') || args.includes('-h')) {
 
   See alive/persona-schema.yaml for field definitions, or alive/personas/ for examples.
 `);
+} else if (args.includes('--create')) {
+  createPersonaCLI().catch(err => {
+    console.error('\n  Create failed:', err.message);
+    process.exit(1);
+  });
 } else if (args.includes('--switch-persona')) {
   switchPersona().catch(err => {
     console.error('\n  Switch failed:', err.message);

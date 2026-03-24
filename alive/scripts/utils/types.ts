@@ -66,7 +66,50 @@ export interface PersonaConfig {
     system_prompt?: string;
   }>;
   content_sources?: ContentSourcesConfig;
+  sub_skills?: string[];
+  features?: FeaturesConfig;
+  platform_config?: Record<string, Record<string, unknown>>;
 }
+
+// === Features Configuration ===
+/**
+ * Feature flags — toggle-able capabilities in persona.yaml.
+ * All features default to false (opt-in).
+ * sub_skills list controls which sub-skills are loaded by the router.
+ * features controls engine-level behaviors (skill_discovery, etc.).
+ */
+export interface FeaturesConfig {
+  /** Autonomous skill discovery — night gap analysis + auto-install. Default: false */
+  skill_discovery?: boolean;
+  /** Random life events during heartbeat ticks. Default: true */
+  random_events?: boolean;
+  /** Social graph engine — relation decay, dormancy, social intents. Default: true */
+  social_graph?: boolean;
+  /** Flow/drift state machine. Default: true */
+  flow_states?: boolean;
+  /** Procrastination tracking and stress feedback. Default: true */
+  procrastination?: boolean;
+  /** Personality drift via night reflection. Default: true */
+  personality_drift?: boolean;
+  /** Content sources browsing (requires content_sources config). Default: false */
+  content_browse?: boolean;
+  /** Allow any extra feature flags */
+  [key: string]: boolean | undefined;
+}
+
+/** Default feature flags — conservative defaults */
+export const DEFAULT_FEATURES: Required<Pick<FeaturesConfig,
+  'skill_discovery' | 'random_events' | 'social_graph' | 'flow_states' |
+  'procrastination' | 'personality_drift' | 'content_browse'
+>> = {
+  skill_discovery: false,
+  random_events: true,
+  social_graph: true,
+  flow_states: true,
+  procrastination: true,
+  personality_drift: true,
+  content_browse: false,
+};
 
 export interface PersonaEventDef {
   id: string;
@@ -369,6 +412,7 @@ export interface FlowState {
   entered_at: string | null;
   duration_ticks: number;
   interrupt_chance: number;
+  cooldown_remaining: number;  // ticks until flow can be entered again after exit
 }
 
 export const DEFAULT_FLOW_STATE: FlowState = {
@@ -377,7 +421,8 @@ export const DEFAULT_FLOW_STATE: FlowState = {
   category: null,
   entered_at: null,
   duration_ticks: 0,
-  interrupt_chance: 0.20,
+  interrupt_chance: 0.25,
+  cooldown_remaining: 0,
 };
 
 // === Random Events ===
@@ -651,3 +696,61 @@ export const DEFAULT_POST_IMPULSE: PostImpulseState = {
   posts_today_date: '',
   posts_today: 0,
 };
+
+// === Skill Discovery Types ===
+
+export interface SkillNeed {
+  id: string;
+  intent_category: IntentCategory;
+  description: string;
+  wished_skill_name: string | null;
+  source: 'unhandled' | 'wished';
+  original_action: string;
+  first_seen: string;
+  occurrences: number;
+  last_seen: string;
+  intensity_peak: number;
+  status: 'pending' | 'searching' | 'installed' | 'failed' | 'dismissed';
+}
+
+export interface SkillNeedsStore {
+  needs: SkillNeed[];
+  last_scan: string | null;
+}
+
+export interface SkillAcquisitionPlan {
+  need_id: string;
+  search_query: string;
+  priority: number;
+  rationale: string;
+}
+
+// === Feature & Sub-Skill Query Helpers ===
+
+/**
+ * Check if a feature is enabled in the persona config.
+ * Falls back to DEFAULT_FEATURES if not explicitly set.
+ */
+export function isFeatureEnabled(persona: PersonaConfig, feature: keyof FeaturesConfig): boolean {
+  const explicit = persona.features?.[feature];
+  if (explicit !== undefined) return explicit;
+  return (DEFAULT_FEATURES as Record<string, boolean>)[feature as string] ?? false;
+}
+
+/**
+ * Get the list of enabled sub-skill names from persona config.
+ * Returns empty array if not configured (= no sub-skills loaded).
+ */
+export function getEnabledSubSkills(persona: PersonaConfig): string[] {
+  return persona.sub_skills ?? [];
+}
+
+/**
+ * Check if a specific sub-skill is enabled in the persona config.
+ * If sub_skills is not defined at all, returns false (opt-in model).
+ */
+export function isSubSkillEnabled(persona: PersonaConfig, skillName: string): boolean {
+  const enabled = persona.sub_skills;
+  if (!enabled) return false;
+  return enabled.includes(skillName);
+}

@@ -51,6 +51,9 @@
     {"action": "create|progress|achieve|abandon", "content": "string", "context": "string"}
   ],
   "personality_drift": null | {"trait": "string", "strength": 0-1, "origin": "string", "effect": "string"},
+  "skill_acquisition_plans": [
+    {"need_id": "对应能力缺口的id", "search_query": "用于搜索技能包的关键词", "priority": 1-3, "rationale": "为什么值得学习"}
+  ],
   "diary_entry": "睡前日记（2-3句话，要有今天最深刻的一件事+对明天的想法+困意表达）"
 }
 ```

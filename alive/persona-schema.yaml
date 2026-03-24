@@ -155,8 +155,42 @@ schema:
     type: array
     items: string
     required: false
-    description: "启用的子技能列表（通用 + 平台子技能名称）"
+    description: "启用的子技能列表（通用 + 平台子技能名称）。只有列出的技能会被路由器加载。"
     default: []
+
+  features:
+    type: object
+    required: false
+    description: "功能开关 — 控制引擎级别的行为。未设置的 feature 使用默认值。"
+    properties:
+      skill_discovery:
+        type: boolean
+        default: false
+        description: "自主技能发现 — 夜间分析能力缺口并自动安装技能"
+      random_events:
+        type: boolean
+        default: true
+        description: "心跳期间的随机生活事件"
+      social_graph:
+        type: boolean
+        default: true
+        description: "社交关系图引擎 — 关系衰减、休眠、社交意图生成"
+      flow_states:
+        type: boolean
+        default: true
+        description: "Flow/Drift 状态机 — 沉浸和摆烂状态"
+      procrastination:
+        type: boolean
+        default: true
+        description: "拖延追踪和压力反馈"
+      personality_drift:
+        type: boolean
+        default: true
+        description: "人格漂移 — 夜间反思中的性格微调"
+      content_browse:
+        type: boolean
+        default: false
+        description: "内容浏览（需要配合 content_sources 配置）"
 
   platform_config:
     type: object

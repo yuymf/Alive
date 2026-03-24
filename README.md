@@ -18,6 +18,7 @@ alive/                    ← 通用活人感引擎 (persona-agnostic)
 │   ├── world/            # 随机事件 + 社交图谱
 │   ├── router/           # 子 skill 路由调度
 │   ├── persona/          # persona.yaml 加载与模板注入
+│   ├── admin/            # /alive 斜杠命令处理器 (不经过 LLM)
 │   └── utils/            # 基础工具 (file-utils, llm-client, types)
 ├── hooks/                # OpenClaw 钩子
 ├── sub-skills/           # 官方子 skill
@@ -48,6 +49,34 @@ alive
 ```
 
 ## 创建你自己的角色
+
+### 方式一：自动生成（推荐新手）
+
+使用 `/alive create` 或 `alive --create` 一键生成完整角色，支持三种模式：
+
+```bash
+# 纯随机 — 一键生成
+alive --create
+
+# 指定名字和定位
+alive --create --name "陈小鱼" --tagline "爱吃甜食的插画师"
+
+# 引导模式 — 逐步填写
+alive --create --guided
+```
+
+在聊天中也可以使用斜杠命令：
+
+```
+/alive create                              # 纯随机
+/alive create 小鱼 "爱吃甜食的插画师"         # 指定名字+定位
+/alive create --guided                     # 引导模式
+/alive create --guided --name "陈小鱼" --tagline "爱画画" --mbti ENFP --traits "温柔,文艺"
+```
+
+生成的角色自动保存到 `alive/personas/` 目录，可直接安装使用。
+
+### 方式二：手动编写 YAML
 
 1. 复制 `alive/personas/minase.yaml` 为你的角色文件（如 `my-persona.yaml`）
 2. 参考 `alive/persona-schema.yaml` 了解所有可配置字段
@@ -148,6 +177,33 @@ npm run test:watch     # watch 模式
 安装完成后，直接打开 OpenClaw 和角色聊天即可。
 
 **角色会记住你说的事情。** 第一次聊的时候不太熟，多聊几次关系会自然升温。
+
+### 管理面板（斜杠命令）
+
+在对话中输入 `/alive` 即可使用管理命令。这些命令**不经过角色人格、不写入日记、不影响记忆**——纯粹的系统管理操作。
+
+| 命令 | 说明 |
+|------|------|
+| `/alive status` | 查看角色综合状态（情绪/精力/活力/心流/作息） |
+| `/alive emotion` | 查看情绪维度详情（valence/arousal/energy/stress...） |
+| `/alive emotion --reset` | 重置情绪到 MBTI 基线值 |
+| `/alive schedule` | 查看当前作息配置 |
+| `/alive schedule --wake 9 --sleep 1` | 修改起床/睡觉时间 |
+| `/alive schedule --timezone Asia/Tokyo` | 修改时区 |
+| `/alive skills` | 列出已启用的子技能及安装状态 |
+| `/alive platform` | 查看平台配置（Instagram 等） |
+| `/alive memory` | 查看记忆统计（日记天数/wisdom/意图池/关系数...） |
+| `/alive create` | 随机生成一个新角色 |
+| `/alive create <名字> "一句话定位"` | 用指定名字和定位生成角色 |
+| `/alive create --guided` | 引导模式，逐步填写角色信息 |
+| `/alive reset emotion` | 重置情绪状态 |
+| `/alive reset vitality` | 重置活力值到 100 |
+| `/alive reset flow` | 重置心流状态 |
+| `/alive reset intents` | 清空意图池 |
+| `/alive reset all` | 重置以上所有状态 |
+| `/alive help` | 显示帮助 |
+
+> **隔离保证：** 斜杠命令通过 `command-dispatch: tool` 直接路由到脚本执行，不加载 personality.md、不触发 context-loader / memory-save 钩子、不调用 LLM。角色完全感知不到这些操作。
 
 ### 多角色管理
 

@@ -72,7 +72,7 @@ describe('e2e shared setup env loading', () => {
       }, null, 2),
     );
 
-    const keys = loadApiKeys() as Record<string, string | undefined>;
+    const keys = loadApiKeys('minase') as Record<string, string | undefined>;
 
     expect(keys.IMAGE_ENTRY).toBe('FAI');
     expect(keys.LLM_API_KEY).toBe('llm-key');
