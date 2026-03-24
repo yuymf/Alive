@@ -1,18 +1,15 @@
 node_modules/
-dist/
-docs/
+dist-alive/
 .codebuddy
 .claude
+.DS_Store
+.worktrees/
+.rerun-worktree
+.superpowers/
+
+# Runtime data
 ig-session.json
 __pycache__/
 *.pyc
-.superpowers/
-.DS_Store
-.worktrees/
-e2e/e2e-output/
-e2e/sandbox/
-e2e/real-day-runs/
-e2e/weekly-runs/
-.rerun-worktree
-skill/cron-schedule.json
-skill/cron-schedule.json.bak
+alive/cron-schedule.json
+alive/cron-schedule.json.bak

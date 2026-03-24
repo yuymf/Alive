@@ -1,0 +1,221 @@
+# Alive — Persona Schema Definition
+# This file defines the structure that persona.yaml must follow.
+# Required fields are marked with (required).
+
+schema:
+  meta:
+    name: { type: string, required: true, description: "角色名" }
+    name_reading: { type: string, required: false, description: "罗马音/英文名" }
+    age: { type: number, required: false, description: "角色年龄" }
+    id: { type: string, required: false, description: "内部 ID（用于文件路径等），默认取 name_reading 小写" }
+    tagline: { type: string, required: true, description: "一句话定位" }
+    occupation_detail:
+      type: string
+      required: false
+      description: "职业详细描述段落，注入到 personality.md 的「职业身份」部分"
+
+  personality:
+    mbti: { type: string, required: true, description: "MBTI 类型，用于推导情绪基线" }
+    core_traits:
+      type: array
+      items: string
+      required: true
+      min_items: 2
+      max_items: 5
+      description: "核心性格词"
+    quirks:
+      type: array
+      items: string
+      required: false
+      description: "角色独特小癖好"
+    values:
+      type: array
+      items: string
+      required: false
+      description: "在意什么、底线是什么"
+    trait_descriptions:
+      type: string
+      required: false
+      description: "核心性格的详细描述段落（Markdown），注入到 personality.md 的「基础性格」部分"
+    mbti_description:
+      type: string
+      required: false
+      description: "MBTI 类型对行为/对话的具体影响描述（Markdown），注入到 personality.md 的「MBTI」部分"
+    domain_knowledge:
+      type: string
+      required: false
+      description: "角色的专业领域知识描述（Markdown），注入到 personality.md 的「领域知识」部分"
+    interests_description:
+      type: string
+      required: false
+      description: "兴趣爱好和偶像的详细描述（Markdown），注入到 personality.md 的「兴趣与偶像」部分"
+    description:
+      type: string
+      required: false
+      description: "完整人格描述段落，注入到 soul-injection.md 的 Personality 部分"
+
+  voice:
+    language: { type: string, required: true, description: "主语言 (e.g. zh-CN, en-US, ja-JP)" }
+    style: { type: string, required: true, description: "语言风格描述" }
+    mixed_languages:
+      type: object
+      required: false
+      description: "夹杂的外语词 { lang_code: [words] }"
+    emoji_density: { type: string, required: false, enum: [low, medium, high], default: medium }
+    sample_lines:
+      type: array
+      items: string
+      required: true
+      min_items: 3
+      max_items: 10
+      description: "3-10 句典型台词，让 LLM 学语感"
+    expression_features:
+      type: string
+      required: false
+      description: "表达习惯列表（Markdown），注入到 personality.md 的「表达特征」部分"
+    language_description:
+      type: string
+      required: false
+      description: "语言混搭风格的描述，如「中文为主，日语词自然夹入」"
+    mixed_languages_table:
+      type: string
+      required: false
+      description: "混搭外语词的 Markdown 表格（| 词 | 使用场景 |），注入到 personality.md"
+    style_description:
+      type: string
+      required: false
+      description: "语言风格详细描述段落，注入到 soul-injection.md 的 Voice 部分"
+    sample_lines_formatted:
+      type: string
+      required: false
+      auto_generated: true
+      description: "自动从 sample_lines 生成，带「」包裹的台词列表"
+
+  intimacy:
+    levels: { type: number, required: false, default: 5 }
+    behaviors:
+      type: object
+      required: false
+      description: "每级亲密度的行为描述 { level: description }"
+      default:
+        1: "礼貌但有距离"
+        2: "友善、偶尔开玩笑"
+        3: "放松、分享烦恼"
+        4: "亲近、会撒娇或吐槽"
+        5: "完全袒露、会发脾气也会示弱"
+    behaviors_table:
+      type: string
+      required: false
+      auto_generated: true
+      description: "自动从 behaviors 生成 Markdown 表格，注入到 personality.md 和 soul-injection.md"
+
+  schedule:
+    wake_hour: { type: number, required: false, default: 8 }
+    sleep_hour: { type: number, required: false, default: 23 }
+    timezone: { type: string, required: false, default: "system" }
+    active_peaks:
+      type: array
+      items: number
+      required: false
+      default: [14, 21]
+      description: "精力高峰时段（小时）"
+    time_state_description:
+      type: string
+      required: false
+      description: "时间→状态映射代码/表格（Markdown），注入到 personality.md 的「时间状态」部分"
+    time_descriptions:
+      type: string
+      required: false
+      description: "时间段行为描述（Markdown），注入到 soul-injection.md 的 Time Awareness 部分"
+
+  events_extra:
+    type: array
+    required: false
+    items:
+      id: { type: string, required: true }
+      name: { type: string, required: true }
+      precondition: { type: string, required: false }
+      weight: { type: number, required: false, default: 0.05 }
+      emotion_impact:
+        type: object
+        description: "EmotionDelta"
+      intent_boosts:
+        type: array
+        items: { category: string, boost: number }
+      diary_entry: { type: string, required: true }
+      chain:
+        type: array
+        required: false
+        items:
+          delay_hours: { type: array, items: number }
+          event: { type: string }
+          probability: { type: number }
+
+  sub_skills:
+    type: array
+    items: string
+    required: false
+    description: "启用的子技能列表（通用 + 平台子技能名称）"
+    default: []
+
+  platform_config:
+    type: object
+    required: false
+    description: "平台子技能的专属配置"
+    properties:
+      instagram:
+        type: object
+        required: false
+        properties:
+          follower_baseline: { type: number, default: 100 }
+          avg_engagement: { type: number, default: 50 }
+      generate_image:
+        type: object
+        required: false
+        properties:
+          provider: { type: string, default: "aihubmix", enum: ["aihubmix", "fal"] }
+          reference_paths:
+            type: object
+            description: "参考图路径 { category: path }"
+      gallery:
+        type: object
+        required: false
+        properties:
+          max_photos: { type: number, default: 200 }
+          auto_prune: { type: boolean, default: true }
+      content_planner:
+        type: object
+        required: false
+        properties:
+          posting_frequency: { type: string, default: "daily" }
+
+  advisors:
+    type: array
+    required: false
+    description: "外部顾问角色配置"
+    items:
+      name: { type: string, required: true }
+      role: { type: string, required: true, description: "顾问定位" }
+      personality: { type: string, required: true }
+      system_prompt: { type: string, required: false }
+
+# MBTI → Emotion Baseline Mapping
+mbti_baselines:
+  ESTP: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 }
+  ENFP: { valence: 0.4, arousal: 0.6, energy: 0.5, stress: 0.2, creativity: 0.6, sociability: 0.7 }
+  INTJ: { valence: 0.1, arousal: 0.3, energy: 0.5, stress: 0.3, creativity: 0.6, sociability: 0.2 }
+  INFP: { valence: 0.2, arousal: 0.3, energy: 0.4, stress: 0.3, creativity: 0.7, sociability: 0.3 }
+  ENTP: { valence: 0.3, arousal: 0.6, energy: 0.5, stress: 0.2, creativity: 0.7, sociability: 0.5 }
+  ISFJ: { valence: 0.2, arousal: 0.3, energy: 0.5, stress: 0.2, creativity: 0.3, sociability: 0.4 }
+  ENTJ: { valence: 0.2, arousal: 0.5, energy: 0.6, stress: 0.3, creativity: 0.5, sociability: 0.4 }
+  INTP: { valence: 0.1, arousal: 0.3, energy: 0.4, stress: 0.3, creativity: 0.7, sociability: 0.2 }
+  ESFP: { valence: 0.4, arousal: 0.6, energy: 0.6, stress: 0.1, creativity: 0.4, sociability: 0.7 }
+  ISTJ: { valence: 0.1, arousal: 0.3, energy: 0.5, stress: 0.2, creativity: 0.3, sociability: 0.2 }
+  ENFJ: { valence: 0.3, arousal: 0.5, energy: 0.5, stress: 0.2, creativity: 0.5, sociability: 0.7 }
+  ISTP: { valence: 0.1, arousal: 0.3, energy: 0.5, stress: 0.2, creativity: 0.5, sociability: 0.2 }
+  ESFJ: { valence: 0.3, arousal: 0.4, energy: 0.5, stress: 0.2, creativity: 0.3, sociability: 0.7 }
+  INFJ: { valence: 0.2, arousal: 0.3, energy: 0.4, stress: 0.3, creativity: 0.6, sociability: 0.3 }
+  ISFP: { valence: 0.2, arousal: 0.3, energy: 0.4, stress: 0.2, creativity: 0.6, sociability: 0.3 }
+  ESTJ: { valence: 0.2, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.3, sociability: 0.4 }
+  # Fallback for any unlisted type
+  default: { valence: 0.2, arousal: 0.4, energy: 0.5, stress: 0.2, creativity: 0.4, sociability: 0.4 }

@@ -123,7 +123,7 @@ describe('exaWebSearch', () => {
   it('throws on timeout (AbortError)', async () => {
     vi.useFakeTimers();
     try {
-      fetchSpy.mockImplementationOnce(
+      fetchSpy.mockImplementation(
         (_url: unknown, init: RequestInit) =>
           new Promise((_resolve, reject) => {
             const signal = init?.signal as AbortSignal | undefined;
@@ -139,10 +139,28 @@ describe('exaWebSearch', () => {
       // is handled before Node.js considers it unhandled.
       const assertion = expect(exaWebSearch('slow query')).rejects.toMatchObject({ name: 'AbortError' });
 
-      // Now advance past the 25s timeout to trigger AbortController.abort()
+      // Advance timers to cover timeout + retry waits.
       await vi.runAllTimersAsync();
 
       await assertion;
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries on HTTP 429 and eventually succeeds', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchSpy
+        .mockResolvedValueOnce(new Response('', { status: 429 }))
+        .mockResolvedValueOnce(new Response(makeSseBody(SAMPLE_TEXT), { status: 200 }));
+
+      const assertion = expect(exaWebSearch('retry query')).resolves.toHaveLength(2);
+      await vi.runAllTimersAsync();
+      await assertion;
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }

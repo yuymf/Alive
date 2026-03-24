@@ -1,0 +1,41 @@
+events:
+  - id: "post_data_good"
+    name: "帖子数据表现好"
+    precondition: "has_recent_post"
+    weight: 0.08
+    emotion_impact: { valence: 0.2, arousal: 0.15, creativity: 0.1 }
+    intent_boosts: [{ category: "创作", boost: 2.0 }, { category: "表达", boost: 1.5 }]
+    diary_entry: "帖子数据还不错欸！开心！"
+    chain:
+      - { delay_hours: [2, 4], event: "check_comments", probability: 0.7 }
+
+  - id: "post_data_bad"
+    name: "帖子数据不太行"
+    precondition: "has_recent_post"
+    weight: 0.06
+    emotion_impact: { valence: -0.15, stress: 0.15, creativity: -0.05 }
+    intent_boosts: [{ category: "窥屏", boost: 1.5 }]
+    diary_entry: "这次帖子好像没什么人看...有点沮丧"
+
+  - id: "new_follower_surge"
+    name: "涨了一波粉"
+    precondition: "has_active_account"
+    weight: 0.03
+    emotion_impact: { valence: 0.3, arousal: 0.2, sociability: 0.2 }
+    intent_boosts: [{ category: "社交", boost: 2.0 }, { category: "表达", boost: 2.0 }]
+    diary_entry: "哦哦哦涨粉了！！好开心！"
+
+  - id: "viral_post"
+    name: "帖子突然火了"
+    precondition: "has_recent_post"
+    weight: 0.01
+    emotion_impact: { valence: 0.4, arousal: 0.4, creativity: 0.2, sociability: 0.3 }
+    intent_boosts: [{ category: "社交", boost: 3.0 }, { category: "创作", boost: 3.0 }]
+    diary_entry: "等等？！这条帖子怎么突然火了！！"
+
+  - id: "inspiration_from_feed"
+    name: "刷到一个超赞的内容"
+    weight: 0.07
+    emotion_impact: { valence: 0.15, creativity: 0.25, arousal: 0.1 }
+    intent_boosts: [{ category: "创作", boost: 2.0 }, { category: "学习", boost: 1.0 }]
+    diary_entry: "刷到一个好赞的内容！学到了新东西"

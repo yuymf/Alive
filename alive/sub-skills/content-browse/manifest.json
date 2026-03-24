@@ -1,0 +1,30 @@
+{
+  "name": "content-browse",
+  "display_name": "内容浏览与灵感采集",
+  "version": "0.1.0",
+  "description": "刷内容、采集灵感、趋势分析",
+  "intent_bindings": [
+    { "intent": "窥屏", "action": "feed-browse", "priority": 4 },
+    { "intent": "学习", "action": "inspiration-collect", "priority": 4 },
+    { "intent": "窥屏", "action": "inspiration-collect", "priority": 2 }
+  ],
+  "config_schema": {
+    "getFeedItems": {
+      "type": "function",
+      "required": true,
+      "description": "Fetch feed items from a platform"
+    },
+    "searchContent": {
+      "type": "function",
+      "required": false,
+      "description": "Search platform-specific content"
+    },
+    "webSearch": {
+      "type": "function",
+      "required": false,
+      "description": "General web search function"
+    }
+  },
+  "vitality_cost": { "base": 10 },
+  "templates": ["inspiration-summary-prompt.md", "feed-analysis-prompt.md"]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "send-message",
+  "display_name": "主动消息",
+  "version": "0.1.0",
+  "description": "自然地主动给朋友发消息，只在真正想分享时才发",
+  "intent_bindings": [
+    { "intent": "社交", "action": "send-message", "priority": 6 },
+    { "intent": "表达", "action": "send-message", "priority": 4 }
+  ],
+  "config_schema": {
+    "openclaw_send": {
+      "type": "function",
+      "required": false,
+      "description": "Platform-specific message send function"
+    }
+  },
+  "vitality_cost": { "base": 5 },
+  "templates": ["outreach-message-prompt.md"]
+}

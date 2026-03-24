@@ -240,6 +240,45 @@ describe('collectXiaohongshuTrends', () => {
     expect(xhsMock.searchXhsNotes).toHaveBeenCalledWith('cosplay', { sortBy: '最新', publishTime: '一周内' });
   });
 
+  it('retries XHS detail fetch and preserves note detail context after transient failure', async () => {
+    const xhsMock = await import('../skill/scripts/xhs-bridge-client');
+    (xhsMock.isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    (xhsMock.listXhsFeed as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'n1', xsec_token: 't1', title: 'Feed Post', description: 'desc', likes: 1600, user: 'u1', tags: [] },
+    ]);
+    (xhsMock.searchXhsNotes as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (xhsMock.getXhsNoteDetail as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce({
+        id: 'n1',
+        xsec_token: 't1',
+        title: 'Detail Post',
+        description: 'detail desc',
+        likes: 1600,
+        user: 'u1',
+        tags: ['cos'],
+        comments: [{ user: 'c1', content: '好看', likes: 10 }],
+        images: [],
+        collected_count: 0,
+        share_count: 0,
+      });
+
+    const { callLLMJSON } = await import('../skill/scripts/llm-client');
+    (callLLMJSON as ReturnType<typeof vi.fn>).mockResolvedValue({
+      feed_highlights: [{ title: 'Feed Post', likes: 100, topic: 'fashion', takeaway: '构图干净' }],
+      cosplay_notes: [],
+      trending_topics: ['jk制服'],
+      cosplay_insights: ['镜面反射构图很火'],
+      saved_inspirations: [],
+    });
+
+    const { collectXiaohongshuTrends } = await import('../skill/scripts/inspiration-collector');
+    const result = await collectXiaohongshuTrends();
+
+    expect(xhsMock.getXhsNoteDetail).toHaveBeenCalledTimes(2);
+    expect(result.trending_topics).toContain('jk制服');
+  });
+
   it('should return empty arrays and skip LLM when live data is empty', async () => {
     const xhsMock = await import('../skill/scripts/xhs-bridge-client');
     (xhsMock.isXhsAvailable as ReturnType<typeof vi.fn>).mockResolvedValue(true);

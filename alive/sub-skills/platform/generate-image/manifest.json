@@ -1,0 +1,28 @@
+{
+  "name": "generate-image",
+  "display_name": "AI 图像生成",
+  "version": "0.1.0",
+  "description": "AI 图像生成全链路 — prompt 构建、API 调用、参考图管理、质量检查、后处理",
+  "intent_bindings": [],
+  "config_schema": {
+    "aihubmix_api_key": {
+      "type": "string",
+      "required": false,
+      "secret": true,
+      "description": "AIHubMix API key (from env)"
+    },
+    "fal_key": {
+      "type": "string",
+      "required": false,
+      "secret": true,
+      "description": "fal.ai API key (from env)"
+    },
+    "image_entry": {
+      "type": "string",
+      "required": false,
+      "default": "AIHUBMIX",
+      "description": "Image provider: AIHUBMIX or FAI"
+    }
+  },
+  "feedback_sources": []
+}

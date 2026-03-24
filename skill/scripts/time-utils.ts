@@ -70,3 +70,8 @@ export function getLocalTimeHHMM(d: Date = now()): string {
   const min = String(d.getMinutes()).padStart(2, '0');
   return `${h}:${min}`;
 }
+
+/** Promise-based delay utility. */
+export function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}

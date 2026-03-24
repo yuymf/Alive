@@ -1,0 +1,54 @@
+{
+  "name": "instagram",
+  "display_name": "Instagram 内容发布",
+  "version": "0.1.0",
+  "description": "Instagram 发帖、图片生成、文案撰写、数据反馈分析",
+  "intent_bindings": [
+    { "intent": "创作", "action": "instagram-post", "priority": 10 },
+    { "intent": "表达", "action": "instagram-post", "priority": 8 },
+    { "intent": "窥屏", "action": "instagram-check-stats", "priority": 3 }
+  ],
+  "config_schema": {
+    "planPhoto": {
+      "type": "function",
+      "required": true,
+      "description": "Plan photo shoot intent"
+    },
+    "generateImages": {
+      "type": "function",
+      "required": true,
+      "description": "Generate images from photo intent"
+    },
+    "planPost": {
+      "type": "function",
+      "required": true,
+      "description": "Plan post caption and hashtags"
+    },
+    "publishPost": {
+      "type": "function",
+      "required": true,
+      "description": "Publish post to Instagram"
+    },
+    "getFollowerCount": {
+      "type": "function",
+      "required": false,
+      "description": "Get current follower count"
+    },
+    "scheduleCommentCheck": {
+      "type": "function",
+      "required": false,
+      "description": "Schedule a comment check after posting"
+    },
+    "refreshInspiration": {
+      "type": "function",
+      "required": false,
+      "description": "Refresh inspiration pool"
+    }
+  },
+  "feedback_sources": [
+    { "name": "instagram", "description": "Post engagement metrics (likes, comments, reach)" }
+  ],
+  "vitality_cost": { "base": 30, "per_photo": 5 },
+  "templates": ["instagram-post.md", "photo-intent-prompt.md", "post-intent-prompt.md"],
+  "events": "events.yaml"
+}

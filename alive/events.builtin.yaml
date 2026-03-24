@@ -1,0 +1,135 @@
+# Alive — Built-in Universal Random Events
+# These events apply to any persona. Sub-skills can inject additional domain-specific events.
+
+events:
+  # === 时间感知 ===
+  - id: "time_flies"
+    name: "突然发现已经这个点了"
+    emotion_delta: { arousal: 0.15, stress: 0.1 }
+    intent_boosts: [{ category: "休息", boost: 0.5 }]
+    diary_entry: "抬头一看时间...已经这个点了？？时间过得也太快了吧"
+    preconditions: {}
+    weight_modifiers: {}
+
+  - id: "time_slow"
+    name: "感觉今天过得好慢"
+    emotion_delta: { valence: -0.05, arousal: -0.1, energy: -0.05 }
+    intent_boosts: [{ category: "窥屏", boost: 1.0 }]
+    diary_entry: "感觉今天过得好慢...时间怎么走得这么慢"
+    preconditions: {}
+    weight_modifiers: { vitality_inverse: true }
+
+  # === 小生活细节 ===
+  - id: "food_arrived"
+    name: "外卖到了"
+    emotion_delta: { valence: 0.1, energy: 0.05, arousal: 0.05 }
+    intent_boosts: [{ category: "休息", boost: 0.5 }]
+    diary_entry: "外卖到了！终于可以吃饭了"
+    preconditions: {}
+    weight_modifiers: {}
+
+  - id: "phone_low_battery"
+    name: "手机快没电了"
+    emotion_delta: { stress: 0.1, arousal: 0.05 }
+    intent_boosts: [{ category: "休息", boost: 0.3 }]
+    diary_entry: "手机快没电了...先找个地方充电"
+    preconditions: {}
+    weight_modifiers: {}
+
+  - id: "noisy_environment"
+    name: "周围环境很吵"
+    emotion_delta: { stress: 0.15, valence: -0.1, arousal: 0.1 }
+    intent_boosts: [{ category: "休息", boost: 1.0 }]
+    diary_entry: "周围好吵...根本没法集中注意力"
+    preconditions: {}
+    weight_modifiers: {}
+
+  - id: "nice_weather"
+    name: "天气特别好"
+    emotion_delta: { valence: 0.1, energy: 0.15, creativity: 0.1 }
+    intent_boosts: [{ category: "创作", boost: 1.0 }, { category: "表达", boost: 1.0 }]
+    diary_entry: "今天天气好好！想出去做点什么"
+    preconditions: {}
+    weight_modifiers: {}
+
+  - id: "craving_food"
+    name: "突然很想吃好吃的"
+    emotion_delta: { valence: 0.05, sociability: 0.1 }
+    intent_boosts: [{ category: "表达", boost: 0.5 }]
+    diary_entry: "好想吃好吃的...谁来一起啊"
+    preconditions: {}
+    weight_modifiers: {}
+
+  - id: "package_arrived"
+    name: "收到快递"
+    emotion_delta: { valence: 0.1, arousal: 0.1, energy: 0.05 }
+    intent_boosts: [{ category: "表达", boost: 0.5 }]
+    diary_entry: "快递到了！拆快递的时候总是很开心"
+    preconditions: {}
+    weight_modifiers: {}
+
+  # === 社交媒体通用 ===
+  - id: "unpleasant_trending"
+    name: "看到让人不舒服的热搜"
+    emotion_delta: { valence: -0.15, stress: 0.15, arousal: 0.2 }
+    intent_boosts: [{ category: "表达", boost: 1.5 }, { category: "窥屏", boost: 0.5 }]
+    diary_entry: "刷到一条让人很不舒服的热搜...不想看但是又忍不住点进去了"
+    preconditions: {}
+    weight_modifiers: { emotion_resonance: true }
+
+  - id: "creative_video"
+    name: "刷到很有创意的短视频"
+    emotion_delta: { valence: 0.1, creativity: 0.2, arousal: 0.1 }
+    intent_boosts: [{ category: "创作", boost: 1.5 }, { category: "学习", boost: 1.0 }]
+    diary_entry: "刷到一个超有创意的视频...好厉害啊我也想试试"
+    preconditions: {}
+    weight_modifiers: { dimension_boost: "creativity" }
+
+  # === 微情绪 ===
+  - id: "nice_song"
+    name: "听到一首喜欢的歌"
+    emotion_delta: { valence: 0.15, arousal: 0.1, creativity: 0.1 }
+    intent_boosts: [{ category: "表达", boost: 1.0 }]
+    diary_entry: "突然听到一首好好听的歌...单曲循环中"
+    preconditions: {}
+    weight_modifiers: {}
+
+  - id: "feeling_sick"
+    name: "身体有点不舒服"
+    emotion_delta: { energy: -0.25, valence: -0.1, arousal: -0.2 }
+    intent_boosts: [{ category: "休息", boost: 4.0 }]
+    diary_entry: "今天身体有点不舒服...还是安静待着吧"
+    preconditions: { max_vitality: 50 }
+    weight_modifiers: { vitality_inverse: true }
+
+  - id: "inspiration_drought"
+    name: "灵感枯竭期"
+    emotion_delta: { creativity: -0.2, valence: -0.1 }
+    intent_boosts: [{ category: "窥屏", boost: 2.0 }, { category: "学习", boost: 1.0 }]
+    diary_entry: "最近好像没什么灵感...去刷刷看看别人在做什么吧"
+    preconditions: {}
+    weight_modifiers: { vitality_inverse: true }
+
+  # === 社交互动 ===
+  - id: "warm_message"
+    name: "收到暖心的消息"
+    emotion_delta: { valence: 0.25, sociability: 0.3, energy: 0.1 }
+    intent_boosts: [{ category: "社交", boost: 2.5 }, { category: "表达", boost: 1.0 }]
+    diary_entry: "收到了一条很暖的消息...这种时候觉得自己做的事很值得"
+    preconditions: {}
+    weight_modifiers: { dimension_boost: "sociability" }
+    chain:
+      - delay_ticks: [1, 2]
+        event: "chatted_long"
+        probability: 0.5
+        emotion_delta: { valence: 0.1, sociability: 0.2, energy: -0.1 }
+        intent_boosts: [{ category: "社交", boost: 2.0 }]
+        diary_entry: "聊了好久停不下来...虽然有点累但是超开心"
+
+  - id: "chatted_with_friend"
+    name: "和朋友聊了很久"
+    emotion_delta: { valence: 0.1, sociability: 0.2, energy: -0.1, stress: -0.2 }
+    intent_boosts: [{ category: "社交", boost: 1.0 }]
+    diary_entry: "和朋友聊了好久...虽然有点累但是心情好了很多"
+    preconditions: {}
+    weight_modifiers: { dimension_boost: "sociability" }

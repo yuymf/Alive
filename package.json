@@ -1,34 +1,30 @@
 {
-  "name": "minase",
-  "version": "0.1.0",
-  "description": "水瀬 — a digital life companion for OpenClaw with evolving memory and Instagram presence",
+  "name": "alive",
+  "version": "0.2.0",
+  "description": "Alive — a generalized digital-life engine for creating AI personas with evolving memory, social presence, and autonomous behavior.",
   "main": "bin/cli.js",
   "bin": {
-    "minase": "bin/cli.js"
+    "alive": "bin/cli.js"
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "vitest run --config vitest.e2e.config.ts",
-    "e2e:real-day": "npx tsx e2e/e2e-real-day.ts",
-    "e2e:week-mock": "npx tsx e2e/e2e-weekly-sim.ts",
-    "generate-refs": "node dist/generate-references.js",
     "prepack": "npm run build"
   },
   "files": [
     "bin",
-    "skill",
-    "templates",
-    "dist"
+    "alive",
+    "dist-alive"
   ],
   "keywords": [
-    "openclaw",
     "digital-life",
-    "cosplay",
-    "instagram",
-    "ai-companion"
+    "alive",
+    "ai-persona",
+    "ai-companion",
+    "autonomous-agent",
+    "social-media"
   ],
   "license": "MIT",
   "engines": {
@@ -39,7 +35,6 @@
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
     "@types/node": "^22.0.0",
     "typescript": "^5.7.0",
     "vitest": "^4.0.18"

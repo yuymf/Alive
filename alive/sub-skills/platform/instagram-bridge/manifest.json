@@ -1,0 +1,22 @@
+{
+  "name": "instagram-bridge",
+  "display_name": "Instagram API 桥接",
+  "version": "0.1.0",
+  "description": "Instagram 平台 API 封装 — 上传、评论、信息流、话题搜索",
+  "intent_bindings": [],
+  "config_schema": {
+    "instagram_username": {
+      "type": "string",
+      "required": false,
+      "secret": true,
+      "description": "Instagram username (from env)"
+    },
+    "instagram_password": {
+      "type": "string",
+      "required": false,
+      "secret": true,
+      "description": "Instagram password (from env)"
+    }
+  },
+  "feedback_sources": []
+}
