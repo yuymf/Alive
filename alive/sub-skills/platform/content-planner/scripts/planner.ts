@@ -23,6 +23,7 @@ import { DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../../../../scripts/utils/t
 import { PATHS, readJSON, writeJSON, appendText } from '../../../../scripts/utils/file-utils';
 import { callLLMJSON } from '../../../../scripts/utils/llm-client';
 import { getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime } from '../../../../scripts/utils/time-utils';
+import { injectPersona } from '../../../../scripts/persona/persona-loader';
 
 // === Platform sub-skill imports ===
 import type { ContentStyle } from '../../generate-image/scripts/prompt-builder';
@@ -363,7 +364,8 @@ export async function planPhoto(): Promise<PhotoIntent> {
     ? savedInspo.map(s => `- ${s.visual_description} (${s.style_tags.join(', ')})`).join('\n')
     : '没有收藏的灵感图';
 
-  const template = readLocalTemplate('photo-intent-prompt.md');
+  const rawTemplate = readLocalTemplate('photo-intent-prompt.md');
+  const template = injectPersona(rawTemplate);
   // Load travel spots for current city
   const travelStatePlan = readJSON<TravelState>(PATHS.travelState, DEFAULT_TRAVEL_STATE);
   let travelSpotsStr = '';
@@ -575,7 +577,8 @@ export async function planPost(options?: { skipAdvisor?: boolean }): Promise<Pos
     } catch { /* diary write is non-critical */ }
   }
 
-  const template = readLocalTemplate('post-intent-prompt.md');
+  const rawTemplate = readLocalTemplate('post-intent-prompt.md');
+  const template = injectPersona(rawTemplate);
   const prompt = template
     .replace('{photo_list}', availablePhotos.map((p, i) => `${i + 1}. ${path.basename(p)} (${path.basename(path.dirname(p))})`).join('\n'))
     .replace('{current_time}', formatLocalTime())
