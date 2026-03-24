@@ -10,6 +10,7 @@ export interface PersonaConfig {
     age?: number;
     tagline: string;
     occupation_detail?: string;
+    reference_image?: string;  // Path to source reference image for generating multi-angle references
   };
   personality: {
     mbti: string;

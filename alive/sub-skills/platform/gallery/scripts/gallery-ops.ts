@@ -6,9 +6,8 @@
  * Changes from skill version:
  * - Import PATHS/readJSON/writeJSON from alive file-utils
  * - Import time-utils from alive utils
- * - Import ContentStyle from generate-image sub-skill (platform-local type)
+ * - GalleryPhoto/PhotoGallery/ContentStyle re-exported from alive/scripts/utils/types.ts (single source of truth)
  * - Removed CLI entry point (actions are exposed via index.ts)
- * - GalleryPhoto and related types defined locally (platform-specific)
  */
 
 import * as fs from 'fs';
@@ -16,32 +15,9 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../../../../scripts/utils/file-utils';
 import { now, getLocalDate, getLocalHour } from '../../../../scripts/utils/time-utils';
-import type { ContentStyle } from '../../generate-image/scripts/prompt-builder';
-
-// === Platform-local types (from skill/scripts/types.ts) ===
-
-export interface GalleryPhoto {
-  id: string;
-  localPath: string;
-  publicUrl: string;
-  description: string;
-  tags: string[];
-  style: ContentStyle;
-  emotion: { valence: number; energy: number };
-  createdAt: string;
-  sharedAt: string | null;
-  shareCount: number;
-  postedToInstagram: boolean;
-  batchId?: string;
-  shotIndex?: number;
-  outfit?: string;
-  outfitChange?: boolean;
-  sceneDescription?: string;
-}
-
-export interface PhotoGallery {
-  photos: GalleryPhoto[];
-}
+// Re-export shared types from alive/scripts/utils/types.ts (single source of truth)
+export type { GalleryPhoto, PhotoGallery, ContentStyle } from '../../../../scripts/utils/types';
+import type { GalleryPhoto, PhotoGallery, ContentStyle } from '../../../../scripts/utils/types';
 
 export interface GallerySearchResult {
   results: Pick<GalleryPhoto, 'id' | 'description' | 'tags' | 'style' | 'emotion' | 'createdAt' | 'publicUrl'>[];
