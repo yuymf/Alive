@@ -43,8 +43,9 @@ import {
   planPost as cpPlanPost,
 } from '../../sub-skills/platform/content-planner/scripts/planner';
 
-// Gallery (for ImgURL upload)
+// Gallery (for ImgURL upload + gallery index)
 import { uploadToImgURL } from '../../sub-skills/platform/gallery/scripts/imgurl-upload';
+import { addPhotoToGallery, pruneGallery } from '../../sub-skills/platform/gallery/scripts/gallery-ops';
 
 // XHS bridge
 import {
@@ -54,7 +55,12 @@ import {
 } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 
 // Alive infra
+import * as fs from 'fs';
+import * as path from 'path';
 import { PATHS, readJSON, writeJSON, appendText } from '../utils/file-utils';
+import { now, getLocalDate } from '../utils/time-utils';
+import type { PostHistory, PostRecord, PhotoGallery, GalleryPhoto, EmotionState } from '../utils/types';
+import { DEFAULT_PHOTO_GALLERY, hydrateEmotionState, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../utils/types';
 
 // ═══════════════════════════════════════════════════════════════════
 // INSTAGRAM sub-skill adapter
@@ -88,10 +94,12 @@ export function createInstagramConfig() {
 
     /**
      * Generate images from a photo intent (generate-image sub-skill)
+     * Also writes generated images to gallery index.
      */
     async generateImages(photoIntent: {
       style: string;
       shots: Array<{ description: string; camera_angle: string; mood: string }>;
+      scene_description?: string;
     }) {
       const style = photoIntent.style as ContentStyle;
       const shots = photoIntent.shots.map(s => ({
@@ -116,6 +124,46 @@ export function createInstagramConfig() {
         } catch {
           urls.push(''); // upload failed, but local path still valid
         }
+      }
+
+      // Write to gallery index (migrated from post-pipeline.ts writePhotosToGallery)
+      const emotion = hydrateEmotionState(readJSON<Record<string, unknown>>(PATHS.emotionState, {
+        mood: { valence: 0.3, arousal: 0.5, description: '普通' },
+        energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
+        last_updated: null, recent_cause: '',
+        momentum: { ...DEFAULT_MOMENTUM },
+        undertone: { ...DEFAULT_UNDERTONE },
+        impulse_history: [],
+        consecutive_high_stress: 0,
+        threshold_break_cooldown: 0,
+      }));
+
+      const batchId = `${getLocalDate()}_${Date.now()}`;
+      for (let i = 0; i < result.images.length; i++) {
+        const img = result.images[i];
+        const url = urls[i] ?? '';
+        const hour = new Date(img.timestamp).getHours();
+        const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+        const seq = String(i).padStart(3, '0');
+        const dateStr = getLocalDate(new Date(img.timestamp)).replace(/-/g, '');
+
+        const photo: GalleryPhoto = {
+          id: `${dateStr}_${style}_${timeOfDay}_${seq}`,
+          localPath: img.localPath,
+          publicUrl: url,
+          description: photoIntent.scene_description ?? shots[i]?.description ?? '',
+          tags: [style as string],
+          style,
+          emotion: { valence: emotion.mood.valence, energy: emotion.energy },
+          createdAt: new Date(img.timestamp).toISOString(),
+          sharedAt: null,
+          shareCount: 0,
+          postedToInstagram: false,
+          batchId,
+          shotIndex: i,
+        };
+
+        addPhotoToGallery(photo);
       }
 
       return {
@@ -202,6 +250,71 @@ export function createInstagramConfig() {
     },
 
     followerBaseline: 100,
+
+    /**
+     * Mark photos as posted to Instagram in the gallery index.
+     */
+    markPhotosAsPosted(localPaths: string[]) {
+      const gallery = readJSON<PhotoGallery>(PATHS.photoGallery, DEFAULT_PHOTO_GALLERY);
+      const pathSet = new Set(localPaths);
+      const updatedGallery: PhotoGallery = {
+        photos: gallery.photos.map(p =>
+          pathSet.has(p.localPath) ? { ...p, postedToInstagram: true } : p
+        ),
+      };
+      writeJSON(PATHS.photoGallery, updatedGallery);
+    },
+
+    /**
+     * Normalize old PostRecord (backward compat: image_local_path → image_local_paths).
+     */
+    normalizePostRecord(post: PostRecord): PostRecord {
+      if (!post.image_local_paths && (post as any).image_local_path) {
+        return { ...post, image_local_paths: [(post as any).image_local_path] };
+      }
+      return post;
+    },
+
+    /**
+     * Clean up old photos from photo-roll (>30 days, unless referenced by posts).
+     * Also prunes the gallery index.
+     */
+    cleanupPhotoRoll() {
+      const rollDir = PATHS.photoRoll;
+      if (!fs.existsSync(rollDir)) return;
+
+      const RETENTION_DAYS = 30;
+      const history = readJSON<PostHistory>(PATHS.postHistory, { posts: [] });
+      const normalizedPosts = history.posts.map(p => {
+        if (!p.image_local_paths && (p as any).image_local_path) {
+          return { ...p, image_local_paths: [(p as any).image_local_path] };
+        }
+        return p;
+      });
+      const postedPaths = new Set(normalizedPosts.flatMap(p => p.image_local_paths));
+      const cutoff = now().getTime() - RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+      for (const dateDir of fs.readdirSync(rollDir)) {
+        const dirPath = path.join(rollDir, dateDir);
+        if (!fs.statSync(dirPath).isDirectory()) continue;
+
+        const dirDate = new Date(dateDir).getTime();
+        if (isNaN(dirDate) || dirDate > cutoff) continue;
+
+        for (const file of fs.readdirSync(dirPath)) {
+          const filePath = path.join(dirPath, file);
+          if (!postedPaths.has(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        }
+
+        if (fs.readdirSync(dirPath).length === 0) {
+          fs.rmdirSync(dirPath);
+        }
+      }
+
+      pruneGallery();
+    },
   };
 }
 

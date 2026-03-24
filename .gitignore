@@ -13,3 +13,4 @@ __pycache__/
 *.pyc
 alive/cron-schedule.json
 alive/cron-schedule.json.bak
+openspec

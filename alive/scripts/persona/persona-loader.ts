@@ -3,6 +3,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import YAML from 'yaml';
 import { PersonaConfig, EmotionDelta, DEFAULT_EMOTION_BASELINE, EmotionUndertone } from '../utils/types';
 import { PATHS } from '../utils/file-utils';
 
@@ -30,33 +31,20 @@ let _cachedPersona: PersonaConfig | null = null;
 
 /**
  * Load persona config from YAML file.
- * Uses a simple YAML parser (key: value) since we don't want heavy deps.
- * For production, recommend js-yaml.
+ * Uses the `yaml` package for native YAML parsing.
  */
 export function loadPersona(customPath?: string): PersonaConfig {
   if (_cachedPersona) return _cachedPersona;
 
   const yamlPath = customPath ?? PATHS.personaConfig;
   if (!fs.existsSync(yamlPath)) {
-    throw new Error(`Persona config not found: ${yamlPath}. Copy persona.example.yaml to persona.yaml and customize.`);
+    throw new Error(`Persona config not found: ${yamlPath}. Run "alive --persona <path>" to install.`);
   }
 
-  // For now, load as JSON since YAML parsing needs a dep.
-  // The install script converts YAML → JSON during setup.
-  const jsonPath = yamlPath.replace(/\.yaml$/, '.json');
-  if (fs.existsSync(jsonPath)) {
-    _cachedPersona = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-    return _cachedPersona!;
-  }
+  const raw = fs.readFileSync(yamlPath, 'utf8');
+  _cachedPersona = YAML.parse(raw) as PersonaConfig;
 
-  // Fallback: try loading the YAML as-is (requires js-yaml at runtime)
-  try {
-    const yaml = require('js-yaml');
-    _cachedPersona = yaml.load(fs.readFileSync(yamlPath, 'utf8')) as PersonaConfig;
-    return _cachedPersona!;
-  } catch {
-    throw new Error(`Cannot parse persona config. Install js-yaml or convert to JSON: ${yamlPath}`);
-  }
+  return _cachedPersona!;
 }
 
 /** Clear cached persona (for testing). */
@@ -135,6 +123,7 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
     .replace(/{persona\.meta\.id}/g, p.meta.id ?? (p.meta.name_reading ?? p.meta.name).toLowerCase().replace(/\s+/g, '-'))
     .replace(/{persona\.meta\.tagline}/g, p.meta.tagline)
     .replace(/{persona\.meta\.occupation_detail}/g, p.meta.occupation_detail ?? '')
+    .replace(/{persona\.meta\.reference_image}/g, p.meta.reference_image ?? '')
     // Aliases
     .replace(/{persona\.name}/g, p.meta.name)
     .replace(/{persona\.name_reading}/g, p.meta.name_reading ?? p.meta.name)
@@ -220,4 +209,46 @@ export function getScheduleConfig(persona?: PersonaConfig): Required<NonNullable
     time_state_description: p.schedule?.time_state_description ?? '',
     time_descriptions: p.schedule?.time_descriptions ?? '',
   };
+}
+
+// === Reference Image Helpers ===
+
+const REFERENCE_FILES = ['front.png', 'half-body.png', 'full-body.png', 'left-profile.png'];
+
+/**
+ * Check if reference images exist in the references directory.
+ * Returns true if at least one reference image file exists.
+ */
+export function hasReferenceImages(): boolean {
+  const refDir = PATHS.referencesDir;
+  if (!fs.existsSync(refDir)) return false;
+  return REFERENCE_FILES.some(f => fs.existsSync(path.join(refDir, f)));
+}
+
+/**
+ * Get the count of existing reference images.
+ */
+export function getReferenceImageCount(): { existing: number; total: number; missing: string[] } {
+  const refDir = PATHS.referencesDir;
+  const missing: string[] = [];
+  let existing = 0;
+  for (const f of REFERENCE_FILES) {
+    if (fs.existsSync(path.join(refDir, f))) {
+      existing++;
+    } else {
+      missing.push(f);
+    }
+  }
+  return { existing, total: REFERENCE_FILES.length, missing };
+}
+
+/**
+ * Resolve the reference_image path from persona config.
+ * If relative, resolves against the persona YAML file directory.
+ */
+export function resolveReferenceImagePath(persona: PersonaConfig, personaYamlDir: string): string | null {
+  const refImage = persona.meta?.reference_image;
+  if (!refImage) return null;
+  if (path.isAbsolute(refImage)) return refImage;
+  return path.resolve(personaYamlDir, refImage);
 }

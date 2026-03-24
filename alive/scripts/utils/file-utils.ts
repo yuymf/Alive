@@ -6,11 +6,16 @@ import * as path from 'path';
 
 let _memoryBaseOverride: string | null = null;
 let _skillBaseOverride: string | null = null;
-let _personaName: string = 'default';
+let _personaName: string = process.env.ALIVE_PERSONA ?? 'default';
 
 /** Set the active persona name (determines memory directory). */
 export function setPersonaName(name: string): void {
   _personaName = name.toLowerCase().replace(/\s+/g, '-');
+}
+
+/** Get the active persona name. */
+export function getPersonaName(): string {
+  return _personaName;
 }
 
 function getMemoryBase(): string {

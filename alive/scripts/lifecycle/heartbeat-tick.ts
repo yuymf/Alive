@@ -43,7 +43,8 @@ import {
 } from '../world/social-graph-engine';
 import { isActiveHeartbeatHour } from '../world/heartbeat-gate';
 import { loadPersona, injectPersona, buildVoiceSignature, getEmotionBaseline } from '../persona/persona-loader';
-import { resolveRoute, buildContext, executeSubSkill, getRouteTable, collectSubSkillEvents } from '../router/skill-router';
+import { resolveRoute, resolveRouteBySkillName, buildContext, executeSubSkill, getRouteTable, getRegisteredSkills, collectSubSkillEvents } from '../router/skill-router';
+import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
 import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
 import { now, getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from '../utils/time-utils';
@@ -192,6 +193,25 @@ async function executeSimulatedAction(
     .replace('{voice_directive}', voiceDirective || '正常叙事语气。');
 
   return llm.callJSON<ActionOutput>(prompt);
+}
+
+/**
+ * Registry of platform config factories for sub-skills.
+ * Add new sub-skill configs here when registering new adapters.
+ */
+const skillConfigFactories: Record<string, () => Record<string, unknown>> = {
+  'instagram': () => createInstagramConfig() as unknown as Record<string, unknown>,
+  'social-engagement': () => createSocialEngagementConfig() as unknown as Record<string, unknown>,
+  'content-browse': () => createContentBrowseConfig() as unknown as Record<string, unknown>,
+};
+
+/**
+ * Resolve platform config for a sub-skill by name.
+ * Maps orchestration sub-skills to their adapter configs.
+ */
+function resolveSkillConfig(skillName: string): Record<string, unknown> {
+  const factory = skillConfigFactories[skillName];
+  return factory ? factory() : {};
 }
 
 /**
@@ -450,6 +470,16 @@ export async function regularTick(
     ? `可用技能: ${handledIntents.join(', ')}。在 chosen_actions 中使用 type: "real", skill: "<skill_name>" 来调用。`
     : '';
 
+  // Build sub_skill_list from manifests for prompt template {sub_skill_list}
+  const registeredManifests = getRegisteredSkills();
+  const subSkillListLines = registeredManifests.map(m => {
+    const intents = m.intent_bindings.map(b => b.intent).join('/');
+    return `  - skill: "${m.name}" — ${m.display_name}（${m.description}）触发意图: ${intents}`;
+  });
+  const subSkillList = subSkillListLines.length > 0
+    ? subSkillListLines.join('\n')
+    : '（暂无已注册的 sub-skill）';
+
   const prompt = template
     .replace('{current_time}', formatTime())
     .replace('{emotion_summary}', `${emotion.mood.description} (v:${emotion.mood.valence.toFixed(1)} a:${emotion.mood.arousal.toFixed(1)} e:${emotion.energy.toFixed(1)})`)
@@ -462,7 +492,8 @@ export async function regularTick(
     .replace('{vitality_context}', `活力: ${Math.round(vitality.vitality)}/100${vitalityConstraints.moodModifier ? ` (${vitalityConstraints.moodModifier})` : ''}`)
     .replace('{confidence_context}', getConfidenceMoodHint(confidence.confidence))
     .replace('{voice_directive}', voiceDirective)
-    .replace('{skill_hint}', skillHint);
+    .replace('{skill_hint}', skillHint)
+    .replace('{sub_skill_list}', subSkillList);
 
   let decision: HeartbeatDecision;
   try {
@@ -522,7 +553,8 @@ export async function regularTick(
       }
     } else if (action.type === 'real' && action.skill) {
       // Route to sub-skill via skill-router
-      const route = resolveRoute(action.skill);
+      // Try intent category first (e.g. "创作"), then fall back to skill name (e.g. "instagram")
+      const route = resolveRoute(action.skill) ?? resolveRouteBySkillName(action.skill);
       if (route) {
         try {
           const satisfiedIntent = intentPool.intents.find(i => i.id === action.satisfies_intent);
@@ -533,7 +565,10 @@ export async function regularTick(
             intensity: satisfiedIntent?.intensity ?? 5,
             action: route.action,
           };
-          const ctx = buildContext(persona, emotion, vitality.vitality, confidence.confidence, resolvedIntent, llm, {});
+
+          // Inject platform config based on skill name
+          const skillConfig = resolveSkillConfig(route.skillName);
+          const ctx = buildContext(persona, emotion, vitality.vitality, confidence.confidence, resolvedIntent, llm, skillConfig);
           const subResult = await executeSubSkill(route, ctx);
 
           // Apply sub-skill results

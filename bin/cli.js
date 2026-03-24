@@ -2,9 +2,11 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const { execSync, execFileSync } = require('child_process');
+const YAML = require('yaml');
 
 const OPENCLAW_DIR = path.join(process.env.HOME, '.openclaw');
 const SKILLS_DIR = path.join(OPENCLAW_DIR, 'skills');
@@ -14,6 +16,10 @@ const CONFIG_FILE = path.join(OPENCLAW_DIR, 'openclaw.json');
 
 const ALIVE_SRC = path.join(__dirname, '..', 'alive');
 const DIST_SRC = path.join(__dirname, '..', 'dist-alive');
+const E2E_REAL_DAY = path.join(__dirname, '..', 'e2e', 'e2e-real-day.ts');
+const PERSONAS_DIR = path.join(ALIVE_SRC, 'personas');
+
+const REFERENCE_FILES = ['front.png', 'half-body.png', 'full-body.png', 'left-profile.png'];
 
 function log(msg) { console.log(`\n  ${msg}`); }
 function ok(msg) { console.log(`  ✓ ${msg}`); }
@@ -66,9 +72,318 @@ function isOpenClawCLIAvailable() {
   }
 }
 
+/**
+ * Migrate from legacy skill slug (e.g. "minase") to "alive".
+ * Renames skill directory and moves config entry in openclaw.json.
+ * Called once before any command runs.
+ */
+function migrateFromLegacySlug() {
+  const ALIVE_SLUG = 'alive';
+  const aliveDest = path.join(SKILLS_DIR, ALIVE_SLUG);
+
+  // If alive/ already exists, nothing to migrate
+  if (fs.existsSync(aliveDest)) return;
+
+  // Scan for a legacy skill directory that contains persona.yaml (the old non-"alive" slug)
+  if (!fs.existsSync(SKILLS_DIR)) return;
+  const candidates = fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
+    .filter(d => d.isDirectory() && d.name !== ALIVE_SLUG)
+    .filter(d => fs.existsSync(path.join(SKILLS_DIR, d.name, 'persona.yaml')));
+
+  if (candidates.length === 0) return;
+
+  // Use the first match (there should only be one alive-like skill)
+  const legacySlug = candidates[0].name;
+  const legacyDir = path.join(SKILLS_DIR, legacySlug);
+
+  log(`Migrating legacy skill "${legacySlug}" → "${ALIVE_SLUG}"...`);
+
+  // 1. Rename skill directory
+  fs.renameSync(legacyDir, aliveDest);
+  ok(`Renamed ${legacyDir} → ${aliveDest}`);
+
+  // 2. Migrate openclaw.json config entry
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      const entries = config.skills?.entries;
+      if (entries && entries[legacySlug] && !entries[ALIVE_SLUG]) {
+        entries[ALIVE_SLUG] = entries[legacySlug];
+        delete entries[legacySlug];
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+        ok(`Migrated openclaw.json: ${legacySlug} → ${ALIVE_SLUG}`);
+      }
+    } catch {
+      warn('Could not migrate openclaw.json — you may need to update it manually');
+    }
+  }
+
+  // 3. Migrate cron jobs (rename prefixes)
+  if (isOpenClawCLIAvailable()) {
+    for (const suffix of ['morning', 'tick', 'night']) {
+      try {
+        execSync(`openclaw cron remove --name "${legacySlug}:${suffix}"`, { stdio: 'ignore' });
+      } catch { /* may not exist */ }
+    }
+    warn(`Removed legacy cron jobs for "${legacySlug}" — they will be re-registered on next install/reinstall.`);
+  }
+
+  // 4. Migrate SOUL.md markers
+  if (fs.existsSync(SOUL_FILE)) {
+    try {
+      let soul = fs.readFileSync(SOUL_FILE, 'utf8');
+      const oldMarker = `<!-- ${legacySlug}-soul-start -->`;
+      const oldEnd = `<!-- ${legacySlug}-soul-end -->`;
+      const newMarker = `<!-- ${ALIVE_SLUG}-soul-start -->`;
+      const newEnd = `<!-- ${ALIVE_SLUG}-soul-end -->`;
+      if (soul.includes(oldMarker)) {
+        soul = soul.replace(oldMarker, newMarker).replace(oldEnd, newEnd);
+        fs.writeFileSync(SOUL_FILE, soul);
+        ok('Updated SOUL.md markers');
+      }
+    } catch { /* best effort */ }
+  }
+
+  log(`Migration complete! Skill is now at ~/.openclaw/skills/${ALIVE_SLUG}/\n`);
+}
+
+/**
+ * Check if reference images exist in the given references directory.
+ */
+function checkReferenceImages(referencesDir) {
+  if (!fs.existsSync(referencesDir)) return { existing: 0, total: 4, missing: REFERENCE_FILES };
+  const missing = [];
+  let existing = 0;
+  for (const f of REFERENCE_FILES) {
+    if (fs.existsSync(path.join(referencesDir, f))) {
+      existing++;
+    } else {
+      missing.push(f);
+    }
+  }
+  return { existing, total: REFERENCE_FILES.length, missing };
+}
+
+/**
+ * Resolve the reference_image path from persona config.
+ * If relative, resolves against the persona YAML file directory.
+ */
+function resolveRefImageFromPersona(persona, personaYamlDir) {
+  const refImage = persona.meta && persona.meta.reference_image;
+  if (!refImage) return null;
+  if (path.isAbsolute(refImage)) return refImage;
+  return path.resolve(personaYamlDir, refImage);
+}
+
+/**
+ * Run generateReferences via npx tsx.
+ * This calls the TypeScript function from within the installed skill directory.
+ * Uses a temporary file + execFileSync to avoid shell injection risks with user-supplied paths.
+ */
+function runGenerateReferences(sourcePath, outputDir, env) {
+  const tmpScript = path.join(os.tmpdir(), `alive-gen-refs-${Date.now()}.mts`);
+  const scriptContent = [
+    `import { generateReferences } from './alive/sub-skills/platform/generate-image/scripts/generate-references';`,
+    `await generateReferences(${JSON.stringify(sourcePath)}, ${JSON.stringify(outputDir)});`,
+  ].join('\n');
+  fs.writeFileSync(tmpScript, scriptContent);
+  try {
+    execFileSync('npx', ['tsx', tmpScript], {
+      stdio: 'inherit',
+      timeout: 5 * 60 * 1000, // 5 minutes
+      env: { ...process.env, ...env },
+      cwd: path.join(__dirname, '..'),
+    });
+    return true;
+  } catch (err) {
+    console.error(`  ✗ Reference image generation failed: ${err.message}`);
+    return false;
+  } finally {
+    try { fs.unlinkSync(tmpScript); } catch { /* best-effort cleanup */ }
+  }
+}
+
+/**
+ * Setup reference images for a persona.
+ * - Checks if reference images already exist
+ * - Tries to use reference_image from persona YAML
+ * - Falls back to asking user for a source image path
+ * - Runs AI generation of multi-angle references
+ *
+ * @param {object} options
+ * @param {object} options.persona - Parsed persona config
+ * @param {string} options.personaYamlDir - Directory of persona YAML (for resolving relative paths)
+ * @param {string} options.skillDest - Installed skill destination path
+ * @param {object} options.rl - readline interface
+ * @param {object} [options.env] - Extra env vars (API keys etc.)
+ * @param {boolean} [options.nonInteractive] - Skip prompts (for real-day-test etc.)
+ * @returns {Promise<boolean>} Whether references are ready
+ */
+async function setupReferenceImages({ persona, personaYamlDir, skillDest, rl, env = {}, nonInteractive = false }) {
+  const referencesDir = path.join(skillDest, 'assets', 'references');
+  const { existing, total, missing } = checkReferenceImages(referencesDir);
+
+  if (existing === total) {
+    ok(`Reference images found (${existing}/${total})`);
+    return true;
+  }
+
+  if (existing > 0) {
+    warn(`Partial reference images: ${existing}/${total} (missing: ${missing.join(', ')})`);
+  } else {
+    log('No reference images found. Reference images are needed for AI image generation.');
+  }
+
+  // Step A: Try to find source image from persona config
+  let sourcePath = resolveRefImageFromPersona(persona, personaYamlDir);
+  if (sourcePath && !fs.existsSync(sourcePath)) {
+    warn(`reference_image in persona.yaml not found: ${sourcePath}`);
+    sourcePath = null;
+  }
+
+  // Step B: Ask user if no source image configured (interactive mode)
+  if (!sourcePath && !nonInteractive) {
+    console.log('\n  To generate reference images, provide a clear source photo of the character.');
+    console.log('  Requirements: front-facing, good lighting, no obstructions.');
+    console.log('  Supported formats: PNG, JPG, JPEG, WEBP\n');
+    const userPath = await ask(rl, '  Source image path (press Enter to skip): ');
+    const trimmed = userPath.trim().replace(/^['"]|['"]$/g, ''); // strip quotes from drag-drop
+    if (trimmed) {
+      const resolved = path.resolve(trimmed);
+      if (fs.existsSync(resolved)) {
+        sourcePath = resolved;
+      } else {
+        warn(`File not found: ${resolved}`);
+      }
+    }
+  }
+
+  if (!sourcePath) {
+    warn('Skipping reference image generation.');
+    console.log('  You can set up references later:');
+    console.log('    alive --setup-references --persona <path/to/persona.yaml>');
+    console.log('  Or manually place images in:');
+    console.log(`    ${referencesDir}/`);
+    console.log(`    Required files: ${REFERENCE_FILES.join(', ')}`);
+    return false;
+  }
+
+  // Step C: Copy source to references dir as source.png
+  fs.mkdirSync(referencesDir, { recursive: true });
+  const sourceBackup = path.join(referencesDir, 'source' + path.extname(sourcePath));
+  fs.copyFileSync(sourcePath, sourceBackup);
+  ok(`Source image saved: ${sourceBackup}`);
+
+  // Step D: Check if API keys are available
+  const mergedEnv = { ...process.env, ...env };
+  const hasAIHubMix = !!mergedEnv.AIHUBMIX_API_KEY;
+  const hasFal = !!mergedEnv.FAL_KEY;
+
+  if (!hasAIHubMix && !hasFal) {
+    warn('No image generation API key configured (AIHUBMIX_API_KEY or FAL_KEY).');
+    console.log('  Source image saved. Generate references later:');
+    console.log('    alive --setup-references --persona <path/to/persona.yaml>');
+    return false;
+  }
+
+  // Step E: Generate multi-angle references
+  log('Generating multi-angle reference images (this may take a few minutes)...');
+  const success = runGenerateReferences(sourceBackup, referencesDir, env);
+
+  if (success) {
+    const after = checkReferenceImages(referencesDir);
+    ok(`Reference images ready: ${after.existing}/${after.total}`);
+    if (after.missing.length > 0) {
+      warn(`Still missing: ${after.missing.join(', ')} — you can re-run --setup-references`);
+    }
+    return after.existing > 0;
+  }
+
+  warn('Reference generation had errors. You can retry later:');
+  console.log('    alive --setup-references --persona <path/to/persona.yaml>');
+  return false;
+}
+
 // ═══════════════════════════════════════════════
 // Alive Framework — Generic Persona Installer
 // ═══════════════════════════════════════════════
+
+/**
+ * Scan the built-in personas/ directory and return parsed persona summaries.
+ */
+function listBuiltinPersonas() {
+  if (!fs.existsSync(PERSONAS_DIR)) return [];
+  const personas = [];
+  for (const file of fs.readdirSync(PERSONAS_DIR)) {
+    if (!file.endsWith('.yaml') && !file.endsWith('.yml')) continue;
+    const filePath = path.join(PERSONAS_DIR, file);
+    try {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      const parsed = YAML.parse(raw);
+      if (parsed?.meta?.name) {
+        personas.push({
+          file,
+          path: filePath,
+          name: parsed.meta.name,
+          nameReading: parsed.meta.name_reading || '',
+          tagline: parsed.meta.tagline || '',
+          mbti: parsed.personality?.mbti || '',
+          traits: (parsed.personality?.core_traits || []).slice(0, 3),
+          language: parsed.voice?.language || '',
+        });
+      }
+    } catch { /* skip malformed files */ }
+  }
+  return personas;
+}
+
+/**
+ * Interactive persona selection — beautiful CLI menu.
+ * Returns the resolved path to the selected persona YAML, or null if cancelled.
+ */
+async function selectPersonaInteractive(rl) {
+  const personas = listBuiltinPersonas();
+  if (personas.length === 0) {
+    console.error('  ✗ No built-in personas found in alive/personas/');
+    console.error('    Use: alive --persona <path/to/persona.yaml>');
+    return null;
+  }
+
+  console.log('  ╭─────────────────────────────────────────────╮');
+  console.log('  │         🌟 Alive — Choose Your Persona       │');
+  console.log('  ╰─────────────────────────────────────────────╯\n');
+
+  for (let i = 0; i < personas.length; i++) {
+    const p = personas[i];
+    const num = `  ${i + 1}`.slice(-3);
+    const traitsStr = p.traits.length > 0 ? p.traits.join(' · ') : '';
+    const mbtiTag = p.mbti ? `[${p.mbti}]` : '';
+
+    console.log(`  ${num}. ${p.name}${p.nameReading ? ` (${p.nameReading})` : ''}  ${mbtiTag}`);
+    if (p.tagline) console.log(`      ${p.tagline}`);
+    if (traitsStr) console.log(`      ✦ ${traitsStr}`);
+    console.log('');
+  }
+
+  console.log(`    0. Cancel — I'll provide my own persona.yaml\n`);
+
+  const answer = await ask(rl, `  Select [1-${personas.length}]: `);
+  const choice = parseInt(answer.trim(), 10);
+
+  if (isNaN(choice) || choice === 0) {
+    console.log('\n  Cancelled. Use: alive --persona <path/to/persona.yaml>\n');
+    return null;
+  }
+
+  if (choice < 1 || choice > personas.length) {
+    console.log('\n  Invalid selection.\n');
+    return null;
+  }
+
+  const selected = personas[choice - 1];
+  console.log(`\n  ✓ Selected: ${selected.name}${selected.nameReading ? ` (${selected.nameReading})` : ''}\n`);
+  return selected.path;
+}
 
 function getPersonaArg() {
   const idx = args.indexOf('--persona');
@@ -76,12 +391,29 @@ function getPersonaArg() {
   return args[idx + 1];
 }
 
+/**
+ * Parse a persona YAML file.
+ * Returns the parsed object or exits with an error.
+ */
+function parsePersonaFile(filePath) {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  return YAML.parse(raw);
+}
+
+/**
+ * Copy persona YAML file into skill directory as persona.yaml.
+ * This is the canonical persona config used at runtime.
+ */
+function installPersonaConfig(resolvedPersonaPath, skillDest) {
+  fs.copyFileSync(resolvedPersonaPath, path.join(skillDest, 'persona.yaml'));
+}
+
 async function install() {
   console.log('\n  Alive Framework — Install Digital Life Persona');
   console.log('  ===============================================\n');
 
   // Step 1: Verify OpenClaw
-  log('Step 1/6: Verifying OpenClaw installation...');
+  log('Step 1/7: Verifying OpenClaw installation...');
   if (!fs.existsSync(OPENCLAW_DIR)) {
     console.error('  ✗ OpenClaw not found at ~/.openclaw');
     console.error('    Install OpenClaw first: https://openclaw.ai');
@@ -90,16 +422,24 @@ async function install() {
   ok('OpenClaw found');
 
   // Step 2: Load persona config
-  log('Step 2/6: Loading persona configuration...');
-  const personaPath = getPersonaArg();
+  log('Step 2/7: Loading persona configuration...');
+  let personaPath = getPersonaArg();
+  let resolvedPersonaPath;
+
   if (!personaPath) {
-    console.error('  ✗ No persona file specified.');
-    console.error('    Usage: alive --persona <path/to/persona.yaml>');
-    console.error('    See alive/persona.example.yaml for the config format.');
-    process.exit(1);
+    // No --persona flag: enter interactive selection
+    const rl0 = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const selectedPath = await selectPersonaInteractive(rl0);
+    rl0.close();
+
+    if (!selectedPath) {
+      process.exit(0);
+    }
+    resolvedPersonaPath = selectedPath;
+  } else {
+    resolvedPersonaPath = path.resolve(personaPath);
   }
 
-  const resolvedPersonaPath = path.resolve(personaPath);
   if (!fs.existsSync(resolvedPersonaPath)) {
     console.error(`  ✗ Persona file not found: ${resolvedPersonaPath}`);
     process.exit(1);
@@ -107,12 +447,9 @@ async function install() {
 
   let persona;
   try {
-    // Support both JSON and YAML (JSON fallback)
-    const raw = fs.readFileSync(resolvedPersonaPath, 'utf8');
-    persona = JSON.parse(raw);
-  } catch {
-    console.error('  ✗ Could not parse persona file. Ensure it is valid JSON.');
-    console.error('    (YAML support requires a build step — use the JSON export.)');
+    persona = parsePersonaFile(resolvedPersonaPath);
+  } catch (err) {
+    console.error(`  ✗ Could not parse persona file: ${err.message}`);
     process.exit(1);
   }
 
@@ -122,14 +459,15 @@ async function install() {
     process.exit(1);
   }
 
-  const skillSlug = (persona.meta.id || personaName).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
-  ok(`Persona: ${personaName} (slug: ${skillSlug})`);
+  const personaSlug = (persona.meta.id || personaName).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+  const skillSlug = 'alive';
+  ok(`Persona: ${personaName} (persona: ${personaSlug}, skill: ${skillSlug})`);
 
   const skillDest = path.join(SKILLS_DIR, skillSlug);
-  const memoryDir = path.join(WORKSPACE_DIR, 'memory', skillSlug);
+  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
 
   // Step 3: Copy alive framework files
-  log('Step 3/6: Installing alive framework files...');
+  log('Step 3/7: Installing alive framework files...');
   if (fs.existsSync(skillDest)) {
     warn(`Existing skill found at ${skillDest} — overwriting`);
   }
@@ -137,19 +475,21 @@ async function install() {
   if (fs.existsSync(DIST_SRC)) {
     copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
   }
-  // Copy persona config into the skill directory
-  fs.copyFileSync(resolvedPersonaPath, path.join(skillDest, 'persona.json'));
+  // Copy persona config into the skill directory as persona.yaml (canonical format)
+  installPersonaConfig(resolvedPersonaPath, skillDest);
   ok(`Alive framework copied to ${skillDest}`);
 
   // Step 4: Register in OpenClaw config
-  log('Step 4/6: Registering skill in OpenClaw config...');
+  log('Step 4/7: Registering skill in OpenClaw config...');
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
   console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
   const llmApiKey = await ask(rl, '  LLM_API_KEY (press Enter to skip): ');
   const llmApiBase = await ask(rl, '  LLM_API_BASE (default: https://aihubmix.com/v1): ');
   const llmModel = await ask(rl, '  LLM_MODEL (default: claude-sonnet-4-20250514): ');
-  rl.close();
+
+  console.log('\n  Optional: Configure image generation API key (for reference image generation):');
+  const imageApiKey = await ask(rl, '  AIHUBMIX_API_KEY (press Enter to skip): ');
 
   let config = {};
   if (fs.existsSync(CONFIG_FILE)) {
@@ -163,13 +503,30 @@ async function install() {
       ...(llmApiKey && { LLM_API_KEY: llmApiKey }),
       ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
       ...(llmModel && { LLM_MODEL: llmModel }),
+      ...(imageApiKey && { AIHUBMIX_API_KEY: imageApiKey }),
+      ALIVE_PERSONA: personaSlug,
     },
   };
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
   ok('openclaw.json updated');
 
-  // Step 5: Initialize memory
-  log('Step 5/6: Setting up memory directories...');
+  // Step 5: Setup reference images
+  log('Step 5/7: Setting up reference images for AI image generation...');
+  const envForRefs = {
+    ...(imageApiKey && { AIHUBMIX_API_KEY: imageApiKey }),
+  };
+  await setupReferenceImages({
+    persona,
+    personaYamlDir: path.dirname(resolvedPersonaPath),
+    skillDest,
+    rl,
+    env: envForRefs,
+  });
+
+  rl.close();
+
+  // Step 6: Initialize memory
+  log('Step 6/7: Setting up memory directories...');
   fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
   const today = new Date().toISOString().slice(0, 10);
 
@@ -203,8 +560,8 @@ async function install() {
   }
   ok(`Memory initialized at ${memoryDir}`);
 
-  // Step 6: Register cron (if OpenClaw CLI available)
-  log('Step 6/6: Registering heartbeat cron jobs...');
+  // Step 7: Register cron (if OpenClaw CLI available)
+  log('Step 7/7: Registering heartbeat cron jobs...');
   if (isOpenClawCLIAvailable()) {
     const cronJobs = [
       { name: `${skillSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
@@ -228,7 +585,8 @@ async function install() {
   console.log(`  Tips:`);
   console.log(`  - Just chat naturally. ${personaName} will remember you.`);
   console.log(`  - Memory lives at: ${memoryDir}`);
-  console.log(`  - Persona config: ${path.join(skillDest, 'persona.json')}`);
+  console.log(`  - Persona config: ${path.join(skillDest, 'persona.yaml')}`);
+  console.log(`  - Switch persona: alive --switch-persona --persona <path>`);
   console.log('');
 }
 
@@ -239,21 +597,22 @@ async function uninstall() {
   const personaPath = getPersonaArg();
   if (!personaPath) {
     console.error('  ✗ No persona file specified.');
-    console.error('    Usage: alive --uninstall --persona <path/to/persona.json>');
+    console.error('    Usage: alive --uninstall --persona <path/to/persona.yaml>');
     process.exit(1);
   }
 
   let persona;
   try {
-    persona = JSON.parse(fs.readFileSync(path.resolve(personaPath), 'utf8'));
-  } catch {
-    console.error('  ✗ Could not parse persona file.');
+    persona = parsePersonaFile(path.resolve(personaPath));
+  } catch (err) {
+    console.error(`  ✗ Could not parse persona file: ${err.message}`);
     process.exit(1);
   }
 
   const personaName = persona.meta?.name;
-  const skillSlug = (persona.meta?.id || personaName || '').toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
-  if (!skillSlug) {
+  const personaSlug = (persona.meta?.id || personaName || '').toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+  const skillSlug = 'alive';
+  if (!personaSlug) {
     console.error('  ✗ Could not determine persona slug.');
     process.exit(1);
   }
@@ -267,7 +626,7 @@ async function uninstall() {
   }
 
   const skillDest = path.join(SKILLS_DIR, skillSlug);
-  const memoryDir = path.join(WORKSPACE_DIR, 'memory', skillSlug);
+  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
 
   log('Removing skill files...');
   removeDirSafe(skillDest, 'Skill directory');
@@ -320,24 +679,788 @@ async function uninstall() {
   log('Uninstall complete!\n');
 }
 
+async function update() {
+  console.log('\n  Alive Framework — Update (code-only, preserves memory & config)');
+  console.log('  ================================================================\n');
+
+  // Step 1: Verify OpenClaw
+  log('Step 1/3: Verifying OpenClaw installation...');
+  if (!fs.existsSync(OPENCLAW_DIR)) {
+    console.error('  ✗ OpenClaw not found at ~/.openclaw');
+    console.error('    Install OpenClaw first: https://openclaw.ai');
+    process.exit(1);
+  }
+  ok('OpenClaw found');
+
+  // Step 2: Load persona config
+  log('Step 2/3: Loading persona configuration...');
+  const personaPath = getPersonaArg();
+  if (!personaPath) {
+    console.error('  ✗ No persona file specified.');
+    console.error('    Usage: alive --update --persona <path/to/persona.yaml>');
+    process.exit(1);
+  }
+
+  const resolvedPersonaPath = path.resolve(personaPath);
+  if (!fs.existsSync(resolvedPersonaPath)) {
+    console.error(`  ✗ Persona file not found: ${resolvedPersonaPath}`);
+    process.exit(1);
+  }
+
+  let persona;
+  try {
+    persona = parsePersonaFile(resolvedPersonaPath);
+  } catch (err) {
+    console.error(`  ✗ Could not parse persona file: ${err.message}`);
+    process.exit(1);
+  }
+
+  const personaName = persona.meta?.name;
+  if (!personaName) {
+    console.error('  ✗ Persona file missing meta.name field.');
+    process.exit(1);
+  }
+
+  const skillSlug = 'alive';
+  const skillDest = path.join(SKILLS_DIR, skillSlug);
+
+  if (!fs.existsSync(skillDest)) {
+    console.error(`  ✗ Skill not found at ${skillDest}`);
+    console.error('    Run a full install first: alive --persona <path/to/persona.yaml>');
+    process.exit(1);
+  }
+  ok(`Persona: ${personaName} (skill: ${skillSlug})`);
+
+  // Step 3: Update framework files only (preserves memory, config, cron)
+  log('Step 3/3: Updating alive framework files...');
+
+  // Remove old skill files but preserve persona.yaml first
+  // Overwrite framework files
+  copyDirRecursive(ALIVE_SRC, skillDest);
+  if (fs.existsSync(DIST_SRC)) {
+    copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
+  }
+  // Always update persona config from source as persona.yaml
+  installPersonaConfig(resolvedPersonaPath, skillDest);
+  ok(`Framework files updated at ${skillDest}`);
+
+  log('Update complete!\n');
+  console.log(`  ${personaName} code updated. Memory, config, and cron jobs are untouched.\n`);
+}
+
+async function reinstall() {
+  console.log('\n  Alive Framework — Reinstall (full clean + fresh install)');
+  console.log('  ========================================================\n');
+
+  // Step 1: Load persona config
+  log('Step 1/9: Loading persona configuration...');
+  const personaPath = getPersonaArg();
+  if (!personaPath) {
+    console.error('  ✗ No persona file specified.');
+    console.error('    Usage: alive --reinstall --persona <path/to/persona.yaml>');
+    process.exit(1);
+  }
+
+  const resolvedPersonaPath = path.resolve(personaPath);
+  if (!fs.existsSync(resolvedPersonaPath)) {
+    console.error(`  ✗ Persona file not found: ${resolvedPersonaPath}`);
+    process.exit(1);
+  }
+
+  let persona;
+  try {
+    persona = parsePersonaFile(resolvedPersonaPath);
+  } catch (err) {
+    console.error(`  ✗ Could not parse persona file: ${err.message}`);
+    process.exit(1);
+  }
+
+  const personaName = persona.meta?.name;
+  if (!personaName) {
+    console.error('  ✗ Persona file missing meta.name field.');
+    process.exit(1);
+  }
+
+  const personaSlug = (persona.meta.id || personaName).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+  const skillSlug = 'alive';
+  ok(`Persona: ${personaName} (persona: ${personaSlug}, skill: ${skillSlug})`);
+
+  const skillDest = path.join(SKILLS_DIR, skillSlug);
+  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+
+  // Confirm
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await ask(rl, `  ⚠ This will WIPE all memory, config, and cron for ${personaName} and reinstall from scratch.\n    Continue? (y/N): `);
+  if (answer.trim().toLowerCase() !== 'y') {
+    console.log('\n  Cancelled.\n');
+    rl.close();
+    process.exit(0);
+  }
+
+  // Step 2: Remove old skill files
+  log('Step 2/9: Removing old skill files...');
+  removeDirSafe(skillDest, 'Skill directory');
+
+  // Step 3: Remove old memory
+  log('Step 3/9: Clearing memory data...');
+  removeDirSafe(memoryDir, 'Memory data');
+
+  // Step 4: Remove old config entry
+  log('Step 4/9: Removing old config entry...');
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      if (config.skills?.entries?.[skillSlug]) {
+        delete config.skills.entries[skillSlug];
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+        ok(`Removed ${skillSlug} from openclaw.json`);
+      }
+    } catch {
+      warn('Could not parse openclaw.json — skipped');
+    }
+  }
+
+  // Step 5: Remove old cron jobs & clean SOUL.md
+  log('Step 5/9: Removing old cron jobs & cleaning SOUL.md...');
+  if (isOpenClawCLIAvailable()) {
+    for (const suffix of ['morning', 'tick', 'night']) {
+      try {
+        execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
+        ok(`Removed cron: ${skillSlug}:${suffix}`);
+      } catch { /* may not exist */ }
+    }
+  } else {
+    warn('OpenClaw CLI not found — skipping cron removal.');
+  }
+
+  // Clean SOUL.md
+  if (fs.existsSync(SOUL_FILE)) {
+    let soul = fs.readFileSync(SOUL_FILE, 'utf8');
+    const marker = `<!-- ${skillSlug}-soul-start -->`;
+    const markerEnd = `<!-- ${skillSlug}-soul-end -->`;
+    if (soul.includes(marker)) {
+      soul = soul.replace(new RegExp(`\n*${marker}[\\s\\S]*?${markerEnd}\n*`), '\n');
+      fs.writeFileSync(SOUL_FILE, soul);
+      ok(`Removed ${skillSlug} persona from SOUL.md`);
+    }
+  }
+
+  // ─── Fresh install begins ───
+
+  // Step 6: Install framework files
+  log('Step 6/9: Installing alive framework files...');
+  copyDirRecursive(ALIVE_SRC, skillDest);
+  if (fs.existsSync(DIST_SRC)) {
+    copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
+  }
+  installPersonaConfig(resolvedPersonaPath, skillDest);
+  ok(`Alive framework copied to ${skillDest}`);
+
+  // Step 7: Register in OpenClaw config
+  log('Step 7/9: Registering skill in OpenClaw config...');
+  console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
+  const llmApiKey = await ask(rl, '  LLM_API_KEY (press Enter to skip): ');
+  const llmApiBase = await ask(rl, '  LLM_API_BASE (default: https://aihubmix.com/v1): ');
+  const llmModel = await ask(rl, '  LLM_MODEL (default: claude-sonnet-4-20250514): ');
+
+  console.log('\n  Optional: Configure image generation API key (for reference image generation):');
+  const imageApiKey = await ask(rl, '  AIHUBMIX_API_KEY (press Enter to skip): ');
+
+  let config = {};
+  if (fs.existsSync(CONFIG_FILE)) {
+    try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* fresh */ }
+  }
+  config.skills = config.skills || {};
+  config.skills.entries = config.skills.entries || {};
+  config.skills.entries[skillSlug] = {
+    enabled: true,
+    env: {
+      ...(llmApiKey && { LLM_API_KEY: llmApiKey }),
+      ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
+      ...(llmModel && { LLM_MODEL: llmModel }),
+      ...(imageApiKey && { AIHUBMIX_API_KEY: imageApiKey }),
+      ALIVE_PERSONA: personaSlug,
+    },
+  };
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  ok('openclaw.json updated');
+
+  // Step 8: Setup reference images
+  log('Step 8/9: Setting up reference images...');
+  const envForRefs = {
+    ...(imageApiKey && { AIHUBMIX_API_KEY: imageApiKey }),
+  };
+  await setupReferenceImages({
+    persona,
+    personaYamlDir: path.dirname(resolvedPersonaPath),
+    skillDest,
+    rl,
+    env: envForRefs,
+  });
+
+  // Step 9: Initialize fresh memory
+  log('Step 9/9: Setting up fresh memory & cron...');
+  fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
+  const today = new Date().toISOString().slice(0, 10);
+
+  const filesToInit = [
+    ['diary.md', `# ${personaName}の日記\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
+    ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
+    ['emotion-state.json', JSON.stringify({
+      mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
+      energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
+      last_updated: null, recent_cause: '初始化',
+      momentum: { valence: 0, arousal: 0, energy: 0, stress: 0, creativity: 0, sociability: 0, duration_ticks: 0 },
+      undertone: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 },
+      impulse_history: [], consecutive_high_stress: 0, threshold_break_cooldown: 0,
+    }, null, 2)],
+    ['intent-pool.json', JSON.stringify({ intents: [], last_updated: null }, null, 2)],
+    ['schedule-today.json', JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
+    ['event-queue.json', JSON.stringify({ events: [], max_size: 50 }, null, 2)],
+    ['heartbeat-log.json', JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
+    ['flow-state.json', JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
+    ['personality-drift.json', JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
+    ['preferences.json', JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
+    ['aspirations.json', JSON.stringify({ aspirations: [] }, null, 2)],
+    ['pending-chains.json', JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
+  ];
+
+  for (const [filename, content] of filesToInit) {
+    const filePath = path.join(memoryDir, filename);
+    fs.writeFileSync(filePath, content); // Always overwrite — this is a fresh reinstall
+  }
+  ok(`Fresh memory initialized at ${memoryDir}`);
+
+  // Register cron
+  if (isOpenClawCLIAvailable()) {
+    const cronJobs = [
+      { name: `${skillSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
+      { name: `${skillSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
+      { name: `${skillSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
+    ];
+    for (const job of cronJobs) {
+      try {
+        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+        ok(`Registered cron: ${job.name} (${job.cron})`);
+      } catch (err) {
+        warn(`Failed to register cron ${job.name}: ${err.message}`);
+      }
+    }
+  } else {
+    warn('OpenClaw CLI not found — skipping cron registration.');
+  }
+
+  rl.close();
+
+  log('Reinstall complete!\n');
+  console.log(`  ${personaName} has been fully reset and reinstalled.\n`);
+  console.log(`  Tips:`);
+  console.log(`  - All memory has been wiped. ${personaName} starts fresh.`);
+  console.log(`  - Memory lives at: ${memoryDir}`);
+  console.log(`  - Persona config: ${path.join(skillDest, 'persona.yaml')}`);
+  console.log(`  - Switch persona: alive --switch-persona --persona <path>`);
+  console.log('');
+}
+
+async function realDayTest() {
+  console.log('\n  Alive Framework — Real Day E2E Test');
+  console.log('  =====================================\n');
+
+  // Step 1: Load persona config
+  log('Step 1/5: Loading persona configuration...');
+  const personaPath = getPersonaArg();
+  if (!personaPath) {
+    console.error('  ✗ No persona file specified.');
+    console.error('    Usage: alive --real-day-test --persona <path/to/persona.yaml>');
+    process.exit(1);
+  }
+
+  const resolvedPersonaPath = path.resolve(personaPath);
+  if (!fs.existsSync(resolvedPersonaPath)) {
+    console.error(`  ✗ Persona file not found: ${resolvedPersonaPath}`);
+    process.exit(1);
+  }
+
+  let persona;
+  try {
+    persona = parsePersonaFile(resolvedPersonaPath);
+  } catch (err) {
+    console.error(`  ✗ Could not parse persona file: ${err.message}`);
+    process.exit(1);
+  }
+
+  const personaName = persona.meta?.name;
+  if (!personaName) {
+    console.error('  ✗ Persona file missing meta.name field.');
+    process.exit(1);
+  }
+
+  // Keep raw persona content in memory — the source file may live inside the
+  // skill directory that we are about to delete in the uninstall step.
+  const personaRawContent = fs.readFileSync(resolvedPersonaPath, 'utf8');
+
+  const personaSlug = (persona.meta.id || personaName).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+  const skillSlug = 'alive';
+  ok(`Persona: ${personaName} (persona: ${personaSlug}, skill: ${skillSlug})`);
+
+  const skillDest = path.join(SKILLS_DIR, skillSlug);
+  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+
+  // Step 2: Check if existing config has env keys — preserve them
+  log('Step 2/5: Loading existing API keys from openclaw.json...');
+  let existingEnv = {};
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      existingEnv = config.skills?.entries?.[skillSlug]?.env || {};
+      const keyCount = Object.keys(existingEnv).length;
+      if (keyCount > 0) {
+        ok(`Found ${keyCount} existing env keys (will preserve them)`);
+      } else {
+        warn('No existing env keys found — you may need to configure them first');
+      }
+    } catch {
+      warn('Could not parse openclaw.json');
+    }
+  }
+
+  // Step 3: Uninstall existing skill (non-interactive)
+  log('Step 3/5: Uninstalling existing skill (non-interactive)...');
+  if (fs.existsSync(skillDest)) {
+    removeDirSafe(skillDest, 'Skill directory');
+  } else {
+    warn('No existing skill directory found');
+  }
+  if (fs.existsSync(memoryDir)) {
+    removeDirSafe(memoryDir, 'Memory data');
+  }
+  // Remove cron
+  if (isOpenClawCLIAvailable()) {
+    for (const suffix of ['morning', 'tick', 'night']) {
+      try {
+        execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
+      } catch { /* may not exist */ }
+    }
+  }
+  // Clean SOUL.md
+  if (fs.existsSync(SOUL_FILE)) {
+    let soul = fs.readFileSync(SOUL_FILE, 'utf8');
+    const marker = `<!-- ${skillSlug}-soul-start -->`;
+    const markerEnd = `<!-- ${skillSlug}-soul-end -->`;
+    if (soul.includes(marker)) {
+      soul = soul.replace(new RegExp(`\n*${marker}[\\s\\S]*?${markerEnd}\n*`), '\n');
+      fs.writeFileSync(SOUL_FILE, soul);
+    }
+  }
+  ok('Old installation cleaned');
+
+  // Step 4: Fresh install (non-interactive — reuse existing env keys)
+  log('Step 4/5: Fresh install (non-interactive)...');
+
+  // Copy alive framework files
+  copyDirRecursive(ALIVE_SRC, skillDest);
+  if (fs.existsSync(DIST_SRC)) {
+    copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
+  }
+  // Write persona as persona.yaml (canonical format)
+  fs.writeFileSync(path.join(skillDest, 'persona.yaml'), personaRawContent);
+  ok(`Framework copied to ${skillDest}`);
+
+  // Register in config with preserved env keys
+  let config = {};
+  if (fs.existsSync(CONFIG_FILE)) {
+    try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* fresh */ }
+  }
+  config.skills = config.skills || {};
+  config.skills.entries = config.skills.entries || {};
+  config.skills.entries[skillSlug] = {
+    enabled: true,
+    env: { ...existingEnv, ALIVE_PERSONA: personaSlug },
+  };
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  ok('openclaw.json updated (env keys preserved)');
+
+  // Setup reference images (non-interactive — auto-detect from persona config)
+  log('Setting up reference images (non-interactive)...');
+  await setupReferenceImages({
+    persona,
+    personaYamlDir: path.dirname(resolvedPersonaPath),
+    skillDest,
+    rl: null,
+    env: existingEnv,
+    nonInteractive: true,
+  });
+
+  // Initialize memory
+  fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
+  const today = new Date().toISOString().slice(0, 10);
+
+  const filesToInit = [
+    ['diary.md', `# ${personaName}の日記\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
+    ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
+    ['emotion-state.json', JSON.stringify({
+      mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
+      energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
+      last_updated: null, recent_cause: '初始化',
+      momentum: { valence: 0, arousal: 0, energy: 0, stress: 0, creativity: 0, sociability: 0, duration_ticks: 0 },
+      undertone: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 },
+      impulse_history: [], consecutive_high_stress: 0, threshold_break_cooldown: 0,
+    }, null, 2)],
+    ['intent-pool.json', JSON.stringify({ intents: [], last_updated: null }, null, 2)],
+    ['schedule-today.json', JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
+    ['event-queue.json', JSON.stringify({ events: [], max_size: 50 }, null, 2)],
+    ['heartbeat-log.json', JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
+    ['flow-state.json', JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
+    ['personality-drift.json', JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
+    ['preferences.json', JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
+    ['aspirations.json', JSON.stringify({ aspirations: [] }, null, 2)],
+    ['pending-chains.json', JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
+  ];
+
+  for (const [filename, content] of filesToInit) {
+    const filePath = path.join(memoryDir, filename);
+    fs.writeFileSync(filePath, content);
+  }
+  ok(`Fresh memory initialized at ${memoryDir}`);
+
+  // Register cron (optional)
+  if (isOpenClawCLIAvailable()) {
+    const cronJobs = [
+      { name: `${skillSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
+      { name: `${skillSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
+      { name: `${skillSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
+    ];
+    for (const job of cronJobs) {
+      try {
+        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+        ok(`Registered cron: ${job.name}`);
+      } catch (err) {
+        warn(`Failed to register cron ${job.name}: ${err.message}`);
+      }
+    }
+  }
+
+  ok('Fresh install complete');
+
+  // Step 5: Run real-day test
+  log('Step 5/5: Launching real-day E2E test...');
+  console.log(`  Running: npx tsx ${E2E_REAL_DAY} --slug ${personaSlug}\n`);
+
+  const dryRun = args.includes('--dry-run');
+  const tsxArgs = [E2E_REAL_DAY, '--slug', personaSlug];
+  if (dryRun) tsxArgs.push('--dry-run');
+
+  try {
+    // Use execFileSync to run tsx with the E2E script
+    // This keeps output streaming to the terminal
+    const { execFileSync: exec } = require('child_process');
+    exec('npx', ['tsx', ...tsxArgs], {
+      stdio: 'inherit',
+      timeout: 60 * 60 * 1000, // 1 hour timeout
+      env: { ...process.env },
+    });
+    log('Real-day test completed successfully!\n');
+  } catch (err) {
+    if (err.status) {
+      console.error(`\n  Real-day test exited with code ${err.status}`);
+    } else {
+      console.error(`\n  Real-day test failed: ${err.message}`);
+    }
+    process.exit(err.status || 1);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// Switch Persona — hot-swap persona.yaml + memory pointer
+// ═══════════════════════════════════════════════
+
+async function switchPersona() {
+  console.log('\n  Alive Framework — Switch Persona');
+  console.log('  ==================================\n');
+
+  const skillSlug = 'alive';
+  const skillDest = path.join(SKILLS_DIR, skillSlug);
+  if (!fs.existsSync(skillDest)) {
+    console.error(`  ✗ Alive not installed. Run "alive --persona <path>" first.`);
+    process.exit(1);
+  }
+
+  const personaPath = getPersonaArg();
+  if (!personaPath) {
+    console.error('  ✗ No persona file specified.');
+    console.error('    Usage: alive --switch-persona --persona <path/to/persona.yaml>');
+    process.exit(1);
+  }
+
+  const resolvedPersonaPath = path.resolve(personaPath);
+  if (!fs.existsSync(resolvedPersonaPath)) {
+    console.error(`  ✗ Persona file not found: ${resolvedPersonaPath}`);
+    process.exit(1);
+  }
+
+  let persona;
+  try {
+    persona = parsePersonaFile(resolvedPersonaPath);
+  } catch (err) {
+    console.error(`  ✗ Could not parse persona file: ${err.message}`);
+    process.exit(1);
+  }
+
+  const personaName = persona.meta?.name;
+  if (!personaName) {
+    console.error('  ✗ Persona file missing meta.name field.');
+    process.exit(1);
+  }
+
+  const personaSlug = (persona.meta.id || personaName).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+
+  log(`Switching to persona: ${personaName} (${personaSlug})...`);
+
+  // 1. Update persona.yaml in skill directory
+  installPersonaConfig(resolvedPersonaPath, skillDest);
+  ok(`Updated persona.yaml in ${skillDest}`);
+
+  // 2. Update ALIVE_PERSONA in openclaw.json
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      if (config.skills?.entries?.[skillSlug]) {
+        config.skills.entries[skillSlug].env = config.skills.entries[skillSlug].env || {};
+        config.skills.entries[skillSlug].env.ALIVE_PERSONA = personaSlug;
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+        ok('Updated ALIVE_PERSONA in openclaw.json');
+      } else {
+        warn('Alive skill entry not found in openclaw.json — run a full install first');
+      }
+    } catch {
+      warn('Could not parse openclaw.json');
+    }
+  }
+
+  // 3. Initialize memory if needed (first time switching to this persona)
+  if (!fs.existsSync(memoryDir)) {
+    log(`First time using ${personaName} — initializing memory...`);
+    fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
+    const today = new Date().toISOString().slice(0, 10);
+
+    const filesToInit = [
+      ['diary.md', `# ${personaName}の日記\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
+      ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
+      ['emotion-state.json', JSON.stringify({
+        mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
+        energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
+        last_updated: null, recent_cause: '初始化',
+        momentum: { valence: 0, arousal: 0, energy: 0, stress: 0, creativity: 0, sociability: 0, duration_ticks: 0 },
+        undertone: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 },
+        impulse_history: [], consecutive_high_stress: 0, threshold_break_cooldown: 0,
+      }, null, 2)],
+      ['intent-pool.json', JSON.stringify({ intents: [], last_updated: null }, null, 2)],
+      ['schedule-today.json', JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
+      ['event-queue.json', JSON.stringify({ events: [], max_size: 50 }, null, 2)],
+      ['heartbeat-log.json', JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
+      ['flow-state.json', JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
+      ['personality-drift.json', JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
+      ['preferences.json', JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
+      ['aspirations.json', JSON.stringify({ aspirations: [] }, null, 2)],
+      ['pending-chains.json', JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
+    ];
+
+    for (const [filename, content] of filesToInit) {
+      const filePath = path.join(memoryDir, filename);
+      if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, content);
+      }
+    }
+    ok(`Fresh memory created at ${memoryDir}`);
+  } else {
+    ok(`Existing memory found at ${memoryDir} — preserved`);
+  }
+
+  // 4. Check reference images
+  log('Checking reference images...');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  // Load existing env for API keys
+  let existingEnv = {};
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      existingEnv = cfg.skills?.entries?.[skillSlug]?.env || {};
+    } catch { /* ignore */ }
+  }
+  await setupReferenceImages({
+    persona,
+    personaYamlDir: path.dirname(resolvedPersonaPath),
+    skillDest,
+    rl,
+    env: existingEnv,
+  });
+  rl.close();
+
+  // 5. Update SOUL.md
+  if (fs.existsSync(SOUL_FILE)) {
+    log('Updating SOUL.md...');
+    let soul = fs.readFileSync(SOUL_FILE, 'utf8');
+    // Remove old alive soul section if present
+    const marker = `<!-- ${skillSlug}-soul-start -->`;
+    const markerEnd = `<!-- ${skillSlug}-soul-end -->`;
+    if (soul.includes(marker)) {
+      soul = soul.replace(new RegExp(`\n*${marker}[\\s\\S]*?${markerEnd}\n*`), '\n');
+      fs.writeFileSync(SOUL_FILE, soul);
+      ok('Cleaned old alive persona from SOUL.md');
+    }
+  }
+
+  log('Switch complete!\n');
+  console.log(`  Active persona: ${personaName} (${personaSlug})`);
+  console.log(`  Memory: ${memoryDir}`);
+  console.log(`  Skill: ${skillDest}`);
+  console.log(`\n  Restart OpenClaw for the change to take effect.\n`);
+}
+
+// ═══════════════════════════════════════════════
+// Setup References — standalone reference image generation
+// ═══════════════════════════════════════════════
+
+async function setupReferencesCommand() {
+  console.log('\n  Alive Framework — Setup Reference Images');
+  console.log('  ==========================================\n');
+
+  const skillSlug = 'alive';
+  const skillDest = path.join(SKILLS_DIR, skillSlug);
+  if (!fs.existsSync(skillDest)) {
+    console.error(`  ✗ Alive not installed. Run "alive --persona <path>" first.`);
+    process.exit(1);
+  }
+
+  const personaPath = getPersonaArg();
+  if (!personaPath) {
+    console.error('  ✗ No persona file specified.');
+    console.error('    Usage: alive --setup-references --persona <path/to/persona.yaml>');
+    process.exit(1);
+  }
+
+  const resolvedPersonaPath = path.resolve(personaPath);
+  if (!fs.existsSync(resolvedPersonaPath)) {
+    console.error(`  ✗ Persona file not found: ${resolvedPersonaPath}`);
+    process.exit(1);
+  }
+
+  let persona;
+  try {
+    persona = parsePersonaFile(resolvedPersonaPath);
+  } catch (err) {
+    console.error(`  ✗ Could not parse persona file: ${err.message}`);
+    process.exit(1);
+  }
+
+  const personaName = persona.meta?.name;
+  if (!personaName) {
+    console.error('  ✗ Persona file missing meta.name field.');
+    process.exit(1);
+  }
+
+  ok(`Persona: ${personaName}`);
+
+  // Load existing env for API keys
+  let existingEnv = {};
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      existingEnv = config.skills?.entries?.[skillSlug]?.env || {};
+    } catch { /* ignore */ }
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  const result = await setupReferenceImages({
+    persona,
+    personaYamlDir: path.dirname(resolvedPersonaPath),
+    skillDest,
+    rl,
+    env: existingEnv,
+  });
+
+  rl.close();
+
+  if (result) {
+    log('Reference images are ready!\n');
+  } else {
+    log('Reference image setup incomplete. See instructions above.\n');
+  }
+}
+
 // Entry: route by CLI args
 const args = process.argv.slice(2);
+
+// Auto-migrate from legacy skill slug (e.g. "minase") to "alive"
+migrateFromLegacySlug();
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`
   Alive Framework — Digital Life Engine
 
   Usage:
-    alive --persona <path>              Install a persona
-    alive --uninstall --persona <path>  Uninstall a persona
-    alive --help                        Show this help
+    alive                                        Interactive persona selection (built-in presets)
+    alive --persona <path>                       Install a persona (full)
+    alive --update --persona <path>              Update code only (preserves memory & config)
+    alive --reinstall --persona <path>           Wipe everything & reinstall from scratch
+    alive --uninstall --persona <path>           Uninstall a persona
+    alive --switch-persona --persona <path>      Switch to a different persona (hot swap)
+    alive --setup-references --persona <path>    Generate reference images from source photo
+    alive --real-day-test --persona <path>       Uninstall + reinstall + run full day E2E test
+    alive --real-day-test --persona <path> --dry-run   Same but skip actual API calls
+    alive --help                                 Show this help
+
+  The skill is always installed at ~/.openclaw/skills/alive/.
+  Each persona gets its own memory directory at ~/.openclaw/workspace/memory/<persona-slug>/.
+  Use --switch-persona to hot-swap between personas.
+
+  Built-in Personas:
+    Run \`alive\` without arguments to see available built-in personas.
+    Add your own .yaml files to alive/personas/ to make them selectable.
+
+  Reference Images:
+    During install, you can provide a source photo to auto-generate multi-angle references.
+    Or set 'meta.reference_image' in your persona.yaml to auto-detect the source.
+    Run --setup-references anytime to generate or regenerate reference images.
 
   Examples:
-    alive --persona ./my-persona.json
-    alive --uninstall --persona ./my-persona.json
+    alive                                          # Interactive selection
+    alive --persona ./persona.yaml                 # Custom persona
+    alive --switch-persona --persona ./another-persona.yaml
+    alive --update --persona ./persona.yaml
+    alive --reinstall --persona ./persona.yaml
+    alive --uninstall --persona ./persona.yaml
+    alive --real-day-test --persona ./persona.yaml
 
-  See alive/persona.example.yaml for the persona config format.
+  See alive/persona-schema.yaml for field definitions, or alive/personas/ for examples.
 `);
+} else if (args.includes('--switch-persona')) {
+  switchPersona().catch(err => {
+    console.error('\n  Switch failed:', err.message);
+    process.exit(1);
+  });
+} else if (args.includes('--setup-references')) {
+  setupReferencesCommand().catch(err => {
+    console.error('\n  Setup references failed:', err.message);
+    process.exit(1);
+  });
+} else if (args.includes('--real-day-test')) {
+  realDayTest().catch(err => {
+    console.error('\n  Real-day test failed:', err.message);
+    process.exit(1);
+  });
+} else if (args.includes('--reinstall')) {
+  reinstall().catch(err => {
+    console.error('\n  Reinstall failed:', err.message);
+    process.exit(1);
+  });
+} else if (args.includes('--update')) {
+  update().catch(err => {
+    console.error('\n  Update failed:', err.message);
+    process.exit(1);
+  });
 } else if (args.includes('--uninstall')) {
   uninstall().catch(err => {
     console.error('\n  Uninstall failed:', err.message);

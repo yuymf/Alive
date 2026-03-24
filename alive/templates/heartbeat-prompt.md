@@ -55,8 +55,11 @@
 行动类型说明：
 - `simulated`：日常行为（刷手机、画画、运动、追番、发呆、和朋友聊天等）——**大多数行动都是这个类型**
 - `inner`：纯内心活动（思考、回忆、下决心等）
-- `real`：需要调用外部 sub-skill 的行为：
-  {sub_skill_list}
+- `real`：需要调用外部 sub-skill 的行为（**只有下列 skill 可用，skill 字段必须填写对应的 skill 名称**）：
+{sub_skill_list}
+
+**选择 real 行动的条件：** 只有当意图池中有匹配的高净值意图，且对应 skill 确实已注册时，才选择 `real` 类型。如果不确定，优先选 `simulated`。
+**skill 字段：** real 行动必须从上面列表中选一个 skill 名称，不要自己编造。simulated/inner 行动 skill 填 null。
 
 搜索使用指引：
 当你对某件事好奇、想学新东西、或者需要了解信息时，可以选择搜索。
