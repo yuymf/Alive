@@ -163,7 +163,12 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
     .replace(/{persona\.schedule\.wake_hour}/g, String(p.schedule?.wake_hour ?? 8))
     .replace(/{persona\.schedule\.sleep_hour}/g, String(p.schedule?.sleep_hour ?? 23))
     .replace(/{persona\.schedule\.time_state_description}/g, (p.schedule?.time_state_description ?? '').trim())
-    .replace(/{persona\.schedule\.time_descriptions}/g, (p.schedule?.time_descriptions ?? '').trim());
+    .replace(/{persona\.schedule\.time_descriptions}/g, (p.schedule?.time_descriptions ?? '').trim())
+    // === content_sources ===
+    .replace(/{persona\.content_sources\.platforms}/g, (p.content_sources?.platforms ?? []).join(', '))
+    .replace(/{persona\.content_sources\.keywords}/g, (p.content_sources?.keywords ?? []).join(', '))
+    .replace(/{persona\.content_sources\.dailyhot_platforms}/g, (p.content_sources?.dailyhot_platforms ?? []).join(', '))
+    .replace(/{persona\.content_sources\.reddit_subreddits}/g, (p.content_sources?.reddit_subreddits ?? []).join(', '));
 }
 
 /**

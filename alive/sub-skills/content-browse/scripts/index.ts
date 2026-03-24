@@ -20,6 +20,7 @@ export interface FeedItem {
   tags?: string[];
   caption?: string;
   thumbnail_url?: string;
+  source?: string;
 }
 
 export interface TrendPost {
@@ -72,7 +73,8 @@ function loadTemplate(templateName: string): string {
 function formatFeedItem(item: FeedItem): string {
   const user = item.user ? ` by ${item.user}` : '';
   const tags = item.tags?.length ? ` [${item.tags.join(', ')}]` : '';
-  return `- ${item.title} (❤️${item.likes})${user}${tags}`;
+  const source = item.source ? ` (${item.source})` : '';
+  return `- ${item.title} (❤️${item.likes})${user}${tags}${source}`;
 }
 
 function getCurrentSeasonLabel(): string {
@@ -151,7 +153,22 @@ export const actions = {
       : '无数据';
 
     const template = loadTemplate('feed-analysis-prompt.md');
+    // Build source platforms list from feed items
+    const sourcePlatforms = new Set<string>();
+    for (const item of allItems) {
+      if (item.source) sourcePlatforms.add(item.source);
+    }
+    const platformsStr = sourcePlatforms.size > 0
+      ? Array.from(sourcePlatforms).join(', ')
+      : '未标注';
+    // Also check config.sourcePlatforms (from adapter)
+    const configPlatforms = config.sourcePlatforms as string[] | undefined;
+    const finalPlatformsStr = configPlatforms?.length
+      ? configPlatforms.join(', ')
+      : platformsStr;
+
     const prompt = template
+      .replace('{source_platforms}', finalPlatformsStr)
       .replace('{feed_data}', feedText)
       .replace('{search_data}', searchText)
       .replace('{detail_data}', '（暂无详情）')
