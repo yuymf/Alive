@@ -451,7 +451,24 @@ export async function planPost(options?: { skipAdvisor?: boolean }): Promise<Pos
     .replace('{trending_hashtags}', inspiration.instagram_trends.trending_hashtags.join(', ') || '暂无数据')
     .replace('{advisor_suggestion}', advisorSuggestion);
 
-  const parsed = await callLLMJSON<PostIntent>(prompt, undefined, 'content-planner');
+  let parsed: PostIntent;
+  try {
+    parsed = await callLLMJSON<PostIntent>(prompt, undefined, 'content-planner');
+  } catch (err) {
+    const fallbackHashtags = inspiration.instagram_trends.trending_hashtags
+      .map(tag => tag.replace(/^#/, '').trim())
+      .filter(Boolean)
+      .slice(0, 5);
+
+    parsed = {
+      wantToPost: true,
+      selectedPhotos: photoList.slice(0, Math.min(3, photoList.length)),
+      caption: `今天的${emotion.mood.description}小记录～`,
+      hashtags: fallbackHashtags.length > 0 ? fallbackHashtags : ['daily', 'life'],
+      reason: `LLM 解析失败，使用降级文案继续发帖: ${(err as Error).message.slice(0, 80)}`,
+    };
+    console.warn(`[content-planner] planPost fallback: ${(err as Error).message}`);
+  }
 
   if (!parsed.wantToPost) {
     return {

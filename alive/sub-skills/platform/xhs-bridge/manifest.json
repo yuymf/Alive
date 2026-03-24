@@ -1,0 +1,15 @@
+{
+  "name": "xhs-bridge",
+  "display_name": "小红书桥接",
+  "version": "0.1.0",
+  "description": "小红书平台 API 封装 — 搜索、信息流、笔记详情",
+  "intent_bindings": [],
+  "config_schema": {
+    "xhs_skills_dir": {
+      "type": "string",
+      "required": false,
+      "description": "Path to xiaohongshu-skills directory (from env XHS_SKILLS_DIR)"
+    }
+  },
+  "feedback_sources": []
+}

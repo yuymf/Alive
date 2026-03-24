@@ -1,0 +1,16 @@
+{
+  "name": "gallery",
+  "display_name": "照片画廊",
+  "version": "0.1.0",
+  "description": "照片搜索、分享、画廊管理 — 支持 ImgURL 公开托管和 OpenClaw 发送",
+  "intent_bindings": [],
+  "config_schema": {
+    "imgurl_token": {
+      "type": "string",
+      "required": false,
+      "secret": true,
+      "description": "ImgURL API token for image hosting (from env)"
+    }
+  },
+  "feedback_sources": []
+}

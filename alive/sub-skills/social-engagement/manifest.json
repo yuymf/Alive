@@ -1,0 +1,34 @@
+{
+  "name": "social-engagement",
+  "display_name": "社交互动",
+  "version": "0.1.0",
+  "description": "主动评论他人内容、回复评论、社交媒体互动",
+  "intent_bindings": [
+    { "intent": "社交", "action": "comment-reply", "priority": 8 },
+    { "intent": "社交", "action": "social-engagement", "priority": 7 }
+  ],
+  "config_schema": {
+    "getComments": {
+      "type": "function",
+      "required": true,
+      "description": "Fetch comments on own posts"
+    },
+    "replyComment": {
+      "type": "function",
+      "required": true,
+      "description": "Reply to a specific comment"
+    },
+    "getCandidates": {
+      "type": "function",
+      "required": true,
+      "description": "Get candidate posts for outbound comments"
+    },
+    "postComment": {
+      "type": "function",
+      "required": true,
+      "description": "Post a comment on another user's content"
+    }
+  },
+  "vitality_cost": { "base": 15 },
+  "templates": ["comment-reply-prompt.md", "outbound-comment-prompt.md"]
+}

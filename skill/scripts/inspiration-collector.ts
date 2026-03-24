@@ -18,7 +18,7 @@ import type { InstagramHashtagPost } from './instagram-bridge-client';
 import { accumulateImpulse } from './post-impulse';
 import { isXhsAvailable, listXhsFeed, searchXhsNotes, getXhsNoteDetail } from './xhs-bridge-client';
 import type { XhsNote, XhsSearchOptions } from './xhs-bridge-client';
-import { now } from './time-utils';
+import { now, sleep } from './time-utils';
 
 const DOWNLOAD_TIMEOUT_MS = 10_000;
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -99,6 +99,24 @@ const XHS_RECENT_SEARCH_OPTIONS: XhsSearchOptions = {
 };
 const XHS_SEARCH_KEYWORDS = ['cosplay', 'cos妆造', '漫展'];
 const ACG_SEARCH_RESULT_LIMIT = 5;
+const XHS_DETAIL_MAX_ATTEMPTS = 2;
+const XHS_DETAIL_RETRY_BASE_DELAY_MS = 800;
+
+async function getXhsNoteDetailWithRetry(note: XhsNote): Promise<Awaited<ReturnType<typeof getXhsNoteDetail>> | null> {
+  for (let attempt = 1; attempt <= XHS_DETAIL_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await getXhsNoteDetail(note.id, note.xsec_token);
+    } catch (err) {
+      if (attempt === XHS_DETAIL_MAX_ATTEMPTS) {
+        console.warn(`XHS detail fetch failed for ${note.id} after ${XHS_DETAIL_MAX_ATTEMPTS} attempts: ${(err as Error).message}`);
+        return null;
+      }
+      console.warn(`XHS detail transient failure for ${note.id}, retrying (${attempt}/${XHS_DETAIL_MAX_ATTEMPTS}): ${(err as Error).message}`);
+      await sleep(XHS_DETAIL_RETRY_BASE_DELAY_MS * attempt);
+    }
+  }
+  return null;
+}
 
 function createEmptyInstagramTrends(): InspirationData['instagram_trends'] {
   return {
@@ -534,13 +552,11 @@ export async function collectXiaohongshuTrends(): Promise<NonNullable<Inspiratio
 
   const details: string[] = [];
   for (const note of topNotes) {
-    try {
-      const detail = await getXhsNoteDetail(note.id, note.xsec_token);
-      const commentSummary = detail.comments.slice(0, 3).map(c => `  - ${c.user}: ${c.content}`).join('\n');
-      details.push(`标题: ${detail.title}\n描述: ${detail.description}\n点赞: ${detail.likes}\n评论:\n${commentSummary}`);
-    } catch (err) {
-      console.warn(`XHS detail fetch failed for ${note.id}: ${(err as Error).message}`);
-    }
+    const detail = await getXhsNoteDetailWithRetry(note);
+    if (!detail) continue;
+
+    const commentSummary = detail.comments.slice(0, 3).map(c => `  - ${c.user}: ${c.content}`).join('\n');
+    details.push(`标题: ${detail.title}\n描述: ${detail.description}\n点赞: ${detail.likes}\n评论:\n${commentSummary}`);
   }
 
   const feedText = [

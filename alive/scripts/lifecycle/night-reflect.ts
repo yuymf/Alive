@@ -1,0 +1,282 @@
+#!/usr/bin/env node
+/**
+ * night-reflect.ts
+ * Night heartbeat — daily reflection, growth updates, social graph rebalancing.
+ * Generalized: no platform-specific preferences, no Instagram social graph.
+ */
+
+import {
+  EmotionState, HeartbeatLog, HeartbeatLogEntry, WisdomStore, WisdomEntry,
+  Preferences, Aspirations, PersonalityDrift, PersonalityModifier,
+  SocialRelation, SocialMeta,
+  DEFAULT_MOMENTUM,
+  FlowState, DEFAULT_FLOW_STATE,
+  ChainAndCooldownState, DEFAULT_CHAIN_STATE,
+  IntentPool,
+} from '../utils/types';
+import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from '../utils/file-utils';
+import { now, getLocalDate, formatLocalTime } from '../utils/time-utils';
+import { rebalanceTiers, updateMetaStats } from '../world/social-graph-engine';
+import { processChainEvents } from '../world/random-events';
+import { getDefaultUndertone, loadPersona, injectPersona } from '../persona/persona-loader';
+
+interface NightReflectDecision {
+  new_wisdom: Array<{ lesson: string; importance: number; tags: string[] }>;
+  preference_updates: Array<{ type: string; name: string; affinity_delta: number; reason: string }>;
+  aspiration_updates: Array<{ action: 'create' | 'progress' | 'achieve' | 'abandon'; content: string; context: string }>;
+  personality_drift: { trait: string; strength: number; origin: string; effect: string } | null;
+  diary_entry: string;
+}
+
+export async function runNightReflect(
+  llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T> },
+): Promise<void> {
+  const currentTime = now();
+  const today = getLocalDate(currentTime);
+  const persona = loadPersona();
+  const defaultUndertone = getDefaultUndertone(persona);
+
+  // Read today's data
+  const diary = readText(PATHS.diary);
+  const todayDiary = diary.split('\n## ')
+    .filter(block => block.startsWith(today))
+    .map(b => `## ${b}`)
+    .join('\n');
+
+  const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
+  const todayLogs = heartbeatLog.logs.filter(l => l.timestamp.startsWith(today));
+  const logSummary = todayLogs
+    .map(l => `${l.timestamp.split('T')[1].slice(0, 5)} [${l.status}] ${l.chosen_actions?.join(', ') || '—'}`)
+    .join('\n');
+
+  // Process remaining chain events before reflection
+  let chainState = readJSON<ChainAndCooldownState>(PATHS.pendingChains, DEFAULT_CHAIN_STATE);
+  const chainResult = processChainEvents(chainState);
+  chainState = chainResult.remaining;
+  for (const triggered of chainResult.triggered) {
+    appendText(PATHS.diary, `\n## ${today} 23:00\n${triggered.event.diary_entry}\n情绪: 连锁事件 | 重要性: 2\n标签: 连锁事件, night\n`);
+  }
+
+  // Gather flow statistics for today
+  const flowTicks = todayLogs.filter(l => l.flow_state === 'flow').length;
+  const driftTicks = todayLogs.filter(l => l.flow_state === 'drift').length;
+  const flowSummary = flowTicks > 0 || driftTicks > 0
+    ? `今天的状态: ${flowTicks}小时沉浸, ${driftTicks}小时摆烂`
+    : '';
+
+  // Gather procrastination data from intent pool
+  const intentPool = readJSON<IntentPool>(PATHS.intentPool, { intents: [], last_updated: null });
+  const procrastinatedIntents = intentPool.intents
+    .filter(i => i.satisfied_at === null && i.skipped_count >= 3)
+    .map(i => `${i.description} (拖了${i.skipped_count}次)`);
+  const procrastinationSummary = procrastinatedIntents.length > 0
+    ? `一直拖延的事: ${procrastinatedIntents.join('、')}`
+    : '';
+
+  const wisdom = readJSON<WisdomStore>(PATHS.coreWisdom, { version: 1, wisdom: [], total_importance_since_reflection: 0 });
+  const preferences = readJSON<Preferences>(PATHS.preferences, { interests: [], content_style: [], active_hours: [], platforms: [] });
+  const aspirations = readJSON<Aspirations>(PATHS.aspirations, { aspirations: [] });
+
+  // Build prompt (inject persona placeholders)
+  let template = readTemplate('night-reflect-prompt.md');
+  template = injectPersona(template, persona);
+
+  const prompt = template
+    .replace('{current_time}', formatLocalTime(currentTime))
+    .replace('{today_diary}', todayDiary || '今天似乎没写什么日记。')
+    .replace('{today_heartbeat_summary}', [logSummary, flowSummary, procrastinationSummary].filter(Boolean).join('\n') || '没有心跳记录。')
+    .replace('{core_wisdom}', wisdom.wisdom.length > 0
+      ? wisdom.wisdom.map(w => `- ${w.lesson} (重要性: ${w.importance})`).join('\n')
+      : '还没有积累人生教训。')
+    .replace('{preferences_summary}', JSON.stringify(preferences, null, 2))
+    .replace('{aspirations_summary}', aspirations.aspirations.length > 0
+      ? aspirations.aspirations.map(a => `- [${a.status}] ${a.content}: ${a.context}`).join('\n')
+      : '还没有明确的梦想。');
+
+  const decision = await llm.callJSON<NightReflectDecision>(prompt);
+
+  // Apply Core Wisdom updates (immutable)
+  let updatedWisdomList = [...wisdom.wisdom];
+  for (const w of decision.new_wisdom) {
+    const id = `w${currentTime.getTime()}_${Math.random().toString(36).slice(2, 6)}`;
+    updatedWisdomList = [
+      ...updatedWisdomList,
+      {
+        id,
+        lesson: w.lesson,
+        source: 'night-reflect',
+        date: today,
+        importance: w.importance,
+        tags: w.tags,
+      },
+    ];
+  }
+  // Trim to max 20 (keep highest importance)
+  if (updatedWisdomList.length > 20) {
+    updatedWisdomList = [...updatedWisdomList].sort((a, b) => b.importance - a.importance).slice(0, 20);
+  }
+  const updatedWisdom: WisdomStore = {
+    ...wisdom,
+    wisdom: updatedWisdomList,
+    total_importance_since_reflection: 0,
+  };
+
+  // Apply preference updates (generalized: interests + content_style)
+  let updatedPrefs: Preferences = {
+    interests: [...preferences.interests],
+    content_style: [...preferences.content_style],
+    active_hours: [...preferences.active_hours],
+    platforms: [...preferences.platforms],
+  };
+  for (const pu of decision.preference_updates) {
+    if (pu.type === 'interests') {
+      const idx = updatedPrefs.interests.findIndex(c => c.name === pu.name);
+      if (idx >= 0) {
+        updatedPrefs = {
+          ...updatedPrefs,
+          interests: updatedPrefs.interests.map((c, i) =>
+            i === idx ? { ...c, affinity: Math.min(10, Math.max(0, c.affinity + pu.affinity_delta)) } : c,
+          ),
+        };
+      } else if (pu.affinity_delta > 0) {
+        updatedPrefs = {
+          ...updatedPrefs,
+          interests: [...updatedPrefs.interests, { name: pu.name, affinity: pu.affinity_delta, times_engaged: 0, source: pu.reason }],
+        };
+      }
+    } else if (pu.type === 'content_style') {
+      const idx = updatedPrefs.content_style.findIndex(s => s.style === pu.name);
+      if (idx >= 0) {
+        updatedPrefs = {
+          ...updatedPrefs,
+          content_style: updatedPrefs.content_style.map((s, i) =>
+            i === idx ? { ...s, affinity: Math.min(10, Math.max(0, s.affinity + pu.affinity_delta)) } : s,
+          ),
+        };
+      } else if (pu.affinity_delta > 0) {
+        updatedPrefs = {
+          ...updatedPrefs,
+          content_style: [...updatedPrefs.content_style, { style: pu.name, affinity: pu.affinity_delta }],
+        };
+      }
+    }
+  }
+
+  // Apply aspiration updates (immutable)
+  let updatedAspirations: Aspirations = {
+    aspirations: aspirations.aspirations.map(a => ({ ...a, progress_notes: [...a.progress_notes] })),
+  };
+  for (const au of decision.aspiration_updates) {
+    if (au.action === 'create') {
+      updatedAspirations = {
+        aspirations: [
+          ...updatedAspirations.aspirations,
+          {
+            id: `asp_${currentTime.getTime()}`,
+            content: au.content,
+            born_from: `reflection_${today}`,
+            context: au.context,
+            intensity: 5.0,
+            status: 'active',
+            progress_notes: [],
+          },
+        ],
+      };
+    } else {
+      updatedAspirations = {
+        aspirations: updatedAspirations.aspirations.map(a => {
+          if (a.content !== au.content) return a;
+          if (au.action === 'progress') {
+            return { ...a, progress_notes: [...a.progress_notes, `${today}: ${au.context}`] };
+          }
+          return {
+            ...a,
+            status: au.action === 'achieve' ? 'achieved' as const : 'abandoned' as const,
+            progress_notes: [...a.progress_notes, `${today}: ${au.context}`],
+          };
+        }),
+      };
+    }
+  }
+
+  // Apply personality drift (rare)
+  const personalityDrift = readJSON<PersonalityDrift>(PATHS.personalityDrift, { base: persona.personality.mbti, modifiers: [] });
+  if (decision.personality_drift) {
+    const updatedDrift: PersonalityDrift = {
+      ...personalityDrift,
+      modifiers: [
+        ...personalityDrift.modifiers,
+        decision.personality_drift as PersonalityModifier,
+      ],
+    };
+    writeJSON(PATHS.personalityDrift, updatedDrift);
+  }
+
+  // Write diary entry
+  appendText(PATHS.diary, `\n## ${today} 23:00\n${decision.diary_entry}\n情绪: 睡前反思 | 重要性: 5\n标签: reflection, night\n`);
+
+  // Write all state
+  writeJSON(PATHS.coreWisdom, updatedWisdom);
+  writeJSON(PATHS.preferences, updatedPrefs);
+  writeJSON(PATHS.aspirations, updatedAspirations);
+
+  // Add night heartbeat log entry
+  const nightLogEntry: HeartbeatLogEntry = {
+    timestamp: currentTime.toISOString(),
+    type: 'night',
+    status: 'completed',
+    chosen_actions: [
+      `+${decision.new_wisdom.length} wisdom`,
+      `${decision.preference_updates.length} pref updates`,
+      `${decision.aspiration_updates.length} aspiration updates`,
+    ],
+    importance_added: 5,
+  };
+  const updatedLog: HeartbeatLog = {
+    ...heartbeatLog,
+    logs: [...heartbeatLog.logs, nightLogEntry],
+  };
+  writeJSON(PATHS.heartbeatLog, updatedLog);
+
+  // Rebalance social graph tiers at end of day (generic, not platform-specific)
+  const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { following: {}, stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
+  let socialRelations = readAllJSON<SocialRelation>(PATHS.socialDir);
+  socialRelations = rebalanceTiers(socialRelations);
+  for (const r of socialRelations) {
+    writeSocialRelation(PATHS.socialDir, r);
+  }
+  writeJSON(PATHS.socialMeta, updateMetaStats(socialMeta, socialRelations));
+
+  // Reset emotion for sleep — set tomorrow's undertone from today's experience
+  const defaultSleepEmotion: EmotionState = {
+    mood: { valence: 0.2, arousal: 0.1, description: '准备睡觉了' },
+    energy: 0.3, stress: 0.1, creativity: 0.2, sociability: 0.1,
+    last_updated: currentTime.toISOString(),
+    recent_cause: '睡前反思完毕',
+    momentum: { ...DEFAULT_MOMENTUM },
+    undertone: defaultUndertone,
+    impulse_history: [],
+    consecutive_high_stress: 0,
+    threshold_break_cooldown: 0,
+  };
+  const todayEmotionAvg = readJSON<EmotionState>(PATHS.emotionState, defaultSleepEmotion);
+  const tomorrowUndertone = {
+    valence: (todayEmotionAvg.mood.valence + defaultUndertone.valence) / 2,
+    arousal: defaultUndertone.arousal,
+    energy: defaultUndertone.energy,
+    stress: Math.max(0, (todayEmotionAvg.stress + defaultUndertone.stress) / 2),
+    creativity: (todayEmotionAvg.creativity + defaultUndertone.creativity) / 2,
+    sociability: defaultUndertone.sociability,
+  };
+  const sleepEmotion: EmotionState = {
+    ...defaultSleepEmotion,
+    undertone: tomorrowUndertone,
+  };
+  writeJSON(PATHS.emotionState, sleepEmotion);
+
+  // Reset flow state and clean up chain events for new day
+  writeJSON(PATHS.flowState, { ...DEFAULT_FLOW_STATE });
+  writeJSON(PATHS.pendingChains, chainState);
+
+  console.log(`Night reflection complete. +${decision.new_wisdom.length} wisdom, ${decision.preference_updates.length} pref updates, ${decision.aspiration_updates.length} aspiration updates.`);
+}
