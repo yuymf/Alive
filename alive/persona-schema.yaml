@@ -199,6 +199,32 @@ schema:
       personality: { type: string, required: true }
       system_prompt: { type: string, required: false }
 
+  content_sources:
+    type: object
+    required: false
+    description: "内容浏览偏好配置 — 声明角色关注的平台和关键词"
+    properties:
+      platforms:
+        type: array
+        items: string
+        required: false
+        description: "启用的平台列表（e.g. reddit, bilibili, dailyhot, zhihu, weibo）"
+      keywords:
+        type: array
+        items: string
+        required: false
+        description: "全平台搜索关键词"
+      dailyhot_platforms:
+        type: array
+        items: string
+        required: false
+        description: "DailyHotApi 的子平台选择（e.g. zhihu, weibo, bilibili）"
+      reddit_subreddits:
+        type: array
+        items: string
+        required: false
+        description: "Reddit 关注的 subreddit"
+
 # MBTI → Emotion Baseline Mapping
 mbti_baselines:
   ESTP: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 }

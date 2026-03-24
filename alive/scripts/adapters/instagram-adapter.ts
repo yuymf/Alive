@@ -416,16 +416,27 @@ export function createSocialEngagementConfig() {
 // CONTENT-BROWSE sub-skill adapter
 // ═══════════════════════════════════════════════════════════════════
 
+import { ContentProviderRegistry } from './content-provider';
+import type { ContentItem, ContentSourcesConfig } from '../utils/types';
+
 /**
  * Create the config object for alive/sub-skills/content-browse.
- * Wires xhs-bridge + instagram-bridge as feed/search providers.
+ * Wires xhs-bridge + instagram-bridge as default feed/search providers.
+ * When a ContentProviderRegistry is provided, aggregates all registered
+ * providers alongside the built-in XHS + IG sources.
  */
 export function createContentBrowseConfig(options?: {
   webSearch?: (query: string, limit?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
+  registry?: ContentProviderRegistry;
+  contentSources?: ContentSourcesConfig;
 }) {
+  const registry = options?.registry;
+  const contentSources = options?.contentSources;
+  const platformFilter = contentSources?.platforms;
+
   return {
     /**
-     * Get feed items — combines XHS homepage feed + IG hashtag recent
+     * Get feed items — combines built-in XHS + IG with Registry providers
      */
     async getFeedItems() {
       const items: Array<{
@@ -434,9 +445,12 @@ export function createContentBrowseConfig(options?: {
         likes: number;
         user?: string;
         tags?: string[];
+        source?: string;
+        url?: string;
+        snippet?: string;
       }> = [];
 
-      // XHS feed
+      // XHS feed (built-in)
       try {
         if (await isXhsAvailable()) {
           const xhsNotes = await listXhsFeed();
@@ -447,12 +461,13 @@ export function createContentBrowseConfig(options?: {
               likes: note.likes,
               user: note.user,
               tags: note.tags,
+              source: 'xhs',
             });
           }
         }
       } catch { /* non-critical */ }
 
-      // Instagram hashtag feed
+      // Instagram hashtag feed (built-in)
       try {
         const result = await hashtagTop('cosplay', 10);
         for (const post of result.posts) {
@@ -461,15 +476,42 @@ export function createContentBrowseConfig(options?: {
             title: post.caption_text.slice(0, 80),
             likes: post.like_count,
             user: post.username,
+            source: 'instagram',
           });
         }
       } catch { /* non-critical */ }
+
+      // Registry providers (multi-platform bridge)
+      if (registry) {
+        try {
+          const registryItems = await registry.getAggregatedFeed({
+            platforms: platformFilter,
+            keywords: contentSources?.keywords,
+            limit: 10,
+          });
+          for (const item of registryItems) {
+            // Skip if already present (dedup by id)
+            if (!items.some(existing => existing.id === item.id)) {
+              items.push({
+                id: item.id,
+                title: item.title,
+                likes: item.likes ?? 0,
+                user: item.user,
+                tags: item.tags,
+                source: item.source,
+                url: item.url,
+                snippet: item.snippet,
+              });
+            }
+          }
+        } catch { /* non-critical — registry failure does not block built-in sources */ }
+      }
 
       return items;
     },
 
     /**
-     * Search content by keyword — combines XHS search + IG hashtag
+     * Search content by keyword — combines built-in XHS + IG with Registry
      */
     async searchContent(keyword: string) {
       const items: Array<{
@@ -478,6 +520,9 @@ export function createContentBrowseConfig(options?: {
         likes: number;
         user?: string;
         tags?: string[];
+        source?: string;
+        url?: string;
+        snippet?: string;
       }> = [];
 
       // XHS search
@@ -491,6 +536,7 @@ export function createContentBrowseConfig(options?: {
               likes: note.likes,
               user: note.user,
               tags: note.tags,
+              source: 'xhs',
             });
           }
         }
@@ -505,9 +551,34 @@ export function createContentBrowseConfig(options?: {
             title: post.caption_text.slice(0, 80),
             likes: post.like_count,
             user: post.username,
+            source: 'instagram',
           });
         }
       } catch { /* non-critical */ }
+
+      // Registry search (multi-platform bridge)
+      if (registry) {
+        try {
+          const registryItems = await registry.search(keyword, {
+            platforms: platformFilter,
+            limit: 10,
+          });
+          for (const item of registryItems) {
+            if (!items.some(existing => existing.id === item.id)) {
+              items.push({
+                id: item.id,
+                title: item.title,
+                likes: item.likes ?? 0,
+                user: item.user,
+                tags: item.tags,
+                source: item.source,
+                url: item.url,
+                snippet: item.snippet,
+              });
+            }
+          }
+        } catch { /* non-critical */ }
+      }
 
       return items;
     },
@@ -518,9 +589,29 @@ export function createContentBrowseConfig(options?: {
     webSearch: options?.webSearch,
 
     /**
-     * Default search keywords for cosplay/ACG persona
+     * Default search keywords — use persona content_sources.keywords if available
      */
-    searchKeywords: ['cosplay', 'コスプレ', 'anime'],
+    searchKeywords: contentSources?.keywords ?? ['cosplay', 'コスプレ', 'anime'],
+
+    /**
+     * The registry instance (exposed for content-browse sub-skill to access source info)
+     */
+    registry,
+
+    /**
+     * Source platforms summary (for LLM prompt injection)
+     */
+    get sourcePlatforms(): string[] {
+      const platforms = ['xhs', 'instagram'];
+      if (registry) {
+        for (const p of registry.getProviders(platformFilter)) {
+          if (!platforms.includes(p.meta.name)) {
+            platforms.push(p.meta.name);
+          }
+        }
+      }
+      return platforms;
+    },
 
     /**
      * Trend query templates

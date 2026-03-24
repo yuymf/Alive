@@ -1,6 +1,18 @@
 // alive/scripts/utils/types.ts
 // Shared type definitions for the Alive engine — generalized from MizuSan
 
+// === Content Provider Types (re-exported from adapters/content-provider.ts) ===
+export type { ContentItem, ContentProviderMeta, ContentProvider } from '../adapters/content-provider';
+export { ContentProviderRegistry } from '../adapters/content-provider';
+
+// === Content Sources Configuration (for persona.yaml) ===
+export interface ContentSourcesConfig {
+  platforms?: string[];           // Enabled platform list (e.g. ['reddit', 'bilibili', 'dailyhot'])
+  keywords?: string[];            // Cross-platform search keywords
+  dailyhot_platforms?: string[];  // DailyHotApi sub-platform selection
+  reddit_subreddits?: string[];   // Reddit subreddits to follow
+}
+
 // === Persona Configuration ===
 export interface PersonaConfig {
   meta: {
@@ -53,6 +65,7 @@ export interface PersonaConfig {
     personality: string;
     system_prompt?: string;
   }>;
+  content_sources?: ContentSourcesConfig;
 }
 
 export interface PersonaEventDef {
