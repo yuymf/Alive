@@ -139,15 +139,15 @@ describe('parseCommand', () => {
 // ── Help ───────────────────────────────────────────────────────────
 
 describe('/alive help', () => {
-  it('returns help text', () => {
-    const result = dispatch('/alive help');
+  it('returns help text', async () => {
+    const result = await dispatch('/alive help');
     expect(result.output).toContain('Admin Commands');
     expect(result.output).toContain('/alive status');
     expect(result.error).toBeUndefined();
   });
 
-  it('bare /alive returns help', () => {
-    const result = dispatch('/alive');
+  it('bare /alive returns help', async () => {
+    const result = await dispatch('/alive');
     expect(result.output).toContain('Admin Commands');
   });
 });
@@ -155,21 +155,21 @@ describe('/alive help', () => {
 // ── Status ─────────────────────────────────────────────────────────
 
 describe('/alive status', () => {
-  it('returns full status when data exists', () => {
+  it('returns full status when data exists', async () => {
     writeJSON(PATHS.emotionState, makeTestEmotion());
     writeJSON(PATHS.vitalityState, { vitality: 80, last_updated: null, consecutive_low_days: 0 });
     writeJSON(PATHS.confidenceState, { confidence: 1.1, streak: 3, last_updated: null });
     writeJSON(PATHS.flowState, { ...DEFAULT_FLOW_STATE });
 
-    const result = dispatch('/alive status');
+    const result = await dispatch('/alive status');
     expect(result.output).toContain('TestChar');
     expect(result.output).toContain('ENFP');
     expect(result.output).toContain('wake 9:00');
     expect(result.error).toBeUndefined();
   });
 
-  it('handles missing emotion gracefully', () => {
-    const result = dispatch('/alive status');
+  it('handles missing emotion gracefully', async () => {
+    const result = await dispatch('/alive status');
     expect(result.output).toContain('TestChar');
     // Should not throw
   });
@@ -178,7 +178,7 @@ describe('/alive status', () => {
 // ── Emotion ────────────────────────────────────────────────────────
 
 describe('/alive emotion', () => {
-  it('returns emotion details', () => {
+  it('returns emotion details', async () => {
     writeJSON(PATHS.emotionState, makeTestEmotion({
       impulse_history: [{
         delta: { valence: 0.1 },
@@ -189,21 +189,21 @@ describe('/alive emotion', () => {
       }],
     }));
 
-    const result = dispatch('/alive emotion');
+    const result = await dispatch('/alive emotion');
     expect(result.output).toContain('Emotion Detail');
     expect(result.output).toContain('Valence');
     expect(result.output).toContain('test impulse');
   });
 
-  it('returns warning when no emotion state', () => {
-    const result = dispatch('/alive emotion');
+  it('returns warning when no emotion state', async () => {
+    const result = await dispatch('/alive emotion');
     expect(result.output).toContain('No emotion state found');
   });
 
-  it('resets emotion to MBTI baseline with --reset', () => {
+  it('resets emotion to MBTI baseline with --reset', async () => {
     writeJSON(PATHS.emotionState, makeTestEmotion({ mood: { valence: -0.8, arousal: 0.9, description: 'very bad' } }));
 
-    const result = dispatch('/alive emotion --reset');
+    const result = await dispatch('/alive emotion --reset');
     expect(result.output).toContain('ENFP baseline');
 
     const updated = readJSON<EmotionState>(PATHS.emotionState, null as unknown as EmotionState);
@@ -216,14 +216,14 @@ describe('/alive emotion', () => {
 // ── Schedule ───────────────────────────────────────────────────────
 
 describe('/alive schedule', () => {
-  it('shows current schedule', () => {
-    const result = dispatch('/alive schedule');
+  it('shows current schedule', async () => {
+    const result = await dispatch('/alive schedule');
     expect(result.output).toContain('9:00');
     expect(result.output).toContain('Asia/Tokyo');
   });
 
-  it('modifies wake and sleep hours', () => {
-    const result = dispatch('/alive schedule --wake 7 --sleep 23');
+  it('modifies wake and sleep hours', async () => {
+    const result = await dispatch('/alive schedule --wake 7 --sleep 23');
     expect(result.output).toContain('wake_hour → 7');
     expect(result.output).toContain('sleep_hour → 23');
 
@@ -235,19 +235,19 @@ describe('/alive schedule', () => {
     expect(updated.schedule.sleep_hour).toBe(23);
   });
 
-  it('modifies timezone', () => {
-    const result = dispatch('/alive schedule --timezone "America/New_York"');
+  it('modifies timezone', async () => {
+    const result = await dispatch('/alive schedule --timezone "America/New_York"');
     expect(result.output).toContain('America/New_York');
   });
 
-  it('rejects invalid wake hour', () => {
-    const result = dispatch('/alive schedule --wake 25');
+  it('rejects invalid wake hour', async () => {
+    const result = await dispatch('/alive schedule --wake 25');
     expect(result.error).toBe(true);
     expect(result.output).toContain('Invalid');
   });
 
-  it('creates backup before modifying', () => {
-    dispatch('/alive schedule --wake 7');
+  it('creates backup before modifying', async () => {
+    await dispatch('/alive schedule --wake 7');
     expect(fs.existsSync(path.join(skillDir, 'persona.yaml.bak'))).toBe(true);
   });
 });
@@ -255,8 +255,8 @@ describe('/alive schedule', () => {
 // ── Skills ─────────────────────────────────────────────────────────
 
 describe('/alive skills', () => {
-  it('lists sub-skills with status', () => {
-    const result = dispatch('/alive skills');
+  it('lists sub-skills with status', async () => {
+    const result = await dispatch('/alive skills');
     expect(result.output).toContain('web-search');
     expect(result.output).toContain('✅ installed');
     expect(result.output).toContain('instagram');
@@ -267,8 +267,8 @@ describe('/alive skills', () => {
 // ── Platform ───────────────────────────────────────────────────────
 
 describe('/alive platform', () => {
-  it('shows platform config', () => {
-    const result = dispatch('/alive platform');
+  it('shows platform config', async () => {
+    const result = await dispatch('/alive platform');
     expect(result.output).toContain('instagram');
     expect(result.output).toContain('2500');
   });
@@ -277,14 +277,14 @@ describe('/alive platform', () => {
 // ── Memory ─────────────────────────────────────────────────────────
 
 describe('/alive memory', () => {
-  it('returns memory stats', () => {
+  it('returns memory stats', async () => {
     // Create some test data
     fs.writeFileSync(path.join(memoryDir, 'diary.md'), '## 2026-03-23\n### 10:00\nTest entry\n## 2026-03-24\n### 09:00\nAnother\n');
     writeJSON(PATHS.coreWisdom, { version: 1, wisdom: [{ id: 'w1', lesson: 'test', source: 'test', date: '2026-03-24', importance: 8, tags: [] }], total_importance_since_reflection: 8 });
     writeJSON(PATHS.heartbeatLog, { logs: [{ timestamp: '2026-03-24T10:00:00Z', type: 'regular', status: 'completed' }], retention_days: 30 });
     writeJSON(PATHS.intentPool, { intents: [{ id: 'i1', category: '创作', description: 'test', intensity: 5, source: 'accumulation', born_at: '', decay_rate: 0.1, satisfied_at: null, resistance: 4, skipped_count: 0, last_attempted: null }], last_updated: null });
 
-    const result = dispatch('/alive memory');
+    const result = await dispatch('/alive memory');
     expect(result.output).toContain('Diary days');
     expect(result.output).toContain('2'); // 2 diary days
     expect(result.output).toContain('Core wisdom entries');
@@ -294,53 +294,53 @@ describe('/alive memory', () => {
 // ── Reset ──────────────────────────────────────────────────────────
 
 describe('/alive reset', () => {
-  it('requires a target', () => {
-    const result = dispatch('/alive reset');
+  it('requires a target', async () => {
+    const result = await dispatch('/alive reset');
     expect(result.output).toContain('Specify what to reset');
   });
 
-  it('resets vitality', () => {
+  it('resets vitality', async () => {
     writeJSON(PATHS.vitalityState, { vitality: 30, last_updated: null, consecutive_low_days: 5 });
-    const result = dispatch('/alive reset vitality');
+    const result = await dispatch('/alive reset vitality');
     expect(result.output).toContain('Vitality reset to 100');
 
     const updated = readJSON<VitalityState>(PATHS.vitalityState, { vitality: 0, last_updated: null, consecutive_low_days: 0 });
     expect(updated.vitality).toBe(100);
   });
 
-  it('resets flow state', () => {
+  it('resets flow state', async () => {
     writeJSON(PATHS.flowState, { status: 'flow', activity: 'coding', category: '创作', entered_at: '2026-03-24T10:00:00Z', duration_ticks: 5, interrupt_chance: 0.05, cooldown_remaining: 0 });
-    const result = dispatch('/alive reset flow');
+    const result = await dispatch('/alive reset flow');
     expect(result.output).toContain('Flow state reset');
 
     const updated = readJSON<FlowState>(PATHS.flowState, DEFAULT_FLOW_STATE);
     expect(updated.status).toBe('none');
   });
 
-  it('clears intent pool', () => {
+  it('clears intent pool', async () => {
     writeJSON(PATHS.intentPool, { intents: [{ id: 'i1', category: '创作', description: 'test', intensity: 5, source: 'accumulation', born_at: '', decay_rate: 0.1, satisfied_at: null, resistance: 4, skipped_count: 0, last_attempted: null }], last_updated: null });
-    const result = dispatch('/alive reset intents');
+    const result = await dispatch('/alive reset intents');
     expect(result.output).toContain('Intent pool cleared');
 
     const updated = readJSON<IntentPool>(PATHS.intentPool, { intents: [], last_updated: null });
     expect(updated.intents).toEqual([]);
   });
 
-  it('resets all', () => {
+  it('resets all', async () => {
     writeJSON(PATHS.emotionState, makeTestEmotion());
     writeJSON(PATHS.vitalityState, { vitality: 30, last_updated: null, consecutive_low_days: 5 });
     writeJSON(PATHS.flowState, { status: 'flow', activity: 'coding', category: '创作', entered_at: '2026-03-24T10:00:00Z', duration_ticks: 5, interrupt_chance: 0.05, cooldown_remaining: 0 });
     writeJSON(PATHS.intentPool, { intents: [{ id: 'i1', category: '创作', description: 'test', intensity: 5, source: 'accumulation', born_at: '', decay_rate: 0.1, satisfied_at: null, resistance: 4, skipped_count: 0, last_attempted: null }], last_updated: null });
 
-    const result = dispatch('/alive reset all');
+    const result = await dispatch('/alive reset all');
     expect(result.output).toContain('ENFP baseline');
     expect(result.output).toContain('Vitality reset');
     expect(result.output).toContain('Flow state reset');
     expect(result.output).toContain('Intent pool cleared');
   });
 
-  it('rejects unknown target', () => {
-    const result = dispatch('/alive reset banana');
+  it('rejects unknown target', async () => {
+    const result = await dispatch('/alive reset banana');
     expect(result.output).toContain('Unknown reset target');
   });
 });
@@ -348,8 +348,8 @@ describe('/alive reset', () => {
 // ── Unknown Command ────────────────────────────────────────────────
 
 describe('unknown command', () => {
-  it('returns error for unknown subcommand', () => {
-    const result = dispatch('/alive foobar');
+  it('returns error for unknown subcommand', async () => {
+    const result = await dispatch('/alive foobar');
     expect(result.error).toBe(true);
     expect(result.output).toContain('Unknown command');
     expect(result.output).toContain('foobar');
@@ -359,24 +359,24 @@ describe('unknown command', () => {
 // ── Isolation Guarantee ────────────────────────────────────────────
 
 describe('memory isolation', () => {
-  it('dispatch does not write to diary', () => {
+  it('dispatch does not write to diary', async () => {
     const diaryBefore = fs.existsSync(PATHS.diary) ? fs.readFileSync(PATHS.diary, 'utf8') : '';
 
-    dispatch('/alive status');
-    dispatch('/alive emotion');
-    dispatch('/alive schedule');
-    dispatch('/alive skills');
-    dispatch('/alive memory');
+    await dispatch('/alive status');
+    await dispatch('/alive emotion');
+    await dispatch('/alive schedule');
+    await dispatch('/alive skills');
+    await dispatch('/alive memory');
 
     const diaryAfter = fs.existsSync(PATHS.diary) ? fs.readFileSync(PATHS.diary, 'utf8') : '';
     expect(diaryAfter).toBe(diaryBefore);
   });
 
-  it('reset commands only touch their target files', () => {
+  it('reset commands only touch their target files', async () => {
     writeJSON(PATHS.emotionState, makeTestEmotion());
     fs.writeFileSync(PATHS.diary, '## 2026-03-24\noriginal diary\n');
 
-    dispatch('/alive reset emotion');
+    await dispatch('/alive reset emotion');
 
     // Diary should be untouched
     expect(fs.readFileSync(PATHS.diary, 'utf8')).toContain('original diary');

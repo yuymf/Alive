@@ -11,6 +11,8 @@ import { loadPersona, clearPersonaCache, getScheduleConfig } from '../persona/pe
 import {
   generatePersonaQuick,
   generatePersonaGuided,
+  generatePersonaQuickAsync,
+  generatePersonaGuidedAsync,
   savePersona,
   formatPersonaPreview,
   getAvailableMBTI,
@@ -128,7 +130,7 @@ function tokenize(input: string): string[] {
 
 // ── Dispatcher ─────────────────────────────────────────────────────
 
-const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult> = {
+const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<CommandResult>> = {
   help: cmdHelp,
   status: cmdStatus,
   emotion: cmdEmotion,
@@ -145,7 +147,7 @@ const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult> = {
  * Handle a parsed /alive command.
  * Returns a Markdown-formatted result, never throws.
  */
-export function handleCommand(cmd: ParsedCommand): CommandResult {
+export async function handleCommand(cmd: ParsedCommand): Promise<CommandResult> {
   const handler = COMMANDS[cmd.subcommand];
   if (!handler) {
     return {
@@ -154,7 +156,7 @@ export function handleCommand(cmd: ParsedCommand): CommandResult {
     };
   }
   try {
-    return handler(cmd);
+    return await handler(cmd);
   } catch (err) {
     return {
       output: `❌ Error executing \`${cmd.subcommand}\`: ${(err as Error).message}`,
@@ -166,7 +168,7 @@ export function handleCommand(cmd: ParsedCommand): CommandResult {
 /**
  * Top-level entry: parse raw input and execute.
  */
-export function dispatch(raw: string): CommandResult {
+export async function dispatch(raw: string): Promise<CommandResult> {
   const cmd = parseCommand(raw);
   return handleCommand(cmd);
 }
@@ -656,7 +658,7 @@ function describeMood(valence: number): string {
 
 // ── Create Command ─────────────────────────────────────────────────
 
-function cmdCreate(cmd: ParsedCommand): CommandResult {
+async function cmdCreate(cmd: ParsedCommand): Promise<CommandResult> {
   // --guided mode: return a structured prompt asking user for input
   if (cmd.flags['guided'] !== undefined) {
     return cmdCreateGuided(cmd);
@@ -666,7 +668,7 @@ function cmdCreate(cmd: ParsedCommand): CommandResult {
   const name = cmd.args[0] || undefined;
   const tagline = cmd.args.slice(1).join(' ') || undefined;
 
-  const persona = generatePersonaQuick({ name, tagline });
+  const persona = await generatePersonaQuickAsync({ name, tagline });
   const savedPath = savePersona(persona);
   const preview = formatPersonaPreview(persona);
 
@@ -686,7 +688,7 @@ function cmdCreate(cmd: ParsedCommand): CommandResult {
   };
 }
 
-function cmdCreateGuided(cmd: ParsedCommand): CommandResult {
+async function cmdCreateGuided(cmd: ParsedCommand): Promise<CommandResult> {
   // Check if user already provided guided answers via flags
   const hasAnswers = cmd.flags['name'] || cmd.args.length > 0;
 
@@ -767,7 +769,7 @@ ${scheduleTable}
     scheduleType: cmd.flags['schedule'] as GuidedCreateOptions['scheduleType'],
   };
 
-  const persona = generatePersonaGuided(guidedOptions);
+  const persona = await generatePersonaGuidedAsync(guidedOptions);
   const savedPath = savePersona(persona);
   const preview = formatPersonaPreview(persona);
 
