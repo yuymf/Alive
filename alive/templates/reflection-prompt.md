@@ -27,7 +27,7 @@
 2. **原因/发现**——发生了什么、为什么
 3. **下一步行动**——以后遇到类似情况该怎么做
 
-{persona.reflection_examples}
+{persona.content.reflection_examples}
 
 坏的教训（禁止！）：
 - "要多努力" "保持积极心态" "继续加油" ← 空洞无物，不可执行

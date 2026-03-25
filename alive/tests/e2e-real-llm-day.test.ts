@@ -125,11 +125,11 @@ describe.skipIf(!shouldRun)('E2E: Real LLM Full Day (水瀬)', () => {
     createMockSubSkill(ss, 'instagram', 'Instagram', 'Instagram 发帖', [
       { intent: '创作', action: 'instagram-post', priority: 10 }, { intent: '表达', action: 'instagram-post', priority: 8 }]);
     createMockSubSkill(ss, 'content-browse', '内容浏览', '刷内容', [
-      { intent: '窥屏', action: 'feed-browse', priority: 4 }, { intent: '学习', action: 'inspiration-collect', priority: 4 }]);
+      { intent: '窥屏', action: 'feed-browse', priority: 4 }, { intent: '学习', action: 'inspiration-collect', priority: 2 }]);
     createMockSubSkill(ss, 'social-engagement', '社交互动', '评论回复', [
       { intent: '社交', action: 'comment-reply', priority: 8 }, { intent: '社交', action: 'social-engagement', priority: 7 }]);
     createMockSubSkill(ss, 'web-search', '网络搜索', '网络搜索', [
-      { intent: '学习', action: 'search-pipeline', priority: 5 }, { intent: '窥屏', action: 'search-pipeline', priority: 3 }]);
+      { intent: '学习', action: 'search-pipeline', priority: 5 }, { intent: '窥屏', action: 'search-pipeline', priority: 4 }]);
 
     setLlmLogPath(path.join(tmpDir, 'llm-call-log.jsonl'));
     llm = createRealLLMClient('e2e-real-llm-day');
@@ -342,7 +342,8 @@ describe.skipIf(!shouldRun)('E2E: Real LLM Full Day (水瀬)', () => {
 
     // Diary coherence: should mention morning and night
     const diary = readText(PATHS.diary);
-    expect(diary).toContain('09:00');
+    // Morning diary entry may use LLM-generated wake_time (e.g. 09:30) rather than exact 09:00
+    expect(diary).toMatch(/2026-03-25 09:\d{2}/);
     expect(diary).toContain('23:00');
   });
 });

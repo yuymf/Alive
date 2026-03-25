@@ -20,6 +20,7 @@ export interface PersonaConfig {
     name_reading?: string;
     id?: string;
     age?: number;
+    gender?: string;           // e.g. '女', '男', '非二元' — used in templates for pronouns
     tagline: string;
     occupation_detail?: string;
     reference_image?: string;  // Path to source reference image for generating multi-angle references
@@ -45,6 +46,8 @@ export interface PersonaConfig {
     language_description?: string;
     mixed_languages_table?: string;
     style_description?: string;
+    diary_style_guide?: string;             // Writing style guide for diary entries
+    language_mixing_instruction?: string;   // e.g. "日记中自然混入你常用的日语词" — replaces hardcoded language-mixing instructions in templates
   };
   intimacy?: {
     levels: number;
@@ -66,6 +69,19 @@ export interface PersonaConfig {
     system_prompt?: string;
   }>;
   content_sources?: ContentSourcesConfig;
+  /** Persona-specific content examples and templates for prompt injection */
+  content?: {
+    behavior_examples?: string;           // Examples of diverse behaviors for heartbeat diversity
+    action_examples_good?: string;        // Good action description examples
+    diary_examples?: string;              // Sample diary entries for style reference
+    night_diary_examples?: string;        // Night reflection diary examples
+    reflection_examples?: string;         // Good reflection/wisdom examples
+    search_topics?: string;               // Example search topics for web-search guidance
+    photo_styles?: string;                // Outfit/fashion style guidance for photo generation
+    caption_examples?: string;            // Social media caption style examples
+    hashtag_strategy?: string;            // Hashtag strategy guidance
+    content_types?: string[];             // e.g. ['cos', 'daily', 'behind_scenes', 'travel']
+  };
   sub_skills?: string[];
   features?: FeaturesConfig;
   platform_config?: Record<string, Record<string, unknown>>;
@@ -490,9 +506,9 @@ export const DEFAULT_CHAIN_STATE: ChainAndCooldownState = {
 export const BASE_RESISTANCE: Record<IntentCategory, number> = {
   '创作': 4.0,
   '社交': 1.5,
-  '窥屏': 0.5,
+  '窥屏': 1.5,  // 从 0.5 提高到 1.5：避免窥屏意图过于容易满足，导致 content-browse 垄断
   '表达': 2.0,
-  '学习': 5.0,
+  '学习': 2.5,  // 从 5.0 降低到 2.5：让学习/搜索意图更容易突破门槛
   '休息': 0.3,
   '梦想': 6.0,
 };

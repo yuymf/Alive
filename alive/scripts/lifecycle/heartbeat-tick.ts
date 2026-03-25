@@ -30,7 +30,7 @@ import {
   injectScheduleIntents, getTopIntentsRaw, satisfyIntent, addIntent,
   applyResistanceToPool, checkImpulseBreakthrough, processProcrastination,
 } from '../engines/intent';
-import { drainVitality, applyActionCost, replenishVitality, getVitalityConstraints, DEFAULT_VITALITY } from '../engines/vitality';
+import { drainVitality, applyActionCost, replenishVitality, getVitalityConstraints, DEFAULT_VITALITY, afternoonRestRecovery } from '../engines/vitality';
 import { updateConfidenceFromBatch, decayConfidence, getCreationRateMultiplier, getConfidenceMoodHint, DEFAULT_CONFIDENCE } from '../engines/confidence';
 import {
   checkFlowEntry, checkDriftEntry, checkFlowExit, checkDriftExit,
@@ -49,7 +49,7 @@ import { createInstagramConfig, createSocialEngagementConfig, createContentBrows
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
 import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
-import { now, getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM } from '../utils/time-utils';
+import { now, getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM, setTimezone } from '../utils/time-utils';
 
 // === Hashtag extraction helpers (used by heartbeat-social-routing tests) ===
 
@@ -233,6 +233,9 @@ export async function regularTick(
   const persona = loadPersona();
   const voiceSignature = buildVoiceSignature(persona);
 
+  // 0b. Set timezone from persona config (fixes UTC vs local time issue)
+  setTimezone(persona.schedule?.timezone ?? null);
+
   // 1. Read state (+ hydration for backward compat)
   let emotion = hydrateEmotionState(readJSON(PATHS.emotionState, DEFAULT_EMOTION) as unknown as Record<string, unknown>);
   let intentPool: IntentPool = readJSON<IntentPool>(PATHS.intentPool, DEFAULT_INTENT_POOL);
@@ -250,6 +253,9 @@ export async function regularTick(
   let confidence = readJSON<ConfidenceState>(PATHS.confidenceState, DEFAULT_CONFIDENCE);
   let flowState = readJSON<FlowState>(PATHS.flowState, DEFAULT_FLOW_STATE);
   let chainState = readJSON<ChainAndCooldownState>(PATHS.pendingChains, DEFAULT_CHAIN_STATE);
+
+  // 1b. Afternoon rest recovery (13:00-15:00, vitality < 50)
+  vitality = afternoonRestRecovery(vitality, hour);
 
   // 2. Perception: three-layer emotion decay + rumination + threshold break
   emotion = decayThreeLayer(emotion);

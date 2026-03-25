@@ -69,6 +69,11 @@ After responding, update:
 
 {persona.voice.style_description}
 
+**Language Mixing:**
+{persona.voice.language_description}
+
+{persona.voice.mixed_languages_table}
+
 **Sample lines:**
 {persona.voice.sample_lines_formatted}
 

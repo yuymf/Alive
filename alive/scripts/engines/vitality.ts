@@ -6,7 +6,7 @@ import { now } from '../utils/time-utils';
 
 const VITALITY_MAX = 100;
 const VITALITY_MIN = 0;
-const BASE_DRAIN_PER_TICK = 3;
+const BASE_DRAIN_PER_TICK = 2;  // 从 3 降到 2：减缓全天活力消耗（之前 85→8.6 太快）
 
 function clampVitality(v: number): number {
   return Math.min(VITALITY_MAX, Math.max(VITALITY_MIN, v));
@@ -23,12 +23,13 @@ const ACTION_COSTS: Record<string, number> = {
 };
 
 const REPLENISHMENT: Record<string, number> = {
-  rest: 8,
-  browsing_light: 3,
-  positive_interaction: 2,
+  rest: 10,               // 从 8 提高到 10
+  browsing_light: 4,      // 从 3 提高到 4
+  positive_interaction: 3, // 从 2 提高到 3
   learning_complete: 5,
   exercise: 6,
-  sleep_cycle: 15,
+  sleep_cycle: 20,        // 从 15 提高到 20
+  afternoon_rest: 12,     // 新增：下午小憩恢复
 };
 
 export function drainVitality(state: VitalityState, emotion: EmotionState, flowModifier?: number): VitalityState {
@@ -58,6 +59,17 @@ export function morningRecovery(state: VitalityState): VitalityState {
   const base = REPLENISHMENT.sleep_cycle;
   const newVitality = emergency ? Math.max(state.vitality + base, 60) : clampVitality(state.vitality + base);
   return { ...state, vitality: newVitality, last_updated: now().toISOString(), consecutive_low_days: emergency ? 0 : newConsecutive };
+}
+
+/**
+ * 下午小憩恢复（13:00-15:00 触发一次）。
+ * 只在活力低于 50 时触发，模拟自然午休。
+ */
+export function afternoonRestRecovery(state: VitalityState, hour: number): VitalityState {
+  if (hour < 13 || hour > 15) return state;
+  if (state.vitality >= 50) return state;
+  const gain = REPLENISHMENT.afternoon_rest;
+  return { ...state, vitality: clampVitality(state.vitality + gain), last_updated: now().toISOString() };
 }
 
 export type VitalityZone = 'high' | 'normal' | 'low' | 'critical';

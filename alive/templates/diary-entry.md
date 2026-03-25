@@ -17,7 +17,7 @@
 像是躺在床上用手机备忘录随手记的，不是在写作文：
 {persona.voice.diary_style_guide}
 
-{persona.diary_examples}
+{persona.content.diary_examples}
 
 坏的日记（禁止！）：
 - "今天过得很充实，做了很多事情" ← 空洞

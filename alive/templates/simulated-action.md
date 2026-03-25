@@ -21,7 +21,7 @@ diary_entry 必须：
 - 包含**内心小剧场**（吐槽、幻想、联想、碎碎念）
 - 1-3句话，不要太长
 
-{persona.diary_examples}
+{persona.content.diary_examples}
 
 坏的日记示例（禁止！）：
 - "检查了帖子的点赞情况" ← 太干巴

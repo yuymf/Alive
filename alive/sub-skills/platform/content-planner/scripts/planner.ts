@@ -135,7 +135,7 @@ const DEFAULT_INSPIRATION: InspirationData = {
   instagram_trends: { hot_styles: [], high_engagement_patterns: [], trending_hashtags: [], updated_at: 0 },
   acg_hotspots: { trending_characters: [], upcoming_events: [], seasonal_themes: [], updated_at: 0 },
   visual_trends: { composition_styles: [], color_palettes: [], scene_ideas: [], updated_at: 0 },
-  self_performance: { best_style: 'cos', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: 0 },
+  self_performance: { best_style: 'daily', best_time_slots: [], best_hashtag_combos: [], engagement_by_style: {}, updated_at: 0 },
   xiaohongshu_trends: { feed_highlights: [], cosplay_notes: [], trending_topics: [], cosplay_insights: [], saved_inspirations: [], updated_at: 0 },
 };
 

@@ -2,7 +2,7 @@
   "name": "content-planner",
   "display_name": "内容策划引擎",
   "version": "0.1.0",
-  "description": "内容决策引擎 — 拍照意图、发帖决策、风格比例管理、闺密顾问",
+  "description": "内容决策引擎 — 拍照意图、发帖决策、风格比例管理、顾问咨询",
   "intent_bindings": [],
   "config_schema": {
     "max_posts_per_day": {

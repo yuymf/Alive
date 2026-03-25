@@ -1,4 +1,4 @@
-# {persona.meta.name}の性格系统
+# {persona.meta.name} — 性格系统
 
 ## 基础性格
 

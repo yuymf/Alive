@@ -11,7 +11,7 @@
 - 最佳hashtag组合: {best_hashtag_combos}
 - 热门hashtag: {trending_hashtags}
 
-**闺密小慧的建议：**
+**顾问建议：**
 {advisor_suggestion}
 
 ## Instagram 发帖策略
@@ -35,18 +35,10 @@
 - 长度：1-3句话就够了，太长没人看
 
 **文案风格参考**：
-✓ "改了三遍假发片还是歪的 我要疯了😭 但是！最后效果还行吧你们说呢"
-✓ "今天阳光太好了忍不住在天台拍了一组 风吹得头发全乱但是好喜欢这种感觉✨"
-✓ "第一次尝试暗黑系妆面...有被自己帅到（小声"
-✗ "今日cos分享！这是我精心准备的XX角色cos作品，希望大家喜欢！🌸✨💕"
-✗ "新照片来啦！请多多支持～"
+{persona.content.caption_examples}
 
 **hashtag策略**（8-15个）：
-- 3-4个大标签（10万+帖子）：#cosplay #cosplayer #anime
-- 3-4个中标签（1万-10万）：#角色名cosplay #具体风格
-- 2-3个小标签（<1万）：精准niche标签
-- 1-2个热门标签：蹭当季/当月热度
-- 不要用被 shadowban 的标签
+{persona.content.hashtag_strategy}
 
 ## 发帖决策
 

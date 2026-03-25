@@ -5,7 +5,7 @@
   "description": "刷内容、采集灵感、趋势分析",
   "intent_bindings": [
     { "intent": "窥屏", "action": "feed-browse", "priority": 4 },
-    { "intent": "学习", "action": "inspiration-collect", "priority": 4 },
+    { "intent": "学习", "action": "inspiration-collect", "priority": 2 },
     { "intent": "窥屏", "action": "inspiration-collect", "priority": 2 }
   ],
   "config_schema": {

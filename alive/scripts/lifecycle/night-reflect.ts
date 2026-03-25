@@ -16,7 +16,7 @@ import {
   isFeatureEnabled,
 } from '../utils/types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from '../utils/file-utils';
-import { now, getLocalDate, formatLocalTime } from '../utils/time-utils';
+import { now, getLocalDate, formatLocalTime, setTimezone } from '../utils/time-utils';
 import { rebalanceTiers, updateMetaStats } from '../world/social-graph-engine';
 import { processChainEvents } from '../world/random-events';
 import { getDefaultUndertone, loadPersona, injectPersona } from '../persona/persona-loader';
@@ -34,9 +34,12 @@ interface NightReflectDecision {
 export async function runNightReflect(
   llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T>; call(prompt: string, maxTokens?: number): Promise<string> },
 ): Promise<void> {
+  const persona = loadPersona();
+  // Set timezone from persona config before any time operations
+  setTimezone(persona.schedule?.timezone ?? null);
+
   const currentTime = now();
   const today = getLocalDate(currentTime);
-  const persona = loadPersona();
   const defaultUndertone = getDefaultUndertone(persona);
 
   // Read today's data
@@ -97,7 +100,27 @@ export async function runNightReflect(
       : '还没有明确的梦想。')
     .replace('{skill_needs}', isFeatureEnabled(persona, 'skill_discovery') ? buildSkillNeedsForPrompt() : '');
 
-  const decision = await llm.callJSON<NightReflectDecision>(prompt);
+  let decision: NightReflectDecision;
+  try {
+    decision = await llm.callJSON<NightReflectDecision>(prompt);
+  } catch (firstErr) {
+    // LLM returned malformed JSON — retry with stricter instruction
+    console.warn(`[night-reflect] JSON parse failed, retrying with stricter prompt: ${(firstErr as Error).message}`);
+    const retryPrompt = prompt + '\n\n⚠️ 上次输出的 JSON 格式有误。请严格输出有效 JSON：\n- 字符串值中的引号用 \\" 转义\n- 不要在最后一个元素后加逗号\n- 确保所有括号正确闭合\n- 只输出一个 JSON 对象，不要有其他文字';
+    try {
+      decision = await llm.callJSON<NightReflectDecision>(retryPrompt);
+    } catch (retryErr) {
+      // Second attempt also failed — create a minimal valid decision so the day can finish
+      console.error(`[night-reflect] JSON parse failed on retry too: ${(retryErr as Error).message}`);
+      decision = {
+        new_wisdom: [],
+        preference_updates: [],
+        aspiration_updates: [],
+        personality_drift: null,
+        diary_entry: '今天太累了...躺下就睡着了，来不及反思了。',
+      };
+    }
+  }
 
   // ── Skill Gap Analysis & Discovery (gated by features.skill_discovery) ──
   if (isFeatureEnabled(persona, 'skill_discovery')) {

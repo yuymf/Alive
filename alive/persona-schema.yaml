@@ -13,6 +13,10 @@ schema:
       type: string
       required: false
       description: "职业详细描述段落，注入到 personality.md 的「职业身份」部分"
+    gender:
+      type: string
+      required: false
+      description: "性别（如 '女'、'男'、'非二元'），用于模板中的代词和性别相关描述"
 
   personality:
     mbti: { type: string, required: true, description: "MBTI 类型，用于推导情绪基线" }
@@ -85,6 +89,14 @@ schema:
       type: string
       required: false
       description: "语言风格详细描述段落，注入到 soul-injection.md 的 Voice 部分"
+    diary_style_guide:
+      type: string
+      required: false
+      description: "日记写作风格指南（如语言混搭、口语化要求等），注入到 diary-entry.md"
+    language_mixing_instruction:
+      type: string
+      required: false
+      description: "语言混搭提醒（如「日记中自然混入你常用的日语词」），注入到 heartbeat-prompt 和 night-reflect-prompt"
     sample_lines_formatted:
       type: string
       required: false
@@ -268,6 +280,53 @@ schema:
         items: string
         required: false
         description: "Reddit 关注的 subreddit"
+
+  content:
+    type: object
+    required: false
+    description: "角色专属的内容示例和模板片段，用于注入到各 prompt 模板中实现角色解耦"
+    properties:
+      behavior_examples:
+        type: string
+        required: false
+        description: "行为多样性示例（Markdown 列表），注入到 heartbeat-prompt 的「行为多样性」部分"
+      action_examples_good:
+        type: string
+        required: false
+        description: "好的行动描述示例（Markdown 列表），注入到 heartbeat-prompt"
+      diary_examples:
+        type: string
+        required: false
+        description: "日记写作示例（好的示例），注入到 simulated-action 和 diary-entry 模板"
+      night_diary_examples:
+        type: string
+        required: false
+        description: "睡前日记示例，注入到 night-reflect-prompt"
+      reflection_examples:
+        type: string
+        required: false
+        description: "反思/智慧提炼的好示例，注入到 reflection-prompt"
+      search_topics:
+        type: string
+        required: false
+        description: "搜索话题示例（如「番剧资讯、旅行攻略、cos 材料」），注入到 heartbeat-prompt 的搜索指引"
+      photo_styles:
+        type: string
+        required: false
+        description: "穿搭风格参考（Markdown 列表），注入到 photo-intent-prompt 的穿搭部分"
+      caption_examples:
+        type: string
+        required: false
+        description: "社交媒体文案风格示例（好的和坏的），注入到 post-intent-prompt"
+      hashtag_strategy:
+        type: string
+        required: false
+        description: "hashtag 策略指南（Markdown 列表），注入到 post-intent-prompt"
+      content_types:
+        type: array
+        items: string
+        required: false
+        description: "内容类型列表（如 ['cos', 'daily', 'behind_scenes', 'travel']）"
 
 # MBTI → Emotion Baseline Mapping
 mbti_baselines:

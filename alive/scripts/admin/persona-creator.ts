@@ -301,10 +301,13 @@ export function generatePersonaQuick(options: QuickCreateOptions = {}): PersonaC
 
   const id = generateId(name);
 
+  const genderLabel = gender === 'female' ? '女' : '男';
+
   const persona: PersonaConfig = {
     meta: {
       name,
       id,
+      gender: genderLabel,
       tagline: `${tagline}`,
       occupation_detail: occupation.detail,
     },
@@ -392,11 +395,14 @@ export function generatePersonaGuided(options: GuidedCreateOptions): PersonaConf
 
   const id = generateId(name);
 
+  const genderLabel = gender === 'male' ? '男' : gender === 'female' ? '女' : undefined;
+
   const persona: PersonaConfig = {
     meta: {
       name,
       id,
       ...(age !== undefined && { age }),
+      ...(genderLabel && { gender: genderLabel }),
       tagline: `${resolvedOccupation} · ${tagline}`,
       occupation_detail: resolvedOccupationDetail,
     },
@@ -529,6 +535,7 @@ export function formatPersonaPreview(persona: PersonaConfig): string {
 | 字段 | 内容 |
 |------|------|
 | **名字** | ${persona.meta.name} |
+| **性别** | ${persona.meta.gender || 'N/A'} |
 | **定位** | ${persona.meta.tagline} |
 | **MBTI** | ${persona.personality.mbti} |
 | **性格** | ${persona.personality.core_traits.join('、')} |

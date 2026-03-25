@@ -35,10 +35,10 @@ export function accumulateIntents(
     switch (intent.category) {
       case '创作': boost = 0.3; if (lastActionHoursAgo > 48) boost += 1.0; break;
       case '社交': boost = hasUnreadEvents ? 2.0 : 0.2; break;
-      case '窥屏': boost = isSlackPeriod(hour) ? 1.5 : 0.3; break;
+      case '窥屏': boost = isSlackPeriod(hour) ? 1.0 : 0.2; break;  // 降低窥屏 boost（从 1.5/0.3 → 1.0/0.2）避免单一技能垄断
       case '休息': boost = consecutiveActiveHeartbeats * 0.5; break;
       case '表达': boost = 0.2; break;
-      case '学习': boost = 0.2; break;
+      case '学习': boost = 0.6; break;  // 从 0.2 提高到 0.6：让学习/搜索意图更容易积累
       case '梦想': boost = 0.1; break;
     }
     return { ...intent, intensity: cap(intent.intensity + boost) };

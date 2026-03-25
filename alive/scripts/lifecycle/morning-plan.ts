@@ -15,7 +15,7 @@ import {
   VitalityState,
 } from '../utils/types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from '../utils/file-utils';
-import { now, getLocalDate, getLocalWeekday, formatLocalTime } from '../utils/time-utils';
+import { now, getLocalDate, getLocalWeekday, formatLocalTime, setTimezone } from '../utils/time-utils';
 import { getEmotionBaseline, getDefaultUndertone, getScheduleConfig, loadPersona, injectPersona, buildVoiceSignature } from '../persona/persona-loader';
 import { morningRecovery, DEFAULT_VITALITY } from '../engines/vitality';
 
@@ -37,10 +37,13 @@ interface MorningPlanDecision {
 export async function runMorningPlan(
   llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T> },
 ): Promise<void> {
+  const persona = loadPersona();
+  // Set timezone from persona config before any time operations
+  setTimezone(persona.schedule?.timezone ?? null);
+
   const currentTime = now();
   const weekday = getLocalWeekday(currentTime);
   const todayStr = getLocalDate(currentTime);
-  const persona = loadPersona();
   const scheduleConfig = getScheduleConfig(persona);
   const baseline = getEmotionBaseline(persona);
   const defaultUndertone = getDefaultUndertone(persona);
