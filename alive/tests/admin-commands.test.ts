@@ -73,9 +73,11 @@ beforeEach(() => {
   fs.mkdirSync(skillDir, { recursive: true });
   fs.mkdirSync(path.join(memoryDir, 'relations'), { recursive: true });
 
-  // Write test persona
+  // Write test persona (to both skillDir and memoryDir for different PATHS resolution)
   fs.writeFileSync(path.join(skillDir, 'persona.yaml'), TEST_PERSONA_YAML);
   fs.writeFileSync(path.join(skillDir, 'persona-schema.yaml'), TEST_SCHEMA_YAML);
+  fs.writeFileSync(path.join(memoryDir, 'persona.yaml'), TEST_PERSONA_YAML);
+  fs.writeFileSync(path.join(memoryDir, 'persona-schema.yaml'), TEST_SCHEMA_YAML);
 
   // Create empty sub-skills dirs for testing
   fs.mkdirSync(path.join(skillDir, 'sub-skills', 'web-search'), { recursive: true });
@@ -227,9 +229,9 @@ describe('/alive schedule', () => {
     expect(result.output).toContain('wake_hour → 7');
     expect(result.output).toContain('sleep_hour → 23');
 
-    // Verify persona.yaml was updated
+    // Verify persona.yaml was updated (PATHS.personaConfig points to memoryDir)
     clearPersonaCache();
-    const raw = fs.readFileSync(path.join(skillDir, 'persona.yaml'), 'utf8');
+    const raw = fs.readFileSync(path.join(memoryDir, 'persona.yaml'), 'utf8');
     const updated = YAML.parse(raw);
     expect(updated.schedule.wake_hour).toBe(7);
     expect(updated.schedule.sleep_hour).toBe(23);
@@ -248,7 +250,7 @@ describe('/alive schedule', () => {
 
   it('creates backup before modifying', () => {
     dispatch('/alive schedule --wake 7');
-    expect(fs.existsSync(path.join(skillDir, 'persona.yaml.bak'))).toBe(true);
+    expect(fs.existsSync(path.join(memoryDir, 'persona.yaml.bak'))).toBe(true);
   });
 });
 

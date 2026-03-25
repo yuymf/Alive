@@ -13,22 +13,25 @@ alive/                    ← 通用活人感引擎 (persona-agnostic)
 ├── protocols/            # 行为协议 (memory, heartbeat, social-graph, ...)
 ├── templates/            # LLM 提示词模板 ({persona.*} 占位符)
 ├── scripts/
-│   ├── engines/          # 核心状态引擎 (emotion, intent, flow, vitality, confidence)
+│   ├── engines/          # 核心状态引擎 (emotion, intent, flow, vitality, confidence, post-impulse)
 │   ├── lifecycle/        # 生命周期 (heartbeat-tick, morning-plan, night-reflect)
 │   ├── world/            # 随机事件 + 社交图谱
 │   ├── router/           # 子 skill 路由调度
+│   ├── hub/              # 技能发现 + 自动安装 (need-tracker, hub-client, adapter, lifecycle)
 │   ├── persona/          # persona.yaml 加载与模板注入
 │   ├── admin/            # /alive 斜杠命令处理器 (不经过 LLM)
-│   └── utils/            # 基础工具 (file-utils, llm-client, types)
+│   ├── adapters/         # 平台适配器 (Instagram, 小红书, ContentProvider + 5 providers)
+│   └── utils/            # 基础工具 (file-utils, llm-client, time-utils, types)
 ├── hooks/                # OpenClaw 钩子
-├── sub-skills/           # 官方子 skill
+├── sub-skills/           # 7 个官方子 skill
 │   ├── instagram/        # Instagram 发帖管线
+│   ├── voice-tts/        # 语音消息合成 (Noiz TTS)
 │   ├── web-search/       # 网络搜索
-│   ├── content-browse/   # 内容浏览 / 灵感收集
+│   ├── content-browse/   # 内容浏览 / 灵感收集 (多平台)
 │   ├── send-message/     # 主动消息
 │   ├── social-engagement/# 社交互动 (评论回复)
-│   └── platform/         # 平台基础能力 (图片生成, gallery, bridge...)
-└── tests/                # 44 个测试文件, 712 tests
+│   └── platform/         # 平台基础能力 (generate-image, gallery, content-planner, instagram-bridge, xhs-bridge)
+└── tests/                # 67 个测试文件
 ```
 
 ## 快速开始
@@ -168,7 +171,7 @@ npm run build
 npm run typecheck
 
 # 测试
-npm run test           # 运行全部测试 (44 files, 712 tests)
+npm run test           # 运行全部测试 (67 test files)
 npm run test:watch     # watch 模式
 ```
 
@@ -191,7 +194,7 @@ npm run test:watch     # watch 模式
 | `/alive schedule --wake 9 --sleep 1` | 修改起床/睡觉时间 |
 | `/alive schedule --timezone Asia/Tokyo` | 修改时区 |
 | `/alive skills` | 列出已启用的子技能及安装状态 |
-| `/alive platform` | 查看平台配置（Instagram 等） |
+| `/alive platform` | 查看平台配置（Instagram / 小红书等） |
 | `/alive memory` | 查看记忆统计（日记天数/wisdom/意图池/关系数...） |
 | `/alive create` | 随机生成一个新角色 |
 | `/alive create <名字> "一句话定位"` | 用指定名字和定位生成角色 |
@@ -207,27 +210,35 @@ npm run test:watch     # watch 模式
 
 ### 多角色管理
 
-Alive 框架支持多个角色共用同一个 skill 安装目录，通过独立的记忆目录隔离数据：
+Alive 支持多角色**并行运行**——每个角色拥有独立的 cron 调度和记忆目录，互不干扰：
 
 ```
-~/.openclaw/skills/alive/          ← 共用的框架 + 当前 persona.yaml
+~/.openclaw/skills/alive/          ← 共用的框架代码
 ~/.openclaw/workspace/memory/
-├── minase/                        ← 角色 A 的记忆
-├── another-persona/               ← 角色 B 的记忆
+├── minase/                        ← 角色 A 的记忆 + 独立 cron
+├── another-persona/               ← 角色 B 的记忆 + 独立 cron
 └── ...
 ```
 
-使用 `alive --switch-persona` 在角色间切换，每个角色的记忆独立保存，不会丢失。
+- 使用 `alive --persona <path>` 安装新角色（增量添加，不影响已有角色）
+- 使用 `alive --switch-persona` 切换 OpenClaw 当前对话的活跃角色
+- 每个角色的记忆、情绪状态、日记完全隔离，不会丢失
 
 ### 记忆系统
 
 记忆存储在 `~/.openclaw/workspace/memory/<persona-slug>/`：
 
 ```
-diary.md            # 角色日记
-core-wisdom.json    # 从经历中蒸馏出的人生教训
-emotion-state.json  # 情绪状态
-relations/          # 和每个人的关系档案
+diary.md               # 角色日记 (30 天滚动，低重要度自动压缩)
+core-wisdom.json       # 从经历中蒸馏出的人生教训 (永久保留，上限 20 条)
+emotion-state.json     # 6 维情绪状态
+intent-pool.json       # 当前意图池
+relations/             # 和每个人的关系档案 (90 天衰减)
+preferences.json       # 角色偏好 (夜间反思涌现)
+aspirations.json       # 梦想与愿望 (active/achieved/abandoned)
+personality-drift.json # 性格漂移 (稀有 MBTI 基线微调)
+voice-state.json       # 语音消息状态 (日计数 + 冷却)
+skill-needs.json       # 能力缺口追踪 (技能自动发现用)
 ```
 
 ## 环境变量
@@ -246,6 +257,7 @@ relations/          # 和每个人的关系档案
 | `IMGURL_TOKEN` | 图片上传到公共图床 | 可选 |
 | `INSTAGRAM_USERNAME` | Instagram 登录用户名 | 可选 |
 | `INSTAGRAM_PASSWORD` | Instagram 登录密码 | 可选 |
+| `XHS_SKILLS_DIR` | 小红书 Python 脚本目录路径 | 可选 |
 
 ## 许可
 

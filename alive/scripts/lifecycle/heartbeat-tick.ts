@@ -212,10 +212,17 @@ const skillConfigFactories: Record<string, () => Record<string, unknown>> = {
 /**
  * Resolve platform config for a sub-skill by name.
  * Maps orchestration sub-skills to their adapter configs.
+ * Optionally injects actionContext from the heartbeat LLM decision
+ * so sub-skills can use it (e.g. content-browse uses it to generate
+ * intent-driven search keywords via LLM).
  */
-function resolveSkillConfig(skillName: string): Record<string, unknown> {
+function resolveSkillConfig(skillName: string, actionContext?: string): Record<string, unknown> {
   const factory = skillConfigFactories[skillName];
-  return factory ? factory() : {};
+  const config = factory ? factory() : {};
+  if (actionContext) {
+    config.actionContext = actionContext;
+  }
+  return config;
 }
 
 /**
@@ -647,8 +654,8 @@ export async function regularTick(
             action: route.action,
           };
 
-          // Inject platform config based on skill name
-          const skillConfig = resolveSkillConfig(route.skillName);
+          // Inject platform config based on skill name + action context
+          const skillConfig = resolveSkillConfig(route.skillName, action.action);
           const ctx = buildContext(persona, emotion, vitality.vitality, confidence.confidence, resolvedIntent, llm, skillConfig);
           const subResult = await executeSubSkill(route, ctx);
 

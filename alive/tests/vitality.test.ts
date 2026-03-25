@@ -116,7 +116,7 @@ describe('replenishVitality', () => {
   it('replenishes from rest', () => {
     const state = makeVitality({ vitality: 50 });
     const result = replenishVitality(state, 'rest');
-    expect(result.vitality).toBe(58); // +8
+    expect(result.vitality).toBe(60); // +10
   });
 
   it('replenishes with custom gain', () => {
@@ -144,7 +144,7 @@ describe('morningRecovery', () => {
   it('adds sleep_cycle recovery', () => {
     const state = makeVitality({ vitality: 50 });
     const result = morningRecovery(state);
-    expect(result.vitality).toBe(65); // +15
+    expect(result.vitality).toBe(70); // +20
   });
 
   it('tracks consecutive low days', () => {

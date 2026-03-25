@@ -71,18 +71,25 @@ function makeCtx(overrides: Partial<SubSkillContext> = {}): SubSkillContext {
     memory: makeMemory(),
     socialGraph: { getRelations: vi.fn(() => []), updateRelation: vi.fn() },
     llm: {
-      callJSON: vi.fn(async () => ({
-        feed_highlights: [
-          { title: 'Reddit cosplay trend', likes: 5000, topic: 'cosplay' },
-          { title: 'Bilibili viral video', likes: 12000, topic: 'anime' },
-        ],
-        trending_topics: ['AI cosplay', 'virtual YouTuber', 'anime photography'],
-        domain_insights: ['Cross-platform content performs best', 'Short-form video is king', 'Reddit discussions drive depth'],
-        saved_inspirations: [
-          { source_id: 'reddit_abc', source_title: 'Amazing cosplay', visual_description: 'Detailed sword prop', style_tags: ['cosplay', 'props'] },
-          { source_id: 'bilibili_BV123', source_title: 'Dance cover', visual_description: 'Neon lighting setup', style_tags: ['dance', 'lighting'] },
-        ],
-      })),
+      callJSON: vi.fn(async (prompt: string) => {
+        // First LLM call: search-intent keyword generation (contains "搜索关键词" or "keywords")
+        if (prompt.includes('搜索关键词') || prompt.includes('keywords') || prompt.includes('搜什么')) {
+          return { keywords: ['cosplay trends', 'anime photography', 'virtual YouTuber'] };
+        }
+        // Second LLM call: feed analysis
+        return {
+          feed_highlights: [
+            { title: 'Reddit cosplay trend', likes: 5000, topic: 'cosplay' },
+            { title: 'Bilibili viral video', likes: 12000, topic: 'anime' },
+          ],
+          trending_topics: ['AI cosplay', 'virtual YouTuber', 'anime photography'],
+          domain_insights: ['Cross-platform content performs best', 'Short-form video is king', 'Reddit discussions drive depth'],
+          saved_inspirations: [
+            { source_id: 'reddit_abc', source_title: 'Amazing cosplay', visual_description: 'Detailed sword prop', style_tags: ['cosplay', 'props'] },
+            { source_id: 'bilibili_BV123', source_title: 'Dance cover', visual_description: 'Neon lighting setup', style_tags: ['dance', 'lighting'] },
+          ],
+        };
+      }),
       call: vi.fn(async () => ''),
     },
     config: {},
@@ -91,6 +98,21 @@ function makeCtx(overrides: Partial<SubSkillContext> = {}): SubSkillContext {
 }
 
 // ── Integration Tests ────────────────────────────────────────────
+
+/** Helper: find the feed-analysis LLM call (not the keyword generation call) */
+function getFeedAnalysisPrompt(llmCallJSON: ReturnType<typeof vi.fn>): string {
+  const calls = llmCallJSON.mock.calls as Array<[string, ...unknown[]]>;
+  // The feed-analysis prompt does NOT contain "搜什么" / "keywords" patterns
+  // but DOES contain feed data items or "数据来源" section
+  for (const call of calls) {
+    const prompt = call[0];
+    if (typeof prompt === 'string' && !prompt.includes('搜什么') && !prompt.includes('关键词1')) {
+      return prompt;
+    }
+  }
+  // fallback: return last call
+  return calls[calls.length - 1][0] as string;
+}
 
 describe('Multi-Platform Content Bridge Integration', () => {
   let registry: ContentProviderRegistry;
@@ -233,7 +255,7 @@ describe('Multi-Platform Content Bridge Integration', () => {
       );
 
       // Verify LLM was called with multi-platform data
-      const llmCallArgs = (ctx.llm.callJSON as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      const llmCallArgs = getFeedAnalysisPrompt(ctx.llm.callJSON as ReturnType<typeof vi.fn>);
       // The prompt should contain source platform info
       expect(llmCallArgs).toContain('reddit');
       expect(llmCallArgs).toContain('bilibili');
@@ -295,7 +317,7 @@ describe('Multi-Platform Content Bridge Integration', () => {
       expect(result.narrative).toContain('刷了');
 
       // Verify only reddit data reached the LLM
-      const llmCallArgs = (ctx.llm.callJSON as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      const llmCallArgs = getFeedAnalysisPrompt(ctx.llm.callJSON as ReturnType<typeof vi.fn>);
       // Source platforms section should only list reddit
       expect(llmCallArgs).toContain('数据来源平台');
       // Extract the source_platforms line (between "数据来源平台" and next "##")
@@ -337,7 +359,7 @@ describe('Multi-Platform Content Bridge Integration', () => {
       expect(result.vitality_cost).toBe(10);
 
       // Verify bilibili and dailyhot items still got through
-      const llmCallArgs = (ctx.llm.callJSON as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      const llmCallArgs = getFeedAnalysisPrompt(ctx.llm.callJSON as ReturnType<typeof vi.fn>);
       expect(llmCallArgs).toContain('Cosplay');
       // inspiration saved despite partial failure
       expect(memory.writeJSON).toHaveBeenCalledWith(
@@ -399,7 +421,7 @@ describe('Multi-Platform Content Bridge Integration', () => {
       const ctx = makeCtx({ config });
       await actions['feed-browse'](ctx);
 
-      const llmCallArgs = (ctx.llm.callJSON as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      const llmCallArgs = getFeedAnalysisPrompt(ctx.llm.callJSON as ReturnType<typeof vi.fn>);
       // Feed items should include source annotation
       expect(llmCallArgs).toContain('(reddit)');
       expect(llmCallArgs).toContain('(bilibili)');
@@ -432,7 +454,9 @@ describe('Multi-Platform Content Bridge Integration', () => {
       expect(result.narrative).toContain('刷了');
       expect(result.vitality_cost).toBe(10);
       expect(getFeedItems).toHaveBeenCalled();
-      expect(searchContent).toHaveBeenCalledWith('cosplay');
+      // searchContent is called with LLM-generated keywords (not raw searchKeywords)
+      expect(searchContent).toHaveBeenCalled();
+      expect(searchContent.mock.calls.length).toBeGreaterThanOrEqual(1);
     });
   });
 });

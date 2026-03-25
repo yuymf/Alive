@@ -115,8 +115,8 @@ describe('audio-store/pruneOldAudio', () => {
     const oldFile = path.join(voiceDir, 'old-file.mp3');
     fs.writeFileSync(oldFile, Buffer.alloc(500));
 
-    // Set file mtime to 8 days ago
-    const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    // Set file mtime to 8 days before the time override (2026-03-24)
+    const eightDaysAgo = new Date(2026, 2, 24 - 8, 14, 30);
     fs.utimesSync(oldFile, eightDaysAgo, eightDaysAgo);
 
     const pruned = pruneOldAudio();

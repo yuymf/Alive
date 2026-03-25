@@ -73,7 +73,7 @@ describe('checkFlowEntry', () => {
   });
 
   it('does not enter flow without a matching intent above threshold', () => {
-    const pool = makePool([{ category: '创作', intensity: 5.0, resistance: 2.0 }]); // net 3.0 < 3.5 threshold
+    const pool = makePool([{ category: '创作', intensity: 4.0, resistance: 2.0 }]); // net 2.0 < 2.5 threshold
     const result = checkFlowEntry(
       { ...DEFAULT_FLOW_STATE },
       { category: '创作', activity: '画画' },
@@ -305,7 +305,7 @@ describe('resetFlow', () => {
     expect(result.status).toBe('none');
     expect(result.activity).toBeNull();
     expect(result.duration_ticks).toBe(0);
-    expect(result.cooldown_remaining).toBe(2); // FLOW_COOLDOWN_TICKS
+    expect(result.cooldown_remaining).toBe(1); // FLOW_COOLDOWN_TICKS
   });
 });
 

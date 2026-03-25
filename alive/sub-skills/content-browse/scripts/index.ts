@@ -94,7 +94,8 @@ export const actions = {
    * Expects ctx.config to optionally contain:
    *   - getFeedItems(): Promise<FeedItem[]>     — fetch recommended feed
    *   - searchContent(keyword): Promise<FeedItem[]>  — search by keyword
-   *   - searchKeywords?: string[]               — keywords to search
+   *   - searchKeywords?: string[]               — fallback keywords to search
+   *   - actionContext?: string                   — heartbeat action description (for LLM keyword generation)
    *   - webSearch?(query): Promise<Array<{title, url, snippet}>> — web search fallback
    */
   async 'feed-browse'(ctx: SubSkillContext): Promise<SubSkillResult> {
@@ -102,7 +103,39 @@ export const actions = {
 
     const getFeedItems = config.getFeedItems as (() => Promise<FeedItem[]>) | undefined;
     const searchContent = config.searchContent as ((kw: string) => Promise<FeedItem[]>) | undefined;
-    const searchKeywords = (config.searchKeywords as string[]) ?? persona.personality.core_traits.slice(0, 3);
+    const fallbackKeywords = (config.searchKeywords as string[]) ?? persona.personality.core_traits.slice(0, 3);
+    const actionContext = (config.actionContext as string) ?? '';
+
+    // 0. Generate intent-driven search keywords via LLM
+    let searchKeywords: string[];
+    try {
+      const recentInspirations = memory.readJSON<InspirationState>('inspiration-state', DEFAULT_INSPIRATION_STATE);
+      const recentTitles = (recentInspirations.saved_inspirations ?? [])
+        .slice(-5)
+        .map(s => s.source_title)
+        .join('、') || '（暂无）';
+
+      const intentTemplate = loadTemplate('search-intent-prompt.md');
+      const intentPrompt = intentTemplate
+        .replace('{persona_name}', persona.meta.name)
+        .replace('{persona_traits}', (persona.personality.core_traits ?? []).join('、'))
+        .replace('{emotion_summary}', `${emotion.mood.description} (valence=${emotion.mood.valence.toFixed(1)}, energy=${emotion.energy.toFixed(1)}, creativity=${emotion.creativity.toFixed(1)})`)
+        .replace('{action_context}', actionContext || '（没有特别想做的事，随便刷刷）')
+        .replace('{recent_inspirations}', recentTitles)
+        .replace('{default_keywords}', fallbackKeywords.join('、'));
+
+      const result = await llm.callJSON<{ keywords: string[] }>(intentPrompt, 300);
+      searchKeywords = (result.keywords ?? []).slice(0, 5);
+
+      if (searchKeywords.length === 0) {
+        searchKeywords = fallbackKeywords;
+      } else {
+        console.log(`[content-browse] LLM generated keywords: ${searchKeywords.join(', ')}`);
+      }
+    } catch (err) {
+      console.warn(`[content-browse] LLM keyword generation failed, using fallback: ${(err as Error).message}`);
+      searchKeywords = fallbackKeywords;
+    }
 
     const feedItems: FeedItem[] = [];
     const searchItems: FeedItem[] = [];
@@ -117,7 +150,7 @@ export const actions = {
       }
     }
 
-    // 2. Search by keywords
+    // 2. Search by LLM-generated keywords
     if (searchContent) {
       for (const keyword of searchKeywords.slice(0, 3)) {
         try {

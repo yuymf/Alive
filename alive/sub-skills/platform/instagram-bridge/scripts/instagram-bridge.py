@@ -17,12 +17,19 @@ Subcommands:
   get_user_feed    --user-id <id> --amount <n>
 
 Environment:
-  INSTAGRAM_USERNAME   (required)
-  INSTAGRAM_PASSWORD   (required)
+  INSTAGRAM_USERNAME   (optional, for password-based login fallback)
+  INSTAGRAM_PASSWORD   (optional, for password-based login fallback)
   INSTAGRAM_TOTP_SECRET (optional, for 2FA)
+  INSTAGRAM_SESSIONID  (optional, cookie-based login — preferred method)
+  INSTAGRAM_CSRFTOKEN  (optional, cookie-based login — preferred method)
+  INSTAGRAM_DS_USER_ID (optional, cookie-based login — preferred method)
 
 Session persisted at ~/.openclaw/workspace/memory/minase/ig-session.json
 All output is JSON on stdout; errors go to stderr.
+
+Login strategy:
+  1. If INSTAGRAM_SESSIONID is set, use cookie-based auth (bypasses UFAC challenge).
+  2. Otherwise, fall back to instagrapi password-based login.
 """
 
 import argparse
@@ -66,8 +73,81 @@ MAX_RETRIES = 3
 RETRY_BASE_DELAY = 5  # seconds
 
 
-def get_client() -> Client:
-    """Create and authenticate an instagrapi Client with session reuse."""
+def _get_cookie_client() -> Client:
+    """Authenticate via cookie-based login using INSTAGRAM_SESSIONID env var.
+
+    This bypasses instagrapi's login flow entirely, which currently triggers
+    an unresolvable UFAC challenge. Instead, we inject browser/app cookies
+    directly and verify by calling a lightweight API.
+    """
+    import time as _time
+
+    sessionid = os.environ.get("INSTAGRAM_SESSIONID")
+    csrftoken = os.environ.get("INSTAGRAM_CSRFTOKEN")
+    ds_user_id = os.environ.get("INSTAGRAM_DS_USER_ID")
+
+    if not sessionid:
+        return None
+
+    mid_val = os.environ.get("INSTAGRAM_MID", "")
+    ig_did = os.environ.get("INSTAGRAM_IG_DID", "cookie-bridge")
+
+    cl = Client()
+    cl.delay_range = [1, 3]
+
+    # Build minimal settings dict (avoids triggering instagrapi init with
+    # missing device signatures that cause challenge_required on private API)
+    settings = {
+        "uuids": {
+            "phone_id": ig_did,
+            "uuid": ig_did,
+            "client_session_id": ig_did,
+            "advertising_id": ig_did,
+        },
+        "authorization_data": {
+            "ds_user_id": ds_user_id or "",
+            "sessionid": sessionid,
+        },
+        "last_login": _time.time(),
+    }
+    cl.set_settings(settings)
+
+    # Inject cookies directly into the HTTP session
+    cl.private.cookies.set("sessionid", sessionid, domain=".instagram.com")
+    if csrftoken:
+        cl.private.cookies.set("csrftoken", csrftoken, domain=".instagram.com")
+    if ds_user_id:
+        cl.private.cookies.set("ds_user_id", ds_user_id, domain=".instagram.com")
+    if mid_val:
+        cl.private.cookies.set("mid", mid_val, domain=".instagram.com")
+    cl.private.cookies.set("ig_did", ig_did, domain=".instagram.com")
+
+    # Verify session is valid with a lightweight API call.
+    # Use private.get() directly to avoid instagrapi's response parsing
+    # which may fail on missing fields (e.g. pinned_channels_info).
+    try:
+        uid = int(ds_user_id) if ds_user_id else cl.user_id
+        resp = cl.private.get(f"https://i.instagram.com/api/v1/users/{uid}/info/")
+        data = resp.json()
+        user = data.get("user", {})
+        username = user.get("username", "?")
+        followers = user.get("follower_count", 0)
+        if not username:
+            raise RuntimeError("Empty user data — session may be invalid")
+        print(f"Cookie auth verified: @{username} (followers: {followers})", file=sys.stderr)
+
+        # Persist session for reuse
+        SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
+        cl.dump_settings(SESSION_PATH)
+        SESSION_PATH.chmod(0o600)
+        return cl
+    except Exception as e:
+        print(f"Cookie auth verification failed: {e}", file=sys.stderr)
+        return None
+
+
+def _get_password_client() -> Client:
+    """Create and authenticate an instagrapi Client with session reuse via password."""
     username = os.environ.get("INSTAGRAM_USERNAME")
     password = os.environ.get("INSTAGRAM_PASSWORD")
     totp_secret = os.environ.get("INSTAGRAM_TOTP_SECRET")
@@ -83,8 +163,9 @@ def get_client() -> Client:
         try:
             cl.load_settings(SESSION_PATH)
             cl.login(username, password)
-            # Verify session is valid
-            cl.get_timeline_feed()
+            # Verify session is valid (use lightweight endpoint)
+            uid = cl.user_id
+            cl.user_info(uid)
             return cl
         except (LoginRequired, ChallengeRequired, Exception):
             # Session expired, do fresh login
@@ -106,6 +187,22 @@ def get_client() -> Client:
     cl.dump_settings(SESSION_PATH)
     SESSION_PATH.chmod(0o600)
     return cl
+
+
+def get_client() -> Client:
+    """Create and authenticate an instagrapi Client.
+
+    Login strategy:
+      1. Try cookie-based auth (INSTAGRAM_SESSIONID) — avoids UFAC challenge.
+      2. Fall back to password-based login.
+    """
+    # Try cookie-based auth first
+    cl = _get_cookie_client()
+    if cl is not None:
+        return cl
+
+    # Fall back to password-based login
+    return _get_password_client()
 
 
 def with_retry(fn):
@@ -249,13 +346,27 @@ def cmd_get_user_info(args):
     """Get current user's profile info (follower count, etc.)."""
     def do_info():
         cl = get_client()
-        info = cl.user_info(cl.user_id)
-        return {
-            "follower_count": info.follower_count,
-            "following_count": info.following_count,
-            "media_count": info.media_count,
-            "username": info.username,
-        }
+        try:
+            info = cl.user_info(cl.user_id)
+            return {
+                "follower_count": info.follower_count,
+                "following_count": info.following_count,
+                "media_count": info.media_count,
+                "username": info.username,
+            }
+        except (KeyError, TypeError) as e:
+            # instagrapi model may not match current API response shape;
+            # fallback to raw private API call
+            import time as _time
+            uid = cl.user_id
+            resp = cl.private.get(f"https://i.instagram.com/api/v1/users/{uid}/info/")
+            user = resp.json().get("user", {})
+            return {
+                "follower_count": user.get("follower_count", 0),
+                "following_count": user.get("following_count", 0),
+                "media_count": user.get("media_count", 0),
+                "username": user.get("username", ""),
+            }
     result = with_retry(do_info)
     print(json.dumps(result))
 
