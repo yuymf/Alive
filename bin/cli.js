@@ -1489,7 +1489,7 @@ async function createPersonaCLI() {
     log('Generating random persona...');
 
     if (creator) {
-      const persona = creator.generatePersonaQuick({ name: name || undefined, tagline: tagline || undefined });
+      const persona = await creator.generatePersonaQuickAsync({ name: name || undefined, tagline: tagline || undefined });
       const savedPath = creator.savePersona(persona);
       const preview = creator.formatPersonaPreview(persona);
       console.log('\n' + preview + '\n');
@@ -1603,9 +1603,9 @@ async function createPersonaCLI() {
     // Use quick mode if no name/tagline, guided if both present
     let persona;
     if (options.name && options.tagline) {
-      persona = creator.generatePersonaGuided(options);
+      persona = await creator.generatePersonaGuidedAsync(options);
     } else {
-      persona = creator.generatePersonaQuick(options);
+      persona = await creator.generatePersonaQuickAsync(options);
     }
 
     const savedPath = creator.savePersona(persona);

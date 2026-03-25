@@ -8,6 +8,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import YAML from 'yaml';
 import type { PersonaConfig } from '../utils/types';
+import { callLLMJSON } from '../utils/llm-client';
+import { readTemplate } from '../utils/file-utils';
 
 // ── Random Pools (Chinese) ───────────────────────────────────────
 
@@ -550,4 +552,277 @@ ${persona.voice.sample_lines.map(l => `> ${l}`).join('\n')}
 
 ### 📖 人物简介
 > ${persona.personality.description || 'N/A'}`;
+}
+
+// ── LLM Output Type ─────────────────────────────────────────────
+
+/** Shape returned by the LLM from persona-generate-prompt.md */
+interface LLMPersonaOutput {
+  meta: {
+    name: string;
+    gender: string;
+    age?: number;
+    tagline: string;
+    occupation_detail?: string;
+  };
+  personality: {
+    mbti: string;
+    core_traits: string[];
+    quirks?: string[];
+    values?: string[];
+    trait_descriptions?: string;
+    mbti_description?: string;
+    domain_knowledge?: string;
+    interests_description?: string;
+    description?: string;
+  };
+  voice: {
+    language?: string;
+    style: string;
+    emoji_density?: 'low' | 'medium' | 'high';
+    sample_lines: string[];
+    expression_features?: string;
+    diary_style_guide?: string;
+  };
+  intimacy?: {
+    levels?: number;
+    behaviors: Record<number | string, string>;
+  };
+  schedule?: {
+    wake_hour: number;
+    sleep_hour: number;
+    timezone?: string;
+    active_peaks: number[];
+    time_state_description?: string;
+  };
+  content?: {
+    behavior_examples?: string;
+    diary_examples?: string;
+    search_topics?: string;
+  };
+}
+
+// ── Async LLM-Powered Generator ─────────────────────────────────
+
+/**
+ * Build the generation-mode description section for the prompt.
+ */
+function buildModeSection(options: QuickCreateOptions): string {
+  if (options.name || options.tagline) {
+    return '**快速模式**：用户提供了部分信息（名字和/或定位标签），请以此为基础丰富完善整个角色。';
+  }
+  return '**全随机模式**：用户没有提供任何信息，请完全自由发挥，创造一个独特有趣的角色。';
+}
+
+/**
+ * Build the seed-info section for the prompt.
+ */
+function buildSeedSection(options: QuickCreateOptions): string {
+  const parts: string[] = [];
+  if (options.name) parts.push(`- 名字：${options.name}`);
+  if (options.tagline) parts.push(`- 定位/标签：${options.tagline}`);
+  if (parts.length === 0) return '（无种子信息，完全自由创造）';
+  return parts.join('\n');
+}
+
+/**
+ * Build the user-constraints section for the prompt.
+ */
+function buildConstraintSection(options: QuickCreateOptions): string {
+  const constraints: string[] = [];
+  if (options.name) constraints.push(`- 角色名必须为「${options.name}」`);
+  if (options.tagline) constraints.push(`- tagline 必须包含「${options.tagline}」的核心含义`);
+  if (constraints.length === 0) return '（无硬约束）';
+  return constraints.join('\n');
+}
+
+/**
+ * Validate that the LLM output contains all critical required fields.
+ * Throws if any required field is missing, causing fallback to sync generator.
+ */
+function validateLLMOutput(output: LLMPersonaOutput): void {
+  if (!output.meta?.name) throw new Error('LLM output missing meta.name');
+  if (!output.personality?.mbti) throw new Error('LLM output missing personality.mbti');
+  if (!output.personality?.core_traits?.length) throw new Error('LLM output missing core_traits');
+  if (!output.voice?.sample_lines?.length) throw new Error('LLM output missing sample_lines');
+  if (!output.voice?.style) throw new Error('LLM output missing voice.style');
+}
+
+/**
+ * Map raw LLM output to a fully valid PersonaConfig.
+ * Ensures required fields are present and fixed values are set.
+ */
+function mapLLMOutputToPersona(llmOutput: LLMPersonaOutput): PersonaConfig {
+  const name = llmOutput.meta.name;
+  const id = generateId(name);
+
+  // Normalise intimacy behaviors keys to numbers
+  const rawBehaviors = llmOutput.intimacy?.behaviors ?? {};
+  const behaviors: Record<number, string> = {};
+  for (const [key, val] of Object.entries(rawBehaviors)) {
+    behaviors[Number(key)] = val;
+  }
+
+  return {
+    meta: {
+      name,
+      id,
+      gender: llmOutput.meta.gender,
+      age: llmOutput.meta.age,
+      tagline: llmOutput.meta.tagline,
+      occupation_detail: llmOutput.meta.occupation_detail,
+    },
+    personality: {
+      mbti: llmOutput.personality.mbti,
+      core_traits: llmOutput.personality.core_traits,
+      quirks: llmOutput.personality.quirks,
+      values: llmOutput.personality.values,
+      trait_descriptions: llmOutput.personality.trait_descriptions,
+      mbti_description: llmOutput.personality.mbti_description,
+      domain_knowledge: llmOutput.personality.domain_knowledge,
+      interests_description: llmOutput.personality.interests_description,
+      description: llmOutput.personality.description,
+    },
+    voice: {
+      language: 'zh-CN', // fixed
+      style: llmOutput.voice.style,
+      emoji_density: llmOutput.voice.emoji_density,
+      sample_lines: llmOutput.voice.sample_lines,
+      expression_features: llmOutput.voice.expression_features,
+      diary_style_guide: llmOutput.voice.diary_style_guide,
+    },
+    intimacy: llmOutput.intimacy ? {
+      levels: 5, // fixed
+      behaviors,
+    } : undefined,
+    schedule: llmOutput.schedule ? {
+      wake_hour: llmOutput.schedule.wake_hour,
+      sleep_hour: llmOutput.schedule.sleep_hour,
+      timezone: 'Asia/Shanghai', // fixed
+      active_peaks: llmOutput.schedule.active_peaks,
+      time_state_description: llmOutput.schedule.time_state_description,
+    } : undefined,
+    content: llmOutput.content ? {
+      behavior_examples: llmOutput.content.behavior_examples,
+      diary_examples: llmOutput.content.diary_examples,
+      search_topics: llmOutput.content.search_topics,
+    } : undefined,
+    sub_skills: [], // always empty for generated personas
+  };
+}
+
+/**
+ * Generate a persona using LLM (async).
+ * Falls back to the synchronous `generatePersonaQuick()` if the LLM call fails.
+ */
+export async function generatePersonaQuickAsync(options: QuickCreateOptions = {}): Promise<PersonaConfig> {
+  try {
+    // 1. Load prompt template
+    const template = readTemplate('persona-generate-prompt.md');
+
+    // 2. Fill placeholders
+    const prompt = template
+      .replace('{generation_mode}', buildModeSection(options))
+      .replace('{seed_info}', buildSeedSection(options))
+      .replace('{user_constraints}', buildConstraintSection(options));
+
+    // 3. Call LLM
+    const llmOutput = await callLLMJSON<LLMPersonaOutput>(prompt, 16384, 'persona-creator');
+
+    // 4. Validate critical fields before mapping
+    validateLLMOutput(llmOutput);
+
+    // 5. Map to PersonaConfig
+    return mapLLMOutputToPersona(llmOutput);
+  } catch (err) {
+    // Fallback to sync generator
+    console.warn(`[persona-creator] LLM generation failed, falling back to sync: ${(err as Error).message}`);
+    return generatePersonaQuick(options);
+  }
+}
+
+// ── Guided Async Helpers ─────────────────────────────────────────
+
+/**
+ * Build the generation-mode section for guided mode.
+ */
+function buildGuidedModeSection(options: GuidedCreateOptions): string {
+  return '**引导模式**：用户提供了详细的角色参数（名字、定位、性别、MBTI 等），请严格遵守这些约束，在此基础上丰富完善角色的所有维度。';
+}
+
+/**
+ * Build the seed-info section for guided mode.
+ */
+function buildGuidedSeedSection(options: GuidedCreateOptions): string {
+  const parts: string[] = [];
+  parts.push(`- 名字：${options.name}`);
+  parts.push(`- 定位/标签：${options.tagline}`);
+  if (options.age !== undefined) parts.push(`- 年龄：${options.age}`);
+  if (options.gender) {
+    const genderLabel = options.gender === 'female' ? '女' : options.gender === 'male' ? '男' : options.gender;
+    parts.push(`- 性别：${genderLabel}`);
+  }
+  if (options.mbti) parts.push(`- MBTI：${options.mbti.toUpperCase()}`);
+  if (options.coreTraits?.length) parts.push(`- 核心性格：${options.coreTraits.join('、')}`);
+  if (options.occupation) parts.push(`- 职业：${options.occupation}`);
+  if (options.occupationDetail) parts.push(`- 职业细节：${options.occupationDetail}`);
+  if (options.voiceStyle) parts.push(`- 说话风格：${options.voiceStyle}`);
+  if (options.scheduleType) parts.push(`- 作息类型：${options.scheduleType}`);
+  return parts.join('\n');
+}
+
+/**
+ * Build the user-constraints section for guided mode.
+ * All user-provided fields become hard constraints.
+ */
+function buildGuidedConstraintSection(options: GuidedCreateOptions): string {
+  const constraints: string[] = [];
+  constraints.push(`- 角色名必须为「${options.name}」`);
+  constraints.push(`- tagline 必须包含「${options.tagline}」的核心含义`);
+  if (options.gender) {
+    const genderLabel = options.gender === 'female' ? '女' : options.gender === 'male' ? '男' : options.gender;
+    constraints.push(`- 性别必须为「${genderLabel}」`);
+  }
+  if (options.age !== undefined) constraints.push(`- 年龄必须为 ${options.age}`);
+  if (options.mbti) constraints.push(`- MBTI 类型必须为「${options.mbti.toUpperCase()}」`);
+  if (options.coreTraits?.length) constraints.push(`- 核心性格必须包含：${options.coreTraits.join('、')}`);
+  if (options.occupation) constraints.push(`- 职业/身份必须为「${options.occupation}」`);
+  if (options.voiceStyle) constraints.push(`- 说话风格必须符合「${options.voiceStyle}」`);
+  if (options.scheduleType) {
+    const scheduleLabels: Record<string, string> = {
+      early: '早起型', normal: '正常型', late: '晚起型', night: '夜猫子型', healthy: '养生型',
+    };
+    constraints.push(`- 作息类型必须为「${scheduleLabels[options.scheduleType] ?? options.scheduleType}」`);
+  }
+  return constraints.join('\n');
+}
+
+/**
+ * Generate a persona from guided user input using LLM (async).
+ * Falls back to the synchronous `generatePersonaGuided()` if the LLM call fails.
+ */
+export async function generatePersonaGuidedAsync(options: GuidedCreateOptions): Promise<PersonaConfig> {
+  try {
+    // 1. Load prompt template
+    const template = readTemplate('persona-generate-prompt.md');
+
+    // 2. Fill placeholders with guided-mode specific content
+    const prompt = template
+      .replace('{generation_mode}', buildGuidedModeSection(options))
+      .replace('{seed_info}', buildGuidedSeedSection(options))
+      .replace('{user_constraints}', buildGuidedConstraintSection(options));
+
+    // 3. Call LLM
+    const llmOutput = await callLLMJSON<LLMPersonaOutput>(prompt, 16384, 'persona-creator');
+
+    // 4. Validate critical fields before mapping
+    validateLLMOutput(llmOutput);
+
+    // 5. Map to PersonaConfig
+    return mapLLMOutputToPersona(llmOutput);
+  } catch (err) {
+    // Fallback to sync generator
+    console.warn(`[persona-creator] LLM guided generation failed, falling back to sync: ${(err as Error).message}`);
+    return generatePersonaGuided(options);
+  }
 }
