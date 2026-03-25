@@ -75,13 +75,18 @@ export const PATHS = {
   // === Skill discovery ===
   get skillNeeds() { return path.join(getMemoryBase(), 'skill-needs.json'); },
 
-  // === Skill infra ===
-  get cronSchedule() { return path.join(getSkillBase(), 'cron-schedule.json'); },
-  get personaConfig() { return path.join(getSkillBase(), 'persona.yaml'); },
+  // === Persona-specific infra (per-persona in memory dir) ===
+  get cronSchedule() { return path.join(getMemoryBase(), 'cron-schedule.json'); },
+  get personaConfig() { return path.join(getMemoryBase(), 'persona.yaml'); },
+  get referencesDir() { return path.join(getMemoryBase(), 'assets', 'references'); },
+
+  // === Shared skill infra (global, not per-persona) ===
   get skillRegistry() { return path.join(getSkillBase(), 'skill-registry.json'); },
   get subSkillsDir() { return path.join(getSkillBase(), 'sub-skills'); },
   get assetsDir() { return path.join(getSkillBase(), 'assets'); },
-  get referencesDir() { return path.join(getSkillBase(), 'assets', 'references'); },
+
+  // === Legacy fallback paths (skill directory — for migration compat) ===
+  get skillPersonaConfig() { return path.join(getSkillBase(), 'persona.yaml'); },
 };
 
 /**

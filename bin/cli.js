@@ -478,9 +478,12 @@ async function install() {
   if (fs.existsSync(DIST_SRC)) {
     copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
   }
-  // Copy persona config into the skill directory as persona.yaml (canonical format)
+  // Copy persona config into BOTH skill directory (legacy compat) and memory directory (per-persona)
   installPersonaConfig(resolvedPersonaPath, skillDest);
+  fs.mkdirSync(memoryDir, { recursive: true });
+  fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona.yaml'));
   ok(`Alive framework copied to ${skillDest}`);
+  ok(`Persona config copied to ${path.join(memoryDir, 'persona.yaml')}`);
 
   // Step 4: Register in OpenClaw config
   log('Step 4/7: Registering skill in OpenClaw config...');
@@ -534,7 +537,7 @@ async function install() {
   const today = new Date().toISOString().slice(0, 10);
 
   const filesToInit = [
-    ['diary.md', `# ${personaName}の日記\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
+    ['diary.md', `# ${personaName}的日记\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
     ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
     ['emotion-state.json', JSON.stringify({
       mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
@@ -567,9 +570,9 @@ async function install() {
   log('Step 7/7: Registering heartbeat cron jobs...');
   if (isOpenClawCLIAvailable()) {
     const cronJobs = [
-      { name: `${skillSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
-      { name: `${skillSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
-      { name: `${skillSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
+      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
+      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
     ];
     for (const job of cronJobs) {
       try {
@@ -588,7 +591,7 @@ async function install() {
   console.log(`  Tips:`);
   console.log(`  - Just chat naturally. ${personaName} will remember you.`);
   console.log(`  - Memory lives at: ${memoryDir}`);
-  console.log(`  - Persona config: ${path.join(skillDest, 'persona.yaml')}`);
+  console.log(`  - Persona config: ${path.join(memoryDir, 'persona.yaml')}`);
   console.log(`  - Switch persona: alive --switch-persona --persona <path>`);
   console.log('');
 }
@@ -650,10 +653,18 @@ async function uninstall() {
 
   log('Removing cron jobs...');
   if (isOpenClawCLIAvailable()) {
+    // Remove new format cron jobs (alive:personaSlug:suffix)
+    for (const suffix of ['morning', 'tick', 'night']) {
+      try {
+        execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
+        ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
+      } catch { /* may not exist */ }
+    }
+    // Also clean legacy format cron jobs (alive:suffix)
     for (const suffix of ['morning', 'tick', 'night']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
-        ok(`Removed cron: ${skillSlug}:${suffix}`);
+        ok(`Removed legacy cron: ${skillSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
   }
@@ -826,10 +837,17 @@ async function reinstall() {
   // Step 5: Remove old cron jobs & clean SOUL.md
   log('Step 5/9: Removing old cron jobs & cleaning SOUL.md...');
   if (isOpenClawCLIAvailable()) {
+    // Remove new format cron jobs
+    for (const suffix of ['morning', 'tick', 'night']) {
+      try {
+        execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
+        ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
+      } catch { /* may not exist */ }
+    }
+    // Also clean legacy format cron jobs
     for (const suffix of ['morning', 'tick', 'night']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
-        ok(`Removed cron: ${skillSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
   } else {
@@ -857,7 +875,11 @@ async function reinstall() {
     copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
   }
   installPersonaConfig(resolvedPersonaPath, skillDest);
+  // Also copy to memory directory for per-persona isolation
+  fs.mkdirSync(memoryDir, { recursive: true });
+  fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona.yaml'));
   ok(`Alive framework copied to ${skillDest}`);
+  ok(`Persona config copied to ${path.join(memoryDir, 'persona.yaml')}`);
 
   // Step 7: Register in OpenClaw config
   log('Step 7/9: Registering skill in OpenClaw config...');
@@ -907,7 +929,7 @@ async function reinstall() {
   const today = new Date().toISOString().slice(0, 10);
 
   const filesToInit = [
-    ['diary.md', `# ${personaName}の日記\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
+    ['diary.md', `# ${personaName}的日记\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
     ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
     ['emotion-state.json', JSON.stringify({
       mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
@@ -937,9 +959,9 @@ async function reinstall() {
   // Register cron
   if (isOpenClawCLIAvailable()) {
     const cronJobs = [
-      { name: `${skillSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
-      { name: `${skillSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
-      { name: `${skillSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
+      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
+      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
     ];
     for (const job of cronJobs) {
       try {
@@ -960,7 +982,7 @@ async function reinstall() {
   console.log(`  Tips:`);
   console.log(`  - All memory has been wiped. ${personaName} starts fresh.`);
   console.log(`  - Memory lives at: ${memoryDir}`);
-  console.log(`  - Persona config: ${path.join(skillDest, 'persona.yaml')}`);
+  console.log(`  - Persona config: ${path.join(memoryDir, 'persona.yaml')}`);
   console.log(`  - Switch persona: alive --switch-persona --persona <path>`);
   console.log('');
 }
@@ -1037,9 +1059,12 @@ async function realDayTest() {
   if (fs.existsSync(memoryDir)) {
     removeDirSafe(memoryDir, 'Memory data');
   }
-  // Remove cron
+  // Remove cron (both new and legacy format)
   if (isOpenClawCLIAvailable()) {
     for (const suffix of ['morning', 'tick', 'night']) {
+      try {
+        execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
+      } catch { /* may not exist */ }
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -1065,8 +1090,10 @@ async function realDayTest() {
   if (fs.existsSync(DIST_SRC)) {
     copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
   }
-  // Write persona as persona.yaml (canonical format)
+  // Write persona as persona.yaml (canonical format) to both skill and memory dirs
   fs.writeFileSync(path.join(skillDest, 'persona.yaml'), personaRawContent);
+  fs.mkdirSync(memoryDir, { recursive: true });
+  fs.writeFileSync(path.join(memoryDir, 'persona.yaml'), personaRawContent);
   ok(`Framework copied to ${skillDest}`);
 
   // Register in config with preserved env keys
@@ -1099,7 +1126,7 @@ async function realDayTest() {
   const today = new Date().toISOString().slice(0, 10);
 
   const filesToInit = [
-    ['diary.md', `# ${personaName}の日記\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
+    ['diary.md', `# ${personaName}的日记\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
     ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
     ['emotion-state.json', JSON.stringify({
       mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
@@ -1129,9 +1156,9 @@ async function realDayTest() {
   // Register cron (optional)
   if (isOpenClawCLIAvailable()) {
     const cronJobs = [
-      { name: `${skillSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
-      { name: `${skillSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
-      { name: `${skillSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
+      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
+      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
     ];
     for (const job of cronJobs) {
       try {
@@ -1220,7 +1247,12 @@ async function switchPersona() {
 
   log(`Switching to persona: ${personaName} (${personaSlug})...`);
 
-  // 1. Update persona.yaml in skill directory
+  // 1. Copy persona.yaml to memory directory (per-persona isolation)
+  fs.mkdirSync(memoryDir, { recursive: true });
+  fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona.yaml'));
+  ok(`Persona config saved to ${path.join(memoryDir, 'persona.yaml')}`);
+
+  // Also update skill directory copy (legacy compat)
   installPersonaConfig(resolvedPersonaPath, skillDest);
   ok(`Updated persona.yaml in ${skillDest}`);
 
@@ -1248,7 +1280,7 @@ async function switchPersona() {
     const today = new Date().toISOString().slice(0, 10);
 
     const filesToInit = [
-      ['diary.md', `# ${personaName}の日記\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
+      ['diary.md', `# ${personaName}的日记\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
       ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
       ['emotion-state.json', JSON.stringify({
         mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
@@ -1291,16 +1323,38 @@ async function switchPersona() {
       existingEnv = cfg.skills?.entries?.[skillSlug]?.env || {};
     } catch { /* ignore */ }
   }
+  // Use memory dir for reference images (per-persona)
+  const personaRefsDir = path.join(memoryDir, 'assets', 'references');
   await setupReferenceImages({
     persona,
     personaYamlDir: path.dirname(resolvedPersonaPath),
-    skillDest,
+    skillDest: memoryDir, // references go to memory dir now
     rl,
     env: existingEnv,
   });
   rl.close();
 
-  // 5. Update SOUL.md
+  // 5. Register cron for new persona (additive — does NOT remove other personas' cron)
+  log('Registering cron for new persona...');
+  if (isOpenClawCLIAvailable()) {
+    const cronJobs = [
+      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
+      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
+    ];
+    for (const job of cronJobs) {
+      try {
+        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+        ok(`Registered cron: ${job.name}`);
+      } catch (err) {
+        warn(`Failed to register cron ${job.name}: ${err.message}`);
+      }
+    }
+  } else {
+    warn('OpenClaw CLI not found — skipping cron registration.');
+  }
+
+  // 6. Update SOUL.md
   if (fs.existsSync(SOUL_FILE)) {
     log('Updating SOUL.md...');
     let soul = fs.readFileSync(SOUL_FILE, 'utf8');
@@ -1491,6 +1545,14 @@ async function createPersonaCLI() {
     age = ageInput || null;
   }
 
+  // Step 3.5: Gender
+  let gender = getFlag('gender');
+  if (!gender) {
+    console.log('\n  性别可选: female(女) / male(男) / other');
+    const genderInput = (await ask(rl, '  性别（可选）: ')).trim().toLowerCase();
+    gender = genderInput || null;
+  }
+
   // Step 4: MBTI
   let mbti = getFlag('mbti');
   if (!mbti) {
@@ -1531,6 +1593,7 @@ async function createPersonaCLI() {
       name: name || undefined,
       tagline: tagline || undefined,
       age: age ? parseInt(age, 10) : undefined,
+      gender: gender || undefined,
       mbti: mbti || undefined,
       coreTraits: traits ? traits.split(/[,，]/).map(s => s.trim()).filter(Boolean) : undefined,
       occupation: occupation || undefined,
@@ -1577,15 +1640,17 @@ const INLINE_TRAITS = ['元气满满', '温柔', '毒舌', '社恐', '佛系', '
 const INLINE_OCCS = ['大学生', '自由插画师', '便利店店员', '咖啡店店主', '程序员', '视频博主', '花店学徒', '宠物店员'];
 
 function inlineGeneratePersona(name, tagline) {
+  const gender = Math.random() > 0.5 ? 'female' : 'male';
   const resolvedName = name || (inlinePick(INLINE_SURNAMES) + inlinePick(INLINE_GIVEN));
   const occ = inlinePick(INLINE_OCCS);
   const resolvedTagline = tagline || occ;
   const mbti = inlinePick(INLINE_MBTI);
   const traits = inlinePickN(INLINE_TRAITS, 3);
   const id = resolvedName.toLowerCase().replace(/[^a-z0-9]/g, '') || `persona-${Date.now().toString(36)}`;
+  const genderLabel = gender === 'female' ? '女' : '男';
 
   return {
-    meta: { name: resolvedName, id, tagline: resolvedTagline },
+    meta: { name: resolvedName, id, gender: genderLabel, tagline: resolvedTagline },
     personality: { mbti, core_traits: traits, quirks: [], values: [], description: `${resolvedName}，${resolvedTagline}。` },
     voice: { language: 'zh-CN', style: '口语化、活泼、短句多。', emoji_density: 'medium', sample_lines: ['你好呀！', '哈哈好的～', '嗯嗯！'] },
     intimacy: { levels: 5, behaviors: { 1: '礼貌有距离', 2: '友善开朗', 3: '放松聊天', 4: '亲近真实', 5: '完全袒露' } },

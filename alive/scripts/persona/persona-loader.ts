@@ -31,20 +31,28 @@ let _cachedPersona: PersonaConfig | null = null;
 
 /**
  * Load persona config from YAML file.
+ * Priority: memory directory (per-persona) → skill directory (legacy fallback).
  * Uses the `yaml` package for native YAML parsing.
  */
 export function loadPersona(customPath?: string): PersonaConfig {
   if (_cachedPersona) return _cachedPersona;
 
-  const yamlPath = customPath ?? PATHS.personaConfig;
-  if (!fs.existsSync(yamlPath)) {
-    throw new Error(`Persona config not found: ${yamlPath}. Run "alive --persona <path>" to install.`);
+  const memoryPath = customPath ?? PATHS.personaConfig;
+  if (fs.existsSync(memoryPath)) {
+    const raw = fs.readFileSync(memoryPath, 'utf8');
+    _cachedPersona = YAML.parse(raw) as PersonaConfig;
+    return _cachedPersona!;
   }
 
-  const raw = fs.readFileSync(yamlPath, 'utf8');
-  _cachedPersona = YAML.parse(raw) as PersonaConfig;
+  // Fallback: try legacy skill directory path
+  const skillPath = PATHS.skillPersonaConfig;
+  if (fs.existsSync(skillPath)) {
+    const raw = fs.readFileSync(skillPath, 'utf8');
+    _cachedPersona = YAML.parse(raw) as PersonaConfig;
+    return _cachedPersona!;
+  }
 
-  return _cachedPersona!;
+  throw new Error(`Persona config not found: ${memoryPath}. Run "alive --persona <path>" to install.`);
 }
 
 /** Clear cached persona (for testing). */
@@ -115,11 +123,16 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
   // Auto-generate sample_lines_formatted
   const sampleLinesFormatted = p.voice.sample_lines.map(s => `- 「${s}」`).join('\n');
 
+  // Compute gender pronoun for template use (她/他/ta)
+  const genderPronoun = p.meta.gender === '男' ? '他' : p.meta.gender === '女' ? '她' : 'ta';
+
   return template
     // === meta ===
     .replace(/{persona\.meta\.name}/g, p.meta.name)
     .replace(/{persona\.meta\.name_reading}/g, p.meta.name_reading ?? p.meta.name)
     .replace(/{persona\.meta\.age}/g, String(p.meta.age ?? ''))
+    .replace(/{persona\.meta\.gender}/g, p.meta.gender ?? '')
+    .replace(/{persona\.meta\.gender_pronoun}/g, genderPronoun)
     .replace(/{persona\.meta\.id}/g, p.meta.id ?? (p.meta.name_reading ?? p.meta.name).toLowerCase().replace(/\s+/g, '-'))
     .replace(/{persona\.meta\.tagline}/g, p.meta.tagline)
     .replace(/{persona\.meta\.occupation_detail}/g, p.meta.occupation_detail ?? '')
@@ -152,6 +165,8 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
     .replace(/{persona\.voice\.expression_features}/g, (p.voice.expression_features ?? '').trim())
     .replace(/{persona\.voice\.style_description}/g, p.voice.style_description ?? p.voice.style)
     .replace(/{persona\.voice\.sample_lines_formatted}/g, sampleLinesFormatted)
+    .replace(/{persona\.voice\.diary_style_guide}/g, (p.voice.diary_style_guide ?? '').trim())
+    .replace(/{persona\.voice\.language_mixing_instruction}/g, (p.voice.language_mixing_instruction ?? '').trim())
     // Aliases
     .replace(/{persona\.voice_style}/g, p.voice.style)
     .replace(/{persona\.sample_lines}/g, p.voice.sample_lines.map(s => `「${s}」`).join(' '))
@@ -164,6 +179,23 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
     .replace(/{persona\.schedule\.sleep_hour}/g, String(p.schedule?.sleep_hour ?? 23))
     .replace(/{persona\.schedule\.time_state_description}/g, (p.schedule?.time_state_description ?? '').trim())
     .replace(/{persona\.schedule\.time_descriptions}/g, (p.schedule?.time_descriptions ?? '').trim())
+    // === content (persona-specific examples & templates) ===
+    .replace(/{persona\.content\.behavior_examples}/g, (p.content?.behavior_examples ?? '').trim())
+    .replace(/{persona\.content\.action_examples_good}/g, (p.content?.action_examples_good ?? '').trim())
+    .replace(/{persona\.content\.diary_examples}/g, (p.content?.diary_examples ?? '').trim())
+    .replace(/{persona\.content\.night_diary_examples}/g, (p.content?.night_diary_examples ?? '').trim())
+    .replace(/{persona\.content\.reflection_examples}/g, (p.content?.reflection_examples ?? '').trim())
+    .replace(/{persona\.content\.search_topics}/g, (p.content?.search_topics ?? '').trim())
+    .replace(/{persona\.content\.photo_styles}/g, (p.content?.photo_styles ?? '').trim())
+    .replace(/{persona\.content\.caption_examples}/g, (p.content?.caption_examples ?? '').trim())
+    .replace(/{persona\.content\.hashtag_strategy}/g, (p.content?.hashtag_strategy ?? '').trim())
+    .replace(/{persona\.content\.content_types}/g, (p.content?.content_types ?? []).join('/'))
+    // Aliases (backward compat for templates using shorter paths)
+    .replace(/{persona\.behavior_examples}/g, (p.content?.behavior_examples ?? '').trim())
+    .replace(/{persona\.action_examples_good}/g, (p.content?.action_examples_good ?? '').trim())
+    .replace(/{persona\.diary_examples}/g, (p.content?.diary_examples ?? '').trim())
+    .replace(/{persona\.night_diary_examples}/g, (p.content?.night_diary_examples ?? '').trim())
+    .replace(/{persona\.reflection_examples}/g, (p.content?.reflection_examples ?? '').trim())
     // === content_sources ===
     .replace(/{persona\.content_sources\.platforms}/g, (p.content_sources?.platforms ?? []).join(', '))
     .replace(/{persona\.content_sources\.keywords}/g, (p.content_sources?.keywords ?? []).join(', '))
