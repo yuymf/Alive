@@ -174,17 +174,51 @@ export function createInstagramConfig() {
 
     /**
      * Plan post caption + hashtags (content-planner → PostIntent)
+     *
+     * If the content planner returns wantToPost=false or an empty caption
+     * (e.g. because photo-roll is empty at plan time), we generate a
+     * minimal but natural-sounding fallback caption based on the photo intent.
      */
     async planPost(
-      _photoIntent: unknown,
+      photoIntent: unknown,
       _imagePaths: string[],
       _emotion: unknown,
       _confidence: number,
     ) {
       const intent = await cpPlanPost();
+
+      // If cpPlanPost returned a meaningful caption, use it directly
+      if (intent.caption && intent.caption.trim().length > 0) {
+        console.log(`[instagram-adapter] planPost caption: "${intent.caption.slice(0, 60)}…"`);
+        return {
+          caption: intent.caption,
+          hashtags: intent.hashtags,
+          style: '',
+          photo_paths: intent.selectedPhotos,
+        };
+      }
+
+      // Fallback: cpPlanPost returned empty caption (wantToPost=false or LLM parse issue)
+      // Generate a natural-sounding default caption from photo intent context
+      const pi = photoIntent as { style?: string; scene_description?: string; emotion_tone?: string } | undefined;
+      const style = pi?.style ?? '';
+      const scene = pi?.scene_description ?? '';
+      const tone = pi?.emotion_tone ?? '';
+
+      // Build a simple, human-feeling caption
+      const fallbackCaptions = [
+        scene ? `${scene.slice(0, 40)}...` : null,
+        tone ? `今天的心情：${tone}` : null,
+        style ? `#${style.replace(/\s+/g, '')}` : null,
+        '📷',
+      ].filter(Boolean);
+      const fallbackCaption = fallbackCaptions.join(' ');
+
+      console.warn(`[instagram-adapter] planPost returned empty caption, using fallback: "${fallbackCaption}"`);
+
       return {
-        caption: intent.caption,
-        hashtags: intent.hashtags,
+        caption: fallbackCaption,
+        hashtags: intent.hashtags.length > 0 ? intent.hashtags : ['photography', 'daily'],
         style: '',
         photo_paths: intent.selectedPhotos,
       };

@@ -148,16 +148,22 @@ export function resolveRoute(intentCategory: string): RouteEntry | null {
 /**
  * Resolve a sub-skill route by skill name (e.g. "instagram", "social-engagement").
  * This searches all route entries for a matching skillName, regardless of intent category.
+ * Returns the highest-priority route among all matches (not just the first found).
  * Returns null if no sub-skill with that name is registered.
  */
 export function resolveRouteBySkillName(skillName: string): RouteEntry | null {
   const table = getRouteTable();
+  let best: RouteEntry | null = null;
   for (const routes of Object.values(table)) {
     for (const route of routes) {
-      if (route.skillName === skillName) return route;
+      if (route.skillName === skillName) {
+        if (!best || route.priority > best.priority) {
+          best = route;
+        }
+      }
     }
   }
-  return null;
+  return best;
 }
 
 // === Fuzzy Skill Name Resolution ===

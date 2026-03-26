@@ -242,6 +242,17 @@ export const actions = {
       );
     }
 
+    // Guard: never publish without a caption (empty captions lack 活人感)
+    if (!postIntent.caption || postIntent.caption.trim().length === 0) {
+      console.warn(`[instagram] planPost returned empty caption, aborting publish`);
+      return createResult(
+        '想了半天文案还是不满意，算了下次再发',
+        { vitality_cost: 10, emotion_deltas: [{ stress: 0.02 }] },
+      );
+    }
+
+    console.log(`[instagram] Caption: "${postIntent.caption.slice(0, 80)}…", Hashtags: ${postIntent.hashtags.length}`);
+
     // 5. Publish
     let publishResult: { media_id: string; success: boolean };
     try {

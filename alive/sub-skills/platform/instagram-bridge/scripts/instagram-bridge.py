@@ -90,19 +90,22 @@ def _get_cookie_client() -> Client:
         return None
 
     mid_val = os.environ.get("INSTAGRAM_MID", "")
-    ig_did = os.environ.get("INSTAGRAM_IG_DID", "cookie-bridge")
+    ig_did = os.environ.get("INSTAGRAM_IG_DID", "")
+    datr_val = os.environ.get("INSTAGRAM_DATR", "")
+    rur_val = os.environ.get("INSTAGRAM_RUR", "")
 
     cl = Client()
     cl.delay_range = [1, 3]
 
     # Build minimal settings dict (avoids triggering instagrapi init with
     # missing device signatures that cause challenge_required on private API)
+    device_id = ig_did or "cookie-bridge"
     settings = {
         "uuids": {
-            "phone_id": ig_did,
-            "uuid": ig_did,
-            "client_session_id": ig_did,
-            "advertising_id": ig_did,
+            "phone_id": device_id,
+            "uuid": device_id,
+            "client_session_id": device_id,
+            "advertising_id": device_id,
         },
         "authorization_data": {
             "ds_user_id": ds_user_id or "",
@@ -112,7 +115,9 @@ def _get_cookie_client() -> Client:
     }
     cl.set_settings(settings)
 
-    # Inject cookies directly into the HTTP session
+    # Inject cookies directly into the HTTP session.
+    # Inject ALL available cookies — Instagram validates multiple cookie fields
+    # for API operations (not just sessionid).
     cl.private.cookies.set("sessionid", sessionid, domain=".instagram.com")
     if csrftoken:
         cl.private.cookies.set("csrftoken", csrftoken, domain=".instagram.com")
@@ -120,7 +125,16 @@ def _get_cookie_client() -> Client:
         cl.private.cookies.set("ds_user_id", ds_user_id, domain=".instagram.com")
     if mid_val:
         cl.private.cookies.set("mid", mid_val, domain=".instagram.com")
-    cl.private.cookies.set("ig_did", ig_did, domain=".instagram.com")
+    if ig_did:
+        cl.private.cookies.set("ig_did", ig_did, domain=".instagram.com")
+    if datr_val:
+        cl.private.cookies.set("datr", datr_val, domain=".instagram.com")
+    if rur_val:
+        cl.private.cookies.set("rur", rur_val, domain=".instagram.com")
+    # Inject extra static cookies that Instagram expects
+    cl.private.cookies.set("ig_nrcb", "1", domain=".instagram.com")
+    cl.private.cookies.set("ps_n", "1", domain=".instagram.com")
+    cl.private.cookies.set("ps_l", "1", domain=".instagram.com")
 
     # Verify session is valid with a lightweight API call.
     # Use private.get() directly to avoid instagrapi's response parsing
@@ -192,21 +206,73 @@ def _get_password_client() -> Client:
 def get_client() -> Client:
     """Create and authenticate an instagrapi Client.
 
-    Login strategy:
-      1. Try cookie-based auth (INSTAGRAM_SESSIONID) — avoids UFAC challenge.
-      2. Fall back to password-based login.
+    Login strategy (ordered by reliability for WRITE operations):
+      1. Restore a saved password-based session (ig-session.json) — most reliable.
+      2. Fresh password-based login — creates proper mobile API session.
+      3. Cookie-based auth (INSTAGRAM_SESSIONID) — works for reads but
+         often fails for writes (upload/configure) due to missing mobile
+         device signatures.
     """
-    # Try cookie-based auth first
+    # Strategy 1: Restore saved session (from a previous password login)
+    if SESSION_PATH.exists():
+        try:
+            cl = Client()
+            cl.delay_range = [1, 3]
+            cl.load_settings(SESSION_PATH)
+            # Re-login with credentials to refresh token if needed
+            username = os.environ.get("INSTAGRAM_USERNAME")
+            password = os.environ.get("INSTAGRAM_PASSWORD")
+            if username and password:
+                cl.login(username, password)
+            else:
+                # No credentials, just verify the session works
+                uid = cl.user_id
+                resp = cl.private.get(f"https://i.instagram.com/api/v1/users/{uid}/info/")
+                if resp.status_code != 200:
+                    raise RuntimeError("Saved session invalid")
+            print(f"Restored saved session (user_id={cl.user_id})", file=sys.stderr)
+            return cl
+        except Exception as e:
+            print(f"Saved session restore failed: {e}, trying fresh login...", file=sys.stderr)
+            try:
+                SESSION_PATH.unlink()
+            except Exception:
+                pass
+
+    # Strategy 2: Fresh password-based login (creates proper mobile session)
+    username = os.environ.get("INSTAGRAM_USERNAME")
+    password = os.environ.get("INSTAGRAM_PASSWORD")
+    if username and password:
+        try:
+            cl = _get_password_client()
+            print(f"Password login successful (user_id={cl.user_id})", file=sys.stderr)
+            return cl
+        except Exception as e:
+            print(f"Password login failed: {e}, trying cookie auth...", file=sys.stderr)
+
+    # Strategy 3: Cookie-based auth (fallback — good for reads, unreliable for writes)
     cl = _get_cookie_client()
     if cl is not None:
         return cl
 
-    # Fall back to password-based login
-    return _get_password_client()
+    raise RuntimeError(
+        "All login strategies failed. Provide INSTAGRAM_USERNAME+PASSWORD "
+        "or valid INSTAGRAM_SESSIONID."
+    )
+
+
+# Track whether we've already fallen back to password login during retry
+_retry_used_password = False
 
 
 def with_retry(fn):
-    """Retry with exponential backoff on RateLimitError, re-login on LoginRequired."""
+    """Retry with exponential backoff on RateLimitError, re-login on LoginRequired.
+
+    On LoginRequired, force a fresh password login (not cookie auth) since
+    cookie-based sessions cannot perform write operations (upload/configure).
+    """
+    global _retry_used_password
+    _retry_used_password = False
     last_error = None
     attempts_made = 0
     for attempt in range(MAX_RETRIES):
@@ -214,11 +280,16 @@ def with_retry(fn):
         try:
             return fn()
         except LoginRequired:
-            print(f"LoginRequired on attempt {attempt + 1}, re-authenticating...", file=sys.stderr)
-            # Force fresh login by removing session
+            print(f"LoginRequired on attempt {attempt + 1}, forcing password re-auth...", file=sys.stderr)
+            # Force fresh password login by removing session AND
+            # temporarily clearing SESSIONID so get_client() won't
+            # use cookie auth again.
             if SESSION_PATH.exists():
-                SESSION_PATH.unlink()
-            # Retry will trigger fresh login via get_client()
+                try:
+                    SESSION_PATH.unlink()
+                except Exception:
+                    pass
+            _retry_used_password = True
             last_error = "LoginRequired after re-auth"
         except RateLimitError:
             delay = RETRY_BASE_DELAY * (2 ** attempt)
@@ -484,12 +555,33 @@ def _normalize_album_paths(image_paths):
 
 
 def cmd_upload_album(args):
-    """Upload a carousel/album post."""
+    """Upload a carousel/album post.
+
+    If configure_sidecar fails (500 error), falls back to uploading only
+    the first image as a single photo. This prevents broken/corrupted posts
+    from appearing on the user's profile.
+    """
     image_paths = json.loads(args.images)
+
+    # Single image: always use photo_upload (sidecar is unreliable for 1 image)
+    if len(image_paths) == 1:
+        p = Path(image_paths[0])
+        if not p.exists():
+            raise FileNotFoundError(f"Image not found: {p}")
+
+        def do_single():
+            cl = get_client()
+            media = cl.photo_upload(p, args.caption or '')
+            return {"media_pk": str(media.pk), "fallback": "single_photo"}
+
+        result = with_retry(do_single)
+        print(json.dumps(result))
+        return
+
     normalized_paths, temp_files = _normalize_album_paths(image_paths)
 
     try:
-        def do_upload():
+        def do_album():
             cl = get_client()
             media = cl.album_upload(
                 paths=normalized_paths,
@@ -497,8 +589,26 @@ def cmd_upload_album(args):
             )
             return {"media_pk": str(media.pk)}
 
-        result = with_retry(do_upload)
-        print(json.dumps(result))
+        try:
+            result = with_retry(do_album)
+            print(json.dumps(result))
+        except RuntimeError as album_err:
+            err_msg = str(album_err)
+            if "500" in err_msg or "configure_sidecar" in err_msg:
+                # configure_sidecar 500 — fallback to first photo only
+                print(
+                    f"Album upload failed ({err_msg}), falling back to single photo...",
+                    file=sys.stderr,
+                )
+                def do_fallback():
+                    cl = get_client()
+                    media = cl.photo_upload(normalized_paths[0], args.caption or '')
+                    return {"media_pk": str(media.pk), "fallback": "single_photo_after_album_500"}
+
+                fallback_result = with_retry(do_fallback)
+                print(json.dumps(fallback_result))
+            else:
+                raise
     finally:
         for temp in temp_files:
             try:

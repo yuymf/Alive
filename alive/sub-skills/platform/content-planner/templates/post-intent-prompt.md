@@ -51,7 +51,9 @@
 - `coverPhoto` 必须从 `selectedPhotos` 中选择。
 - `selectedPhotos[0]` 必须等于 `coverPhoto`（首图强制置顶）。
 - `selectedPhotos` 不要出现重复文件名。
-- 如果不想发帖：`wantToPost=false`，并返回空 `selectedPhotos` 和空 `coverPhoto`。
+- **`caption` 绝对不能为空字符串！** 即使只是简单的一句话+emoji，也要写点什么。空文案的帖子完全没有活人感。
+- `caption` 要像一个真实的人在发ins——随性、有情绪、有细节，不要像AI或者运营号。
+- 如果不想发帖：`wantToPost=false`，并返回空 `selectedPhotos` 和空 `coverPhoto`。但 `caption` 仍然要写一个备选文案（万一之后改主意了可以用）。
 
 以 JSON 格式返回：
 ```json

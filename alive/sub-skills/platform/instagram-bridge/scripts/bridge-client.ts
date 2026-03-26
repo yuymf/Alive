@@ -181,9 +181,28 @@ export interface CommentResult {
 }
 
 /**
+ * Upload a single photo to Instagram.
+ */
+export async function uploadPhoto(imagePath: string, caption: string): Promise<string> {
+  const result = await callInstagramBridge('upload_photo', {
+    image: imagePath,
+    caption,
+  });
+  return (result as { media_pk: string }).media_pk;
+}
+
+/**
  * Upload a carousel/album post to Instagram.
+ * Automatically falls back to single photo upload when only 1 image is provided,
+ * because configure_sidecar (album API) is unreliable for single-image posts
+ * and can return 500 errors that corrupt the post on desktop.
  */
 export async function uploadAlbum(imagePaths: string[], caption: string): Promise<string> {
+  // Single image: use upload_photo instead of album (avoids configure_sidecar 500 errors)
+  if (imagePaths.length === 1) {
+    return uploadPhoto(imagePaths[0], caption);
+  }
+
   const result = await callInstagramBridge('upload_album', {
     images: JSON.stringify(imagePaths),
     caption,

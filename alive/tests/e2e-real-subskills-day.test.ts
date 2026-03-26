@@ -51,6 +51,9 @@ function tryLoadApiKeys(): boolean {
       'LLM_API_KEY', 'LLM_API_BASE', 'LLM_MODEL',
       'AIHUBMIX_API_KEY', 'FAL_KEY', 'IMGURL_TOKEN',
       'INSTAGRAM_USERNAME', 'INSTAGRAM_PASSWORD',
+      'INSTAGRAM_SESSIONID', 'INSTAGRAM_CSRFTOKEN', 'INSTAGRAM_DS_USER_ID',
+      'INSTAGRAM_TOTP_SECRET',
+      'INSTAGRAM_MID', 'INSTAGRAM_IG_DID', 'INSTAGRAM_DATR', 'INSTAGRAM_RUR',
       'EXA_API_KEY',
     ];
     for (const k of keys) {
@@ -120,6 +123,21 @@ describe.skipIf(!shouldRun)('E2E: Real Sub-Skills Full Day (水瀬)', () => {
     fs.mkdirSync(path.join(tmpDir, 'templates'), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, 'photo-roll'), { recursive: true });
     fs.mkdirSync(path.join(tmpDir, 'references'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'assets', 'references'), { recursive: true });
+
+    // Pre-seed reference images for image generation pipeline
+    // PATHS.referencesDir = <memoryBase>/assets/references/ — must copy to correct location
+    // Also keep a copy in <tmpDir>/references/ for backward compat
+    const sourceRef = path.join(__dirname, '..', 'personas', 'minase-source.png');
+    if (fs.existsSync(sourceRef)) {
+      for (const refName of ['front.png', 'half-body.png', 'full-body.png', 'left-profile.png']) {
+        fs.copyFileSync(sourceRef, path.join(tmpDir, 'assets', 'references', refName));
+        fs.copyFileSync(sourceRef, path.join(tmpDir, 'references', refName));
+      }
+      console.log('  ✓ Reference images pre-seeded from minase-source.png');
+    } else {
+      console.warn('  ⚠ minase-source.png not found — image generation will fail');
+    }
 
     fs.writeFileSync(path.join(tmpDir, 'persona.yaml'), YAML.stringify(TEST_PERSONA));
 
@@ -159,6 +177,15 @@ describe.skipIf(!shouldRun)('E2E: Real Sub-Skills Full Day (水瀬)', () => {
     if (!fs.existsSync(testManifest)) throw new Error(`Missing manifest: ${testManifest}`);
     if (!fs.existsSync(testIndex)) throw new Error(`Missing index.js: ${testIndex}`);
     console.log(`  Sub-skills: dist=${distSubSkillsDir} (symlinked to sandbox)`);
+
+    // Pre-seed post-impulse so Instagram can actually post (threshold=80, start at 85)
+    fs.writeFileSync(path.join(tmpDir, 'post-impulse.json'), JSON.stringify({
+      impulse: 85,
+      last_accumulated: null,
+      daily_accumulation: 0,
+      dormancy_days: 0,
+      last_posted_date: null,
+    }));
 
     setLlmLogPath(path.join(tmpDir, 'llm-call-log.jsonl'));
     llm = createRealLLMClient('e2e-real-subskills-day');
@@ -471,7 +498,7 @@ describe.skipIf(!shouldRun)('E2E: Real Sub-Skills Full Day (水瀬)', () => {
     if (diary.length < 500) {
       issue('warning', 'diary', `全天日记仅 ${diary.length} 字 — 内容过少`);
     }
-  }, 1800_000); // 30 min timeout — real APIs (image gen, search, social) take much longer
+  }, 3000_000); // 50 min timeout — real APIs (image gen + publish, search, social) take much longer
 
   // ── Phase 3: Night Reflection ──────────────────────────────
 
