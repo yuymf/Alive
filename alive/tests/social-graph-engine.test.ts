@@ -30,8 +30,7 @@ function makeRelation(overrides: Partial<SocialRelation> = {}): SocialRelation {
 
 function makeMeta(): SocialMeta {
   return {
-    instagram_following: [],
-    xiaohongshu_following: [],
+    following: {},
     stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 },
   };
 }
@@ -160,6 +159,21 @@ describe('processDormancy', () => {
 });
 
 describe('rebalanceTiers', () => {
+  it('demotes excess core relations to familiar', () => {
+    const relations: SocialRelation[] = [];
+    for (let i = 0; i < 7; i++) {
+      relations.push(makeRelation({
+        id: `core_${i}`,
+        relationship: { closeness: 8 + (i * 0.1), sentiment: 'positive', tags: [] },
+      }));
+    }
+    const rebalanced = rebalanceTiers(relations);
+    const core = rebalanced.filter(r => r.relationship.closeness > 7);
+    const familiar = rebalanced.filter(r => r.relationship.closeness >= 4 && r.relationship.closeness <= 7);
+    expect(core.length).toBeLessThanOrEqual(5);
+    expect(familiar.length).toBeGreaterThan(0);
+  });
+
   it('demotes excess familiar to cognitive', () => {
     const relations: SocialRelation[] = [];
     for (let i = 0; i < 18; i++) {
@@ -189,7 +203,7 @@ describe('generateSocialIntents', () => {
     ];
     const intents = generateSocialIntents(relations, makeMeta(), now);
     expect(intents.length).toBeGreaterThanOrEqual(1);
-    expect(intents[0].category).toBe('社交');
+    expect(intents[0].category).toBe('connect');
     expect(intents[0].description).toContain('BestFriend');
   });
 

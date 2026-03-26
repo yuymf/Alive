@@ -31,7 +31,7 @@ import {
   applyResistanceToPool, checkImpulseBreakthrough, processProcrastination,
 } from '../engines/intent';
 import { drainVitality, applyActionCost, replenishVitality, getVitalityConstraints, DEFAULT_VITALITY, afternoonRestRecovery } from '../engines/vitality';
-import { updateConfidenceFromBatch, decayConfidence, getCreationRateMultiplier, getConfidenceMoodHint, DEFAULT_CONFIDENCE } from '../engines/confidence';
+import { updateConfidenceFromBatch, decayConfidence, getProduceRateMultiplier, getConfidenceMoodHint, DEFAULT_CONFIDENCE } from '../engines/confidence';
 import {
   checkFlowEntry, checkDriftEntry, checkFlowExit, checkDriftExit,
   tickFlow, resetFlow, generateFlowDiary, generateDriftDiary,
@@ -43,7 +43,7 @@ import {
   updateMetaStats, reactivateRelation, classifyTier,
 } from '../world/social-graph-engine';
 import { isActiveHeartbeatHour } from '../world/heartbeat-gate';
-import { loadPersona, injectPersona, buildVoiceSignature } from '../persona/persona-loader';
+import { loadPersona, injectPersona, buildVoiceSignature, getEmotionCouplingConfigs } from '../persona/persona-loader';
 import { resolveRoute, resolveRouteBySkillName, fuzzyResolveSkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
 import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
@@ -94,10 +94,11 @@ const DEFAULT_SCHEDULE: ScheduleToday = { date: null, rigid: [], flexible: [], g
 const DEFAULT_EVENT_QUEUE: EventQueue = { events: [], max_size: HEARTBEAT_CONFIG.EVENT_QUEUE_MAX_SIZE };
 const DEFAULT_HEARTBEAT_LOG: HeartbeatLog = { logs: [], retention_days: HEARTBEAT_CONFIG.LOG_RETENTION_DAYS };
 
-const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想']);
+const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['produce', 'connect', 'consume', 'express', 'learn', 'rest', 'aspire']);
 
 function toIntentCategory(s: string): IntentCategory {
-  return VALID_CATEGORIES.has(s) ? s as IntentCategory : '表达';
+  if (VALID_CATEGORIES.has(s)) return s as IntentCategory;
+  return 'express';
 }
 
 interface HeartbeatDecision {
@@ -240,6 +241,7 @@ export async function regularTick(
 
   const persona = loadPersona();
   const voiceSignature = buildVoiceSignature(persona);
+  const intentEnabled = isFeatureEnabled(persona, 'intent');
 
   // 0b. Set timezone from persona config (fixes UTC vs local time issue)
   setTimezone(persona.schedule?.timezone ?? null);
@@ -367,8 +369,10 @@ export async function regularTick(
 
       // P0-2: Flow 期间仍需运行 intent 消化逻辑
       // 即使在 flow 中，intent 仍然会积累和衰变，避免 intent 堆积
-      intentPool = decaySatisfied(intentPool);
-      intentPool = accumulateIntents(intentPool, hour, 24, heartbeatLog.logs.filter(l => l.status === 'completed').slice(-10).length, hasNewEvent);
+      if (intentEnabled) {
+        intentPool = decaySatisfied(intentPool);
+        intentPool = accumulateIntents(intentPool, hour, 24, heartbeatLog.logs.filter(l => l.status === 'completed').slice(-10).length, hasNewEvent);
+      }
 
       let flowDiary: string;
       let tickSummary: string;
@@ -448,43 +452,47 @@ export async function regularTick(
   const consecutiveActive = heartbeatLog.logs.filter(l => l.status === 'completed').slice(-10).length;
   const lastActionHoursAgo = 24; // generic fallback
 
-  // 5. Intent phase: rule engine
-  intentPool = decaySatisfied(intentPool);
-  intentPool = accumulateIntents(intentPool, hour, lastActionHoursAgo, consecutiveActive, hasNewEvent);
-  intentPool = applyEventBoosts(intentPool, events);
-  intentPool = injectScheduleIntents(intentPool, schedule, hour);
-
-  // 5b. Inject social graph intents
-  for (const si of socialIntents) {
-    intentPool = addIntent(intentPool, si.category, si.description, si.intensity, 'accumulation');
-  }
-
-  // 5c. Apply emotion→intent coupling
-  const couplingMultipliers = computeEmotionIntentCoupling(emotion);
   const vitalityConstraints = getVitalityConstraints(vitality.vitality);
-  const creationMultiplier = getCreationRateMultiplier(confidence.confidence);
-  intentPool = {
-    ...intentPool,
-    intents: intentPool.intents.map(i => {
-      if (i.satisfied_at !== null) return i;
-      const coupling = couplingMultipliers[i.category] ?? 1.0;
-      const vitalityMod = vitalityConstraints.intentMultiplier;
-      const confidenceMod = i.category === '创作' ? creationMultiplier : 1.0;
-      const adjustedIntensity = Math.min(10, i.intensity * coupling * vitalityMod * confidenceMod);
-      return adjustedIntensity !== i.intensity ? { ...i, intensity: adjustedIntensity } : i;
-    }),
-  };
+  const produceMultiplier = getProduceRateMultiplier(confidence.confidence);
 
-  // 5d. Apply dynamic resistance
-  intentPool = applyResistanceToPool(
-    intentPool, vitality.vitality, confidence.confidence,
-    false, null, rigidNow,
-  );
+  // 5. Intent phase: rule engine
+  if (intentEnabled) {
+    intentPool = decaySatisfied(intentPool);
+    intentPool = accumulateIntents(intentPool, hour, lastActionHoursAgo, consecutiveActive, hasNewEvent);
+    intentPool = applyEventBoosts(intentPool, events);
+    intentPool = injectScheduleIntents(intentPool, schedule, hour);
 
-  // 5e. Check impulse breakthrough
-  const breakthrough = checkImpulseBreakthrough(intentPool, vitality.vitality, false);
-  if (breakthrough) {
-    console.log(`Impulse breakthrough: ${breakthrough.description}`);
+    // 5b. Inject social graph intents
+    for (const si of socialIntents) {
+      intentPool = addIntent(intentPool, si.category, si.description, si.intensity, 'accumulation');
+    }
+
+    // 5c. Apply emotion→intent coupling (uses persona.intent_config if available)
+    const emotionCouplings = getEmotionCouplingConfigs(persona);
+    const couplingMultipliers = computeEmotionIntentCoupling(emotion, emotionCouplings);
+    intentPool = {
+      ...intentPool,
+      intents: intentPool.intents.map(i => {
+        if (i.satisfied_at !== null) return i;
+        const coupling = couplingMultipliers[i.category] ?? 1.0;
+        const vitalityMod = vitalityConstraints.intentMultiplier;
+        const confidenceMod = i.category === 'produce' ? produceMultiplier : 1.0;
+        const adjustedIntensity = Math.min(10, i.intensity * coupling * vitalityMod * confidenceMod);
+        return adjustedIntensity !== i.intensity ? { ...i, intensity: adjustedIntensity } : i;
+      }),
+    };
+
+    // 5d. Apply dynamic resistance
+    intentPool = applyResistanceToPool(
+      intentPool, vitality.vitality, confidence.confidence,
+      false, null, rigidNow,
+    );
+
+    // 5e. Check impulse breakthrough
+    const breakthrough = checkImpulseBreakthrough(intentPool, vitality.vitality, false);
+    if (breakthrough) {
+      console.log(`Impulse breakthrough: ${breakthrough.description}`);
+    }
   }
 
   // 5f. Context-aware random event (gated by features.random_events)
@@ -523,13 +531,15 @@ export async function regularTick(
   let template = readTemplate('heartbeat-prompt.md');
   template = injectPersona(template, persona);
 
-  const intentSummary = getTopIntentsRaw(intentPool, HEARTBEAT_CONFIG.TOP_INTENTS_FOR_LLM)
-    .map(i => {
-      const net = i.intensity - i.resistance;
-      const skippedInfo = i.skipped_count > 0 ? `, 拖延: ${i.skipped_count}次` : '';
-      return `- [${i.category}] ${i.description} (强度: ${i.intensity.toFixed(1)}, 门槛: ${i.resistance.toFixed(1)}, 净值: ${net.toFixed(1)}${skippedInfo}) id=${i.id}`;
-    })
-    .join('\n');
+  const intentSummary = intentEnabled
+    ? getTopIntentsRaw(intentPool, HEARTBEAT_CONFIG.TOP_INTENTS_FOR_LLM)
+        .map(i => {
+          const net = i.intensity - i.resistance;
+          const skippedInfo = i.skipped_count > 0 ? `, 拖延: ${i.skipped_count}次` : '';
+          return `- [${i.category}] ${i.description} (强度: ${i.intensity.toFixed(1)}, 门槛: ${i.resistance.toFixed(1)}, 净值: ${net.toFixed(1)}${skippedInfo}) id=${i.id}`;
+        })
+        .join('\n')
+    : '（intent 引擎已关闭）';
 
   const personalityDrift = readJSON(PATHS.personalityDrift, { base: persona.personality.mbti, modifiers: [] });
   const personalityContext = `${persona.personality.mbti}基底。${personalityDrift.modifiers.map((m: { effect: string }) => m.effect).join('；')}`;
@@ -590,8 +600,10 @@ export async function regularTick(
   }
 
   // 7. Apply LLM decisions to intent pool
-  for (const newImpulse of decision.new_impulses) {
-    intentPool = addIntent(intentPool, toIntentCategory(newImpulse.category), newImpulse.description, newImpulse.intensity, 'llm');
+  if (intentEnabled) {
+    for (const newImpulse of decision.new_impulses) {
+      intentPool = addIntent(intentPool, toIntentCategory(newImpulse.category), newImpulse.description, newImpulse.intensity, 'llm');
+    }
   }
 
   // 8. Execute actions
@@ -601,7 +613,7 @@ export async function regularTick(
   const collectedFeedback: FeedbackEvent[] = [];
 
   for (const action of decision.chosen_actions) {
-    if (action.satisfies_intent) {
+    if (intentEnabled && action.satisfies_intent) {
       chosenIntentIds.add(action.satisfies_intent);
       const satisfiedIntent = intentPool.intents.find(i => i.id === action.satisfies_intent);
       intentPool = satisfyIntent(intentPool, action.satisfies_intent);
@@ -732,8 +744,8 @@ export async function regularTick(
     confidence = updateConfidenceFromBatch(confidence, collectedFeedback);
   }
 
-  // 8c. Procrastination tracking (gated by features.procrastination)
-  if (isFeatureEnabled(persona, 'procrastination')) {
+  // 8c. Procrastination tracking (gated by features.procrastination + features.intent)
+  if (intentEnabled && isFeatureEnabled(persona, 'procrastination')) {
     const procResult = processProcrastination(intentPool, chosenIntentIds, Math.random, emotion.stress);
     intentPool = procResult.pool;
     if (procResult.stressDelta > 0) {

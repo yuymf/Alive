@@ -2,7 +2,7 @@
 // Emotion computation engine — generalized for any persona
 // Three-layer model: Impulse → Momentum → Undertone
 
-import { EmotionState, EmotionDelta, EmotionMomentum, ImpulseHistoryEntry } from '../utils/types';
+import { EmotionState, EmotionDelta, EmotionMomentum, ImpulseHistoryEntry, MetaIntent, ALL_META_INTENTS, EmotionCouplingConfig, DEFAULT_EMOTION_COUPLING } from '../utils/types';
 import { getEmotionBaseline } from '../persona/persona-loader';
 import { now } from '../utils/time-utils';
 import { EMOTION_CONFIG } from '../config';
@@ -136,27 +136,41 @@ export const EVENT_DELTAS: Record<string, { delta: EmotionDelta; cause: string }
 
 // === Emotion → Intent Coupling ===
 
-export function computeEmotionIntentCoupling(emotion: EmotionState): Record<string, number> {
-  return {
-    '创作': 1.0 + 0.5 * emotion.creativity,
-    '社交': 1.0 + 0.3 * emotion.sociability - 0.2 * emotion.stress,
-    '窥屏': 1.0 + 0.2 * (1.0 - emotion.energy),
-    '休息': 1.0 + 0.8 * (1.0 - emotion.energy),
-    '表达': 1.0 + 0.3 * Math.abs(emotion.mood.valence),
-    '学习': 1.0 + 0.2 * emotion.creativity - 0.3 * emotion.stress,
-    '梦想': 1.0 + 0.2 * emotion.mood.valence,
-  };
+/**
+ * Compute emotion→intent coupling multipliers.
+ * When couplingConfig is provided (from persona.intent_config), uses those weights.
+ * Otherwise falls back to DEFAULT_EMOTION_COUPLING.
+ */
+export function computeEmotionIntentCoupling(
+  emotion: EmotionState,
+  couplingConfig?: Record<MetaIntent, EmotionCouplingConfig>,
+): Record<string, number> {
+  const config = couplingConfig ?? DEFAULT_EMOTION_COUPLING;
+  const result: Record<string, number> = {};
+  for (const intent of ALL_META_INTENTS) {
+    const c = config[intent] ?? {};
+    let multiplier = 1.0;
+    if (c.creativity)      multiplier += c.creativity * emotion.creativity;
+    if (c.sociability)     multiplier += c.sociability * emotion.sociability;
+    if (c.stress)          multiplier += c.stress * emotion.stress;
+    if (c.energy_inverse)  multiplier += c.energy_inverse * (1.0 - emotion.energy);
+    if (c.valence)         multiplier += c.valence * emotion.mood.valence;
+    if (c.valence_abs)     multiplier += c.valence_abs * Math.abs(emotion.mood.valence);
+    if (c.arousal)         multiplier += c.arousal * emotion.mood.arousal;
+    result[intent] = multiplier;
+  }
+  return result;
 }
 
 export function intentSatisfactionFeedback(emotion: EmotionState, category: string): EmotionState {
   const feedbacks: Record<string, EmotionDelta> = {
-    '创作': { creativity: 0.1, valence: 0.1 },
-    '社交': { sociability: 0.15, valence: 0.05 },
-    '窥屏': { energy: -0.05 },
-    '休息': { energy: 0.15, stress: -0.1 },
-    '表达': { valence: 0.05, arousal: 0.05 },
-    '学习': { creativity: 0.1, energy: -0.05 },
-    '梦想': { valence: 0.1 },
+    produce: { creativity: 0.1, valence: 0.1 },
+    connect: { sociability: 0.15, valence: 0.05 },
+    consume: { energy: -0.05 },
+    rest:    { energy: 0.15, stress: -0.1 },
+    express: { valence: 0.05, arousal: 0.05 },
+    learn:   { creativity: 0.1, energy: -0.05 },
+    aspire:  { valence: 0.1 },
   };
   const delta = feedbacks[category];
   if (!delta) return emotion;

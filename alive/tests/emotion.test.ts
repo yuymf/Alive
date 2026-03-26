@@ -181,13 +181,13 @@ describe('EVENT_DELTAS', () => {
 describe('computeEmotionIntentCoupling', () => {
   it('returns multipliers for all 7 intent categories', () => {
     const coupling = computeEmotionIntentCoupling(makeState());
-    expect(coupling).toHaveProperty('创作');
-    expect(coupling).toHaveProperty('社交');
-    expect(coupling).toHaveProperty('窥屏');
-    expect(coupling).toHaveProperty('休息');
-    expect(coupling).toHaveProperty('表达');
-    expect(coupling).toHaveProperty('学习');
-    expect(coupling).toHaveProperty('梦想');
+    expect(coupling).toHaveProperty('produce');
+    expect(coupling).toHaveProperty('connect');
+    expect(coupling).toHaveProperty('consume');
+    expect(coupling).toHaveProperty('rest');
+    expect(coupling).toHaveProperty('express');
+    expect(coupling).toHaveProperty('learn');
+    expect(coupling).toHaveProperty('aspire');
   });
 
   it('high creativity boosts 创作 multiplier', () => {
@@ -195,14 +195,14 @@ describe('computeEmotionIntentCoupling', () => {
     const lowCreativity = makeState({ creativity: 0.1 });
     const highCoupling = computeEmotionIntentCoupling(highCreativity);
     const lowCoupling = computeEmotionIntentCoupling(lowCreativity);
-    expect(highCoupling['创作']).toBeGreaterThan(lowCoupling['创作']);
+    expect(highCoupling['produce']).toBeGreaterThan(lowCoupling['produce']);
   });
 
   it('low energy boosts 休息 multiplier', () => {
     const tired = makeState({ energy: 0.1 });
     const energetic = makeState({ energy: 0.9 });
-    expect(computeEmotionIntentCoupling(tired)['休息']).toBeGreaterThan(
-      computeEmotionIntentCoupling(energetic)['休息']
+    expect(computeEmotionIntentCoupling(tired)['rest']).toBeGreaterThan(
+      computeEmotionIntentCoupling(energetic)['rest']
     );
   });
 });
@@ -212,13 +212,13 @@ describe('computeEmotionIntentCoupling', () => {
 describe('intentSatisfactionFeedback', () => {
   it('satisfying 创作 intent increases creativity', () => {
     const state = makeState();
-    const result = intentSatisfactionFeedback(state, '创作');
+    const result = intentSatisfactionFeedback(state, 'produce');
     expect(result.creativity).toBeGreaterThanOrEqual(state.creativity);
   });
 
   it('satisfying 休息 intent increases energy and decreases stress', () => {
     const state = makeState({ stress: 0.4 });
-    const result = intentSatisfactionFeedback(state, '休息');
+    const result = intentSatisfactionFeedback(state, 'rest');
     expect(result.energy).toBeGreaterThanOrEqual(state.energy);
   });
 

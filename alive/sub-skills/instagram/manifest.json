@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "description": "Instagram 发帖、图片生成、文案撰写、数据反馈分析",
   "intent_bindings": [
-    { "intent": "创作", "action": "instagram-post", "priority": 10 },
-    { "intent": "表达", "action": "instagram-post", "priority": 8 },
-    { "intent": "窥屏", "action": "instagram-check-stats", "priority": 3 }
+    { "intent": "produce", "action": "instagram-post", "priority": 10 },
+    { "intent": "express", "action": "instagram-post", "priority": 8 },
+    { "intent": "consume", "action": "instagram-check-stats", "priority": 3 }
   ],
   "config_schema": {
     "planPhoto": {

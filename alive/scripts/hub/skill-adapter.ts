@@ -40,7 +40,7 @@ function buildDefaultManifest(skillName: string): Record<string, unknown> {
     version: '0.1.0',
     description: `Adapted skill: ${skillName}`,
     intent_bindings: [
-      { intent: '創作', action: 'default', priority: DEFAULT_PRIORITY },
+      { intent: 'produce', action: 'default', priority: DEFAULT_PRIORITY },
     ],
   };
 }
@@ -116,7 +116,7 @@ export async function generateAdaptedSkill(
       // Ensure at least one binding
       if ((manifest.intent_bindings as unknown[]).length === 0) {
         manifest.intent_bindings = [
-          { intent: '創作', action: 'default', priority: DEFAULT_PRIORITY },
+          { intent: 'produce', action: 'default', priority: DEFAULT_PRIORITY },
         ];
       }
     } catch {
@@ -169,7 +169,7 @@ ${skillDoc}
 Based on the skill document above, generate a JSON object with:
 
 1. **intent_bindings**: An array of intent bindings. Each binding maps an intent category to an action name.
-   Valid intent categories: "創作", "社交", "窺屏", "表達", "學習", "休息", "夢想"
+   Valid intent categories: "produce", "connect", "consume", "express", "learn", "rest", "aspire"
    Action names should be kebab-case verbs describing what the skill does.
    Priority should be 3 (this is an adapted/external skill).
 

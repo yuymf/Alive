@@ -63,7 +63,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
     it('Channel 2 (wished_skill): records need from simulated action with wished_skill', () => {
       // Simulate what heartbeat-tick.ts does when it encounters a wished_skill
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '想用 Lightroom 修图但没有这个技能',
         wished_skill_name: 'lightroom-editing',
         source: 'wished',
@@ -80,7 +80,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
 
     it('Channel 1 (unhandled): records need from unresolved route', () => {
       recordSkillNeed({
-        intent_category: '学习',
+        intent_category: 'learn',
         description: '想学新的编程语言',
         wished_skill_name: null,
         source: 'unhandled',
@@ -97,7 +97,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
     it('deduplicates repeated wished_skill needs across multiple ticks', () => {
       // Tick 1: first encounter
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '想修图',
         wished_skill_name: 'lightroom-editing',
         source: 'wished',
@@ -107,7 +107,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
 
       // Tick 2: same wish, higher intensity
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '还是想修图',
         wished_skill_name: 'lightroom-editing',
         source: 'wished',
@@ -117,7 +117,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
 
       // Tick 3: same wish again
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '真的很想修图',
         wished_skill_name: 'lightroom-editing',
         source: 'wished',
@@ -137,7 +137,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
   describe('Stage 2: Pending needs inject anticipation into next tick', () => {
     it('buildPendingNeedsHint returns text when needs exist', () => {
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '想修图',
         wished_skill_name: 'lightroom-editing',
         source: 'wished',
@@ -158,7 +158,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
 
     it('buildSkillNeedsForPrompt returns formatted text for night reflect', () => {
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '想修图',
         wished_skill_name: 'lightroom-editing',
         source: 'wished',
@@ -190,7 +190,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
 
     it('evaluateSkillNeeds calls LLM and returns plans when needs exist', async () => {
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '想修图',
         wished_skill_name: 'lightroom-editing',
         source: 'wished',
@@ -220,7 +220,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
       // Record 3 different needs
       for (let i = 0; i < 3; i++) {
         recordSkillNeed({
-          intent_category: '创作',
+          intent_category: 'produce',
           description: `need ${i}`,
           wished_skill_name: `skill-${i}`,
           source: 'wished',
@@ -250,7 +250,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
     it('full pipeline: record need → evaluate → search (mocked) → install adapted → status updated', async () => {
       // Step 1: Record a skill need
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '想修图',
         wished_skill_name: 'lightroom-editing',
         source: 'wished',
@@ -304,7 +304,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
 
     it('failed install updates status to failed', () => {
       recordSkillNeed({
-        intent_category: '学习',
+        intent_category: 'learn',
         description: '想学画画',
         wished_skill_name: 'digital-painting',
         source: 'wished',
@@ -376,7 +376,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
     it('Day 1 tick → records need, Day 1 night → evaluates + installs, Day 2 → no more pending', async () => {
       // Day 1: Heartbeat records a skill need
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '想用视频编辑软件',
         wished_skill_name: 'video-editing',
         source: 'wished',
@@ -418,7 +418,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
     it('multiple needs across multiple ticks, night reflect handles top 2', async () => {
       // Multiple ticks record different needs
       recordSkillNeed({
-        intent_category: '创作',
+        intent_category: 'produce',
         description: '想修图',
         wished_skill_name: 'photo-editing',
         source: 'wished',
@@ -427,7 +427,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
       });
 
       recordSkillNeed({
-        intent_category: '社交',
+        intent_category: 'connect',
         description: '想做直播',
         wished_skill_name: 'live-streaming',
         source: 'wished',
@@ -436,7 +436,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
       });
 
       recordSkillNeed({
-        intent_category: '学习',
+        intent_category: 'learn',
         description: '想学做音乐',
         wished_skill_name: 'music-production',
         source: 'wished',

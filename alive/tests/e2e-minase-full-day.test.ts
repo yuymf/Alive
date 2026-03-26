@@ -83,15 +83,15 @@ const MORNING_PLAN_RESPONSE = JSON.stringify({
   wake_time: '09:00',
   sleep_time: '23:00',
   flexible_schedule: [
-    { activity: '外景拍摄', preferred_time: '10:00-12:00', intent_boost: 3, intent_category: '创作' },
-    { activity: '整理照片', preferred_time: '14:00-16:00', intent_boost: 2, intent_category: '创作' },
-    { activity: '发帖', preferred_time: '19:00-21:00', intent_boost: 2, intent_category: '表达' },
+    { activity: '外景拍摄', preferred_time: '10:00-12:00', intent_boost: 3, intent_category: 'produce' },
+    { activity: '整理照片', preferred_time: '14:00-16:00', intent_boost: 2, intent_category: 'produce' },
+    { activity: '发帖', preferred_time: '19:00-21:00', intent_boost: 2, intent_category: 'express' },
   ],
   intent_seeds: [
-    { category: '创作', description: '拍一组春日外景cos', intensity: 7 },
-    { category: '社交', description: '回复粉丝评论', intensity: 4 },
-    { category: '学习', description: '学新的修图技巧', intensity: 3 },
-    { category: '窥屏', description: '刷一下 Instagram 看看最近流行什么', intensity: 5 },
+    { category: 'produce', description: '拍一组春日外景cos', intensity: 7 },
+    { category: 'connect', description: '回复粉丝评论', intensity: 4 },
+    { category: 'learn', description: '学新的修图技巧', intensity: 3 },
+    { category: 'consume', description: '刷一下 Instagram 看看最近流行什么', intensity: 5 },
   ],
   diary_entry: '早安！今天天气超好，要好好拍照！ganba！',
 });
@@ -102,7 +102,7 @@ function makeHeartbeatDecision(hour: number): string {
     10: {
       inner_monologue: '天气真好，出门去公园拍照吧',
       new_impulses: [
-        { category: '创作', description: '看到好看的光影想拍', intensity: 6 },
+        { category: 'produce', description: '看到好看的光影想拍', intensity: 6 },
       ],
       suppressed_intents: [],
       chosen_actions: [
@@ -120,7 +120,7 @@ function makeHeartbeatDecision(hour: number): string {
     12: {
       inner_monologue: '肚子饿了...先去找吃的',
       new_impulses: [
-        { category: '休息', description: '想找个cafe坐一会', intensity: 4 },
+        { category: 'rest', description: '想找个cafe坐一会', intensity: 4 },
       ],
       suppressed_intents: [],
       chosen_actions: [
@@ -138,7 +138,7 @@ function makeHeartbeatDecision(hour: number): string {
     14: {
       inner_monologue: '该整理今天拍的照片了',
       new_impulses: [
-        { category: '创作', description: '想试试新的调色预设', intensity: 5 },
+        { category: 'produce', description: '想试试新的调色预设', intensity: 5 },
       ],
       suppressed_intents: [],
       chosen_actions: [
@@ -156,7 +156,7 @@ function makeHeartbeatDecision(hour: number): string {
     16: {
       inner_monologue: '修图修到头疼了...看看评论吧，粉丝好多问题想回',
       new_impulses: [
-        { category: '社交', description: '想跟粉丝互动一下', intensity: 5 },
+        { category: 'connect', description: '想跟粉丝互动一下', intensity: 5 },
       ],
       suppressed_intents: [],
       chosen_actions: [
@@ -174,7 +174,7 @@ function makeHeartbeatDecision(hour: number): string {
     18: {
       inner_monologue: '发现了一个超有氛围感的杂货铺',
       new_impulses: [
-        { category: '创作', description: '这个店好适合当背景', intensity: 4 },
+        { category: 'produce', description: '这个店好适合当背景', intensity: 4 },
       ],
       suppressed_intents: [],
       chosen_actions: [
@@ -184,7 +184,7 @@ function makeHeartbeatDecision(hour: number): string {
     19: {
       inner_monologue: '该发帖了！今天拍的照片太好看了必须发出去',
       new_impulses: [
-        { category: '表达', description: '今天的照片太好看了必须分享', intensity: 7 },
+        { category: 'express', description: '今天的照片太好看了必须分享', intensity: 7 },
       ],
       suppressed_intents: [],
       chosen_actions: [
@@ -202,7 +202,7 @@ function makeHeartbeatDecision(hour: number): string {
     21: {
       inner_monologue: '明天去哪拍呢？搜一下附近有什么好看的地方',
       new_impulses: [
-        { category: '学习', description: '想研究明天的拍摄地点', intensity: 4 },
+        { category: 'learn', description: '想研究明天的拍摄地点', intensity: 4 },
       ],
       suppressed_intents: [],
       chosen_actions: [
@@ -212,7 +212,7 @@ function makeHeartbeatDecision(hour: number): string {
     22: {
       inner_monologue: '有点累了...追一集番吧',
       new_impulses: [
-        { category: '休息', description: '想追新番休息一下', intensity: 6 },
+        { category: 'rest', description: '想追新番休息一下', intensity: 6 },
       ],
       suppressed_intents: [],
       chosen_actions: [
@@ -391,23 +391,23 @@ function setupSandbox() {
   const subSkillsDir = path.join(tmpDir, 'sub-skills');
   createMockSubSkill(subSkillsDir, 'instagram', 'Instagram 内容发布',
     'Instagram 发帖、图片生成、文案撰写', [
-      { intent: '创作', action: 'instagram-post', priority: 10 },
-      { intent: '表达', action: 'instagram-post', priority: 8 },
+      { intent: 'produce', action: 'instagram-post', priority: 10 },
+      { intent: 'express', action: 'instagram-post', priority: 8 },
     ]);
   createMockSubSkill(subSkillsDir, 'content-browse', '内容浏览与灵感采集',
     '刷内容、采集灵感', [
-      { intent: '窥屏', action: 'feed-browse', priority: 4 },
-      { intent: '学习', action: 'inspiration-collect', priority: 4 },
+      { intent: 'consume', action: 'feed-browse', priority: 4 },
+      { intent: 'learn', action: 'inspiration-collect', priority: 4 },
     ]);
   createMockSubSkill(subSkillsDir, 'social-engagement', '社交互动',
     '评论回复、社交互动', [
-      { intent: '社交', action: 'comment-reply', priority: 8 },
-      { intent: '社交', action: 'social-engagement', priority: 7 },
+      { intent: 'connect', action: 'comment-reply', priority: 8 },
+      { intent: 'connect', action: 'social-engagement', priority: 7 },
     ]);
   createMockSubSkill(subSkillsDir, 'web-search', '网络搜索研究',
     '网络搜索、学习新知识', [
-      { intent: '学习', action: 'search-pipeline', priority: 5 },
-      { intent: '窥屏', action: 'search-pipeline', priority: 3 },
+      { intent: 'learn', action: 'search-pipeline', priority: 5 },
+      { intent: 'consume', action: 'search-pipeline', priority: 3 },
     ]);
 
   // socialMeta (social-meta.json) now lives outside socialDir, so no contamination risk.
@@ -509,8 +509,8 @@ describe('E2E: 水瀬 (Minase) Full Day Simulation', () => {
       // Verify intent pool was seeded
       const intentPool = readJSON<IntentPool>(PATHS.intentPool, null as any);
       expect(intentPool.intents.length).toBe(4);
-      expect(intentPool.intents.map(i => i.category)).toContain('创作');
-      expect(intentPool.intents.map(i => i.category)).toContain('社交');
+      expect(intentPool.intents.map(i => i.category)).toContain('produce');
+      expect(intentPool.intents.map(i => i.category)).toContain('connect');
 
       // Verify emotion initialized with ESTP baseline
       const emotion = readJSON<EmotionState>(PATHS.emotionState, null as any);
@@ -640,8 +640,8 @@ describe('E2E: 水瀬 (Minase) Full Day Simulation', () => {
 
       const pool = readJSON<IntentPool>(PATHS.intentPool, { intents: [], last_updated: null });
       const categories = pool.intents.map(i => i.category);
-      expect(categories).toContain('创作');
-      expect(categories).toContain('休息');
+      expect(categories).toContain('produce');
+      expect(categories).toContain('rest');
     });
   });
 

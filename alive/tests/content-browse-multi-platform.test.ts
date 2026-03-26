@@ -67,7 +67,7 @@ function makeCtx(overrides: Partial<SubSkillContext> = {}): SubSkillContext {
     emotion: makeEmotion(),
     vitality: 80,
     confidence: 1.0,
-    intent: { id: 'i1', category: '窥屏' as const, description: '刷一下手机', intensity: 5, action: 'feed-browse' },
+    intent: { id: 'i1', category: 'consume' as const, description: '刷一下手机', intensity: 5, action: 'feed-browse' },
     memory: makeMemory(),
     socialGraph: { getRelations: vi.fn(() => []), updateRelation: vi.fn() },
     llm: {

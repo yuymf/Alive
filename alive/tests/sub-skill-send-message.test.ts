@@ -167,7 +167,7 @@ describe('send-message/action', () => {
       emotion: makeEmotion(),
       vitality: 80,
       confidence: 1.0,
-      intent: { id: 'i1', category: '社交' as const, description: '想和朋友说说最近的事', intensity: 5, action: 'send-message' },
+      intent: { id: 'i1', category: 'connect' as const, description: '想和朋友说说最近的事', intensity: 5, action: 'send-message' },
       memory: makeMemory(),
       socialGraph: { getRelations: vi.fn(() => []), updateRelation: vi.fn() },
       llm: {

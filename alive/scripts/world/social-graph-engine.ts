@@ -141,6 +141,21 @@ export function rebalanceTiers(
     byTier[classifyTier(r.relationship.closeness)].push({ ...r });
   }
 
+  if (byTier.core.length > TIER_LIMITS.core) {
+    const sorted = [...byTier.core].sort((a, b) => a.relationship.closeness - b.relationship.closeness);
+    const excess = sorted.slice(0, sorted.length - TIER_LIMITS.core);
+    byTier.core = sorted.slice(sorted.length - TIER_LIMITS.core);
+    for (const r of excess) {
+      byTier.familiar.push({
+        ...r,
+        relationship: {
+          ...r.relationship,
+          closeness: Math.min(r.relationship.closeness, SOCIAL_GRAPH_CONFIG.TIER_THRESHOLDS.core),
+        },
+      });
+    }
+  }
+
   if (byTier.familiar.length > TIER_LIMITS.familiar) {
     const sorted = [...byTier.familiar].sort((a, b) => a.relationship.closeness - b.relationship.closeness);
     const excess = sorted.slice(0, sorted.length - TIER_LIMITS.familiar);
@@ -189,7 +204,7 @@ export function generateSocialIntents(
     const days = daysSince(r.last_interaction, now);
     if (days >= SOCIAL_GRAPH_CONFIG.CORE_INACTIVE_DAYS) {
       intents.push({
-        category: '社交',
+        category: 'connect',
         description: `想去看看 @${r.name} 的最近动态`,
         intensity: Math.min(5, 2 + days * 0.5),
       });
@@ -202,7 +217,7 @@ export function generateSocialIntents(
   for (const m of milestones) {
     if (totalRelations >= m && totalRelations < m + 5) {
       intents.push({
-        category: '表达',
+        category: 'express',
         description: `关注者突破 ${m} 了！想做点什么特别的`,
         intensity: 6,
       });

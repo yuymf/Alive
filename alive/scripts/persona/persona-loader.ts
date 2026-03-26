@@ -4,7 +4,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import YAML from 'yaml';
-import { PersonaConfig, EmotionDelta, DEFAULT_EMOTION_BASELINE, EmotionUndertone, ContentSourcesConfig } from '../utils/types';
+import {
+  PersonaConfig, EmotionDelta, DEFAULT_EMOTION_BASELINE, EmotionUndertone, ContentSourcesConfig,
+  MetaIntent, ALL_META_INTENTS, IntentDisplayConfig, EmotionCouplingConfig, WorkImpulseConfig,
+  DEFAULT_INTENT_DISPLAY, DEFAULT_EMOTION_COUPLING, DEFAULT_WORK_IMPULSE,
+} from '../utils/types';
 import { PATHS } from '../utils/file-utils';
 
 // MBTI → Emotion Baseline mapping
@@ -81,6 +85,67 @@ export function getDefaultUndertone(persona?: PersonaConfig): EmotionUndertone {
     stress: baseline.stress ?? 0.2,
     creativity: baseline.creativity ?? 0.4,
     sociability: baseline.sociability ?? 0.4,
+  };
+}
+
+// === Intent Configuration (from persona.yaml) ===
+
+/**
+ * Get merged intent display configs: persona overrides on top of defaults.
+ */
+export function getIntentDisplayConfigs(persona?: PersonaConfig): Record<MetaIntent, IntentDisplayConfig> {
+  const p = persona ?? loadPersona();
+  const result = { ...DEFAULT_INTENT_DISPLAY };
+  if (p.intent_config) {
+    for (const key of ALL_META_INTENTS) {
+      if (p.intent_config[key]) {
+        result[key] = { ...result[key], ...p.intent_config[key] };
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Get merged emotion coupling configs: persona overrides on top of defaults.
+ */
+export function getEmotionCouplingConfigs(persona?: PersonaConfig): Record<MetaIntent, EmotionCouplingConfig> {
+  const p = persona ?? loadPersona();
+  const result = { ...DEFAULT_EMOTION_COUPLING };
+  if (p.intent_config) {
+    for (const key of ALL_META_INTENTS) {
+      const personaCoupling = p.intent_config[key]?.emotion_coupling;
+      if (personaCoupling) {
+        result[key] = { ...result[key], ...personaCoupling };
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Get base resistance values, with persona overrides.
+ */
+export function getBaseResistanceFromPersona(persona?: PersonaConfig): Record<MetaIntent, number> {
+  const configs = getIntentDisplayConfigs(persona);
+  const result: Record<string, number> = {};
+  for (const key of ALL_META_INTENTS) {
+    result[key] = configs[key].base_resistance ?? DEFAULT_INTENT_DISPLAY[key].base_resistance ?? 0;
+  }
+  return result as Record<MetaIntent, number>;
+}
+
+/**
+ * Get work impulse config with persona overrides.
+ */
+export function getWorkImpulseConfig(persona?: PersonaConfig): Required<WorkImpulseConfig> {
+  const p = persona ?? loadPersona();
+  return {
+    display_name: p.work_impulse?.display_name ?? DEFAULT_WORK_IMPULSE.display_name,
+    trigger_threshold: p.work_impulse?.trigger_threshold ?? DEFAULT_WORK_IMPULSE.trigger_threshold,
+    dormancy_days: p.work_impulse?.dormancy_days ?? DEFAULT_WORK_IMPULSE.dormancy_days,
+    dormancy_boost: p.work_impulse?.dormancy_boost ?? DEFAULT_WORK_IMPULSE.dormancy_boost,
+    sources: p.work_impulse?.sources ?? DEFAULT_WORK_IMPULSE.sources,
   };
 }
 

@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { PostHistory, PostRecord, ContentStyle, PostImpulseState, DEFAULT_POST_IMPULSE, hydrateEmotionState, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../../../scripts/utils/types';
+import { PostHistory, PostRecord, ContentStyle, WorkImpulseState, DEFAULT_WORK_IMPULSE_STATE, hydrateEmotionState, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../../../scripts/utils/types';
 import type { GalleryPhoto as SharedGalleryPhoto, PhotoGallery, ShotDescription } from '../../../scripts/utils/types';
 import { DEFAULT_PHOTO_GALLERY } from '../../../scripts/utils/types';
 import { PATHS, readJSON, writeJSON, appendText } from '../../../scripts/utils/file-utils';
@@ -18,7 +18,7 @@ import { uploadToImgURL } from '../../platform/gallery/scripts/imgurl-upload';
 import { now, getLocalDate, getLocalTimeHHMM } from '../../../scripts/utils/time-utils';
 import { planPhoto, planPost, shouldConsiderPosting } from '../../platform/content-planner/scripts/planner';
 import { callInstagramBridge, uploadAlbum } from '../../platform/instagram-bridge/scripts/bridge-client';
-import { resetImpulseAfterPost, accumulateImpulse } from '../../../scripts/engines/post-impulse';
+import { resetImpulseAfterOutput, accumulateImpulse } from '../../../scripts/engines/work-impulse';
 import { addPhotoToGallery, pruneGallery } from '../../platform/gallery/scripts/gallery-ops';
 import type { GalleryPhoto } from '../../platform/gallery/scripts/gallery-ops';
 
@@ -318,10 +318,10 @@ async function runPipeline(): Promise<void> {
     }
 
     // Accumulate impulse from successful photos
-    let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
+    let impulse: WorkImpulseState = readJSON(PATHS.workImpulse, DEFAULT_WORK_IMPULSE_STATE);
     const photoBoost = 20 + Math.random() * 10;
     impulse = accumulateImpulse(impulse, photoBoost);
-    writeJSON(PATHS.postImpulse, impulse);
+    writeJSON(PATHS.workImpulse, impulse);
 
     lastPhotoStyle = photoIntent.style;
     lastPhotoScene = photoIntent.sceneDescription;
@@ -449,9 +449,9 @@ async function runPipeline(): Promise<void> {
     markPhotosAsPosted(orderedPhotos);
 
     // Reset impulse after successful post
-    let impulse: PostImpulseState = readJSON(PATHS.postImpulse, DEFAULT_POST_IMPULSE);
-    impulse = resetImpulseAfterPost(impulse);
-    writeJSON(PATHS.postImpulse, impulse);
+    let impulse: WorkImpulseState = readJSON(PATHS.workImpulse, DEFAULT_WORK_IMPULSE_STATE);
+    impulse = resetImpulseAfterOutput(impulse);
+    writeJSON(PATHS.workImpulse, impulse);
 
     // Diary entry in Minase's voice
     writeDiary(postIntent.reason, 6, ['instagram', 'post']);

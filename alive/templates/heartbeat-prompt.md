@@ -93,7 +93,7 @@
 {
   "inner_monologue": "你此刻的内心独白（1-2句话，要有具体想法，不要空洞的感叹）",
   "new_impulses": [
-    {"category": "创作|社交|窥屏|表达|学习|休息|梦想", "description": "string", "intensity": 0-10}
+    {"category": "produce|connect|consume|express|learn|rest|aspire", "description": "string", "intensity": 0-10}
   ],
   "suppressed_intents": ["被压制的意图id"],
   "chosen_actions": [

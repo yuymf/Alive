@@ -27,14 +27,14 @@ vi.mock('../scripts/persona/persona-loader', () => ({
 function makeIntent(overrides: Partial<Intent> = {}): Intent {
   return {
     id: 'test-1',
-    category: '创作' as IntentCategory,
+    category: 'produce' as IntentCategory,
     description: '画画',
     intensity: 5.0,
     source: 'accumulation',
     born_at: '2026-03-24T10:00:00',
     decay_rate: 0.5,
     satisfied_at: null,
-    resistance: BASE_RESISTANCE['创作'],
+    resistance: BASE_RESISTANCE['produce'],
     skipped_count: 0,
     last_attempted: null,
     ...overrides,
@@ -75,41 +75,41 @@ describe('decaySatisfied', () => {
 
 describe('accumulateIntents', () => {
   it('boosts 创作 intent normally', () => {
-    const pool = makePool([makeIntent({ category: '创作', intensity: 3.0 })]);
+    const pool = makePool([makeIntent({ category: 'produce', intensity: 3.0 })]);
     const result = accumulateIntents(pool, 14, 10, 0, false);
     expect(result.intents[0].intensity).toBeGreaterThan(3.0);
   });
 
   it('boosts 创作 extra when lastActionHoursAgo > 48', () => {
-    const pool = makePool([makeIntent({ category: '创作', intensity: 3.0 })]);
+    const pool = makePool([makeIntent({ category: 'produce', intensity: 3.0 })]);
     const normal = accumulateIntents(pool, 14, 10, 0, false);
     const longAgo = accumulateIntents(pool, 14, 50, 0, false);
     expect(longAgo.intents[0].intensity).toBeGreaterThan(normal.intents[0].intensity);
   });
 
   it('boosts 社交 when unread events', () => {
-    const pool = makePool([makeIntent({ category: '社交', intensity: 2.0 })]);
+    const pool = makePool([makeIntent({ category: 'connect', intensity: 2.0 })]);
     const noEvents = accumulateIntents(pool, 14, 10, 0, false);
     const withEvents = accumulateIntents(pool, 14, 10, 0, true);
     expect(withEvents.intents[0].intensity).toBeGreaterThan(noEvents.intents[0].intensity);
   });
 
   it('boosts 窥屏 during slack period (12-13)', () => {
-    const pool = makePool([makeIntent({ category: '窥屏', intensity: 2.0 })]);
+    const pool = makePool([makeIntent({ category: 'consume', intensity: 2.0 })]);
     const slack = accumulateIntents(pool, 12, 10, 0, false);
     const nonSlack = accumulateIntents(pool, 9, 10, 0, false);
     expect(slack.intents[0].intensity).toBeGreaterThan(nonSlack.intents[0].intensity);
   });
 
   it('boosts 休息 by consecutive active heartbeats', () => {
-    const pool = makePool([makeIntent({ category: '休息', intensity: 1.0 })]);
+    const pool = makePool([makeIntent({ category: 'rest', intensity: 1.0 })]);
     const few = accumulateIntents(pool, 14, 10, 1, false);
     const many = accumulateIntents(pool, 14, 10, 5, false);
     expect(many.intents[0].intensity).toBeGreaterThan(few.intents[0].intensity);
   });
 
   it('caps intensity at 10.0', () => {
-    const pool = makePool([makeIntent({ category: '社交', intensity: 9.5 })]);
+    const pool = makePool([makeIntent({ category: 'connect', intensity: 9.5 })]);
     const result = accumulateIntents(pool, 14, 10, 0, true); // +2.0 boost
     expect(result.intents[0].intensity).toBeLessThanOrEqual(10.0);
   });
@@ -119,11 +119,11 @@ describe('accumulateIntents', () => {
 
 describe('applyEventBoosts', () => {
   it('boosts existing intents from event data', () => {
-    const pool = makePool([makeIntent({ category: '创作', intensity: 3.0 })]);
+    const pool = makePool([makeIntent({ category: 'produce', intensity: 3.0 })]);
     const events: EventQueue = {
       events: [{
         type: 'inspiration', processed: false, timestamp: '',
-        data: { intent_boosts: [{ category: '创作', boost: 2.0 }] },
+        data: { intent_boosts: [{ category: 'produce', boost: 2.0 }] },
       }],
       max_size: 50,
     };
@@ -136,13 +136,13 @@ describe('applyEventBoosts', () => {
     const events: EventQueue = {
       events: [{
         type: 'social-ping', processed: false, timestamp: '',
-        data: { intent_boosts: [{ category: '社交', boost: 3.0 }] },
+        data: { intent_boosts: [{ category: 'connect', boost: 3.0 }] },
       }],
       max_size: 50,
     };
     const result = applyEventBoosts(pool, events);
     expect(result.intents.length).toBe(1);
-    expect(result.intents[0].category).toBe('社交');
+    expect(result.intents[0].category).toBe('connect');
   });
 
   it('skips processed events', () => {
@@ -150,7 +150,7 @@ describe('applyEventBoosts', () => {
     const events: EventQueue = {
       events: [{
         type: 'test', processed: true, timestamp: '',
-        data: { intent_boosts: [{ category: '创作', boost: 5.0 }] },
+        data: { intent_boosts: [{ category: 'produce', boost: 5.0 }] },
       }],
       max_size: 50,
     };
@@ -164,9 +164,9 @@ describe('applyEventBoosts', () => {
 describe('getTopIntents', () => {
   it('returns intents sorted by (intensity - resistance)', () => {
     const pool = makePool([
-      makeIntent({ id: 'a', category: '窥屏', intensity: 3.0, resistance: 0.5 }),    // net 2.5
-      makeIntent({ id: 'b', category: '创作', intensity: 7.0, resistance: 4.0 }),     // net 3.0
-      makeIntent({ id: 'c', category: '社交', intensity: 4.0, resistance: 1.5 }),     // net 2.5
+      makeIntent({ id: 'a', category: 'consume', intensity: 3.0, resistance: 0.5 }),    // net 2.5
+      makeIntent({ id: 'b', category: 'produce', intensity: 7.0, resistance: 4.0 }),     // net 3.0
+      makeIntent({ id: 'c', category: 'connect', intensity: 4.0, resistance: 1.5 }),     // net 2.5
     ]);
     const top = getTopIntents(pool, 2);
     expect(top.length).toBe(2);
@@ -213,16 +213,16 @@ describe('satisfyIntent', () => {
 describe('addIntent', () => {
   it('adds a new intent to the pool', () => {
     const pool = makePool([]);
-    const result = addIntent(pool, '学习', '读论文', 3.0, 'llm');
+    const result = addIntent(pool, 'learn', '读论文', 3.0, 'llm');
     expect(result.intents.length).toBe(1);
-    expect(result.intents[0].category).toBe('学习');
+    expect(result.intents[0].category).toBe('learn');
     expect(result.intents[0].description).toBe('读论文');
     expect(result.intents[0].source).toBe('llm');
   });
 
   it('caps intensity at 10.0', () => {
     const pool = makePool([]);
-    const result = addIntent(pool, '创作', '画大作', 15.0, 'event');
+    const result = addIntent(pool, 'produce', '画大作', 15.0, 'event');
     expect(result.intents[0].intensity).toBe(10.0);
   });
 });
@@ -231,35 +231,35 @@ describe('addIntent', () => {
 
 describe('computeDynamicResistance', () => {
   it('increases resistance for high-energy categories when vitality is low', () => {
-    const intent = makeIntent({ category: '创作' });
+    const intent = makeIntent({ category: 'produce' });
     const normal = computeDynamicResistance(intent, 60, 1.0, false, null, null);
     const tired = computeDynamicResistance(intent, 20, 1.0, false, null, null);
     expect(tired).toBeGreaterThan(normal);
   });
 
   it('increases resistance when in flow on a different category', () => {
-    const intent = makeIntent({ category: '社交' });
+    const intent = makeIntent({ category: 'connect' });
     const noFlow = computeDynamicResistance(intent, 60, 1.0, false, null, null);
-    const inFlow = computeDynamicResistance(intent, 60, 1.0, true, '创作', null);
+    const inFlow = computeDynamicResistance(intent, 60, 1.0, true, 'produce', null);
     expect(inFlow).toBeGreaterThan(noFlow);
   });
 
   it('same flow category does not add resistance', () => {
-    const intent = makeIntent({ category: '创作' });
-    const inFlow = computeDynamicResistance(intent, 60, 1.0, true, '创作', null);
+    const intent = makeIntent({ category: 'produce' });
+    const inFlow = computeDynamicResistance(intent, 60, 1.0, true, 'produce', null);
     const noFlow = computeDynamicResistance(intent, 60, 1.0, false, null, null);
     expect(inFlow).toBe(noFlow);
   });
 
   it('rigid schedule adds resistance for non-matching intents', () => {
-    const intent = makeIntent({ category: '创作' });
+    const intent = makeIntent({ category: 'produce' });
     const noSchedule = computeDynamicResistance(intent, 60, 1.0, false, null, null);
-    const withSchedule = computeDynamicResistance(intent, 60, 1.0, false, null, { allowed_actions: ['社交'] });
+    const withSchedule = computeDynamicResistance(intent, 60, 1.0, false, null, { allowed_actions: ['connect'] });
     expect(withSchedule).toBeGreaterThan(noSchedule);
   });
 
   it('low confidence increases 创作 resistance', () => {
-    const intent = makeIntent({ category: '创作' });
+    const intent = makeIntent({ category: 'produce' });
     const confident = computeDynamicResistance(intent, 60, 1.0, false, null, null);
     const notConfident = computeDynamicResistance(intent, 60, 0.5, false, null, null);
     expect(notConfident).toBeGreaterThan(confident);
@@ -277,17 +277,17 @@ describe('checkImpulseBreakthrough', () => {
   });
 
   it('returns 窥屏 when not in flow and vitality is low', () => {
-    const pool = makePool([makeIntent({ id: 'b1', category: '窥屏', intensity: 3.0 })]);
+    const pool = makePool([makeIntent({ id: 'b1', category: 'consume', intensity: 3.0 })]);
     const result = checkImpulseBreakthrough(pool, 40, false);
     expect(result).toBeTruthy();
-    expect(result!.category).toBe('窥屏');
+    expect(result!.category).toBe('consume');
   });
 
   it('returns 休息 when vitality is critical', () => {
-    const pool = makePool([makeIntent({ id: 'r1', category: '休息', intensity: 1.0 })]);
+    const pool = makePool([makeIntent({ id: 'r1', category: 'rest', intensity: 1.0 })]);
     const result = checkImpulseBreakthrough(pool, 10, false);
     expect(result).toBeTruthy();
-    expect(result!.category).toBe('休息');
+    expect(result!.category).toBe('rest');
   });
 
   it('returns null when no conditions met', () => {

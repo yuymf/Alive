@@ -65,7 +65,7 @@ export const PATHS = {
   get postHistory() { return path.join(getMemoryBase(), 'post-history.json'); },
   get photoRoll() { return path.join(getMemoryBase(), 'photo-roll'); },
   get photoGallery() { return path.join(getMemoryBase(), 'photo-gallery.json'); },
-  get postImpulse() { return path.join(getMemoryBase(), 'post-impulse.json'); },
+  get workImpulse() { return path.join(getMemoryBase(), 'work-impulse.json'); },
   get inspirationRefs() { return path.join(getMemoryBase(), 'inspiration-refs'); },
   get searchState() { return path.join(getMemoryBase(), 'search-state.json'); },
   get travelState() { return path.join(getMemoryBase(), 'travel-state.json'); },

@@ -123,18 +123,18 @@ describe.skipIf(!shouldRun)('E2E: Real LLM Full Day (水瀬)', () => {
     // Create mock sub-skills
     const ss = path.join(tmpDir, 'sub-skills');
     createMockSubSkill(ss, 'instagram', 'Instagram', 'Instagram 发帖', [
-      { intent: '创作', action: 'instagram-post', priority: 10 }, { intent: '表达', action: 'instagram-post', priority: 8 }]);
+      { intent: 'produce', action: 'instagram-post', priority: 10 }, { intent: 'express', action: 'instagram-post', priority: 8 }]);
     createMockSubSkill(ss, 'content-browse', '内容浏览', '刷内容', [
-      { intent: '窥屏', action: 'feed-browse', priority: 4 }, { intent: '学习', action: 'inspiration-collect', priority: 2 }]);
+      { intent: 'consume', action: 'feed-browse', priority: 4 }, { intent: 'learn', action: 'inspiration-collect', priority: 2 }]);
     createMockSubSkill(ss, 'social-engagement', '社交互动', '评论回复', [
-      { intent: '社交', action: 'comment-reply', priority: 8 }, { intent: '社交', action: 'social-engagement', priority: 7 }]);
+      { intent: 'connect', action: 'comment-reply', priority: 8 }, { intent: 'connect', action: 'social-engagement', priority: 7 }]);
     createMockSubSkill(ss, 'web-search', '网络搜索', '网络搜索', [
-      { intent: '学习', action: 'search-pipeline', priority: 5 }, { intent: '窥屏', action: 'search-pipeline', priority: 4 }]);
+      { intent: 'learn', action: 'search-pipeline', priority: 5 }, { intent: 'consume', action: 'search-pipeline', priority: 4 }]);
 
     setLlmLogPath(path.join(tmpDir, 'llm-call-log.jsonl'));
     llm = createRealLLMClient('e2e-real-llm-day');
 
-    console.log(`\n  Real LLM E2E | Model: ${process.env.LLM_MODEL || 'minimax-m2.5'} | Sandbox: ${tmpDir}\n`);
+    console.log(`\n  Real LLM E2E | Model: ${process.env.LLM_MODEL || 'claude-sonnet-4-20250514'} | Sandbox: ${tmpDir}\n`);
   });
 
   afterAll(() => {

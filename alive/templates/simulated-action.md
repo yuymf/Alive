@@ -72,7 +72,7 @@ diary_entry 必须：
     "sociability": -0.5 to 0.5
   },
   "new_intents": [
-    {"category": "创作|社交|窥屏|表达|学习|休息|梦想", "description": "string", "intensity": 0-10, "source": "inspiration"}
+    {"category": "produce|connect|consume|express|learn|rest|aspire", "description": "string", "intensity": 0-10, "source": "inspiration"}
   ],
   "relation_updates": [
     {"id": "string", "platform": "string", "note": "string"}

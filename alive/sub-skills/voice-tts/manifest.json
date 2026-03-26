@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "description": "将角色的话变成语音消息发送——让聊天更像真人朋友",
   "intent_bindings": [
-    { "intent": "社交", "action": "send-voice", "priority": 5 },
-    { "intent": "表达", "action": "send-voice", "priority": 5 }
+    { "intent": "connect", "action": "send-voice", "priority": 5 },
+    { "intent": "express", "action": "send-voice", "priority": 5 }
   ],
   "config_schema": {
     "tts_provider": {

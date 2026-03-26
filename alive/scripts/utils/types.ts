@@ -85,6 +85,10 @@ export interface PersonaConfig {
   sub_skills?: string[];
   features?: FeaturesConfig;
   platform_config?: Record<string, Record<string, unknown>>;
+  /** Per-intent display names, resistance overrides, and emotion coupling weights */
+  intent_config?: Partial<Record<MetaIntent, IntentDisplayConfig>>;
+  /** Work impulse configuration — persona-level overrides for the work impulse engine */
+  work_impulse?: WorkImpulseConfig;
 }
 
 // === Features Configuration ===
@@ -117,8 +121,8 @@ export interface FeaturesConfig {
   vitality?: boolean;
   /** Confidence engine — 0.5x-1.5x creation multiplier. Default: true */
   confidence?: boolean;
-  /** Post impulse engine — 0-100 posting desire accumulator. Default: true */
-  post_impulse?: boolean;
+  /** Work impulse engine — 0-100 core output desire accumulator. Default: true */
+  work_impulse?: boolean;
   /** Allow any extra feature flags */
   [key: string]: boolean | undefined;
 }
@@ -127,7 +131,7 @@ export interface FeaturesConfig {
 export const DEFAULT_FEATURES: Required<Pick<FeaturesConfig,
   'skill_discovery' | 'random_events' | 'social_graph' | 'flow_states' |
   'procrastination' | 'personality_drift' | 'content_browse' |
-  'emotion' | 'intent' | 'vitality' | 'confidence' | 'post_impulse'
+  'emotion' | 'intent' | 'vitality' | 'confidence' | 'work_impulse'
 >> = {
   skill_discovery: false,
   random_events: true,
@@ -140,7 +144,7 @@ export const DEFAULT_FEATURES: Required<Pick<FeaturesConfig,
   intent: true,
   vitality: true,
   confidence: true,
-  post_impulse: true,
+  work_impulse: true,
 };
 
 export interface PersonaEventDef {
@@ -225,12 +229,131 @@ export const DEFAULT_EMOTION_BASELINE: EmotionDelta = {
   sociability: 0.4,
 };
 
+// === Universal Intent System ===
+// MetaIntent: 7 universal behavioral drives that apply to any persona type.
+// Engine code will migrate to these keys; persona.yaml maps them to display names.
+
+export type MetaIntent = 'produce' | 'connect' | 'consume' | 'express' | 'learn' | 'rest' | 'aspire';
+
+export const ALL_META_INTENTS: readonly MetaIntent[] = [
+  'produce', 'connect', 'consume', 'express', 'learn', 'rest', 'aspire',
+] as const;
+
+/** LLM output fallback: Chinese category → MetaIntent (LLM may output Chinese) */
+const LEGACY_TO_META: Record<string, MetaIntent> = {
+  '创作': 'produce', '創作': 'produce',
+  '社交': 'connect',
+  '窥屏': 'consume', '窺屏': 'consume',
+  '表达': 'express', '表達': 'express',
+  '学习': 'learn',   '學習': 'learn',
+  '休息': 'rest',
+  '梦想': 'aspire',  '夢想': 'aspire',
+};
+
+/** Emotion coupling weights for a single MetaIntent — configurable per persona. */
+export interface EmotionCouplingConfig {
+  creativity?: number;
+  sociability?: number;
+  stress?: number;
+  energy_inverse?: number;   // multiplied by (1.0 - energy)
+  valence?: number;
+  valence_abs?: number;      // multiplied by |valence|
+  arousal?: number;
+}
+
+/** Per-intent configuration in persona.yaml */
+export interface IntentDisplayConfig {
+  display_name: string;
+  activities?: string[];
+  base_resistance?: number;
+  accumulation_boost?: number;
+  emotion_coupling?: EmotionCouplingConfig;
+}
+
+/** Work impulse configuration (generalized from post-impulse) */
+export interface WorkImpulseConfig {
+  display_name?: string;
+  trigger_threshold?: number;
+  dormancy_days?: number;
+  dormancy_boost?: number;
+  sources?: string[];
+}
+
+/** Default emotion coupling weights (equivalent to current hardcoded behavior) */
+export const DEFAULT_EMOTION_COUPLING: Record<MetaIntent, EmotionCouplingConfig> = {
+  produce:  { creativity: 0.5 },
+  connect:  { sociability: 0.3, stress: -0.2 },
+  consume:  { energy_inverse: 0.2 },
+  express:  { valence_abs: 0.3 },
+  learn:    { creativity: 0.2, stress: -0.3 },
+  rest:     { energy_inverse: 0.8 },
+  aspire:   { valence: 0.2 },
+};
+
+/** Default intent display configs (equivalent to current behavior) */
+export const DEFAULT_INTENT_DISPLAY: Record<MetaIntent, IntentDisplayConfig> = {
+  produce: { display_name: '创作', base_resistance: 4.0, accumulation_boost: 0.3 },
+  connect: { display_name: '社交', base_resistance: 1.5, accumulation_boost: 0.2 },
+  consume: { display_name: '窥屏', base_resistance: 1.5, accumulation_boost: 0.2 },
+  express: { display_name: '表达', base_resistance: 2.0, accumulation_boost: 0.2 },
+  learn:   { display_name: '学习', base_resistance: 2.5, accumulation_boost: 0.6 },
+  rest:    { display_name: '休息', base_resistance: 0.3, accumulation_boost: 0.0 },
+  aspire:  { display_name: '梦想', base_resistance: 6.0, accumulation_boost: 0.1 },
+};
+
+/** Default work impulse config */
+export const DEFAULT_WORK_IMPULSE: Required<WorkImpulseConfig> = {
+  display_name: '产出冲动',
+  trigger_threshold: 70,
+  dormancy_days: 5,
+  dormancy_boost: 50,
+  sources: ['inspiration_event', 'high_emotion', 'output_success'],
+};
+
+/**
+ * Resolve a category string (MetaIntent key, legacy Chinese, or display_name) to MetaIntent.
+ * Returns null if unrecognized.
+ */
+export function resolveToMetaIntent(
+  category: string,
+  intentConfig?: Partial<Record<MetaIntent, IntentDisplayConfig>>,
+): MetaIntent | null {
+  // Direct MetaIntent key
+  if (ALL_META_INTENTS.includes(category as MetaIntent)) return category as MetaIntent;
+  // Legacy Chinese (simplified + traditional)
+  if (LEGACY_TO_META[category]) return LEGACY_TO_META[category];
+  // Display name reverse lookup
+  if (intentConfig) {
+    for (const [key, config] of Object.entries(intentConfig)) {
+      if (config.display_name === category) return key as MetaIntent;
+    }
+  }
+  // Fallback: check default display names
+  for (const [key, config] of Object.entries(DEFAULT_INTENT_DISPLAY)) {
+    if (config.display_name === category) return key as MetaIntent;
+  }
+  return null;
+}
+
+/**
+ * Get display name for a MetaIntent, using persona config if available.
+ */
+export function getIntentDisplayName(
+  meta: MetaIntent,
+  intentConfig?: Partial<Record<MetaIntent, IntentDisplayConfig>>,
+): string {
+  return intentConfig?.[meta]?.display_name
+    ?? DEFAULT_INTENT_DISPLAY[meta]?.display_name
+    ?? meta;
+}
+
 // === Intent Pool ===
-export type IntentCategory = '创作' | '社交' | '窥屏' | '表达' | '学习' | '休息' | '梦想';
+/** IntentCategory is now an alias for MetaIntent */
+export type IntentCategory = MetaIntent;
 
 export interface Intent {
   id: string;
-  category: IntentCategory;
+  category: MetaIntent;
   description: string;
   intensity: number;  // 0 ~ 10.0
   source: 'accumulation' | 'event' | 'inspiration' | 'aspiration' | 'llm' | 'schedule';
@@ -420,6 +543,7 @@ export interface VitalityState {
   vitality: number;
   last_updated: string | null;
   consecutive_low_days: number;
+  last_afternoon_rest_date?: string | null;
 }
 
 // === Confidence (generalized) ===
@@ -519,14 +643,14 @@ export const DEFAULT_CHAIN_STATE: ChainAndCooldownState = {
 };
 
 // === Resistance Constants ===
-export const BASE_RESISTANCE: Record<IntentCategory, number> = {
-  '创作': 4.0,
-  '社交': 1.5,
-  '窥屏': 1.5,  // 从 0.5 提高到 1.5：避免窥屏意图过于容易满足，导致 content-browse 垄断
-  '表达': 2.0,
-  '学习': 2.5,  // 从 5.0 降低到 2.5：让学习/搜索意图更容易突破门槛
-  '休息': 0.3,
-  '梦想': 6.0,
+export const BASE_RESISTANCE: Record<MetaIntent, number> = {
+  produce: 4.0,
+  connect: 1.5,
+  consume: 1.5,
+  express: 2.0,
+  learn:   2.5,
+  rest:    0.3,
+  aspire:  6.0,
 };
 
 // === Emotion Defaults ===
@@ -631,9 +755,14 @@ export function hydrateEmotionState(raw: Record<string, unknown>): EmotionState 
 
 export function hydrateIntent(raw: Record<string, unknown>): Intent {
   const intent = raw as Partial<Intent> & Pick<Intent, 'id' | 'category' | 'description' | 'intensity' | 'source' | 'born_at' | 'decay_rate' | 'satisfied_at'>;
+  // Normalize category to MetaIntent key (reject legacy Chinese keys)
+  const category = (ALL_META_INTENTS.includes(intent.category as MetaIntent)
+    ? intent.category
+    : 'express') as MetaIntent;
   return {
     ...intent,
-    resistance: intent.resistance ?? (BASE_RESISTANCE[intent.category] ?? 0),
+    category,
+    resistance: intent.resistance ?? (BASE_RESISTANCE[category] ?? 0),
     skipped_count: intent.skipped_count ?? 0,
     last_attempted: intent.last_attempted ?? null,
   };
@@ -715,19 +844,24 @@ export interface PostHistory {
   posts: PostRecord[];
 }
 
-export interface PostImpulseState {
+export interface WorkImpulseState {
   value: number;
-  last_post_at: number;
-  posts_today_date: string;
-  posts_today: number;
+  last_output_at: number;
+  outputs_today_date: string;
+  outputs_today: number;
 }
 
-export const DEFAULT_POST_IMPULSE: PostImpulseState = {
+export const DEFAULT_WORK_IMPULSE_STATE: WorkImpulseState = {
   value: 0,
-  last_post_at: 0,
-  posts_today_date: '',
-  posts_today: 0,
+  last_output_at: 0,
+  outputs_today_date: '',
+  outputs_today: 0,
 };
+
+/** @deprecated Use WorkImpulseState instead */
+export type PostImpulseState = WorkImpulseState;
+/** @deprecated Use DEFAULT_WORK_IMPULSE_STATE instead */
+export const DEFAULT_POST_IMPULSE = DEFAULT_WORK_IMPULSE_STATE;
 
 // === Skill Discovery Types ===
 

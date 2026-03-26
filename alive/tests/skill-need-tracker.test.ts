@@ -34,7 +34,7 @@ afterEach(() => {
 describe('recordSkillNeed', () => {
   it('creates a new need with source "unhandled"', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'wanted to generate music but no skill available',
       wished_skill_name: null,
       source: 'unhandled',
@@ -53,7 +53,7 @@ describe('recordSkillNeed', () => {
 
   it('creates a new need with source "wished"', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'wished for music generation',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -70,7 +70,7 @@ describe('recordSkillNeed', () => {
 
   it('deduplicates by wished_skill_name — accumulates occurrences and updates last_seen', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'want music gen',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -79,7 +79,7 @@ describe('recordSkillNeed', () => {
     });
 
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'really want music gen',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -95,7 +95,7 @@ describe('recordSkillNeed', () => {
 
   it('deduplicates without wished_skill_name — matches by description keywords', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'generate background music for video',
       wished_skill_name: null,
       source: 'unhandled',
@@ -104,7 +104,7 @@ describe('recordSkillNeed', () => {
     });
 
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'create background music',
       wished_skill_name: null,
       source: 'unhandled',
@@ -120,7 +120,7 @@ describe('recordSkillNeed', () => {
 
   it('creates separate needs when descriptions share no keywords', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'generate background music',
       wished_skill_name: null,
       source: 'unhandled',
@@ -129,7 +129,7 @@ describe('recordSkillNeed', () => {
     });
 
     recordSkillNeed({
-      intent_category: '社交',
+      intent_category: 'connect',
       description: 'send direct messages on twitter',
       wished_skill_name: null,
       source: 'unhandled',
@@ -143,7 +143,7 @@ describe('recordSkillNeed', () => {
 
   it('intensity_peak takes the historical maximum', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'music',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -152,7 +152,7 @@ describe('recordSkillNeed', () => {
     });
 
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'music again',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -170,7 +170,7 @@ describe('recordSkillNeed', () => {
 describe('getPendingNeeds', () => {
   it('returns only pending needs', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'music gen',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -179,7 +179,7 @@ describe('getPendingNeeds', () => {
     });
 
     recordSkillNeed({
-      intent_category: '社交',
+      intent_category: 'connect',
       description: 'dm feature',
       wished_skill_name: 'dm-tool',
       source: 'wished',
@@ -206,7 +206,7 @@ describe('getPendingNeeds', () => {
 describe('updateNeedStatus', () => {
   it('changes need status from pending to installed', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'music',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -223,7 +223,7 @@ describe('updateNeedStatus', () => {
 
   it('changes need status to failed', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'music',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -243,7 +243,7 @@ describe('updateNeedStatus', () => {
 describe('buildPendingNeedsHint', () => {
   it('generates hint text when pending needs exist', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'generate music',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -252,7 +252,7 @@ describe('buildPendingNeedsHint', () => {
     });
 
     recordSkillNeed({
-      intent_category: '社交',
+      intent_category: 'connect',
       description: 'send DMs',
       wished_skill_name: 'dm-tool',
       source: 'wished',
@@ -273,7 +273,7 @@ describe('buildPendingNeedsHint', () => {
 
   it('includes occurrence count in hint', () => {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'music',
       wished_skill_name: 'music-gen',
       source: 'wished',
@@ -282,7 +282,7 @@ describe('buildPendingNeedsHint', () => {
     });
 
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: 'music again',
       wished_skill_name: 'music-gen',
       source: 'wished',

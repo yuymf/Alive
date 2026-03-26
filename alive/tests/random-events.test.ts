@@ -8,7 +8,7 @@ import {
 } from '../scripts/utils/types';
 
 const VALID_INTENT_CATEGORIES: IntentCategory[] = [
-  '创作', '社交', '窥屏', '表达', '学习', '休息', '梦想',
+  'produce', 'connect', 'consume', 'express', 'learn', 'rest', 'aspire',
 ];
 
 afterEach(() => {
@@ -188,9 +188,9 @@ describe('rollRandomEvent', () => {
         .mockReturnValueOnce(0.05)   // probability check
         .mockReturnValueOnce(0.0)    // select first event in filtered pool
         .mockReturnValue(0.5);       // id suffix
-      const result = rollRandomEvent({ excludeCategories: ['休息'] });
+      const result = rollRandomEvent({ excludeCategories: ['rest'] });
       if (result !== null) {
-        const onlyBoostsExcluded = result.intent_boosts.every(b => b.category === '休息');
+        const onlyBoostsExcluded = result.intent_boosts.every(b => b.category === 'rest');
         expect(onlyBoostsExcluded).toBe(false);
       }
     });
@@ -200,9 +200,9 @@ describe('rollRandomEvent', () => {
         .mockReturnValueOnce(0.05)
         .mockReturnValueOnce(0.0)
         .mockReturnValue(0.5);
-      const result = rollRandomEvent({ excludeCategories: ['创作'] });
+      const result = rollRandomEvent({ excludeCategories: ['produce'] });
       if (result !== null) {
-        const allExcluded = result.intent_boosts.every(b => b.category === '创作');
+        const allExcluded = result.intent_boosts.every(b => b.category === 'produce');
         expect(allExcluded).toBe(false);
       }
     });
@@ -217,7 +217,7 @@ describe('rollRandomEvent', () => {
     });
 
     it('returned event passes the exclusion filter for each boost category', () => {
-      const excluded: IntentCategory[] = ['社交', '休息'];
+      const excluded: IntentCategory[] = ['connect', 'rest'];
       vi.spyOn(Math, 'random')
         .mockReturnValueOnce(0.05)
         .mockReturnValueOnce(0.0)
@@ -550,7 +550,7 @@ describe('rollContextAwareEvent', () => {
       const flowState: FlowState = {
         ...DEFAULT_FLOW_STATE,
         status: 'flow',
-        category: '创作',
+        category: 'produce',
         activity: '拍照',
       };
       const ctx = makeCtx({ flow: flowState });
@@ -607,7 +607,7 @@ describe('rollContextAwareEvent', () => {
         if (callCount === 1) return 0.0;
         return 0.5;
       };
-      const ctx = makeCtx({ recentActions: ['窥屏'] });
+      const ctx = makeCtx({ recentActions: ['consume'] });
       const result = rollContextAwareEvent(ctx, { probability: 1.0, rng });
       expect(result.event).not.toBeNull();
     });
@@ -771,7 +771,7 @@ describe('rollContextAwareEvent', () => {
 
   describe('chain event generation', () => {
     it('generates chain events when probability is met', () => {
-      const ctx = makeCtx({ currentSchedule: '上班', recentActions: ['窥屏'] });
+      const ctx = makeCtx({ currentSchedule: '上班', recentActions: ['consume'] });
 
       let totalChains = 0;
       const trials = 100;
@@ -837,7 +837,7 @@ describe('processChainEvents', () => {
             description: '连锁事件1',
             probability: 0.5,
             emotion_delta: { valence: -0.1 },
-            intent_boosts: [{ category: '休息', boost: 1.0 }],
+            intent_boosts: [{ category: 'rest', boost: 1.0 }],
             diary_entry: '测试日记1',
           },
         },
@@ -862,7 +862,7 @@ describe('processChainEvents', () => {
             description: '等待中的事件',
             probability: 0.5,
             emotion_delta: { stress: 0.1 },
-            intent_boosts: [{ category: '休息', boost: 1.0 }],
+            intent_boosts: [{ category: 'rest', boost: 1.0 }],
             diary_entry: '还没到时间',
           },
         },
@@ -886,7 +886,7 @@ describe('processChainEvents', () => {
             description: '要触发',
             probability: 0.5,
             emotion_delta: { valence: 0.1 },
-            intent_boosts: [{ category: '社交', boost: 1.0 }],
+            intent_boosts: [{ category: 'connect', boost: 1.0 }],
             diary_entry: '触发了',
           },
         },
@@ -897,7 +897,7 @@ describe('processChainEvents', () => {
             description: '还要等',
             probability: 0.5,
             emotion_delta: { stress: 0.1 },
-            intent_boosts: [{ category: '休息', boost: 1.0 }],
+            intent_boosts: [{ category: 'rest', boost: 1.0 }],
             diary_entry: '等待中',
           },
         },
@@ -908,7 +908,7 @@ describe('processChainEvents', () => {
             description: '也要触发',
             probability: 0.5,
             emotion_delta: { valence: -0.1 },
-            intent_boosts: [{ category: '表达', boost: 1.0 }],
+            intent_boosts: [{ category: 'express', boost: 1.0 }],
             diary_entry: '也触发了',
           },
         },
@@ -949,7 +949,7 @@ describe('processChainEvents', () => {
         description: '不变',
         probability: 0.5,
         emotion_delta: { valence: 0.1 },
-        intent_boosts: [{ category: '创作', boost: 1.0 }],
+        intent_boosts: [{ category: 'produce', boost: 1.0 }],
         diary_entry: '不变',
       },
     };

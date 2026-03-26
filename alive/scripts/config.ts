@@ -92,15 +92,15 @@ export const CONFIDENCE_CONFIG = {
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════
-// Post Impulse Engine
+// Work Impulse Engine (core output desire accumulator)
 // ═══════════════════════════════════════════════════════════════════
 
-export const POST_IMPULSE_CONFIG = {
+export const WORK_IMPULSE_CONFIG = {
   /** Per-tick base impulse decay */
   BASE_DECAY: 3,
-  /** Impulse threshold to inject post desire (0-100) */
+  /** Impulse threshold to inject produce desire (0-100) */
   IMPULSE_THRESHOLD: 70,
-  /** Days without posting before dormancy boost */
+  /** Days without core output before dormancy boost */
   DORMANCY_DAYS: 5,
   /** Impulse boost on dormancy trigger */
   DORMANCY_BOOST: 50,
@@ -163,7 +163,7 @@ export const LLM_CONFIG = {
   /** Default API base URL */
   DEFAULT_API_BASE: 'https://aihubmix.com/v1',
   /** Default model name */
-  DEFAULT_MODEL: 'minimax-m2.5',
+  DEFAULT_MODEL: 'claude-sonnet-4-20250514',
   /** Max tokens for truncation retry */
   MAX_RETRY_TOKENS: 32768 as number,
   /** Default max tokens per call */

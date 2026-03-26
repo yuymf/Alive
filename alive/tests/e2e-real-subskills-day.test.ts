@@ -178,19 +178,18 @@ describe.skipIf(!shouldRun)('E2E: Real Sub-Skills Full Day (水瀬)', () => {
     if (!fs.existsSync(testIndex)) throw new Error(`Missing index.js: ${testIndex}`);
     console.log(`  Sub-skills: dist=${distSubSkillsDir} (symlinked to sandbox)`);
 
-    // Pre-seed post-impulse so Instagram can actually post (threshold=80, start at 85)
-    fs.writeFileSync(path.join(tmpDir, 'post-impulse.json'), JSON.stringify({
-      impulse: 85,
-      last_accumulated: null,
-      daily_accumulation: 0,
-      dormancy_days: 0,
-      last_posted_date: null,
+    // Pre-seed work-impulse so Instagram can actually post (threshold=70, start at 85)
+    fs.writeFileSync(path.join(tmpDir, 'work-impulse.json'), JSON.stringify({
+      value: 85,
+      last_output_at: 0,
+      outputs_today_date: '',
+      outputs_today: 0,
     }));
 
     setLlmLogPath(path.join(tmpDir, 'llm-call-log.jsonl'));
     llm = createRealLLMClient('e2e-real-subskills-day');
 
-    console.log(`\n  Real Sub-Skills E2E | Model: ${process.env.LLM_MODEL || 'minimax-m2.5'} | Sandbox: ${tmpDir}`);
+    console.log(`\n  Real Sub-Skills E2E | Model: ${process.env.LLM_MODEL || 'claude-sonnet-4-20250514'} | Sandbox: ${tmpDir}`);
     console.log(`  MODE: FULLY REAL — NO API MOCKS (except cron)`);
   });
 
@@ -334,10 +333,10 @@ describe.skipIf(!shouldRun)('E2E: Real Sub-Skills Full Day (水瀬)', () => {
 
     // Post impulse state
     try {
-      const impulsePath = path.join(tmpDir, 'post-impulse.json');
+      const impulsePath = path.join(tmpDir, 'work-impulse.json');
       if (fs.existsSync(impulsePath)) {
         const impulse = JSON.parse(fs.readFileSync(impulsePath, 'utf8'));
-        console.log(`\n    🔥 Post Impulse: ${impulse.impulse}/100 (last accumulated: ${impulse.last_accumulated ?? 'never'}, last posted: ${impulse.last_posted_date ?? 'never'})`);
+        console.log(`\n    🔥 Work Impulse: ${impulse.impulse}/100 (last accumulated: ${impulse.last_accumulated ?? 'never'}, last posted: ${impulse.last_posted_date ?? 'never'})`);
       }
     } catch (e) { /* ignore */ }
 
@@ -385,9 +384,9 @@ describe.skipIf(!shouldRun)('E2E: Real Sub-Skills Full Day (水瀬)', () => {
 
     // Check for real sub-skill narrative evidence in diary
     const hasInstagramEvidence = diary.includes('Instagram') || diary.includes('instagram') || diary.includes('📸');
-    const hasSearchEvidence = diary.includes('搜') || diary.includes('学习');
+    const hasSearchEvidence = diary.includes('搜') || diary.includes('learn');
     const hasBrowseEvidence = diary.includes('刷') || diary.includes('灵感') || diary.includes('📱');
-    const hasSocialEvidence = diary.includes('评论') || diary.includes('社交') || diary.includes('互动');
+    const hasSocialEvidence = diary.includes('评论') || diary.includes('connect') || diary.includes('互动');
     console.log(`\n  Sub-skill diary evidence: instagram=${hasInstagramEvidence} search=${hasSearchEvidence} browse=${hasBrowseEvidence} social=${hasSocialEvidence}`);
 
     // Issues summary

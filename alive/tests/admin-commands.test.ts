@@ -284,7 +284,7 @@ describe('/alive memory', () => {
     fs.writeFileSync(path.join(memoryDir, 'diary.md'), '## 2026-03-23\n### 10:00\nTest entry\n## 2026-03-24\n### 09:00\nAnother\n');
     writeJSON(PATHS.coreWisdom, { version: 1, wisdom: [{ id: 'w1', lesson: 'test', source: 'test', date: '2026-03-24', importance: 8, tags: [] }], total_importance_since_reflection: 8 });
     writeJSON(PATHS.heartbeatLog, { logs: [{ timestamp: '2026-03-24T10:00:00Z', type: 'regular', status: 'completed' }], retention_days: 30 });
-    writeJSON(PATHS.intentPool, { intents: [{ id: 'i1', category: '创作', description: 'test', intensity: 5, source: 'accumulation', born_at: '', decay_rate: 0.1, satisfied_at: null, resistance: 4, skipped_count: 0, last_attempted: null }], last_updated: null });
+    writeJSON(PATHS.intentPool, { intents: [{ id: 'i1', category: 'produce', description: 'test', intensity: 5, source: 'accumulation', born_at: '', decay_rate: 0.1, satisfied_at: null, resistance: 4, skipped_count: 0, last_attempted: null }], last_updated: null });
 
     const result = await dispatch('/alive memory');
     expect(result.output).toContain('Diary days');
@@ -311,7 +311,7 @@ describe('/alive reset', () => {
   });
 
   it('resets flow state', async () => {
-    writeJSON(PATHS.flowState, { status: 'flow', activity: 'coding', category: '创作', entered_at: '2026-03-24T10:00:00Z', duration_ticks: 5, interrupt_chance: 0.05, cooldown_remaining: 0 });
+    writeJSON(PATHS.flowState, { status: 'flow', activity: 'coding', category: 'produce', entered_at: '2026-03-24T10:00:00Z', duration_ticks: 5, interrupt_chance: 0.05, cooldown_remaining: 0 });
     const result = await dispatch('/alive reset flow');
     expect(result.output).toContain('Flow state reset');
 
@@ -320,7 +320,7 @@ describe('/alive reset', () => {
   });
 
   it('clears intent pool', async () => {
-    writeJSON(PATHS.intentPool, { intents: [{ id: 'i1', category: '创作', description: 'test', intensity: 5, source: 'accumulation', born_at: '', decay_rate: 0.1, satisfied_at: null, resistance: 4, skipped_count: 0, last_attempted: null }], last_updated: null });
+    writeJSON(PATHS.intentPool, { intents: [{ id: 'i1', category: 'produce', description: 'test', intensity: 5, source: 'accumulation', born_at: '', decay_rate: 0.1, satisfied_at: null, resistance: 4, skipped_count: 0, last_attempted: null }], last_updated: null });
     const result = await dispatch('/alive reset intents');
     expect(result.output).toContain('Intent pool cleared');
 
@@ -331,8 +331,8 @@ describe('/alive reset', () => {
   it('resets all', async () => {
     writeJSON(PATHS.emotionState, makeTestEmotion());
     writeJSON(PATHS.vitalityState, { vitality: 30, last_updated: null, consecutive_low_days: 5 });
-    writeJSON(PATHS.flowState, { status: 'flow', activity: 'coding', category: '创作', entered_at: '2026-03-24T10:00:00Z', duration_ticks: 5, interrupt_chance: 0.05, cooldown_remaining: 0 });
-    writeJSON(PATHS.intentPool, { intents: [{ id: 'i1', category: '创作', description: 'test', intensity: 5, source: 'accumulation', born_at: '', decay_rate: 0.1, satisfied_at: null, resistance: 4, skipped_count: 0, last_attempted: null }], last_updated: null });
+    writeJSON(PATHS.flowState, { status: 'flow', activity: 'coding', category: 'produce', entered_at: '2026-03-24T10:00:00Z', duration_ticks: 5, interrupt_chance: 0.05, cooldown_remaining: 0 });
+    writeJSON(PATHS.intentPool, { intents: [{ id: 'i1', category: 'produce', description: 'test', intensity: 5, source: 'accumulation', born_at: '', decay_rate: 0.1, satisfied_at: null, resistance: 4, skipped_count: 0, last_attempted: null }], last_updated: null });
 
     const result = await dispatch('/alive reset all');
     expect(result.output).toContain('ENFP baseline');

@@ -2,7 +2,7 @@
 // Metabolism system — generalized (no platform-specific action types)
 
 import { VitalityState, EmotionState } from '../utils/types';
-import { now } from '../utils/time-utils';
+import { now, getLocalDate } from '../utils/time-utils';
 import { VITALITY_CONFIG } from '../config';
 
 const VITALITY_MAX = VITALITY_CONFIG.VITALITY_MAX;
@@ -69,8 +69,17 @@ export function morningRecovery(state: VitalityState): VitalityState {
 export function afternoonRestRecovery(state: VitalityState, hour: number): VitalityState {
   if (hour < 13 || hour > 15) return state;
   if (state.vitality >= 50) return state;
+
+  const today = getLocalDate();
+  if (state.last_afternoon_rest_date === today) return state;
+
   const gain = REPLENISHMENT.afternoon_rest;
-  return { ...state, vitality: clampVitality(state.vitality + gain), last_updated: now().toISOString() };
+  return {
+    ...state,
+    vitality: clampVitality(state.vitality + gain),
+    last_updated: now().toISOString(),
+    last_afternoon_rest_date: today,
+  };
 }
 
 export type VitalityZone = 'high' | 'normal' | 'low' | 'critical';
@@ -99,4 +108,9 @@ export function getVitalityConstraints(vitality: number): {
   }
 }
 
-export const DEFAULT_VITALITY: VitalityState = { vitality: VITALITY_CONFIG.DEFAULT_VITALITY, last_updated: null, consecutive_low_days: 0 };
+export const DEFAULT_VITALITY: VitalityState = {
+  vitality: VITALITY_CONFIG.DEFAULT_VITALITY,
+  last_updated: null,
+  consecutive_low_days: 0,
+  last_afternoon_rest_date: null,
+};

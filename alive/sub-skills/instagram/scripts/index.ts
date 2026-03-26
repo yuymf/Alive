@@ -14,6 +14,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { SubSkillContext, SubSkillResult, EmotionDelta } from '../../../scripts/router/sub-skill-sdk';
 import { createResult, createFeedback } from '../../../scripts/router/sub-skill-sdk';
+import { WorkImpulseState, DEFAULT_WORK_IMPULSE_STATE, isFeatureEnabled } from '../../../scripts/utils/types';
+import {
+  accumulateImpulse, decayImpulse as coreDecayImpulse,
+  shouldInjectProduceDesire, resetImpulseAfterOutput,
+} from '../../../scripts/engines/work-impulse';
 
 // ── Types (Instagram-specific, declared locally) ─────────────────
 
@@ -58,14 +63,6 @@ export interface PostRecord {
   };
 }
 
-export interface PostImpulseState {
-  impulse: number;
-  last_accumulated: string | null;
-  daily_accumulation: number;
-  dormancy_days: number;
-  last_posted_date: string | null;
-}
-
 // ── Template Loader ──────────────────────────────────────────────
 
 function loadTemplate(templateName: string): string {
@@ -73,52 +70,6 @@ function loadTemplate(templateName: string): string {
   const templatePath = path.join(templateDir, templateName);
   if (fs.existsSync(templatePath)) return fs.readFileSync(templatePath, 'utf8');
   throw new Error(`Template not found: ${templateName}`);
-}
-
-// ── Impulse System (generalized from post-impulse.ts) ────────────
-
-const IMPULSE_THRESHOLD = 80;
-const IMPULSE_DECAY_RATE = 5;
-const DEFAULT_IMPULSE: PostImpulseState = {
-  impulse: 0,
-  last_accumulated: null,
-  daily_accumulation: 0,
-  dormancy_days: 0,
-  last_posted_date: null,
-};
-
-function decayImpulse(state: PostImpulseState): PostImpulseState {
-  const today = new Date().toISOString().slice(0, 10);
-  if (state.last_accumulated === today) return state;
-  return {
-    ...state,
-    impulse: Math.max(0, state.impulse - IMPULSE_DECAY_RATE),
-    daily_accumulation: 0,
-  };
-}
-
-function accumulateImpulse(state: PostImpulseState, amount: number): PostImpulseState {
-  const today = new Date().toISOString().slice(0, 10);
-  return {
-    ...state,
-    impulse: Math.min(100, state.impulse + amount),
-    last_accumulated: today,
-    daily_accumulation: (state.last_accumulated === today ? state.daily_accumulation : 0) + amount,
-  };
-}
-
-function shouldPost(state: PostImpulseState): boolean {
-  return state.impulse >= IMPULSE_THRESHOLD;
-}
-
-function resetAfterPost(state: PostImpulseState): PostImpulseState {
-  const today = new Date().toISOString().slice(0, 10);
-  return {
-    ...state,
-    impulse: Math.max(0, state.impulse * 0.3),
-    last_posted_date: today,
-    dormancy_days: 0,
-  };
 }
 
 // ── Actions ──────────────────────────────────────────────────────
@@ -175,19 +126,23 @@ export const actions = {
     const getFollowerCount = config.getFollowerCount as (() => Promise<number>) | undefined;
     const followerBaseline = (config.followerBaseline as number) ?? 100;
 
-    // Check impulse
-    let impulseState = memory.readJSON<PostImpulseState>('post-impulse', DEFAULT_IMPULSE);
-    impulseState = decayImpulse(impulseState);
+    const workImpulseEnabled = isFeatureEnabled(persona, 'work_impulse');
+    let impulseState: WorkImpulseState | null = null;
 
-    if (!shouldPost(impulseState)) {
-      // Accumulate from browsing/inspiration
-      impulseState = accumulateImpulse(impulseState, 5 + Math.random() * 10);
-      memory.writeJSON('post-impulse', impulseState);
+    if (workImpulseEnabled) {
+      impulseState = memory.readJSON<WorkImpulseState>('work-impulse', DEFAULT_WORK_IMPULSE_STATE);
+      impulseState = coreDecayImpulse(impulseState);
 
-      return createResult(
-        `发帖冲动还不够强（${Math.round(impulseState.impulse)}/100）`,
-        { vitality_cost: 0 },
-      );
+      if (!shouldInjectProduceDesire(impulseState)) {
+        // Accumulate from browsing/inspiration
+        impulseState = accumulateImpulse(impulseState, 5 + Math.random() * 10);
+        memory.writeJSON('work-impulse', impulseState);
+
+        return createResult(
+          `发帖冲动还不够强（${Math.round(impulseState.value)}/100）`,
+          { vitality_cost: 0 },
+        );
+      }
     }
 
     const dateStr = new Date().toISOString().slice(0, 10);
@@ -273,9 +228,11 @@ export const actions = {
     }
 
     // 6. Post-publish housekeeping
-    // Reset impulse
-    impulseState = resetAfterPost(impulseState);
-    memory.writeJSON('post-impulse', impulseState);
+    // Reset impulse only when the work impulse engine is enabled
+    if (workImpulseEnabled && impulseState) {
+      impulseState = resetImpulseAfterOutput(impulseState);
+      memory.writeJSON('work-impulse', impulseState);
+    }
 
     // Record post history
     const postHistory = memory.readJSON<{ posts: PostRecord[] }>('post-history', { posts: [] });

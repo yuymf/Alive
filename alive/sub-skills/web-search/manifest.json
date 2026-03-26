@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "description": "好奇心驱动的网络搜索、学习新知识、研究话题",
   "intent_bindings": [
-    { "intent": "学习", "action": "search-pipeline", "priority": 5 },
-    { "intent": "窥屏", "action": "search-pipeline", "priority": 4 }
+    { "intent": "learn", "action": "search-pipeline", "priority": 5 },
+    { "intent": "consume", "action": "search-pipeline", "priority": 4 }
   ],
   "config_schema": {
     "exa_mcp_server": {

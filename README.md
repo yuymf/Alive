@@ -40,7 +40,7 @@ alive/                         # 通用活人感引擎 (persona-agnostic)
 │   │   ├── flow.ts            # 心流引擎
 │   │   ├── vitality.ts        # 活力引擎
 │   │   ├── confidence.ts      # 自信引擎
-│   │   └── post-impulse.ts    # 冲动后行为引擎
+│   │   └── work-impulse.ts    # 核心产出冲动引擎
 │   ├── lifecycle/             # 生命周期
 │   │   ├── morning-plan.ts    # 晨规划
 │   │   ├── heartbeat-tick.ts  # 每小时心跳

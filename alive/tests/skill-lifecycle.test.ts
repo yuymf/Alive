@@ -37,7 +37,7 @@ function createDummySkill(name: string) {
   fs.mkdirSync(path.join(skillDir, 'scripts'), { recursive: true });
   fs.writeFileSync(
     path.join(skillDir, 'manifest.json'),
-    JSON.stringify({ name, intent_bindings: [{ intent: '創作', action: 'test', priority: 3 }] }),
+    JSON.stringify({ name, intent_bindings: [{ intent: 'produce', action: 'test', priority: 3 }] }),
   );
 }
 

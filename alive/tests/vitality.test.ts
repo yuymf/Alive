@@ -7,6 +7,7 @@ import {
   applyActionCost,
   replenishVitality,
   morningRecovery,
+  afternoonRestRecovery,
   getVitalityZone,
   getVitalityConstraints,
   DEFAULT_VITALITY,
@@ -165,6 +166,24 @@ describe('morningRecovery', () => {
     // emergency: max(20+15=35, 60) = 60, consecutive resets
     expect(result.vitality).toBe(60);
     expect(result.consecutive_low_days).toBe(0);
+  });
+});
+
+// ──── afternoonRestRecovery ────
+
+describe('afternoonRestRecovery', () => {
+  it('recovers low vitality only once during the afternoon window', () => {
+    const state = makeVitality({ vitality: 20 });
+    const once = afternoonRestRecovery(state, 13);
+    const twice = afternoonRestRecovery(once, 15);
+    expect(once.vitality).toBe(32);
+    expect(twice.vitality).toBe(32);
+  });
+
+  it('does nothing outside the afternoon window', () => {
+    const state = makeVitality({ vitality: 20 });
+    const result = afternoonRestRecovery(state, 12);
+    expect(result.vitality).toBe(20);
   });
 });
 

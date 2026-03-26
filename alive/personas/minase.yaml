@@ -172,7 +172,7 @@ events_extra:
     name: "品牌合作谈崩"
     weight: 0.05
     emotion_impact: { valence: -0.2, stress: 0.3, energy: -0.1 }
-    intent_boosts: [{ category: "休息", boost: 2.0 }]
+    intent_boosts: [{ category: "rest", boost: 2.0 }]
     diary_entry: "今天谈合作好烦...对方压价压得离谱"
     chain:
       - { delay_hours: [4, 8], event: "still_upset", probability: 0.6 }
@@ -181,7 +181,7 @@ events_extra:
     name: "漫展即将到来"
     weight: 0.03
     emotion_impact: { valence: 0.3, arousal: 0.3, creativity: 0.3 }
-    intent_boosts: [{ category: "创作", boost: 3.0 }, { category: "梦想", boost: 2.0 }]
+    intent_boosts: [{ category: "produce", boost: 3.0 }, { category: "aspire", boost: 2.0 }]
     diary_entry: "漫展快到了！必须要准备新的cos才行！"
 
 advisors:

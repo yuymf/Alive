@@ -68,7 +68,7 @@ function makeMockLlm(response: unknown) {
 function seedPendingNeeds(count: number) {
   for (let i = 0; i < count; i++) {
     recordSkillNeed({
-      intent_category: '創作',
+      intent_category: 'produce',
       description: `skill need ${i}`,
       wished_skill_name: `skill-${i}`,
       source: 'wished',

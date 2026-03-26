@@ -52,7 +52,7 @@ describe('generateAdaptedSkill', () => {
   it('generates a complete sub-skill directory structure', async () => {
     const llm = makeMockLlm({
       intent_bindings: [
-        { intent: '創作', action: 'generate-music', priority: 3 },
+        { intent: 'produce', action: 'generate-music', priority: 3 },
       ],
       description: 'AI-powered music generation',
     });
@@ -67,8 +67,8 @@ describe('generateAdaptedSkill', () => {
   it('generates manifest.json with correct intent_bindings from LLM', async () => {
     const llm = makeMockLlm({
       intent_bindings: [
-        { intent: '創作', action: 'generate-music', priority: 3 },
-        { intent: '表達', action: 'compose-melody', priority: 3 },
+        { intent: 'produce', action: 'generate-music', priority: 3 },
+        { intent: 'express', action: 'compose-melody', priority: 3 },
       ],
       description: 'Music generation skill',
     });
@@ -86,7 +86,7 @@ describe('generateAdaptedSkill', () => {
   it('generates scripts/index.js with adapter wrapper code', async () => {
     const llm = makeMockLlm({
       intent_bindings: [
-        { intent: '創作', action: 'generate-music', priority: 3 },
+        { intent: 'produce', action: 'generate-music', priority: 3 },
       ],
       description: 'Music gen',
     });
@@ -102,7 +102,7 @@ describe('generateAdaptedSkill', () => {
   it('creates .adapted marker file', async () => {
     const llm = makeMockLlm({
       intent_bindings: [
-        { intent: '創作', action: 'generate-music', priority: 3 },
+        { intent: 'produce', action: 'generate-music', priority: 3 },
       ],
       description: 'Music gen',
     });
@@ -116,7 +116,7 @@ describe('generateAdaptedSkill', () => {
   it('copies SKILL.md into the adapted skill directory', async () => {
     const llm = makeMockLlm({
       intent_bindings: [
-        { intent: '創作', action: 'generate-music', priority: 3 },
+        { intent: 'produce', action: 'generate-music', priority: 3 },
       ],
       description: 'Music gen',
     });
@@ -132,7 +132,7 @@ describe('generateAdaptedSkill', () => {
   it('sets adapted skill default priority to 3', async () => {
     const llm = makeMockLlm({
       intent_bindings: [
-        { intent: '創作', action: 'generate-music', priority: 7 }, // LLM gives high priority
+        { intent: 'produce', action: 'generate-music', priority: 7 }, // LLM gives high priority
       ],
       description: 'Music gen',
     });

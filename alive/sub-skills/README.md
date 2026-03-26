@@ -24,7 +24,7 @@ sub-skills/
   "name": "你的技能名称",
   "version": "1.0.0",
   "description": "简短描述",
-  "intent_categories": ["创作", "社交"],
+  "intent_categories": ["produce", "connect"],
   "triggers": ["your-trigger-name"],
   "priority": 5,
   "vitality_cost": {
@@ -45,22 +45,26 @@ sub-skills/
 | `name` | string | ✅ | 显示名称 |
 | `version` | string | ✅ | 语义化版本号 |
 | `description` | string | ✅ | 简短描述 |
-| `intent_categories` | string[] | ✅ | 该技能可响应的意图类别（7选N） |
+| `intent_categories` | string[] | ✅ | 该技能可响应的 MetaIntent 类别（7选N） |
 | `triggers` | string[] | ✅ | 触发器名称列表 |
 | `priority` | number | ✅ | 路由优先级（1-10，越高越优先） |
 | `vitality_cost` | object | ✅ | 体力消耗配置 |
 | `dependencies.env` | string[] | — | 需要的环境变量 |
 | `dependencies.tools` | string[] | — | 需要的 OpenClaw 工具 |
 
-### 7 大意图类别
+### 7 大 MetaIntent 类别
 
-- `创作` — 生成内容（写文、发帖、画图等）
-- `社交` — 与人互动（评论、回复、发消息等）
-- `窥屏` — 浏览内容（刷 feed、看热门等）
-- `表达` — 情绪表达（发泄、分享心情等）
-- `学习` — 获取知识（搜索、阅读、研究等）
-- `休息` — 放松休息（发呆、听歌等）
-- `梦想` — 追求目标（技能学习、长期计划等）
+| MetaIntent | 说明 | 示例行为 |
+|------------|------|---------|
+| `produce` | 核心产出 | 写文、发帖、画图、剪片、写论文等 |
+| `connect` | 社交互动 | 评论、回复、发消息、开会等 |
+| `consume` | 信息摄取 | 刷 feed、看热门、读文献、审片等 |
+| `express` | 情绪表达 | 发泄、分享心情、表达观点等 |
+| `learn` | 学习成长 | 搜索、阅读、研究、上课等 |
+| `rest` | 休息恢复 | 发呆、听歌、放松等 |
+| `aspire` | 愿景追求 | 长期计划、技能学习、梦想推进等 |
+
+每个角色可通过 `persona.yaml` 的 `intent_config` 自定义 display_name、活动示例、阻力值和情绪耦合权重。
 
 ## 脚本入口 (scripts/index.js)
 
@@ -128,7 +132,7 @@ events:
       valence: 0.2
       creativity: 0.1
     intent_boosts:
-      - category: "创作"
+      - category: "produce"
         boost: 2.0
     diary_entry: "发生了一件有趣的事..."
     precondition: null
@@ -160,8 +164,9 @@ heartbeat-tick（心跳）
 
 | 技能 | 意图 | 说明 |
 |------|------|------|
-| `instagram` | 创作、表达 | Instagram 内容发布管线 |
-| `web-search` | 学习、窥屏 | 网络搜索与知识摘要 |
-| `content-browse` | 窥屏、学习 | Feed 浏览与灵感采集 |
-| `social-engagement` | 社交 | 评论回复与主动互动 |
-| `send-message` | 社交、表达 | 主动发送消息 |
+| `instagram` | produce, express | Instagram 内容发布管线 |
+| `web-search` | learn, consume | 网络搜索与知识摘要 |
+| `content-browse` | consume, learn | Feed 浏览与灵感采集 |
+| `social-engagement` | connect | 评论回复与主动互动 |
+| `send-message` | connect, express | 主动发送消息 |
+| `voice-tts` | connect, express | 语音消息合成与发送 |

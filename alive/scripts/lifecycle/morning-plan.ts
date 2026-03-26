@@ -19,10 +19,11 @@ import { now, getLocalDate, getLocalWeekday, formatLocalTime, setTimezone } from
 import { getEmotionBaseline, getDefaultUndertone, getScheduleConfig, loadPersona, injectPersona, buildVoiceSignature } from '../persona/persona-loader';
 import { morningRecovery, DEFAULT_VITALITY } from '../engines/vitality';
 
-const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想']);
+const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['produce', 'connect', 'consume', 'express', 'learn', 'rest', 'aspire']);
 
 function toIntentCategory(s: string): IntentCategory {
-  return VALID_CATEGORIES.has(s) ? s as IntentCategory : '表达';
+  if (VALID_CATEGORIES.has(s)) return s as IntentCategory;
+  return 'express';
 }
 
 interface MorningPlanDecision {
@@ -105,7 +106,7 @@ export async function runMorningPlan(
       activity: f.activity,
       preferred_time: f.preferred_time,
       intent_boost: f.intent_boost,
-      intent_category: toIntentCategory(f.intent_category || '创作'),
+      intent_category: toIntentCategory(f.intent_category || 'produce'),
     })),
     generated_by: 'morning-plan',
   };

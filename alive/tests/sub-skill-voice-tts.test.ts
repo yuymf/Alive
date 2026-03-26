@@ -165,7 +165,7 @@ describe('voice-tts/action', () => {
       emotion: makeEmotion(),
       vitality: 80,
       confidence: 1.0,
-      intent: { id: 'i1', category: '表达' as const, description: '想发语音分享心情', intensity: 5, action: 'send-voice' },
+      intent: { id: 'i1', category: 'express' as const, description: '想发语音分享心情', intensity: 5, action: 'send-voice' },
       memory: makeMemory(),
       socialGraph: { getRelations: vi.fn(() => []), updateRelation: vi.fn() },
       llm: {

@@ -52,31 +52,31 @@ beforeEach(() => {
 
 describe('checkFlowEntry', () => {
   it('enters flow when last action has a high-intensity matching intent and sufficient energy', () => {
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
     const result = checkFlowEntry(
       { ...DEFAULT_FLOW_STATE },
-      { category: '创作', activity: '画COS照' },
+      { category: 'produce', activity: '画COS照' },
       pool,
       0.6, // energy above threshold
       0,   // no cooldown
     );
     expect(result.status).toBe('flow');
-    expect(result.category).toBe('创作');
+    expect(result.category).toBe('produce');
     expect(result.activity).toBe('画COS照');
   });
 
   it('does not enter flow when already in flow', () => {
-    const existing: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2, cooldown_remaining: 0 };
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
-    const result = checkFlowEntry(existing, { category: '创作', activity: '画COS照' }, pool, 0.6, 0);
+    const existing: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
+    const result = checkFlowEntry(existing, { category: 'produce', activity: '画COS照' }, pool, 0.6, 0);
     expect(result).toEqual(existing);
   });
 
   it('does not enter flow without a matching intent above threshold', () => {
-    const pool = makePool([{ category: '创作', intensity: 4.0, resistance: 2.0 }]); // net 2.0 < 2.5 threshold
+    const pool = makePool([{ category: 'produce', intensity: 4.0, resistance: 2.0 }]); // net 2.0 < 2.5 threshold
     const result = checkFlowEntry(
       { ...DEFAULT_FLOW_STATE },
-      { category: '创作', activity: '画画' },
+      { category: 'produce', activity: '画画' },
       pool,
       0.6,
       0,
@@ -85,16 +85,16 @@ describe('checkFlowEntry', () => {
   });
 
   it('does not enter flow without last action', () => {
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
     const result = checkFlowEntry({ ...DEFAULT_FLOW_STATE }, null, pool, 0.6, 0);
     expect(result.status).toBe('none');
   });
 
   it('does not enter flow when energy is too low', () => {
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
     const result = checkFlowEntry(
       { ...DEFAULT_FLOW_STATE },
-      { category: '创作', activity: '画画' },
+      { category: 'produce', activity: '画画' },
       pool,
       0.15, // below FLOW_MIN_ENERGY (0.30)
       0,
@@ -103,10 +103,10 @@ describe('checkFlowEntry', () => {
   });
 
   it('does not enter flow during cooldown period', () => {
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
     const result = checkFlowEntry(
       { ...DEFAULT_FLOW_STATE, cooldown_remaining: 2 },
-      { category: '创作', activity: '画画' },
+      { category: 'produce', activity: '画画' },
       pool,
       0.6,
       2, // cooldown active
@@ -115,10 +115,10 @@ describe('checkFlowEntry', () => {
   });
 
   it('does not enter flow for 休息 category', () => {
-    const pool = makePool([{ category: '休息', intensity: 8.0, resistance: 2.0 }]);
+    const pool = makePool([{ category: 'rest', intensity: 8.0, resistance: 2.0 }]);
     const result = checkFlowEntry(
       { ...DEFAULT_FLOW_STATE },
-      { category: '休息', activity: '午睡' },
+      { category: 'rest', activity: '午睡' },
       pool,
       0.6,
       0,
@@ -127,10 +127,10 @@ describe('checkFlowEntry', () => {
   });
 
   it('does not enter flow for 窥屏 category', () => {
-    const pool = makePool([{ category: '窥屏', intensity: 8.0, resistance: 2.0 }]);
+    const pool = makePool([{ category: 'consume', intensity: 8.0, resistance: 2.0 }]);
     const result = checkFlowEntry(
       { ...DEFAULT_FLOW_STATE },
-      { category: '窥屏', activity: '刷手机' },
+      { category: 'consume', activity: '刷手机' },
       pool,
       0.6,
       0,
@@ -143,7 +143,7 @@ describe('checkFlowEntry', () => {
 
 describe('checkDriftEntry', () => {
   it('enters drift when vitality is low and no strong intents', () => {
-    const pool = makePool([{ category: '窥屏', intensity: 0.5, resistance: 0.5 }]);
+    const pool = makePool([{ category: 'consume', intensity: 0.5, resistance: 0.5 }]);
     const result = checkDriftEntry({ ...DEFAULT_FLOW_STATE }, 30, pool, 0.1);
     expect(result.status).toBe('drift');
   });
@@ -155,7 +155,7 @@ describe('checkDriftEntry', () => {
   });
 
   it('does not enter drift when there is a strong intent', () => {
-    const pool = makePool([{ category: '创作', intensity: 5.0, resistance: 2.0 }]); // net 3.0 > 1.0
+    const pool = makePool([{ category: 'produce', intensity: 5.0, resistance: 2.0 }]); // net 3.0 > 1.0
     const result = checkDriftEntry({ ...DEFAULT_FLOW_STATE }, 30, pool, 0.1);
     expect(result.status).toBe('none');
   });
@@ -171,38 +171,38 @@ describe('checkDriftEntry', () => {
 
 describe('checkFlowExit', () => {
   it('exits flow when intent drops below resistance', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
-    const pool = makePool([{ category: '创作', intensity: 2.0, resistance: 4.0 }]); // below resistance
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const pool = makePool([{ category: 'produce', intensity: 2.0, resistance: 4.0 }]); // below resistance
     const { shouldExit, reason } = checkFlowExit(flow, pool, 60, null, false, () => 1);
     expect(shouldExit).toBe(true);
     expect(reason).toBe('做够了');
   });
 
   it('exits flow when vitality is critical', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
     const { shouldExit, reason } = checkFlowExit(flow, pool, 15, null, false, () => 1);
     expect(shouldExit).toBe(true);
     expect(reason).toBe('累到不行');
   });
 
   it('exits flow on random interrupt', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.5, cooldown_remaining: 0 };
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 1, interrupt_chance: 0.5, cooldown_remaining: 0 };
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
     const { shouldExit } = checkFlowExit(flow, pool, 60, null, false, () => 0.3); // rng < 0.5
     expect(shouldExit).toBe(true);
   });
 
   it('does not exit when conditions are fine', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.15, cooldown_remaining: 0 };
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 1, interrupt_chance: 0.15, cooldown_remaining: 0 };
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
     const { shouldExit } = checkFlowExit(flow, pool, 60, null, false, () => 0.99);
     expect(shouldExit).toBe(false);
   });
 
   it('forces exit when duration_ticks >= MAX_FLOW_TICKS (3)', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.5, cooldown_remaining: 0 };
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 3, interrupt_chance: 0.5, cooldown_remaining: 0 };
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
     // rng returns 1.0 so random interrupt won't trigger — only max_ticks should catch this
     const { shouldExit, reason } = checkFlowExit(flow, pool, 60, null, false, () => 1);
     expect(shouldExit).toBe(true);
@@ -210,8 +210,8 @@ describe('checkFlowExit', () => {
   });
 
   it('does not force exit when duration_ticks < MAX_FLOW_TICKS', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 0, interrupt_chance: 0.15, cooldown_remaining: 0 };
-    const pool = makePool([{ category: '创作', intensity: 8.0, resistance: 2.0 }]);
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 0, interrupt_chance: 0.15, cooldown_remaining: 0 };
+    const pool = makePool([{ category: 'produce', intensity: 8.0, resistance: 2.0 }]);
     const { shouldExit } = checkFlowExit(flow, pool, 60, null, false, () => 1);
     expect(shouldExit).toBe(false);
   });
@@ -221,15 +221,15 @@ describe('checkFlowExit', () => {
 
 describe('checkDriftExit', () => {
   it('exits drift when a strong intent appears', () => {
-    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
-    const pool = makePool([{ category: '创作', intensity: 6.0, resistance: 2.0, description: '画画' }]);
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: 'consume', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const pool = makePool([{ category: 'produce', intensity: 6.0, resistance: 2.0, description: '画画' }]);
     const { shouldExit, reason } = checkDriftExit(flow, pool, 30, false);
     expect(shouldExit).toBe(true);
     expect(reason).toContain('画画');
   });
 
   it('exits drift on new event', () => {
-    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: 'consume', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const pool = makePool([]);
     const { shouldExit, reason } = checkDriftExit(flow, pool, 30, true);
     expect(shouldExit).toBe(true);
@@ -237,7 +237,7 @@ describe('checkDriftExit', () => {
   });
 
   it('exits drift when vitality recovers', () => {
-    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: 'consume', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const pool = makePool([]);
     const { shouldExit, reason } = checkDriftExit(flow, pool, 60, false);
     expect(shouldExit).toBe(true);
@@ -245,7 +245,7 @@ describe('checkDriftExit', () => {
   });
 
   it('forces exit when duration_ticks >= MAX_DRIFT_TICKS (2)', () => {
-    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 2, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: 'consume', entered_at: '', duration_ticks: 2, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const pool = makePool([]);
     // vitality low, no events, no strong intents — only max_ticks should catch this
     const { shouldExit, reason } = checkDriftExit(flow, pool, 30, false);
@@ -254,7 +254,7 @@ describe('checkDriftExit', () => {
   });
 
   it('does not force exit when duration_ticks < MAX_DRIFT_TICKS', () => {
-    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: 'consume', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const pool = makePool([]);
     const { shouldExit } = checkDriftExit(flow, pool, 30, false);
     expect(shouldExit).toBe(false);
@@ -265,21 +265,21 @@ describe('checkDriftExit', () => {
 
 describe('tickFlow', () => {
   it('uses early increment for first 2 ticks', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.35, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 1, interrupt_chance: 0.35, cooldown_remaining: 0 };
     const ticked = tickFlow(flow);
     expect(ticked.duration_ticks).toBe(2);
     expect(ticked.interrupt_chance).toBeCloseTo(0.50); // +0.15 early increment
   });
 
   it('uses late (higher) increment after 2 ticks', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 2, interrupt_chance: 0.50, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 2, interrupt_chance: 0.50, cooldown_remaining: 0 };
     const ticked = tickFlow(flow);
     expect(ticked.duration_ticks).toBe(3);
     expect(ticked.interrupt_chance).toBeCloseTo(0.70); // +0.20 late increment
   });
 
   it('caps interrupt_chance at 0.85', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 20, interrupt_chance: 0.84, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 20, interrupt_chance: 0.84, cooldown_remaining: 0 };
     const ticked = tickFlow(flow);
     expect(ticked.interrupt_chance).toBeLessThanOrEqual(0.85);
   });
@@ -313,32 +313,32 @@ describe('resetFlow', () => {
 
 describe('generateFlowDiary', () => {
   it('generates an early-phase diary for low tick count', () => {
-    const flow: FlowState = { status: 'flow', activity: '画COS照', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'flow', activity: '画COS照', category: 'produce', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const diary = generateFlowDiary(flow, makeEmotion(), () => 0);
     expect(diary).toContain('画COS照');
   });
 
   it('generates a deep-phase diary for high tick count', () => {
-    const flow: FlowState = { status: 'flow', activity: '画COS照', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'flow', activity: '画COS照', category: 'produce', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const diary = generateFlowDiary(flow, makeEmotion(), () => 0);
     expect(diary).toContain('画COS照');
   });
 
   it('adds stress note when stressed', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const diary = generateFlowDiary(flow, makeEmotion({ stress: 0.6 }), () => 0);
     expect(diary).toContain('累');
   });
 
   it('adds happy note when mood is good', () => {
-    const flow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const diary = generateFlowDiary(flow, makeEmotion({ mood: { valence: 0.6, arousal: 0.5, description: '开心' } }), () => 0);
     expect(diary).toContain('心情很好');
   });
 
   it('early and deep templates produce different outputs', () => {
-    const earlyFlow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
-    const deepFlow: FlowState = { status: 'flow', activity: '画画', category: '创作', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const earlyFlow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const deepFlow: FlowState = { status: 'flow', activity: '画画', category: 'produce', entered_at: '', duration_ticks: 3, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const earlyDiary = generateFlowDiary(earlyFlow, makeEmotion(), () => 0);
     const deepDiary = generateFlowDiary(deepFlow, makeEmotion(), () => 0);
     // Both contain activity but come from different template sets
@@ -353,7 +353,7 @@ describe('generateFlowDiary', () => {
 
 describe('generateDriftDiary', () => {
   it('generates a drift diary entry', () => {
-    const flow: FlowState = { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: '', duration_ticks: 5, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const flow: FlowState = { status: 'drift', activity: '刷手机', category: 'consume', entered_at: '', duration_ticks: 5, interrupt_chance: 0.2, cooldown_remaining: 0 };
     const diary = generateDriftDiary(flow, () => 0);
     expect(diary).toBeTruthy();
     expect(diary.length).toBeGreaterThan(0);

@@ -17,7 +17,7 @@ const FLOW_MIN_ENERGY = FLOW_CONFIG.FLOW_MIN_ENERGY;      // 从 0.30 降到 0.2
 const FLOW_COOLDOWN_TICKS = FLOW_CONFIG.FLOW_COOLDOWN_TICKS;     // 从 2 降到 1：缩短冷却期，让一天能有更多次 flow
 
 // 不允许进入 flow 的类别（休息、窥屏不应进入心流）
-const FLOW_EXCLUDED_CATEGORIES: ReadonlySet<string> = new Set(['休息', '窥屏']);
+const FLOW_EXCLUDED_CATEGORIES: ReadonlySet<string> = new Set(['rest', 'consume']);
 
 export interface LastAction {
   category: IntentCategory;
@@ -41,7 +41,7 @@ export function checkDriftEntry(currentFlow: FlowState, vitality: number, pool: 
   if (currentFlow.status !== 'none' || vitality >= 40 || stress >= 0.3) return currentFlow;
   const hasStrong = pool.intents.some(i => i.satisfied_at === null && (i.intensity - i.resistance) >= 1.0);
   if (hasStrong) return currentFlow;
-  return { status: 'drift', activity: '刷手机', category: '窥屏', entered_at: now().toISOString(), duration_ticks: 0, interrupt_chance: INTERRUPT_CHANCE_INITIAL, cooldown_remaining: 0 };
+  return { status: 'drift', activity: '刷手机', category: 'consume', entered_at: now().toISOString(), duration_ticks: 0, interrupt_chance: INTERRUPT_CHANCE_INITIAL, cooldown_remaining: 0 };
 }
 
 export function checkFlowExit(flow: FlowState, pool: IntentPool, vitality: number, rigidSchedule: { allowed_actions: string[] } | null, hasNewEvent: boolean, rng = Math.random): { shouldExit: boolean; reason: string | null } {

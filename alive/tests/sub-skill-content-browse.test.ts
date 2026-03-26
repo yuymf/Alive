@@ -41,7 +41,7 @@ function makeCtx(overrides: Partial<SubSkillContext> = {}): SubSkillContext {
     emotion: makeEmotion(),
     vitality: 80,
     confidence: 1.0,
-    intent: { id: 'i1', category: '窥屏' as const, description: '刷一下手机', intensity: 5, action: 'feed-browse' },
+    intent: { id: 'i1', category: 'consume' as const, description: '刷一下手机', intensity: 5, action: 'feed-browse' },
     memory: makeMemory(),
     socialGraph: { getRelations: vi.fn(() => []), updateRelation: vi.fn() },
     llm: {
@@ -211,7 +211,7 @@ describe('content-browse/feed-browse', () => {
 describe('content-browse/inspiration-collect', () => {
   it('returns early when webSearch not configured', async () => {
     const ctx = makeCtx({
-      intent: { id: 'i1', category: '学习' as const, description: '找灵感', intensity: 5, action: 'inspiration-collect' },
+      intent: { id: 'i1', category: 'learn' as const, description: '找灵感', intensity: 5, action: 'inspiration-collect' },
     });
     const result = await actions['inspiration-collect'](ctx);
     expect(result.narrative).toContain('未配置');
@@ -227,7 +227,7 @@ describe('content-browse/inspiration-collect', () => {
     const ctx = makeCtx({
       config: { webSearch, trendQueries: ['query1', 'query2'] },
       memory,
-      intent: { id: 'i1', category: '学习' as const, description: '找灵感', intensity: 5, action: 'inspiration-collect' },
+      intent: { id: 'i1', category: 'learn' as const, description: '找灵感', intensity: 5, action: 'inspiration-collect' },
       llm: {
         callJSON: vi.fn(async () => ({
           hot_styles: ['style1', 'style2'],
@@ -253,7 +253,7 @@ describe('content-browse/inspiration-collect', () => {
 
     const ctx = makeCtx({
       config: { webSearch, trendQueries: ['q1'] },
-      intent: { id: 'i1', category: '学习' as const, description: '找灵感', intensity: 5, action: 'inspiration-collect' },
+      intent: { id: 'i1', category: 'learn' as const, description: '找灵感', intensity: 5, action: 'inspiration-collect' },
     });
 
     const result = await actions['inspiration-collect'](ctx);
@@ -268,7 +268,7 @@ describe('content-browse/inspiration-collect', () => {
 
     const ctx = makeCtx({
       config: { webSearch }, // no trendQueries
-      intent: { id: 'i1', category: '学习' as const, description: '找灵感', intensity: 5, action: 'inspiration-collect' },
+      intent: { id: 'i1', category: 'learn' as const, description: '找灵感', intensity: 5, action: 'inspiration-collect' },
       llm: {
         callJSON: vi.fn(async () => ({
           hot_styles: [], high_engagement_patterns: [], trending_hashtags: [],

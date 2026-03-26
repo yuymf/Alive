@@ -275,6 +275,15 @@ describe('callLLM', () => {
     await expect(callLLM('test')).rejects.toThrow('LLM_API_KEY not set');
   });
 
+  it('falls back to the documented default model when LLM_MODEL is unset', async () => {
+    delete process.env.LLM_MODEL;
+    mockFetchOk('hello');
+    await callLLM('test prompt');
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.model).toBe('claude-sonnet-4-20250514');
+  });
+
   it('retries once on failure then throws', async () => {
     vi.useFakeTimers();
 

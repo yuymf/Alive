@@ -1,7 +1,7 @@
 // alive/scripts/engines/intent.ts
-// Intent pool rule engine — generalized (no platform-specific event types)
+// Intent pool rule engine — universal MetaIntent keys
 
-import { Intent, IntentPool, IntentCategory, EmotionState, ScheduleToday, EventQueue, BASE_RESISTANCE } from '../utils/types';
+import { Intent, IntentPool, IntentCategory, EmotionState, ScheduleToday, EventQueue, BASE_RESISTANCE, MetaIntent, ALL_META_INTENTS } from '../utils/types';
 import { now } from '../utils/time-utils';
 import { INTENT_CONFIG } from '../config';
 
@@ -34,13 +34,13 @@ export function accumulateIntents(
     if (intent.satisfied_at !== null) return intent;
     let boost = 0;
     switch (intent.category) {
-      case '创作': boost = 0.3; if (lastActionHoursAgo > 48) boost += 1.0; break;
-      case '社交': boost = hasUnreadEvents ? 2.0 : 0.2; break;
-      case '窥屏': boost = isSlackPeriod(hour) ? 1.0 : 0.2; break;  // 降低窥屏 boost（从 1.5/0.3 → 1.0/0.2）避免单一技能垄断
-      case '休息': boost = consecutiveActiveHeartbeats * 0.5; break;
-      case '表达': boost = 0.2; break;
-      case '学习': boost = 0.6; break;  // 从 0.2 提高到 0.6：让学习/搜索意图更容易积累
-      case '梦想': boost = 0.1; break;
+      case 'produce': boost = 0.3; if (lastActionHoursAgo > 48) boost += 1.0; break;
+      case 'connect': boost = hasUnreadEvents ? 2.0 : 0.2; break;
+      case 'consume': boost = isSlackPeriod(hour) ? 1.0 : 0.2; break;
+      case 'rest':    boost = consecutiveActiveHeartbeats * 0.5; break;
+      case 'express': boost = 0.2; break;
+      case 'learn':   boost = 0.6; break;
+      case 'aspire':  boost = 0.1; break;
     }
     return { ...intent, intensity: cap(intent.intensity + boost) };
   });
@@ -57,14 +57,17 @@ export function applyEventBoosts(pool: IntentPool, events: EventQueue): IntentPo
     const boosts = (event.data as { intent_boosts?: Array<{ category: string; boost: number }> }).intent_boosts;
     if (boosts) {
       for (const b of boosts) {
-        intents = boostOrCreate(intents, b.category as IntentCategory, b.boost, `事件: ${event.type}`, 'event');
+        const resolved = ALL_META_INTENTS.includes(b.category as MetaIntent) ? b.category as MetaIntent : null;
+        if (resolved) {
+          intents = boostOrCreate(intents, resolved, b.boost, `事件: ${event.type}`, 'event');
+        }
       }
     }
   }
   return { ...pool, intents };
 }
 
-function boostOrCreate(intents: Intent[], category: IntentCategory, boost: number, description: string, source: Intent['source']): Intent[] {
+function boostOrCreate(intents: Intent[], category: MetaIntent, boost: number, description: string, source: Intent['source']): Intent[] {
   const existing = intents.find(i => i.category === category && i.satisfied_at === null);
   if (existing) {
     return intents.map(i => i.id === existing.id ? { ...i, intensity: cap(i.intensity + boost) } : i);
@@ -102,7 +105,7 @@ export function satisfyIntent(pool: IntentPool, intentId: string): IntentPool {
   return { ...pool, intents: pool.intents.map(i => i.id === intentId ? { ...i, satisfied_at: now().toISOString() } : i) };
 }
 
-export function addIntent(pool: IntentPool, category: IntentCategory, description: string, intensity: number, source: Intent['source']): IntentPool {
+export function addIntent(pool: IntentPool, category: MetaIntent, description: string, intensity: number, source: Intent['source']): IntentPool {
   return { ...pool, intents: [...pool.intents, {
     id: generateId(), category, description, intensity: cap(intensity), source,
     born_at: now().toISOString(), decay_rate: INTENT_CONFIG.DEFAULT_DECAY_RATE, satisfied_at: null,
@@ -112,22 +115,22 @@ export function addIntent(pool: IntentPool, category: IntentCategory, descriptio
 
 // === Resistance ===
 
-const HIGH_ENERGY_CATEGORIES: ReadonlySet<IntentCategory> = new Set(['创作', '学习', '梦想']);
+const HIGH_ENERGY_CATEGORIES: ReadonlySet<MetaIntent> = new Set<MetaIntent>(['produce', 'learn', 'aspire']);
 
 export function computeDynamicResistance(
   intent: Intent, vitality: number, confidence: number,
-  inFlow: boolean, flowCategory: IntentCategory | null,
+  inFlow: boolean, flowCategory: MetaIntent | null,
   rigidSchedule: { allowed_actions: string[] } | null,
 ): number {
   let resistance = BASE_RESISTANCE[intent.category] ?? 0;
   if (vitality < 30 && HIGH_ENERGY_CATEGORIES.has(intent.category)) resistance *= 1.5;
   if (inFlow && intent.category !== flowCategory) resistance += 3.0;
   if (rigidSchedule && !rigidSchedule.allowed_actions.some(a => a.includes(intent.category as string))) resistance += 5.0;
-  if (intent.category === '创作' && confidence < 0.8) resistance += 2.0;
+  if (intent.category === 'produce' && confidence < 0.8) resistance += 2.0;
   return resistance;
 }
 
-export function applyResistanceToPool(pool: IntentPool, vitality: number, confidence: number, inFlow: boolean, flowCategory: IntentCategory | null, rigidSchedule: { allowed_actions: string[] } | null): IntentPool {
+export function applyResistanceToPool(pool: IntentPool, vitality: number, confidence: number, inFlow: boolean, flowCategory: MetaIntent | null, rigidSchedule: { allowed_actions: string[] } | null): IntentPool {
   return { ...pool, intents: pool.intents.map(intent => {
     if (intent.satisfied_at !== null) return intent;
     const newR = computeDynamicResistance(intent, vitality, confidence, inFlow, flowCategory, rigidSchedule);
@@ -139,8 +142,8 @@ export function checkImpulseBreakthrough(pool: IntentPool, vitality: number, inF
   const unsatisfied = pool.intents.filter(i => i.satisfied_at === null);
   const eventBreak = unsatisfied.find(i => i.intensity > 8.0 && i.source === 'event');
   if (eventBreak) return eventBreak;
-  if (!inFlow && vitality < 50) { const browsing = unsatisfied.find(i => i.category === '窥屏'); if (browsing) return browsing; }
-  if (vitality < 15) { const rest = unsatisfied.find(i => i.category === '休息'); if (rest) return rest; }
+  if (!inFlow && vitality < 50) { const browsing = unsatisfied.find(i => i.category === 'consume'); if (browsing) return browsing; }
+  if (vitality < 15) { const rest = unsatisfied.find(i => i.category === 'rest'); if (rest) return rest; }
   return null;
 }
 
@@ -158,9 +161,7 @@ const PROCRASTINATION_TEMPLATES = [
 export function processProcrastination(pool: IntentPool, chosenIntentIds: ReadonlySet<string>, rng = Math.random, currentStress = 0): ProcrastinationResult {
   let stressDelta = 0;
   const diaryEntries: string[] = [];
-  // Track which descriptions we've already emitted this tick to avoid duplicates
   const emittedDescriptions = new Set<string>();
-  // Global cap: max N procrastination diary entries per tick to avoid diary bloat
   const MAX_DIARY_PER_TICK = INTENT_CONFIG.MAX_DIARY_PER_TICK;
 
   const intents = pool.intents.map(intent => {
@@ -168,10 +169,8 @@ export function processProcrastination(pool: IntentPool, chosenIntentIds: Readon
     if (chosenIntentIds.has(intent.id)) return intent.skipped_count > 0 ? { ...intent, skipped_count: 0, last_attempted: now().toISOString() } : intent;
     const newSkipped = intent.skipped_count + 1;
     if (newSkipped >= INTENT_CONFIG.PROCRASTINATION_RESOLVE_AT) {
-      // Reduced threshold: resolve sooner (abandon or burst)
       const abandonProb = currentStress > 0.5 ? 0.8 : (currentStress < 0.3 ? 0.5 : 0.6);
       if (rng() < abandonProb) {
-        // On abandon: set intensity below resistance so it won't re-trigger the cycle
         const newIntensity = Math.min(intent.resistance * 0.8, 0.5);
         if (diaryEntries.length < MAX_DIARY_PER_TICK) {
           diaryEntries.push(`算了...${intent.description}不想做了`);
@@ -184,7 +183,6 @@ export function processProcrastination(pool: IntentPool, chosenIntentIds: Readon
         return { ...intent, intensity: cap(intent.intensity + 3.0), skipped_count: 0 };
       }
     }
-    // Only emit diary entry at exactly skipped_count === 3 (not every tick >= 3)
     if (newSkipped === 3 && !emittedDescriptions.has(intent.description) && diaryEntries.length < MAX_DIARY_PER_TICK) {
       stressDelta += 0.05;
       const templateFn = PROCRASTINATION_TEMPLATES[Math.floor(rng() * PROCRASTINATION_TEMPLATES.length)];

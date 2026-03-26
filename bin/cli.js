@@ -42,15 +42,25 @@ function copyDirRecursive(src, dest) {
   }
 }
 
+/**
+ * Recursively merge compiled JS/d.ts/map files from dist-alive/ into skillDest/.
+ * This overlays the compiled output on top of the source tree so that
+ * require('…/index.js') works at runtime (e.g. sub-skills loaded by skill-router).
+ */
 function copyBuiltScripts(src, dest) {
   if (!fs.existsSync(src)) {
     warn(`Built scripts not found at ${src} — run npm run build before packaging`);
     return;
   }
   fs.mkdirSync(dest, { recursive: true });
-  for (const file of fs.readdirSync(src)) {
-    if (!file.endsWith('.js')) continue;
-    fs.copyFileSync(path.join(src, file), path.join(dest, file));
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyBuiltScripts(srcPath, destPath);
+    } else if (entry.name.endsWith('.js') || entry.name.endsWith('.d.ts') || entry.name.endsWith('.js.map') || entry.name.endsWith('.d.ts.map')) {
+      fs.copyFileSync(srcPath, destPath);
+    }
   }
 }
 
@@ -476,7 +486,7 @@ async function install() {
   }
   copyDirRecursive(ALIVE_SRC, skillDest);
   if (fs.existsSync(DIST_SRC)) {
-    copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
+    copyBuiltScripts(DIST_SRC, skillDest);
   }
   // Copy persona config into BOTH skill directory (legacy compat) and memory directory (per-persona)
   installPersonaConfig(resolvedPersonaPath, skillDest);
@@ -745,14 +755,33 @@ async function update() {
   }
   ok(`Persona: ${personaName} (skill: ${skillSlug})`);
 
-  // Step 3: Update framework files only (preserves memory, config, cron)
-  log('Step 3/3: Updating alive framework files...');
+  // Step 3: Build TypeScript → dist-alive (ensures JS is up-to-date)
+  log('Step 3/4: Building TypeScript...');
+  const tsconfig = path.join(__dirname, '..', 'tsconfig.alive.json');
+  if (fs.existsSync(tsconfig)) {
+    try {
+      execSync('npx tsc -p tsconfig.alive.json', {
+        cwd: path.join(__dirname, '..'),
+        stdio: 'pipe',
+        timeout: 60000,
+      });
+      ok('TypeScript compiled successfully');
+    } catch (err) {
+      warn(`TypeScript compilation failed: ${err.message}`);
+      warn('Continuing with existing dist-alive/ (may be stale)');
+    }
+  } else {
+    warn('tsconfig.alive.json not found — skipping build');
+  }
+
+  // Step 4: Update framework files only (preserves memory, config, cron)
+  log('Step 4/4: Updating alive framework files...');
 
   // Remove old skill files but preserve persona.yaml first
   // Overwrite framework files
   copyDirRecursive(ALIVE_SRC, skillDest);
   if (fs.existsSync(DIST_SRC)) {
-    copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
+    copyBuiltScripts(DIST_SRC, skillDest);
   }
   // Always update persona config from source as persona.yaml
   installPersonaConfig(resolvedPersonaPath, skillDest);
@@ -872,7 +901,7 @@ async function reinstall() {
   log('Step 6/9: Installing alive framework files...');
   copyDirRecursive(ALIVE_SRC, skillDest);
   if (fs.existsSync(DIST_SRC)) {
-    copyBuiltScripts(DIST_SRC, path.join(skillDest, 'scripts'));
+    copyBuiltScripts(DIST_SRC, skillDest);
   }
   installPersonaConfig(resolvedPersonaPath, skillDest);
   // Also copy to memory directory for per-persona isolation
@@ -1083,7 +1112,14 @@ async function realDayTest() {
   ok('Old installation cleaned');
 
   // Step 4: Fresh install (non-interactive — reuse existing env keys)
-  log('Step 4/5: Fresh install (non-interactive)...');
+  log('Step 4/5: Building and installing (non-interactive)...');
+  const tsconfig3 = path.join(__dirname, '..', 'tsconfig.alive.json');
+  if (fs.existsSync(tsconfig3)) {
+    try {
+      execSync('npx tsc -p tsconfig.alive.json', { cwd: path.join(__dirname, '..'), stdio: 'pipe', timeout: 60000 });
+      ok('TypeScript compiled');
+    } catch { warn('TypeScript compilation failed — continuing with existing dist'); }
+  }
 
   // Copy alive framework files
   copyDirRecursive(ALIVE_SRC, skillDest);

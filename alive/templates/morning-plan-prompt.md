@@ -44,10 +44,10 @@
   "wake_time": "HH:MM",
   "sleep_time": "HH:MM",
   "flexible_schedule": [
-    {"activity": "具体的活动描述", "preferred_time": "HH:MM", "intent_boost": 1-5, "intent_category": "创作|社交|窥屏|表达|学习|休息|梦想"}
+    {"activity": "具体的活动描述", "preferred_time": "HH:MM", "intent_boost": 1-5, "intent_category": "produce|connect|consume|express|learn|rest|aspire"}
   ],
   "intent_seeds": [
-    {"category": "创作|社交|窥屏|表达|学习|休息|梦想", "description": "string", "intensity": 1-10}
+    {"category": "produce|connect|consume|express|learn|rest|aspire", "description": "string", "intensity": 1-10}
   ],
   "diary_entry": "早上好～今天的日记开头（1-2句话，要有刚醒来的感觉和对今天的期待）"
 }

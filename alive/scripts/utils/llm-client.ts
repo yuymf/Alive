@@ -161,7 +161,7 @@ function appendLlmLog(entry: Record<string, unknown>): void {
  * Env:
  *   LLM_API_KEY   — required
  *   LLM_API_BASE  — default: https://aihubmix.com/v1
- *   LLM_MODEL     — default: minimax-m2.5
+ *   LLM_MODEL     — default: claude-sonnet-4-20250514
  */
 export async function callLLM(
   prompt: string,

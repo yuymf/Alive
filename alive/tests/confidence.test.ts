@@ -6,7 +6,7 @@ import {
   updateConfidenceFromFeedback,
   updateConfidenceFromBatch,
   decayConfidence,
-  getCreationRateMultiplier,
+  getProduceRateMultiplier,
   getConfidenceMoodHint,
   DEFAULT_CONFIDENCE,
 } from '../scripts/engines/confidence';
@@ -85,6 +85,13 @@ describe('updateConfidenceFromFeedback', () => {
     expect(result.confidence).toBeGreaterThanOrEqual(0.5);
   });
 
+  it('keeps confidence neutral when metric equals baseline', () => {
+    const state = makeState({ confidence: 1.0, streak: 2 });
+    const result = updateConfidenceFromFeedback(state, makeFeedback({ metric: 80, baseline: 80 }));
+    expect(result.confidence).toBe(1.0);
+    expect(result.streak).toBe(0);
+  });
+
   it('updates last_updated', () => {
     const state = makeState({ last_updated: null });
     const result = updateConfidenceFromFeedback(state, makeFeedback());
@@ -137,12 +144,12 @@ describe('decayConfidence', () => {
   });
 });
 
-// ──── getCreationRateMultiplier ────
+// ──── getProduceRateMultiplier ────
 
-describe('getCreationRateMultiplier', () => {
+describe('getProduceRateMultiplier', () => {
   it('returns confidence value directly', () => {
-    expect(getCreationRateMultiplier(1.2)).toBe(1.2);
-    expect(getCreationRateMultiplier(0.8)).toBe(0.8);
+    expect(getProduceRateMultiplier(1.2)).toBe(1.2);
+    expect(getProduceRateMultiplier(0.8)).toBe(0.8);
   });
 });
 

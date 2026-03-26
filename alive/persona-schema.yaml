@@ -170,6 +170,64 @@ schema:
     description: "启用的子技能列表（通用 + 平台子技能名称）。只有列出的技能会被路由器加载。"
     default: []
 
+  intent_config:
+    type: object
+    required: false
+    description: "Per-MetaIntent configuration — display names, resistance overrides, accumulation boosts, and emotion coupling weights. Keys must be MetaIntent values: produce, connect, consume, express, learn, rest, aspire."
+    additionalProperties:
+      type: object
+      properties:
+        display_name:
+          type: string
+          description: "LLM 提示词中显示的意图类别名（如「创作」「剪辑」「研究」）"
+        activities:
+          type: array
+          items: string
+          description: "该意图下的具体活动示例（如 [\"剪辑\", \"调色\", \"编排分镜\"]）"
+        base_resistance:
+          type: number
+          description: "基础阻力值，覆盖引擎默认值"
+        accumulation_boost:
+          type: number
+          description: "每心跳的额外累积速率修正"
+        emotion_coupling:
+          type: object
+          description: "情绪→意图耦合权重覆盖"
+          properties:
+            creativity: { type: number, description: "创造力耦合权重" }
+            sociability: { type: number, description: "社交性耦合权重" }
+            stress: { type: number, description: "压力耦合权重（负值表示压力抑制）" }
+            energy_inverse: { type: number, description: "低能量耦合权重（乘以 1.0-energy）" }
+            valence: { type: number, description: "情绪效价耦合权重" }
+            valence_abs: { type: number, description: "情绪效价绝对值耦合权重" }
+            arousal: { type: number, description: "唤醒度耦合权重" }
+
+  work_impulse:
+    type: object
+    required: false
+    description: "核心产出冲动配置 — 控制 produce 意图的冲动积累→阈值触发机制"
+    properties:
+      display_name:
+        type: string
+        default: "发帖冲动"
+        description: "冲动的显示名（如「发帖冲动」「剪片手痒」「该写论文了」）"
+      trigger_threshold:
+        type: number
+        default: 70
+        description: "冲动阈值 (0-100)，达到时注入 produce 意图"
+      dormancy_days:
+        type: number
+        default: 5
+        description: "无核心产出的天数阈值，超过后触发休眠加速"
+      dormancy_boost:
+        type: number
+        default: 50
+        description: "休眠加速的冲动增量"
+      sources:
+        type: array
+        items: string
+        description: "冲动来源事件列表"
+
   features:
     type: object
     required: false

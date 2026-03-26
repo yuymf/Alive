@@ -18,7 +18,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '突然发现已经这个点了',
     emotion_delta: { arousal: 0.15, stress: 0.1 },
-    intent_boosts: [{ category: '休息', boost: 0.5 }],
+    intent_boosts: [{ category: 'rest', boost: 0.5 }],
     diary_entry: '抬头一看时间...已经这个点了？？时间过得也太快了吧',
     preconditions: {},
     weight_modifiers: {},
@@ -26,7 +26,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '感觉今天过得好慢',
     emotion_delta: { valence: -0.05, arousal: -0.1, energy: -0.05 },
-    intent_boosts: [{ category: '窥屏', boost: 1.0 }],
+    intent_boosts: [{ category: 'consume', boost: 1.0 }],
     diary_entry: '感觉今天过得好慢...时间怎么走得这么慢',
     preconditions: {},
     weight_modifiers: { vitality_inverse: true },
@@ -36,7 +36,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '天气特别好',
     emotion_delta: { valence: 0.1, energy: 0.15, creativity: 0.1 },
-    intent_boosts: [{ category: '创作', boost: 1.0 }, { category: '表达', boost: 1.0 }],
+    intent_boosts: [{ category: 'produce', boost: 1.0 }, { category: 'express', boost: 1.0 }],
     diary_entry: '今天天气好好！想出去走走',
     preconditions: {},
     weight_modifiers: {},
@@ -44,7 +44,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '外卖到了',
     emotion_delta: { valence: 0.1, energy: 0.05, arousal: 0.05 },
-    intent_boosts: [{ category: '休息', boost: 0.5 }],
+    intent_boosts: [{ category: 'rest', boost: 0.5 }],
     diary_entry: '外卖到了！终于可以吃饭了',
     preconditions: {},
     weight_modifiers: {},
@@ -52,7 +52,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '突然很想吃好吃的',
     emotion_delta: { valence: 0.05, sociability: 0.1 },
-    intent_boosts: [{ category: '表达', boost: 0.5 }],
+    intent_boosts: [{ category: 'express', boost: 0.5 }],
     diary_entry: '好饿...好想吃好吃的',
     preconditions: {},
     weight_modifiers: {},
@@ -60,7 +60,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '手机快没电了',
     emotion_delta: { stress: 0.1, arousal: 0.05 },
-    intent_boosts: [{ category: '休息', boost: 0.3 }],
+    intent_boosts: [{ category: 'rest', boost: 0.3 }],
     diary_entry: '手机快没电了...先找个地方充电',
     preconditions: {},
     weight_modifiers: {},
@@ -68,7 +68,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '收到快递',
     emotion_delta: { valence: 0.1, arousal: 0.1, energy: 0.05 },
-    intent_boosts: [{ category: '表达', boost: 0.5 }],
+    intent_boosts: [{ category: 'express', boost: 0.5 }],
     diary_entry: '快递到了！拆快递的时候总是很开心',
     preconditions: {},
     weight_modifiers: {},
@@ -76,7 +76,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '身体有点不舒服',
     emotion_delta: { energy: -0.25, valence: -0.1, arousal: -0.2 },
-    intent_boosts: [{ category: '休息', boost: 4.0 }],
+    intent_boosts: [{ category: 'rest', boost: 4.0 }],
     diary_entry: '今天身体有点不舒服...还是安静待着吧',
     preconditions: { max_vitality: 50 },
     weight_modifiers: { vitality_inverse: true },
@@ -84,7 +84,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '附近很吵',
     emotion_delta: { stress: 0.15, valence: -0.1, arousal: 0.1 },
-    intent_boosts: [{ category: '休息', boost: 1.0 }],
+    intent_boosts: [{ category: 'rest', boost: 1.0 }],
     diary_entry: '周围好吵...根本没法集中注意力',
     preconditions: {},
     weight_modifiers: {},
@@ -94,7 +94,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '看到一个很有趣的评论',
     emotion_delta: { valence: 0.15, sociability: 0.2, arousal: 0.1 },
-    intent_boosts: [{ category: '社交', boost: 2.0 }],
+    intent_boosts: [{ category: 'connect', boost: 2.0 }],
     diary_entry: '看到一条评论也太好笑了吧哈哈哈哈哈',
     preconditions: {},
     weight_modifiers: { dimension_boost: 'sociability' },
@@ -102,7 +102,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '看到让人不舒服的热搜',
     emotion_delta: { valence: -0.15, stress: 0.15, arousal: 0.2 },
-    intent_boosts: [{ category: '表达', boost: 1.5 }, { category: '窥屏', boost: 0.5 }],
+    intent_boosts: [{ category: 'express', boost: 1.5 }, { category: 'consume', boost: 0.5 }],
     diary_entry: '刷到一条让人很不舒服的热搜...不想看但是又忍不住点进去了',
     preconditions: {},
     weight_modifiers: { emotion_resonance: true },
@@ -110,7 +110,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '刷到很有创意的内容',
     emotion_delta: { valence: 0.1, creativity: 0.2, arousal: 0.1 },
-    intent_boosts: [{ category: '创作', boost: 1.5 }, { category: '学习', boost: 1.0 }],
+    intent_boosts: [{ category: 'produce', boost: 1.5 }, { category: 'learn', boost: 1.0 }],
     diary_entry: '刷到一个超有创意的内容...好厉害啊我也想试试',
     preconditions: {},
     weight_modifiers: { dimension_boost: 'creativity' },
@@ -120,7 +120,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '听到一首喜欢的歌',
     emotion_delta: { valence: 0.15, arousal: 0.1, creativity: 0.1 },
-    intent_boosts: [{ category: '表达', boost: 1.0 }],
+    intent_boosts: [{ category: 'express', boost: 1.0 }],
     diary_entry: '突然听到一首好好听的歌...单曲循环中',
     preconditions: {},
     weight_modifiers: {},
@@ -128,7 +128,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '灵感枯竭期',
     emotion_delta: { creativity: -0.2, valence: -0.1 },
-    intent_boosts: [{ category: '窥屏', boost: 2.0 }, { category: '学习', boost: 1.0 }],
+    intent_boosts: [{ category: 'consume', boost: 2.0 }, { category: 'learn', boost: 1.0 }],
     diary_entry: '最近好像没什么灵感...去看看别人的东西找找感觉吧',
     preconditions: {},
     weight_modifiers: { vitality_inverse: true },
@@ -138,7 +138,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '收到暖心的私信鼓励',
     emotion_delta: { valence: 0.25, sociability: 0.3, energy: 0.1 },
-    intent_boosts: [{ category: '社交', boost: 2.5 }, { category: '表达', boost: 1.0 }],
+    intent_boosts: [{ category: 'connect', boost: 2.5 }, { category: 'express', boost: 1.0 }],
     diary_entry: '有人给我发了好暖的私信...这种时候觉得自己做的事真的很值得',
     preconditions: {},
     weight_modifiers: { dimension_boost: 'sociability' },
@@ -148,7 +148,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
         probability: 0.5,
         delay_ticks: [1, 2],
         emotion_delta: { valence: 0.1, sociability: 0.2, energy: -0.1 },
-        intent_boosts: [{ category: '社交', boost: 2.0 }],
+        intent_boosts: [{ category: 'connect', boost: 2.0 }],
         diary_entry: '和人聊了好久停不下来...虽然有点累但是超开心',
       },
     ],
@@ -156,7 +156,7 @@ const BUILTIN_EVENT_POOL: RandomEventDef[] = [
   {
     description: '和朋友聊了很久',
     emotion_delta: { valence: 0.1, sociability: 0.2, energy: -0.1, stress: -0.2 },
-    intent_boosts: [{ category: '社交', boost: 1.0 }],
+    intent_boosts: [{ category: 'connect', boost: 1.0 }],
     diary_entry: '和朋友聊了好久...虽然有点累但是心情好了很多',
     preconditions: {},
     weight_modifiers: { dimension_boost: 'sociability' },

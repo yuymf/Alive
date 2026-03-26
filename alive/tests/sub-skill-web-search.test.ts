@@ -36,7 +36,7 @@ function makeEmotion(overrides: Partial<EmotionState> = {}): EmotionState {
 
 function makeIntent(overrides: Partial<ResolvedIntent> = {}): ResolvedIntent {
   return {
-    id: 'i1', category: '学习', description: '搜一下最新的AI进展',
+    id: 'i1', category: 'learn', description: '搜一下最新的AI进展',
     intensity: 6, action: 'search-pipeline', ...overrides,
   };
 }

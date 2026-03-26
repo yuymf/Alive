@@ -357,7 +357,7 @@ export async function runRealDay(overrides?: Partial<DayConfig>): Promise<DayRes
   // ── Step 3: Create LLM Client ──
   console.log('\n  Step 3: Creating real LLM client...');
   const llm = createRealLLMClient('e2e-real-day');
-  console.log(`  ✓ LLM client ready (model: ${process.env.LLM_MODEL || 'minimax-m2.5'}, base: ${process.env.LLM_API_BASE || 'https://aihubmix.com/v1'})`);
+  console.log(`  ✓ LLM client ready (model: ${process.env.LLM_MODEL || 'claude-sonnet-4-20250514'}, base: ${process.env.LLM_API_BASE || 'https://aihubmix.com/v1'})`);
 
   // ── Step 4: Run Full Day Simulation ──
   console.log('\n  Step 4: Running full day simulation...');

@@ -87,7 +87,7 @@ describe('hydrateIntent', () => {
   it('fills resistance from BASE_RESISTANCE when missing', () => {
     const oldIntent = {
       id: 'test_1',
-      category: '创作' as const,
+      category: 'produce' as const,
       description: 'test',
       intensity: 5.0,
       source: 'accumulation' as const,
@@ -96,13 +96,13 @@ describe('hydrateIntent', () => {
       satisfied_at: null,
     };
     const result = hydrateIntent(oldIntent as unknown as Record<string, unknown>);
-    expect(result.resistance).toBe(BASE_RESISTANCE['创作']);
+    expect(result.resistance).toBe(BASE_RESISTANCE['produce']);
     expect(result.skipped_count).toBe(0);
     expect(result.last_attempted).toBeNull();
   });
 
   it('uses correct BASE_RESISTANCE per category', () => {
-    const categories = ['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想'] as const;
+    const categories = ['produce', 'connect', 'consume', 'express', 'learn', 'rest', 'aspire'] as const;
     for (const cat of categories) {
       const intent = hydrateIntent({
         id: `test_${cat}`, category: cat, description: 'x', intensity: 1,
@@ -114,7 +114,7 @@ describe('hydrateIntent', () => {
 
   it('preserves existing new fields if present', () => {
     const intent: Intent = {
-      id: 'test_1', category: '学习', description: 'x', intensity: 3,
+      id: 'test_1', category: 'learn', description: 'x', intensity: 3,
       source: 'llm', born_at: '', decay_rate: 0.5, satisfied_at: null,
       resistance: 10.0, skipped_count: 3, last_attempted: '2026-01-01T00:00:00Z',
     };
@@ -126,13 +126,13 @@ describe('hydrateIntent', () => {
 
   it('preserves all original fields', () => {
     const old = {
-      id: 'int_abc', category: '梦想' as const, description: 'dream big',
+      id: 'int_abc', category: 'aspire' as const, description: 'dream big',
       intensity: 7.5, source: 'event' as const, born_at: '2026-01-01T12:00:00Z',
       decay_rate: 1.0, satisfied_at: '2026-01-01T13:00:00Z',
     };
     const result = hydrateIntent(old as unknown as Record<string, unknown>);
     expect(result.id).toBe('int_abc');
-    expect(result.category).toBe('梦想');
+    expect(result.category).toBe('aspire');
     expect(result.intensity).toBe(7.5);
     expect(result.satisfied_at).toBe('2026-01-01T13:00:00Z');
   });

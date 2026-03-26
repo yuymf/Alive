@@ -25,10 +25,13 @@ export function updateConfidenceFromFeedback(
   feedback: FeedbackEvent,
 ): ConfidenceState {
   const isPositive = feedback.metric > feedback.baseline;
-  const delta = isPositive ? CONFIDENCE_CONFIG.FEEDBACK_DELTA : -CONFIDENCE_CONFIG.FEEDBACK_DELTA;
+  const isNegative = feedback.metric < feedback.baseline;
+  const delta = isPositive
+    ? CONFIDENCE_CONFIG.FEEDBACK_DELTA
+    : (isNegative ? -CONFIDENCE_CONFIG.FEEDBACK_DELTA : 0);
   const newStreak = isPositive
     ? (state.streak > 0 ? state.streak + 1 : 1)
-    : (state.streak < 0 ? state.streak - 1 : -1);
+    : (isNegative ? (state.streak < 0 ? state.streak - 1 : -1) : 0);
 
   const streakBonus = Math.min(Math.abs(newStreak), 3) * 0.02 * Math.sign(newStreak);
 
@@ -62,9 +65,9 @@ export function decayConfidence(state: ConfidenceState): ConfidenceState {
 }
 
 /**
- * Get the creation rate multiplier from confidence.
+ * Get the produce rate multiplier from confidence.
  */
-export function getCreationRateMultiplier(confidence: number): number {
+export function getProduceRateMultiplier(confidence: number): number {
   return confidence;
 }
 

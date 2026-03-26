@@ -1,15 +1,14 @@
 // alive/tests/sub-skill-instagram.test.ts
 // Tests for the Instagram sub-skill
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { actions } from '../sub-skills/instagram/scripts/index';
 import type {
-  PostImpulseState,
   PhotoIntent,
   PostIntent,
 } from '../sub-skills/instagram/scripts/index';
-import type { SubSkillContext, EmotionState, MemoryAccessor } from '../scripts/utils/types';
-import { DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../scripts/utils/types';
+import type { SubSkillContext, EmotionState, MemoryAccessor, WorkImpulseState } from '../scripts/utils/types';
+import { DEFAULT_MOMENTUM, DEFAULT_UNDERTONE, DEFAULT_WORK_IMPULSE_STATE } from '../scripts/utils/types';
 
 // ── Mock helpers ─────────────────────────────────────────────────
 
@@ -25,14 +24,24 @@ function makeEmotion(overrides: Partial<EmotionState> = {}): EmotionState {
   };
 }
 
+/** Helper to create a core WorkImpulseState with overrides */
+function makeImpulse(overrides: Partial<WorkImpulseState> = {}): WorkImpulseState {
+  return { ...DEFAULT_WORK_IMPULSE_STATE, ...overrides };
+}
+
 function makeMemory(store: Record<string, unknown> = {}): MemoryAccessor {
   const jsonStore: Record<string, unknown> = { ...store };
   const diaryEntries: string[] = [];
+  const readDiary = vi.fn(() => diaryEntries.join('\n'));
+  const appendDiary = vi.fn((entry: string) => diaryEntries.push(entry));
+  const readJSON = vi.fn(<T>(key: string, fallback: T) => (jsonStore[key] as T) ?? fallback) as MemoryAccessor['readJSON'];
+  const writeJSON = vi.fn(<T>(key: string, data: T) => { jsonStore[key] = data; }) as MemoryAccessor['writeJSON'];
+
   return {
-    readDiary: vi.fn(() => diaryEntries.join('\n')),
-    appendDiary: vi.fn((entry: string) => diaryEntries.push(entry)),
-    readJSON: vi.fn(<T>(key: string, fallback: T) => (jsonStore[key] as T) ?? fallback),
-    writeJSON: vi.fn(<T>(key: string, data: T) => { jsonStore[key] = data; }),
+    readDiary,
+    appendDiary,
+    readJSON,
+    writeJSON,
   };
 }
 
@@ -65,10 +74,13 @@ function makeCtx(overrides: Partial<SubSkillContext> = {}): SubSkillContext {
     emotion: makeEmotion(),
     vitality: 80,
     confidence: 1.0,
-    intent: { id: 'i1', category: '创作' as const, description: '想发ins', intensity: 8, action: 'instagram-post' },
+    intent: { id: 'i1', category: 'produce' as const, description: '想发ins', intensity: 8, action: 'instagram-post' },
     memory: makeMemory(),
     socialGraph: { getRelations: vi.fn(() => []), updateRelation: vi.fn() },
-    llm: { callJSON: vi.fn(async () => ({})), call: vi.fn(async () => '') },
+    llm: {
+      callJSON: vi.fn(async <T>() => ({} as T)) as SubSkillContext['llm']['callJSON'],
+      call: vi.fn(async () => '') as SubSkillContext['llm']['call'],
+    },
     config: {},
     ...overrides,
   };
@@ -93,13 +105,7 @@ describe('instagram/instagram-post', () => {
         publishPost: vi.fn(),
       },
       memory: makeMemory({
-        'post-impulse': {
-          impulse: 30, // below 80 threshold
-          last_accumulated: new Date().toISOString().slice(0, 10),
-          daily_accumulation: 0,
-          dormancy_days: 0,
-          last_posted_date: null,
-        },
+        'work-impulse': makeImpulse({ value: 30 }),
       }),
     });
 
@@ -110,13 +116,7 @@ describe('instagram/instagram-post', () => {
 
   it('accumulates impulse when below threshold', async () => {
     const memory = makeMemory({
-      'post-impulse': {
-        impulse: 30,
-        last_accumulated: new Date().toISOString().slice(0, 10),
-        daily_accumulation: 0,
-        dormancy_days: 0,
-        last_posted_date: null,
-      },
+      'work-impulse': makeImpulse({ value: 30 }),
     });
 
     const ctx = makeCtx({
@@ -132,10 +132,38 @@ describe('instagram/instagram-post', () => {
     await actions['instagram-post'](ctx);
 
     const writeCall = (memory.writeJSON as ReturnType<typeof vi.fn>).mock.calls.find(
-      (c: unknown[]) => c[0] === 'post-impulse'
+      (c: unknown[]) => c[0] === 'work-impulse'
     );
-    const updatedState = writeCall![1] as PostImpulseState;
-    expect(updatedState.impulse).toBeGreaterThan(30);
+    const updatedState = writeCall![1] as WorkImpulseState;
+    expect(updatedState.value).toBeGreaterThan(30);
+  });
+
+  it('bypasses impulse gating when work_impulse feature is disabled', async () => {
+    const planPhoto = vi.fn(async () => makePhotoIntent());
+    const generateImages = vi.fn(async () => ({
+      paths: ['/tmp/photo1.jpg'],
+      urls: ['https://cdn.example.com/photo1.jpg'],
+    }));
+    const planPost = vi.fn(async () => makePostIntent());
+    const publishPost = vi.fn(async () => ({ media_id: 'media123', success: true }));
+
+    const ctx = makeCtx({
+      persona: {
+        meta: { name: 'TestChar', tagline: '测试角色' },
+        personality: { mbti: 'INFP', core_traits: ['creative'] },
+        voice: { language: 'zh', style: '活泼', sample_lines: [] },
+        features: { work_impulse: false },
+      } as any,
+      config: { planPhoto, generateImages, planPost, publishPost },
+      memory: makeMemory({
+        'work-impulse': makeImpulse({ value: 5 }),
+      }),
+    });
+
+    const result = await actions['instagram-post'](ctx);
+    expect(planPhoto).toHaveBeenCalled();
+    expect(publishPost).toHaveBeenCalled();
+    expect(result.narrative).toContain('发了一条 Instagram');
   });
 
   it('runs full pipeline when impulse exceeds threshold', async () => {
@@ -149,13 +177,7 @@ describe('instagram/instagram-post', () => {
     const scheduleCommentCheck = vi.fn();
 
     const memory = makeMemory({
-      'post-impulse': {
-        impulse: 90, // above 80 threshold
-        last_accumulated: new Date().toISOString().slice(0, 10),
-        daily_accumulation: 0,
-        dormancy_days: 0,
-        last_posted_date: null,
-      },
+      'work-impulse': makeImpulse({ value: 90 }),
     });
 
     const ctx = makeCtx({
@@ -179,13 +201,7 @@ describe('instagram/instagram-post', () => {
 
   it('resets impulse after successful post', async () => {
     const memory = makeMemory({
-      'post-impulse': {
-        impulse: 90,
-        last_accumulated: new Date().toISOString().slice(0, 10),
-        daily_accumulation: 0,
-        dormancy_days: 0,
-        last_posted_date: null,
-      },
+      'work-impulse': makeImpulse({ value: 90 }),
     });
 
     const ctx = makeCtx({
@@ -201,16 +217,16 @@ describe('instagram/instagram-post', () => {
     await actions['instagram-post'](ctx);
 
     const impulseWrites = (memory.writeJSON as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (c: unknown[]) => c[0] === 'post-impulse'
+      (c: unknown[]) => c[0] === 'work-impulse'
     );
-    const lastImpulse = impulseWrites[impulseWrites.length - 1][1] as PostImpulseState;
-    expect(lastImpulse.impulse).toBeLessThan(90 * 0.31); // should be ~27 (90 * 0.3)
-    expect(lastImpulse.last_posted_date).toBe(new Date().toISOString().slice(0, 10));
+    const lastImpulse = impulseWrites[impulseWrites.length - 1][1] as WorkImpulseState;
+    // resetImpulseAfterOutput sets value to 0
+    expect(lastImpulse.value).toBe(0);
   });
 
   it('records post in post-history', async () => {
     const memory = makeMemory({
-      'post-impulse': { impulse: 90, last_accumulated: new Date().toISOString().slice(0, 10), daily_accumulation: 0, dormancy_days: 0, last_posted_date: null },
+      'work-impulse': makeImpulse({ value: 90 }),
     });
 
     const ctx = makeCtx({
@@ -237,7 +253,7 @@ describe('instagram/instagram-post', () => {
 
   it('handles planPhoto failure gracefully', async () => {
     const memory = makeMemory({
-      'post-impulse': { impulse: 90, last_accumulated: new Date().toISOString().slice(0, 10), daily_accumulation: 0, dormancy_days: 0, last_posted_date: null },
+      'work-impulse': makeImpulse({ value: 90 }),
     });
 
     const ctx = makeCtx({
@@ -257,7 +273,7 @@ describe('instagram/instagram-post', () => {
 
   it('handles generateImages failure', async () => {
     const memory = makeMemory({
-      'post-impulse': { impulse: 90, last_accumulated: new Date().toISOString().slice(0, 10), daily_accumulation: 0, dormancy_days: 0, last_posted_date: null },
+      'work-impulse': makeImpulse({ value: 90 }),
     });
 
     const ctx = makeCtx({
@@ -277,7 +293,7 @@ describe('instagram/instagram-post', () => {
 
   it('handles empty generated images', async () => {
     const memory = makeMemory({
-      'post-impulse': { impulse: 90, last_accumulated: new Date().toISOString().slice(0, 10), daily_accumulation: 0, dormancy_days: 0, last_posted_date: null },
+      'work-impulse': makeImpulse({ value: 90 }),
     });
 
     const ctx = makeCtx({
@@ -296,7 +312,7 @@ describe('instagram/instagram-post', () => {
 
   it('handles publish failure', async () => {
     const memory = makeMemory({
-      'post-impulse': { impulse: 90, last_accumulated: new Date().toISOString().slice(0, 10), daily_accumulation: 0, dormancy_days: 0, last_posted_date: null },
+      'work-impulse': makeImpulse({ value: 90 }),
     });
 
     const ctx = makeCtx({
@@ -315,7 +331,7 @@ describe('instagram/instagram-post', () => {
 
   it('adds confidence bonus to emotion deltas when confidence > 1.0', async () => {
     const memory = makeMemory({
-      'post-impulse': { impulse: 90, last_accumulated: new Date().toISOString().slice(0, 10), daily_accumulation: 0, dormancy_days: 0, last_posted_date: null },
+      'work-impulse': makeImpulse({ value: 90 }),
     });
 
     const ctx = makeCtx({
@@ -337,13 +353,7 @@ describe('instagram/instagram-post', () => {
 
   it('applies impulse decay when called on a new day', async () => {
     const memory = makeMemory({
-      'post-impulse': {
-        impulse: 50,
-        last_accumulated: '2026-03-20', // old date
-        daily_accumulation: 10,
-        dormancy_days: 0,
-        last_posted_date: null,
-      },
+      'work-impulse': makeImpulse({ value: 50 }),
     });
 
     const ctx = makeCtx({
@@ -359,12 +369,12 @@ describe('instagram/instagram-post', () => {
     await actions['instagram-post'](ctx);
 
     const impulseWrites = (memory.writeJSON as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (c: unknown[]) => c[0] === 'post-impulse'
+      (c: unknown[]) => c[0] === 'work-impulse'
     );
-    const lastImpulse = impulseWrites[impulseWrites.length - 1][1] as PostImpulseState;
-    // 50 - 5 (decay) + 5~15 (accumulation) = 50~60
-    expect(lastImpulse.impulse).toBeGreaterThanOrEqual(45);
-    expect(lastImpulse.impulse).toBeLessThanOrEqual(65);
+    const lastImpulse = impulseWrites[impulseWrites.length - 1][1] as WorkImpulseState;
+    // 50 - 3 (BASE_DECAY) + 5~15 (accumulation) = 52~62
+    expect(lastImpulse.value).toBeGreaterThanOrEqual(47);
+    expect(lastImpulse.value).toBeLessThanOrEqual(67);
   });
 });
 
@@ -373,7 +383,7 @@ describe('instagram/instagram-post', () => {
 describe('instagram/instagram-check-stats', () => {
   it('returns early when checkPostStats not configured', async () => {
     const ctx = makeCtx({
-      intent: { id: 'i1', category: '窥屏' as const, description: '看看数据', intensity: 4, action: 'instagram-check-stats' },
+      intent: { id: 'i1', category: 'consume' as const, description: '看看数据', intensity: 4, action: 'instagram-check-stats' },
     });
     const result = await actions['instagram-check-stats'](ctx);
     expect(result.narrative).toContain('未配置');
@@ -384,7 +394,7 @@ describe('instagram/instagram-check-stats', () => {
     const ctx = makeCtx({
       config: { checkPostStats: vi.fn() },
       memory: makeMemory({ 'post-history': { posts: [] } }),
-      intent: { id: 'i1', category: '窥屏' as const, description: '看数据', intensity: 4, action: 'instagram-check-stats' },
+      intent: { id: 'i1', category: 'consume' as const, description: '看数据', intensity: 4, action: 'instagram-check-stats' },
     });
     const result = await actions['instagram-check-stats'](ctx);
     expect(result.narrative).toContain('没有');
@@ -408,7 +418,7 @@ describe('instagram/instagram-check-stats', () => {
     const ctx = makeCtx({
       config: { checkPostStats, avgEngagement: 30 },
       memory,
-      intent: { id: 'i1', category: '窥屏' as const, description: '看数据', intensity: 4, action: 'instagram-check-stats' },
+      intent: { id: 'i1', category: 'consume' as const, description: '看数据', intensity: 4, action: 'instagram-check-stats' },
     });
 
     const result = await actions['instagram-check-stats'](ctx);
@@ -433,10 +443,10 @@ describe('instagram/instagram-check-stats', () => {
           }],
         },
       }),
-      intent: { id: 'i1', category: '窥屏' as const, description: '看数据', intensity: 4, action: 'instagram-check-stats' },
+      intent: { id: 'i1', category: 'consume' as const, description: '看数据', intensity: 4, action: 'instagram-check-stats' },
     });
 
-    const result = await actions['instagram-check-stats'](ctx);
+    await actions['instagram-check-stats'](ctx);
     expect(checkPostStats).not.toHaveBeenCalled();
   });
 
@@ -455,10 +465,10 @@ describe('instagram/instagram-check-stats', () => {
           }],
         },
       }),
-      intent: { id: 'i1', category: '窥屏' as const, description: '看数据', intensity: 4, action: 'instagram-check-stats' },
+      intent: { id: 'i1', category: 'consume' as const, description: '看数据', intensity: 4, action: 'instagram-check-stats' },
     });
 
-    const result = await actions['instagram-check-stats'](ctx);
+    await actions['instagram-check-stats'](ctx);
     expect(checkPostStats).not.toHaveBeenCalled();
   });
 });
