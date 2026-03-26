@@ -9,6 +9,7 @@ import {
   VitalityState, FlowState,
 } from '../utils/types';
 import { now } from '../utils/time-utils';
+import { RANDOM_EVENTS_CONFIG } from '../config';
 
 // === Universal Event Pool (no character-specific events) ===
 
@@ -198,7 +199,7 @@ export function rollRandomEvent(options?: {
   probability?: number;
   excludeCategories?: IntentCategory[];
 }): RandomEvent | null {
-  const prob = options?.probability ?? 0.10;
+  const prob = options?.probability ?? RANDOM_EVENTS_CONFIG.EVENT_PROBABILITY;
 
   if (Math.random() > prob) return null;
 
@@ -270,12 +271,12 @@ function computeWeight(event: RandomEventDef, ctx: EventContext): number {
     const eventValence = event.emotion_delta.valence ?? 0;
     const currentValence = ctx.emotion.mood.valence;
     if (Math.sign(eventValence) === Math.sign(currentValence) && currentValence !== 0) {
-      weight *= 1.5;
+      weight *= RANDOM_EVENTS_CONFIG.RESONANCE_WEIGHT;
     }
   }
 
   if (wm.vitality_inverse) {
-    if (ctx.vitality.vitality < 40) weight *= 2.0;
+    if (ctx.vitality.vitality < 40) weight *= RANDOM_EVENTS_CONFIG.VITALITY_INVERSE_WEIGHT;
   }
 
   if (wm.dimension_boost) {
@@ -287,7 +288,7 @@ function computeWeight(event: RandomEventDef, ctx: EventContext): number {
       : dim === 'creativity' ? ctx.emotion.creativity
       : dim === 'sociability' ? ctx.emotion.sociability
       : 0;
-    if (dimValue > 0.5) weight *= 2.0;
+    if (dimValue > 0.5) weight *= RANDOM_EVENTS_CONFIG.DIMENSION_BOOST_WEIGHT;
   }
 
   return weight;
@@ -311,7 +312,7 @@ export function rollContextAwareEvent(
   ctx: EventContext,
   options?: { probability?: number; rng?: () => number },
 ): { event: RandomEvent | null; newChainEvents: PendingChainEvent[] } {
-  const prob = options?.probability ?? 0.10;
+  const prob = options?.probability ?? RANDOM_EVENTS_CONFIG.EVENT_PROBABILITY;
   const rng = options?.rng ?? Math.random;
 
   if (rng() > prob) return { event: null, newChainEvents: [] };

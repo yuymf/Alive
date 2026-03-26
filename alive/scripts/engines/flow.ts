@@ -4,16 +4,17 @@
 import { FlowState, IntentPool, IntentCategory, EmotionState, DEFAULT_FLOW_STATE } from '../utils/types';
 import { buildVoiceSignature } from '../persona/persona-loader';
 import { now } from '../utils/time-utils';
+import { FLOW_CONFIG } from '../config';
 
-const INTERRUPT_CHANCE_INITIAL = 0.35;     // 提高初始中断概率（从0.25 → 0.35）
+const INTERRUPT_CHANCE_INITIAL = FLOW_CONFIG.INTERRUPT_CHANCE_INITIAL;     // 提高初始中断概率（从0.25 → 0.35）
 const INTERRUPT_CHANCE_INCREMENT_EARLY = 0.15;  // 前 2 tick（加速中断）从 0.08 → 0.15
 const INTERRUPT_CHANCE_INCREMENT_LATE = 0.20;   // 2 tick 后（生理需求增长）从 0.12 → 0.20
 const INTERRUPT_CHANCE_CAP = 0.85;
-const MAX_FLOW_TICKS = 2;   // 真人心流最多 ~2 小时（从 3 缩短到 2，避免吞噬时间）
-const MAX_DRIFT_TICKS = 2;  // 真人摆烂最多 ~2 小时（缩短）
-const FLOW_ENTRY_THRESHOLD = 2.5;  // 从 3.5 降到 2.5：让心流更容易进入（之前一天只有 1 次 flow 太少）
-const FLOW_MIN_ENERGY = 0.25;      // 从 0.30 降到 0.25：稍微放宽能量门槛
-const FLOW_COOLDOWN_TICKS = 1;     // 从 2 降到 1：缩短冷却期，让一天能有更多次 flow
+const MAX_FLOW_TICKS = FLOW_CONFIG.MAX_FLOW_TICKS;   // 真人心流最多 ~2 小时（从 3 缩短到 2，避免吞噬时间）
+const MAX_DRIFT_TICKS = FLOW_CONFIG.MAX_DRIFT_TICKS;  // 真人摆烂最多 ~2 小时（缩短）
+const FLOW_ENTRY_THRESHOLD = FLOW_CONFIG.FLOW_ENTRY_THRESHOLD;  // 从 3.5 降到 2.5：让心流更容易进入（之前一天只有 1 次 flow 太少）
+const FLOW_MIN_ENERGY = FLOW_CONFIG.FLOW_MIN_ENERGY;      // 从 0.30 降到 0.25：稍微放宽能量门槛
+const FLOW_COOLDOWN_TICKS = FLOW_CONFIG.FLOW_COOLDOWN_TICKS;     // 从 2 降到 1：缩短冷却期，让一天能有更多次 flow
 
 // 不允许进入 flow 的类别（休息、窥屏不应进入心流）
 const FLOW_EXCLUDED_CATEGORIES: ReadonlySet<string> = new Set(['休息', '窥屏']);

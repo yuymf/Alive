@@ -71,9 +71,11 @@ export interface LLMResult {
 
 // === Real LLM Implementation (OpenAI-compatible API) ===
 
-const DEFAULT_API_BASE = 'https://aihubmix.com/v1';
-const DEFAULT_MODEL = 'minimax-m2.5';
-const MAX_RETRY_TOKENS = 32768;
+import { LLM_CONFIG } from '../config';
+
+const DEFAULT_API_BASE = LLM_CONFIG.DEFAULT_API_BASE;
+const DEFAULT_MODEL = LLM_CONFIG.DEFAULT_MODEL;
+const MAX_RETRY_TOKENS = LLM_CONFIG.MAX_RETRY_TOKENS;
 
 const isDebug = () => process.env.LLM_DEBUG === '1' || process.env.LLM_DEBUG === 'true';
 
@@ -106,7 +108,7 @@ interface OpenAIChatResponse {
 }
 
 let _llmLogPath: string | null = null;
-const LLM_LOG_MAX_BYTES = 500 * 1024;
+const LLM_LOG_MAX_BYTES = LLM_CONFIG.LLM_LOG_MAX_BYTES;
 
 function getLlmLogPath(): string {
   if (!_llmLogPath) {
@@ -163,7 +165,7 @@ function appendLlmLog(entry: Record<string, unknown>): void {
  */
 export async function callLLM(
   prompt: string,
-  maxTokens = 16384,
+  maxTokens = LLM_CONFIG.DEFAULT_MAX_TOKENS,
   caller?: string,
   options?: LLMCallOptions,
 ): Promise<LLMResult> {
@@ -230,7 +232,7 @@ export async function callLLM(
       if (attempt === 0) {
         debugLog('RETRY', `attempt 1 failed: ${(err as Error).message}`);
         console.error(`LLM call failed, retrying in 10s: ${(err as Error).message}`);
-        await new Promise(r => setTimeout(r, 10_000));
+        await new Promise(r => setTimeout(r, LLM_CONFIG.RETRY_DELAY_MS));
       } else {
         debugLog('FAIL', `attempt 2 failed: ${(err as Error).message}`);
         appendLlmLog({
@@ -260,7 +262,7 @@ export async function callLLM(
  */
 export async function callLLMJSON<T>(
   prompt: string,
-  maxTokens = 16384,
+  maxTokens = LLM_CONFIG.DEFAULT_MAX_TOKENS,
   caller?: string,
   options?: LLMCallOptions,
 ): Promise<T> {

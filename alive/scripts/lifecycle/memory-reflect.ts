@@ -14,9 +14,11 @@ import type { LLMClient } from '../utils/llm-client';
 
 // ── Configuration ────────────────────────────────────────────────
 
-const DEFAULT_THRESHOLD = 100;
-const MAX_WISDOM_ENTRIES = 20;
-const MIN_IMPORTANCE = 6;
+import { MEMORY_REFLECT_CONFIG } from '../config';
+
+const DEFAULT_THRESHOLD = MEMORY_REFLECT_CONFIG.DEFAULT_THRESHOLD;
+const MAX_WISDOM_ENTRIES = MEMORY_REFLECT_CONFIG.MAX_WISDOM_ENTRIES;
+const MIN_IMPORTANCE = MEMORY_REFLECT_CONFIG.MIN_IMPORTANCE;
 
 // ── Helpers ──────────────────────────────────────────────────────
 

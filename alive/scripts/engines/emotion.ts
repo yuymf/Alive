@@ -5,10 +5,11 @@
 import { EmotionState, EmotionDelta, EmotionMomentum, ImpulseHistoryEntry } from '../utils/types';
 import { getEmotionBaseline } from '../persona/persona-loader';
 import { now } from '../utils/time-utils';
+import { EMOTION_CONFIG } from '../config';
 
 const DECAY_RATE = 0.1;
-const IMPULSE_DECAY = 0.20;
-const MAX_IMPULSE_HISTORY = 50;
+const IMPULSE_DECAY = EMOTION_CONFIG.IMPULSE_DECAY;
+const MAX_IMPULSE_HISTORY = EMOTION_CONFIG.MAX_IMPULSE_HISTORY;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -220,7 +221,7 @@ export function applyImpulse(state: EmotionState, delta: EmotionDelta, cause: st
   const afterDelta = applyDelta(state, delta, cause);
   const entry: ImpulseHistoryEntry = { delta, cause, importance, timestamp: now().toISOString(), tick_age: 0 };
   const newHistory = [...afterDelta.impulse_history, entry].slice(-MAX_IMPULSE_HISTORY);
-  const alpha = 0.3;
+  const alpha = EMOTION_CONFIG.IMPULSE_ALPHA;
   const newMomentum: EmotionMomentum = {
     valence: afterDelta.momentum.valence + ((delta.valence ?? 0) * alpha),
     arousal: afterDelta.momentum.arousal + ((delta.arousal ?? 0) * alpha),
@@ -256,9 +257,9 @@ export function rollRumination(state: EmotionState, rng: () => number = Math.ran
 // === Threshold Break ===
 
 export function checkThresholdBreak(state: EmotionState): { state: EmotionState; diaryEntry: string | null } {
-  const newConsecutive = state.stress > 0.6 ? state.consecutive_high_stress + 1 : 0;
+  const newConsecutive = state.stress > EMOTION_CONFIG.STRESS_THRESHOLD ? state.consecutive_high_stress + 1 : 0;
   const updated = { ...state, consecutive_high_stress: newConsecutive };
-  if (newConsecutive < 3 || state.threshold_break_cooldown > 0) return { state: updated, diaryEntry: null };
+  if (newConsecutive < EMOTION_CONFIG.CONSECUTIVE_STRESS_TICKS || state.threshold_break_cooldown > 0) return { state: updated, diaryEntry: null };
 
   const dir = state.mood.valence >= 0 ? 1 : -1;
   const nv = clamp(state.mood.valence + dir * 0.4, -1.0, 1.0);
@@ -266,7 +267,7 @@ export function checkThresholdBreak(state: EmotionState): { state: EmotionState;
   const breakState: EmotionState = {
     ...updated,
     mood: { valence: nv, arousal: na, description: describeMood(nv, na, updated.energy, 0.2, updated.creativity) },
-    stress: 0.2, consecutive_high_stress: 0, threshold_break_cooldown: 5,
+    stress: 0.2, consecutive_high_stress: 0, threshold_break_cooldown: EMOTION_CONFIG.THRESHOLD_BREAK_COOLDOWN,
     impulse_history: [...updated.impulse_history, {
       delta: { valence: dir * 0.4, arousal: 0.3, stress: -(state.stress - 0.2) },
       cause: '情绪爆发', importance: 8, timestamp: now().toISOString(), tick_age: 0,

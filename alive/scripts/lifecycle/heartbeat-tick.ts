@@ -47,6 +47,7 @@ import { loadPersona, injectPersona, buildVoiceSignature } from '../persona/pers
 import { resolveRoute, resolveRouteBySkillName, fuzzyResolveSkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
 import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
+import { HEARTBEAT_CONFIG } from '../config';
 import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
 import { now, getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM, setTimezone } from '../utils/time-utils';
@@ -90,8 +91,8 @@ const DEFAULT_EMOTION: EmotionState = {
 };
 const DEFAULT_INTENT_POOL: IntentPool = { intents: [], last_updated: null };
 const DEFAULT_SCHEDULE: ScheduleToday = { date: null, rigid: [], flexible: [], generated_by: null };
-const DEFAULT_EVENT_QUEUE: EventQueue = { events: [], max_size: 50 };
-const DEFAULT_HEARTBEAT_LOG: HeartbeatLog = { logs: [], retention_days: 7 };
+const DEFAULT_EVENT_QUEUE: EventQueue = { events: [], max_size: HEARTBEAT_CONFIG.EVENT_QUEUE_MAX_SIZE };
+const DEFAULT_HEARTBEAT_LOG: HeartbeatLog = { logs: [], retention_days: HEARTBEAT_CONFIG.LOG_RETENTION_DAYS };
 
 const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['创作', '社交', '窥屏', '表达', '学习', '休息', '梦想']);
 
@@ -265,10 +266,16 @@ export async function regularTick(
   vitality = afternoonRestRecovery(vitality, hour);
 
   // 2. Perception: three-layer emotion decay + rumination + threshold break
-  emotion = decayThreeLayer(emotion);
-  const flowDrainModifier = flowState.status === 'flow' ? 0.7 : 1.0;
-  vitality = drainVitality(vitality, emotion, flowDrainModifier);
-  confidence = decayConfidence(confidence);
+  if (isFeatureEnabled(persona, 'emotion')) {
+    emotion = decayThreeLayer(emotion);
+  }
+  const flowDrainModifier = flowState.status === 'flow' ? HEARTBEAT_CONFIG.FLOW_DRAIN_MODIFIER : 1.0;
+  if (isFeatureEnabled(persona, 'vitality')) {
+    vitality = drainVitality(vitality, emotion, flowDrainModifier);
+  }
+  if (isFeatureEnabled(persona, 'confidence')) {
+    confidence = decayConfidence(confidence);
+  }
 
   // Rumination check
   const ruminationResult = rollRumination(emotion);
@@ -516,7 +523,7 @@ export async function regularTick(
   let template = readTemplate('heartbeat-prompt.md');
   template = injectPersona(template, persona);
 
-  const intentSummary = getTopIntentsRaw(intentPool, 7)
+  const intentSummary = getTopIntentsRaw(intentPool, HEARTBEAT_CONFIG.TOP_INTENTS_FOR_LLM)
     .map(i => {
       const net = i.intensity - i.resistance;
       const skippedInfo = i.skipped_count > 0 ? `, 拖延: ${i.skipped_count}次` : '';
@@ -847,8 +854,8 @@ function writeFlowTickState(
 
   let updatedLog = { ...heartbeatLog, logs: [...heartbeatLog.logs, logEntry] };
   const logJson = JSON.stringify(updatedLog);
-  if (logJson.length > 100_000) {
-    updatedLog = { ...updatedLog, logs: updatedLog.logs.slice(-50) };
+  if (logJson.length > HEARTBEAT_CONFIG.LOG_SIZE_LIMIT) {
+    updatedLog = { ...updatedLog, logs: updatedLog.logs.slice(-HEARTBEAT_CONFIG.LOG_TRIM_KEEP) };
   }
   writeJSON(PATHS.heartbeatLog, updatedLog);
 }

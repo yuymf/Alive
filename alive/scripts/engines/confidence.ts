@@ -4,11 +4,12 @@
 
 import { ConfidenceState, FeedbackEvent } from '../utils/types';
 import { now } from '../utils/time-utils';
+import { CONFIDENCE_CONFIG } from '../config';
 
-const CONFIDENCE_MIN = 0.5;
-const CONFIDENCE_MAX = 1.5;
-const CONFIDENCE_NEUTRAL = 1.0;
-const DECAY_RATE = 0.0033;
+const CONFIDENCE_MIN = CONFIDENCE_CONFIG.CONFIDENCE_MIN;
+const CONFIDENCE_MAX = CONFIDENCE_CONFIG.CONFIDENCE_MAX;
+const CONFIDENCE_NEUTRAL = CONFIDENCE_CONFIG.CONFIDENCE_NEUTRAL;
+const DECAY_RATE = CONFIDENCE_CONFIG.DECAY_RATE;
 
 function clampConfidence(v: number): number {
   return Math.min(CONFIDENCE_MAX, Math.max(CONFIDENCE_MIN, v));
@@ -24,7 +25,7 @@ export function updateConfidenceFromFeedback(
   feedback: FeedbackEvent,
 ): ConfidenceState {
   const isPositive = feedback.metric > feedback.baseline;
-  const delta = isPositive ? 0.05 : -0.05;
+  const delta = isPositive ? CONFIDENCE_CONFIG.FEEDBACK_DELTA : -CONFIDENCE_CONFIG.FEEDBACK_DELTA;
   const newStreak = isPositive
     ? (state.streak > 0 ? state.streak + 1 : 1)
     : (state.streak < 0 ? state.streak - 1 : -1);

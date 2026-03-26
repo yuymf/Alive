@@ -8,8 +8,9 @@ import { generateAdaptedSkill } from './skill-adapter';
 import { clearRouteTable } from '../router/skill-router';
 import { canInstallMore, checkInstallLimit } from './skill-lifecycle';
 import type { SkillAcquisitionPlan, SkillNeed } from '../utils/types';
+import { SKILL_LIFECYCLE_CONFIG } from '../config';
 
-const MAX_PLANS = 2;
+const MAX_PLANS = SKILL_LIFECYCLE_CONFIG.MAX_PLANS;
 
 interface LlmLike {
   callJSON<T>(prompt: string, maxTokens?: number): Promise<T>;

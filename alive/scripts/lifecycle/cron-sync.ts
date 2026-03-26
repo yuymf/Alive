@@ -40,10 +40,12 @@ export interface SyncResult {
 
 // ── Defaults ─────────────────────────────────────────────────────
 
+import { CRON_CONFIG } from '../config';
+
 const DEFAULT_EXPRESSIONS: CronExpressions = {
-  morning: '0 7 * * *',
-  tick: '0 8-22 * * *',
-  night: '0 23 * * *',
+  morning: CRON_CONFIG.DEFAULT_MORNING,
+  tick: CRON_CONFIG.DEFAULT_TICK,
+  night: CRON_CONFIG.DEFAULT_NIGHT,
 };
 
 // ── Job Name Builder ─────────────────────────────────────────────
@@ -65,7 +67,7 @@ function buildJobNames(personaSlug: string) {
 function listAllCronJobs(): CronJob[] {
   try {
     const raw = execFileSync('openclaw', ['cron', 'list', '--json'], {
-      timeout: 10_000,
+      timeout: CRON_CONFIG.CLI_TIMEOUT_MS,
       encoding: 'utf8',
     });
     const parsed = JSON.parse(raw);
@@ -90,7 +92,7 @@ export function findCronJobByName(name: string): CronJob | null {
 export function editCronExpression(jobId: string, cronExpr: string): boolean {
   try {
     execFileSync('openclaw', ['cron', 'edit', jobId, '--cron', cronExpr, '--exact'], {
-      timeout: 10_000,
+      timeout: CRON_CONFIG.CLI_TIMEOUT_MS,
       encoding: 'utf8',
     });
     return true;

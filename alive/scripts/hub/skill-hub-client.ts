@@ -7,7 +7,9 @@ import { promisify } from 'util';
 
 const execFileAsync = promisify(_execFile);
 
-const CLI_TIMEOUT_MS = 30_000;
+import { SKILL_LIFECYCLE_CONFIG } from '../config';
+
+const CLI_TIMEOUT_MS = SKILL_LIFECYCLE_CONFIG.CLI_TIMEOUT_MS;
 
 // ─── Types ──────────────────────────────────────────────
 

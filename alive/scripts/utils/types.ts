@@ -109,6 +109,16 @@ export interface FeaturesConfig {
   personality_drift?: boolean;
   /** Content sources browsing (requires content_sources config). Default: false */
   content_browse?: boolean;
+  /** Emotion engine — 6D emotion model with three-layer inertia. Default: true */
+  emotion?: boolean;
+  /** Intent engine — 7-category intent pool with resistance. Default: true */
+  intent?: boolean;
+  /** Vitality engine — 0-100 energy resource. Default: true */
+  vitality?: boolean;
+  /** Confidence engine — 0.5x-1.5x creation multiplier. Default: true */
+  confidence?: boolean;
+  /** Post impulse engine — 0-100 posting desire accumulator. Default: true */
+  post_impulse?: boolean;
   /** Allow any extra feature flags */
   [key: string]: boolean | undefined;
 }
@@ -116,7 +126,8 @@ export interface FeaturesConfig {
 /** Default feature flags — conservative defaults */
 export const DEFAULT_FEATURES: Required<Pick<FeaturesConfig,
   'skill_discovery' | 'random_events' | 'social_graph' | 'flow_states' |
-  'procrastination' | 'personality_drift' | 'content_browse'
+  'procrastination' | 'personality_drift' | 'content_browse' |
+  'emotion' | 'intent' | 'vitality' | 'confidence' | 'post_impulse'
 >> = {
   skill_discovery: false,
   random_events: true,
@@ -125,6 +136,11 @@ export const DEFAULT_FEATURES: Required<Pick<FeaturesConfig,
   procrastination: true,
   personality_drift: true,
   content_browse: false,
+  emotion: true,
+  intent: true,
+  vitality: true,
+  confidence: true,
+  post_impulse: true,
 };
 
 export interface PersonaEventDef {

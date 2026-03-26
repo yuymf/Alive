@@ -3,22 +3,18 @@
 // Handles tier classification, closeness changes, decay, dormancy, and intent generation.
 
 import { SocialRelation, SocialMeta, IntentCategory } from '../utils/types';
+import { SOCIAL_GRAPH_CONFIG } from '../config';
 
 // === Tier Classification ===
 
 export type SocialTier = 'core' | 'familiar' | 'cognitive' | 'dormant';
 
-const TIER_LIMITS: Record<SocialTier, number> = {
-  core: 5,
-  familiar: 15,
-  cognitive: 100,
-  dormant: 500,
-};
+const TIER_LIMITS: Record<SocialTier, number> = SOCIAL_GRAPH_CONFIG.TIER_LIMITS as Record<SocialTier, number>;
 
 export function classifyTier(closeness: number): SocialTier {
-  if (closeness > 7) return 'core';
-  if (closeness >= 4) return 'familiar';
-  if (closeness >= 1) return 'cognitive';
+  if (closeness > SOCIAL_GRAPH_CONFIG.TIER_THRESHOLDS.core) return 'core';
+  if (closeness >= SOCIAL_GRAPH_CONFIG.TIER_THRESHOLDS.familiar) return 'familiar';
+  if (closeness >= SOCIAL_GRAPH_CONFIG.TIER_THRESHOLDS.cognitive) return 'cognitive';
   return 'dormant';
 }
 
@@ -122,7 +118,7 @@ export function processDormancy(
 
   for (const relation of relations) {
     const days = daysSince(relation.last_interaction, now);
-    if (days >= 90 && classifyTier(relation.relationship.closeness) === 'dormant') {
+    if (days >= SOCIAL_GRAPH_CONFIG.DORMANCY_DAYS && classifyTier(relation.relationship.closeness) === 'dormant') {
       removed.push(relation);
     } else {
       active.push(relation);
@@ -191,7 +187,7 @@ export function generateSocialIntents(
   for (const r of relations) {
     if (classifyTier(r.relationship.closeness) !== 'core') continue;
     const days = daysSince(r.last_interaction, now);
-    if (days >= 3) {
+    if (days >= SOCIAL_GRAPH_CONFIG.CORE_INACTIVE_DAYS) {
       intents.push({
         category: '社交',
         description: `想去看看 @${r.name} 的最近动态`,

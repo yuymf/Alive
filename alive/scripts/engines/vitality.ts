@@ -3,10 +3,11 @@
 
 import { VitalityState, EmotionState } from '../utils/types';
 import { now } from '../utils/time-utils';
+import { VITALITY_CONFIG } from '../config';
 
-const VITALITY_MAX = 100;
+const VITALITY_MAX = VITALITY_CONFIG.VITALITY_MAX;
 const VITALITY_MIN = 0;
-const BASE_DRAIN_PER_TICK = 2;  // 从 3 降到 2：减缓全天活力消耗（之前 85→8.6 太快）
+const BASE_DRAIN_PER_TICK = VITALITY_CONFIG.BASE_DRAIN_PER_TICK;  // 从 3 降到 2：减缓全天活力消耗（之前 85→8.6 太快）
 
 function clampVitality(v: number): number {
   return Math.min(VITALITY_MAX, Math.max(VITALITY_MIN, v));
@@ -55,9 +56,9 @@ export function replenishVitality(state: VitalityState, source: string, customGa
 export function morningRecovery(state: VitalityState): VitalityState {
   const wasLow = state.vitality < 30;
   const newConsecutive = wasLow ? state.consecutive_low_days + 1 : 0;
-  const emergency = newConsecutive >= 3;
+  const emergency = newConsecutive >= VITALITY_CONFIG.EMERGENCY_LOW_DAYS;
   const base = REPLENISHMENT.sleep_cycle;
-  const newVitality = emergency ? Math.max(state.vitality + base, 60) : clampVitality(state.vitality + base);
+  const newVitality = emergency ? Math.max(state.vitality + base, VITALITY_CONFIG.EMERGENCY_MIN_VITALITY) : clampVitality(state.vitality + base);
   return { ...state, vitality: newVitality, last_updated: now().toISOString(), consecutive_low_days: emergency ? 0 : newConsecutive };
 }
 
@@ -98,4 +99,4 @@ export function getVitalityConstraints(vitality: number): {
   }
 }
 
-export const DEFAULT_VITALITY: VitalityState = { vitality: 70, last_updated: null, consecutive_low_days: 0 };
+export const DEFAULT_VITALITY: VitalityState = { vitality: VITALITY_CONFIG.DEFAULT_VITALITY, last_updated: null, consecutive_low_days: 0 };

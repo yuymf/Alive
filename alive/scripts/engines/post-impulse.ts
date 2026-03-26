@@ -4,13 +4,14 @@
 
 import { PostImpulseState } from '../utils/types';
 import { now, getLocalDate } from '../utils/time-utils';
+import { POST_IMPULSE_CONFIG } from '../config';
 
-const BASE_DECAY = 3;
+const BASE_DECAY = POST_IMPULSE_CONFIG.BASE_DECAY;
 const EXTRA_DECAY_1_POST = 5;
 const EXTRA_DECAY_2_POSTS = 15;
-const IMPULSE_THRESHOLD = 70;
-const DORMANCY_DAYS = 5;
-const DORMANCY_BOOST = 50;
+const IMPULSE_THRESHOLD = POST_IMPULSE_CONFIG.IMPULSE_THRESHOLD;
+const DORMANCY_DAYS = POST_IMPULSE_CONFIG.DORMANCY_DAYS;
+const DORMANCY_BOOST = POST_IMPULSE_CONFIG.DORMANCY_BOOST;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));

@@ -5,12 +5,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PATHS } from '../utils/file-utils';
+import { SKILL_LIFECYCLE_CONFIG } from '../config';
 
 /** Maximum skills that can be installed in a single night reflect cycle. */
-export const MAX_INSTALL_PER_NIGHT = 2;
+export const MAX_INSTALL_PER_NIGHT = SKILL_LIFECYCLE_CONFIG.MAX_INSTALL_PER_NIGHT;
 
 /** Maximum total installed skills before blocking new installs. */
-export const MAX_TOTAL_SKILLS = 20;
+export const MAX_TOTAL_SKILLS = SKILL_LIFECYCLE_CONFIG.MAX_TOTAL_SKILLS;
 
 const ARCHIVED_DIR = '.archived';
 

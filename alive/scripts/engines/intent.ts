@@ -3,8 +3,9 @@
 
 import { Intent, IntentPool, IntentCategory, EmotionState, ScheduleToday, EventQueue, BASE_RESISTANCE } from '../utils/types';
 import { now } from '../utils/time-utils';
+import { INTENT_CONFIG } from '../config';
 
-const INTENSITY_CAP = 10.0;
+const INTENSITY_CAP = INTENT_CONFIG.INTENSITY_CAP;
 
 function cap(value: number): number {
   return Math.min(INTENSITY_CAP, Math.max(0, value));
@@ -70,7 +71,7 @@ function boostOrCreate(intents: Intent[], category: IntentCategory, boost: numbe
   }
   return [...intents, {
     id: generateId(), category, description, intensity: cap(boost), source,
-    born_at: now().toISOString(), decay_rate: 0.5, satisfied_at: null,
+    born_at: now().toISOString(), decay_rate: INTENT_CONFIG.DEFAULT_DECAY_RATE, satisfied_at: null,
     resistance: BASE_RESISTANCE[category] ?? 0, skipped_count: 0, last_attempted: null,
   }];
 }
@@ -104,7 +105,7 @@ export function satisfyIntent(pool: IntentPool, intentId: string): IntentPool {
 export function addIntent(pool: IntentPool, category: IntentCategory, description: string, intensity: number, source: Intent['source']): IntentPool {
   return { ...pool, intents: [...pool.intents, {
     id: generateId(), category, description, intensity: cap(intensity), source,
-    born_at: now().toISOString(), decay_rate: 0.5, satisfied_at: null,
+    born_at: now().toISOString(), decay_rate: INTENT_CONFIG.DEFAULT_DECAY_RATE, satisfied_at: null,
     resistance: BASE_RESISTANCE[category] ?? 0, skipped_count: 0, last_attempted: null,
   }]};
 }
@@ -159,15 +160,15 @@ export function processProcrastination(pool: IntentPool, chosenIntentIds: Readon
   const diaryEntries: string[] = [];
   // Track which descriptions we've already emitted this tick to avoid duplicates
   const emittedDescriptions = new Set<string>();
-  // Global cap: max 3 procrastination diary entries per tick to avoid diary bloat
-  const MAX_DIARY_PER_TICK = 3;
+  // Global cap: max N procrastination diary entries per tick to avoid diary bloat
+  const MAX_DIARY_PER_TICK = INTENT_CONFIG.MAX_DIARY_PER_TICK;
 
   const intents = pool.intents.map(intent => {
     if (intent.satisfied_at !== null || intent.intensity <= intent.resistance) return intent;
     if (chosenIntentIds.has(intent.id)) return intent.skipped_count > 0 ? { ...intent, skipped_count: 0, last_attempted: now().toISOString() } : intent;
     const newSkipped = intent.skipped_count + 1;
-    if (newSkipped >= 4) {
-      // Reduced threshold from 5 to 4: resolve sooner (abandon or burst)
+    if (newSkipped >= INTENT_CONFIG.PROCRASTINATION_RESOLVE_AT) {
+      // Reduced threshold: resolve sooner (abandon or burst)
       const abandonProb = currentStress > 0.5 ? 0.8 : (currentStress < 0.3 ? 0.5 : 0.6);
       if (rng() < abandonProb) {
         // On abandon: set intensity below resistance so it won't re-trigger the cycle

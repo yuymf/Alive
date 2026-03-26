@@ -16,20 +16,22 @@ import type { EmotionState } from '../utils/types';
 
 // ── Configuration ─────────────────────────────────────────────────
 
+import { OUTREACH_CONFIG } from '../config';
+
 /** Max proactive messages per calendar day */
-const MAX_DAILY_OUTREACH = 2;
+const MAX_DAILY_OUTREACH = OUTREACH_CONFIG.MAX_DAILY_OUTREACH;
 
 /** Minimum hours between two proactive messages */
-const COOLDOWN_HOURS = 4;
+const COOLDOWN_HOURS = OUTREACH_CONFIG.COOLDOWN_HOURS;
 
 /** Hours where proactive messages are allowed (inclusive) */
-const ACTIVE_HOURS = { start: 10, end: 21 };
+const ACTIVE_HOURS = OUTREACH_CONFIG.ACTIVE_HOURS;
 
 /** Minimum sociability threshold to consider sending */
-const MIN_SOCIABILITY = 0.35;
+const MIN_SOCIABILITY = OUTREACH_CONFIG.MIN_SOCIABILITY;
 
 /** Minimum valence — don't message when very upset */
-const MIN_VALENCE = -0.2;
+const MIN_VALENCE = OUTREACH_CONFIG.MIN_VALENCE;
 
 // ── State type ────────────────────────────────────────────────────
 
