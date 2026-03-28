@@ -13,6 +13,19 @@ export interface ContentSourcesConfig {
   reddit_subreddits?: string[];   // Reddit subreddits to follow
 }
 
+// === Conversation Style Configuration ===
+export interface ConversationStyleConfig {
+  mode: 'topic-driver' | 'responsive' | 'balanced';
+  traits: string[];
+  anti_patterns?: string[];
+}
+
+export interface ConversationExample {
+  context: string;
+  bad: string;
+  good: string;
+}
+
 // === Persona Configuration ===
 export interface PersonaConfig {
   meta: {
@@ -48,6 +61,8 @@ export interface PersonaConfig {
     style_description?: string;
     diary_style_guide?: string;             // Writing style guide for diary entries
     language_mixing_instruction?: string;   // e.g. "日记中自然混入你常用的日语词" — replaces hardcoded language-mixing instructions in templates
+    banned_expressions?: string[];
+    conversation_examples?: ConversationExample[];
   };
   intimacy?: {
     levels: number;
@@ -89,6 +104,7 @@ export interface PersonaConfig {
   intent_config?: Partial<Record<MetaIntent, IntentDisplayConfig>>;
   /** Work impulse configuration — persona-level overrides for the work impulse engine */
   work_impulse?: WorkImpulseConfig;
+  conversation_style?: ConversationStyleConfig;
 }
 
 // === Features Configuration ===
