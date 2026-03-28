@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import YAML from 'yaml';
 import type { PersonaConfig } from '../scripts/utils/types';
 import {
   buildConversationStyleDescription,
@@ -210,5 +213,60 @@ describe('injectPersona — conversation style placeholders', () => {
   it('injects empty string for conversation_examples when not configured', () => {
     const result = injectPersona('{persona.voice.conversation_examples_formatted}', basePersona);
     expect(result).toBe('');
+  });
+});
+
+describe('integration: guodegang persona template rendering', () => {
+  const guodegangPath = path.resolve(__dirname, '../personas/guodegang.yaml');
+  const soulInjectionPath = path.resolve(__dirname, '../templates/soul-injection.md');
+  const personalityPath = path.resolve(__dirname, '../templates/personality.md');
+
+  let persona: PersonaConfig;
+
+  beforeAll(() => {
+    persona = YAML.parse(fs.readFileSync(guodegangPath, 'utf8'));
+  });
+
+  it('soul-injection.md renders anti-service section', () => {
+    const template = fs.readFileSync(soulInjectionPath, 'utf8');
+    const rendered = injectPersona(template, persona);
+    // Universal anti-service (static text, not placeholder)
+    expect(rendered).toContain('Anti-Service Patterns');
+    expect(rendered).toContain('效劳');
+    // Conversation style injected
+    expect(rendered).toContain('你主导对话');
+    expect(rendered).toContain('顺着对方的话题展开');
+    // Conversation examples injected
+    expect(rendered).toContain('**场景：** 对方打招呼');
+    expect(rendered).toContain('✗ "有什么事儿得我效劳？"');
+    // No unresolved placeholders for our new fields
+    expect(rendered).not.toContain('{persona.conversation_style.');
+    expect(rendered).not.toContain('{persona.voice.conversation_examples_formatted}');
+    expect(rendered).not.toContain('{persona.voice.banned_expressions_formatted}');
+  });
+
+  it('personality.md renders expanded banned expressions', () => {
+    const template = fs.readFileSync(personalityPath, 'utf8');
+    const rendered = injectPersona(template, persona);
+    // Universal expansions (static text)
+    expect(rendered).toContain('一切"等候指示"型表达');
+    // Persona-specific banned expressions
+    expect(rendered).toContain('- "指点指点"');
+    expect(rendered).toContain('- "有什么事儿得我..."');
+    // No unresolved placeholder
+    expect(rendered).not.toContain('{persona.voice.banned_expressions_formatted}');
+  });
+
+  it('minimal persona (no conversation_style) renders defaults gracefully', () => {
+    const minimalPersona: PersonaConfig = {
+      meta: { name: 'Minimal', tagline: 'test' },
+      personality: { mbti: 'INFP', core_traits: ['kind'] },
+      voice: { language: 'zh-CN', style: 'casual', sample_lines: ['hi'] },
+    };
+    const template = '{persona.conversation_style.description} | {persona.voice.banned_expressions_formatted} | {persona.voice.conversation_examples_formatted}';
+    const rendered = injectPersona(template, minimalPersona);
+    expect(rendered).toContain('自然聊天');
+    // banned_expressions and conversation_examples should render as empty
+    expect(rendered).toMatch(/\| {0,2}\| {0,2}$/);
   });
 });
