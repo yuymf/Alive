@@ -18,6 +18,7 @@ const ALIVE_SRC = path.join(__dirname, '..', 'alive');
 const DIST_SRC = path.join(__dirname, '..', 'dist-alive');
 const E2E_REAL_DAY = path.join(__dirname, '..', 'e2e', 'e2e-real-day.ts');
 const PERSONAS_DIR = path.join(ALIVE_SRC, 'personas');
+const TEMPLATES_DIR = path.join(ALIVE_SRC, 'templates');
 
 const REFERENCE_FILES = ['front.png', 'half-body.png', 'full-body.png', 'left-profile.png'];
 
@@ -317,6 +318,141 @@ async function setupReferenceImages({ persona, personaYamlDir, skillDest, rl, en
   return false;
 }
 
+/**
+ * Write (or replace) the alive soul section in SOUL.md.
+ * Reads templates/soul-injection.md, injects persona fields, writes to SOUL.md.
+ */
+function writeSoulSection(persona) {
+  const skillSlug = 'alive';
+  const marker = `<!-- ${skillSlug}-soul-start -->`;
+  const markerEnd = `<!-- ${skillSlug}-soul-end -->`;
+  const personaName = persona.meta.name;
+
+  // Read soul-injection.md template
+  const templatePath = path.join(TEMPLATES_DIR, 'soul-injection.md');
+  if (!fs.existsSync(templatePath)) {
+    warn(`soul-injection.md not found at ${templatePath} — skipping soul injection`);
+    return;
+  }
+  let template = fs.readFileSync(templatePath, 'utf8');
+
+  // Strip YAML frontmatter (--- ... ---)
+  template = template.replace(/^---[\s\S]*?---\n*/, '');
+
+  // Inject persona placeholders
+  template = injectPersonaTemplate(template, persona);
+
+  const section = [
+    '',
+    marker,
+    template.trim(),
+    markerEnd,
+    '',
+  ].join('\n');
+
+  if (!fs.existsSync(SOUL_FILE)) {
+    warn('SOUL.md not found — skipping soul injection');
+    return;
+  }
+
+  let soul = fs.readFileSync(SOUL_FILE, 'utf8');
+
+  // Remove old section if present
+  if (soul.includes(marker)) {
+    soul = soul.replace(new RegExp(`\n*${marker}[\\s\\S]*?${markerEnd}\n*`), '\n');
+  }
+
+  // Append new section
+  soul = soul.trimEnd() + '\n' + section;
+  fs.writeFileSync(SOUL_FILE, soul);
+  ok(`SOUL.md updated with ${personaName} identity (from soul-injection.md)`);
+}
+
+/**
+ * Lightweight persona template injection for CLI context (pure JS, no TS imports).
+ * Mirrors the replace logic from persona-loader.ts injectPersona().
+ */
+function injectPersonaTemplate(template, p) {
+  const behaviorsTable = generateBehaviorsTableCLI(p);
+  const sampleLinesFormatted = (p.voice?.sample_lines || []).map(s => `- 「${s}」`).join('\n');
+  const mixedLanguagesTable = generateMixedLanguagesTableCLI(p);
+  const personaId = (p.meta.id || (p.meta.name_reading || p.meta.name)).toLowerCase().replace(/\s+/g, '-');
+
+  // conversation style
+  const convStyle = p.conversation_style || { mode: 'balanced', traits: [] };
+  const modeDescriptions = {
+    'topic-driver': '你主导对话。对方说什么，你先用自己的经历和见解去接，然后自然展开。不要被动等问题。',
+    'responsive': '你认真听，想好了再说。不急着接话，但说出来的有分量。',
+    'balanced': '自然聊天。有话说就说，没话说不硬聊。',
+  };
+  let convDescription = modeDescriptions[convStyle.mode] || modeDescriptions['balanced'];
+  if (convStyle.traits && convStyle.traits.length) {
+    convDescription += '\n\n对话习惯：\n' + convStyle.traits.map(t => `- ${t}`).join('\n');
+  }
+  if (convStyle.anti_patterns && convStyle.anti_patterns.length) {
+    convDescription += '\n\n对话禁忌：\n' + convStyle.anti_patterns.map(t => `- ${t}`).join('\n');
+  }
+
+  // banned expressions
+  const bannedExpressionsFormatted = (p.voice?.banned_expressions || []).map(e => `- "${e}"`).join('\n');
+
+  // conversation examples
+  const convExamples = p.voice?.conversation_examples || [];
+  const convExamplesFormatted = convExamples.map(e =>
+    `**场景：** ${e.context}\n✗ "${e.bad}"\n✓ "${e.good}"`
+  ).join('\n\n');
+
+  // session greeting examples
+  const sessionGreetingExamples = (p.voice?.session_greeting_examples || '').trim();
+
+  return template
+    .replace(/{persona\.meta\.name}/g, p.meta.name || '')
+    .replace(/{persona\.meta\.name_reading}/g, p.meta.name_reading || p.meta.name || '')
+    .replace(/{persona\.meta\.age}/g, String(p.meta.age ?? ''))
+    .replace(/{persona\.meta\.tagline}/g, p.meta.tagline || '')
+    .replace(/{persona\.meta\.id}/g, personaId)
+    .replace(/{persona\.personality\.core_traits}/g, (p.personality?.core_traits || []).join('、'))
+    .replace(/{persona\.personality\.quirks}/g, (p.personality?.quirks || []).join('、'))
+    .replace(/{persona\.personality\.values}/g, (p.personality?.values || []).join('、'))
+    .replace(/{persona\.personality\.mbti}/g, p.personality?.mbti || '')
+    .replace(/{persona\.personality\.description}/g, (p.personality?.description || '').trim())
+    .replace(/{persona\.intimacy\.levels}/g, String(p.intimacy?.levels ?? 5))
+    .replace(/{persona\.intimacy\.behaviors_table}/g, behaviorsTable)
+    .replace(/{persona\.schedule\.wake_hour}/g, String(p.schedule?.wake_hour ?? 8))
+    .replace(/{persona\.schedule\.sleep_hour}/g, String(p.schedule?.sleep_hour ?? 23))
+    .replace(/{persona\.schedule\.time_descriptions}/g, (p.schedule?.time_descriptions || '').trim())
+    .replace(/{persona\.voice\.style_description}/g, p.voice?.style_description || p.voice?.style || '')
+    .replace(/{persona\.voice\.language_description}/g, p.voice?.language_description || `${p.voice?.language || 'zh-CN'} 为主`)
+    .replace(/{persona\.voice\.mixed_languages_table}/g, mixedLanguagesTable)
+    .replace(/{persona\.voice\.sample_lines_formatted}/g, sampleLinesFormatted)
+    .replace(/{persona\.conversation_style\.description}/g, convDescription)
+    .replace(/{persona\.conversation_style\.mode}/g, convStyle.mode)
+    .replace(/{persona\.voice\.banned_expressions_formatted}/g, bannedExpressionsFormatted)
+    .replace(/{persona\.voice\.conversation_examples_formatted}/g, convExamplesFormatted)
+    .replace(/{persona\.voice\.session_greeting_examples}/g, sessionGreetingExamples);
+}
+
+function generateBehaviorsTableCLI(p) {
+  const behaviors = p.intimacy?.behaviors;
+  if (!behaviors || Object.keys(behaviors).length === 0) return '';
+  const rows = Object.entries(behaviors)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([level, desc]) => `| ${level} | ${desc} |`);
+  return `| 等级 | 行为变化 |\n|------|---------|\n${rows.join('\n')}`;
+}
+
+function generateMixedLanguagesTableCLI(p) {
+  if (!p.voice?.mixed_languages) return '';
+  const rows = [];
+  for (const [, words] of Object.entries(p.voice.mixed_languages)) {
+    for (const word of words) {
+      rows.push(`| ${word} | 常用 |`);
+    }
+  }
+  if (rows.length === 0) return '';
+  return `| 词 | 使用场景 |\n|-----|---------|\n${rows.join('\n')}`;
+}
+
 // ═══════════════════════════════════════════════
 // Alive Framework — Generic Persona Installer
 // ═══════════════════════════════════════════════
@@ -596,6 +732,9 @@ async function install() {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
 
+  // Write persona identity to SOUL.md
+  writeSoulSection(persona);
+
   log('Installation complete!\n');
   console.log(`  ${personaName} is ready. Start OpenClaw to begin.\n`);
   console.log(`  Tips:`);
@@ -786,6 +925,9 @@ async function update() {
   // Always update persona config from source as persona.yaml
   installPersonaConfig(resolvedPersonaPath, skillDest);
   ok(`Framework files updated at ${skillDest}`);
+
+  // Refresh SOUL.md with latest soul-injection.md template
+  writeSoulSection(persona);
 
   log('Update complete!\n');
   console.log(`  ${personaName} code updated. Memory, config, and cron jobs are untouched.\n`);
@@ -1006,6 +1148,9 @@ async function reinstall() {
 
   rl.close();
 
+  // Write persona identity to SOUL.md
+  writeSoulSection(persona);
+
   log('Reinstall complete!\n');
   console.log(`  ${personaName} has been fully reset and reinstalled.\n`);
   console.log(`  Tips:`);
@@ -1208,6 +1353,9 @@ async function realDayTest() {
 
   ok('Fresh install complete');
 
+  // Write persona identity to SOUL.md
+  writeSoulSection(persona);
+
   // Step 5: Run real-day test
   log('Step 5/5: Launching real-day E2E test...');
   console.log(`  Running: npx tsx ${E2E_REAL_DAY} --slug ${personaSlug}\n`);
@@ -1391,18 +1539,7 @@ async function switchPersona() {
   }
 
   // 6. Update SOUL.md
-  if (fs.existsSync(SOUL_FILE)) {
-    log('Updating SOUL.md...');
-    let soul = fs.readFileSync(SOUL_FILE, 'utf8');
-    // Remove old alive soul section if present
-    const marker = `<!-- ${skillSlug}-soul-start -->`;
-    const markerEnd = `<!-- ${skillSlug}-soul-end -->`;
-    if (soul.includes(marker)) {
-      soul = soul.replace(new RegExp(`\n*${marker}[\\s\\S]*?${markerEnd}\n*`), '\n');
-      fs.writeFileSync(SOUL_FILE, soul);
-      ok('Cleaned old alive persona from SOUL.md');
-    }
-  }
+  writeSoulSection(persona);
 
   log('Switch complete!\n');
   console.log(`  Active persona: ${personaName} (${personaSlug})`);
