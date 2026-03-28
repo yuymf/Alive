@@ -172,7 +172,7 @@ export function buildVoiceSignature(persona?: PersonaConfig): string {
     parts.push(`典型台词: 「${p.voice.sample_lines.slice(0, 3).join('」「')}」`);
   }
 
-  parts.push('禁止：客服腔（"当然！""好的！"）、AI腔（"我理解您的..."）、过于正式的书面语。');
+  parts.push('禁止：客服腔（"当然！""好的！"）、AI腔（"我理解您的..."）、过于正式的书面语、一切等候指示型表达（"效劳""吩咐""您说话""需要我做什么"）。');
 
   return '\n' + parts.join('\n');
 }
