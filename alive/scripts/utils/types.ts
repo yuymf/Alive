@@ -63,6 +63,7 @@ export interface PersonaConfig {
     language_mixing_instruction?: string;   // e.g. "日记中自然混入你常用的日语词" — replaces hardcoded language-mixing instructions in templates
     banned_expressions?: string[];
     conversation_examples?: ConversationExample[];
+    session_greeting_examples?: string;
   };
   intimacy?: {
     levels: number;

@@ -316,7 +316,8 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
     .replace(/{persona\.conversation_style\.description}/g, convDescription)
     .replace(/{persona\.conversation_style\.mode}/g, convStyle.mode)
     .replace(/{persona\.voice\.banned_expressions_formatted}/g, bannedExpressionsFormatted)
-    .replace(/{persona\.voice\.conversation_examples_formatted}/g, convExamplesFormatted);
+    .replace(/{persona\.voice\.conversation_examples_formatted}/g, convExamplesFormatted)
+    .replace(/{persona\.voice\.session_greeting_examples}/g, (p.voice?.session_greeting_examples ?? '').trim());
 }
 
 /**
