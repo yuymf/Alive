@@ -8,6 +8,7 @@ import {
   PersonaConfig, EmotionDelta, DEFAULT_EMOTION_BASELINE, EmotionUndertone, ContentSourcesConfig,
   MetaIntent, ALL_META_INTENTS, IntentDisplayConfig, EmotionCouplingConfig, WorkImpulseConfig,
   DEFAULT_INTENT_DISPLAY, DEFAULT_EMOTION_COUPLING, DEFAULT_WORK_IMPULSE,
+  ConversationStyleConfig, ConversationExample,
 } from '../utils/types';
 import { PATHS } from '../utils/file-utils';
 
@@ -177,6 +178,38 @@ export function buildVoiceSignature(persona?: PersonaConfig): string {
 }
 
 /**
+ * Build a readable conversation style description from config.
+ * Injected into soul-injection.md via {persona.conversation_style.description}.
+ */
+export function buildConversationStyleDescription(style: ConversationStyleConfig): string {
+  const modeDescriptions: Record<string, string> = {
+    'topic-driver': '你主导对话。对方说什么，你先用自己的经历和见解去接，然后自然展开。不要被动等问题。',
+    'responsive': '你认真听，想好了再说。不急着接话，但说出来的有分量。',
+    'balanced': '自然聊天。有话说就说，没话说不硬聊。',
+  };
+
+  let desc = modeDescriptions[style.mode] ?? modeDescriptions['balanced'];
+  if (style.traits?.length) {
+    desc += '\n\n对话习惯：\n' + style.traits.map(t => `- ${t}`).join('\n');
+  }
+  if (style.anti_patterns?.length) {
+    desc += '\n\n对话禁忌：\n' + style.anti_patterns.map(t => `- ${t}`).join('\n');
+  }
+  return desc;
+}
+
+/**
+ * Format conversation examples into a readable good/bad comparison.
+ * Injected into personality.md via {persona.voice.conversation_examples_formatted}.
+ */
+export function formatConversationExamples(examples: ConversationExample[]): string {
+  if (!examples.length) return '';
+  return examples.map(e =>
+    `**场景：** ${e.context}\n✗ "${e.bad}"\n✓ "${e.good}"`
+  ).join('\n\n');
+}
+
+/**
  * Inject persona config into a template string.
  * Replaces {persona.xxx} placeholders.
  */
@@ -190,6 +223,19 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
 
   // Compute gender pronoun for template use (她/他/ta)
   const genderPronoun = p.meta.gender === '男' ? '他' : p.meta.gender === '女' ? '她' : 'ta';
+
+  // Conversation style (defaults to balanced)
+  const convStyle = p.conversation_style ?? { mode: 'balanced' as const, traits: [] };
+  const convDescription = buildConversationStyleDescription(convStyle);
+
+  // Banned expressions (persona-level additions)
+  const bannedExpressionsFormatted = (p.voice?.banned_expressions ?? [])
+    .map(e => `- "${e}"`).join('\n');
+
+  // Conversation examples
+  const convExamplesFormatted = formatConversationExamples(
+    p.voice?.conversation_examples ?? []
+  );
 
   return template
     // === meta ===
@@ -265,7 +311,12 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
     .replace(/{persona\.content_sources\.platforms}/g, (p.content_sources?.platforms ?? []).join(', '))
     .replace(/{persona\.content_sources\.keywords}/g, (p.content_sources?.keywords ?? []).join(', '))
     .replace(/{persona\.content_sources\.dailyhot_platforms}/g, (p.content_sources?.dailyhot_platforms ?? []).join(', '))
-    .replace(/{persona\.content_sources\.reddit_subreddits}/g, (p.content_sources?.reddit_subreddits ?? []).join(', '));
+    .replace(/{persona\.content_sources\.reddit_subreddits}/g, (p.content_sources?.reddit_subreddits ?? []).join(', '))
+    // === conversation style ===
+    .replace(/{persona\.conversation_style\.description}/g, convDescription)
+    .replace(/{persona\.conversation_style\.mode}/g, convStyle.mode)
+    .replace(/{persona\.voice\.banned_expressions_formatted}/g, bannedExpressionsFormatted)
+    .replace(/{persona\.voice\.conversation_examples_formatted}/g, convExamplesFormatted);
 }
 
 /**
