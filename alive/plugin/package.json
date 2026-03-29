@@ -1,0 +1,12 @@
+{
+  "name": "alive-admin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Alive 管理面板命令处理器 — /alive slash commands",
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ]
+  }
+}

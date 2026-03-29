@@ -1,4 +1,4 @@
-import { definePluginEntry } from 'openclaw/plugin-sdk';
+import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
