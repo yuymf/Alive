@@ -1575,6 +1575,21 @@ async function switchPersona() {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
 
+  // Install alive-admin plugin (ensure plugin is registered for new persona)
+  if (isOpenClawCLIAvailable()) {
+    const pluginDir = path.join(skillDest, 'plugin');
+    if (fs.existsSync(pluginDir)) {
+      try {
+        execFileSync('openclaw', ['plugins', 'install', '--link', pluginDir], {
+          timeout: 15000, encoding: 'utf8', stdio: 'pipe',
+        });
+        ok('alive-admin plugin installed');
+      } catch (err) {
+        warn(`Failed to install alive-admin plugin: ${err.message}`);
+      }
+    }
+  }
+
   // 6. Update SOUL.md
   writeSoulSection(persona);
 
