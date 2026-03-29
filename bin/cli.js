@@ -837,6 +837,16 @@ async function uninstall() {
     }
   }
 
+  // Remove alive-admin plugin
+  if (isOpenClawCLIAvailable()) {
+    try {
+      execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore' });
+      ok('Removed alive-admin plugin');
+    } catch {
+      // Plugin may not be installed; ignore
+    }
+  }
+
   log('Cleaning SOUL.md...');
   if (fs.existsSync(SOUL_FILE)) {
     let soul = fs.readFileSync(SOUL_FILE, 'utf8');
