@@ -67,6 +67,55 @@ alive/                         # 通用活人感引擎 (persona-agnostic)
 └── tests/                     # 测试文件
 ```
 
+## 安装到 OpenClaw
+
+Alive 作为 OpenClaw skill 运行，安装后会复制到 `~/.openclaw/skills/alive/`。
+
+### 方式一：交互式安装（推荐）
+
+```bash
+cd /Users/halyu/Documents/Code/Alive
+node bin/cli.js
+```
+
+安装程序会依次：
+1. 验证 OpenClaw 目录存在
+2. 让你选择或指定 persona
+3. 复制 alive 框架到 `~/.openclaw/skills/alive/`
+4. 在 `openclaw.json` 中注册 skill（含 env 环境变量）
+5. 设置参考图（可选）
+6. 初始化记忆目录 `~/.openclaw/workspace/memory/<persona-slug>/`
+7. 注册 cron 任务（morning / tick / night）
+
+### 方式二：指定 persona 文件
+
+```bash
+node bin/cli.js --persona ./alive/personas/minase.yaml
+```
+
+### 保留现有 env 配置
+
+运行安装命令时，**直接按 Enter 跳过所有 API Key 输入**，现有 env 值不会被覆盖。
+
+| 命令 | env 行为 |
+|------|---------|
+| `install` | 跳过提示 → 保留现有值 |
+| `update` | 自动保留现有值 |
+| `reinstall` | 会提示输入，会覆盖 |
+| `real-day-test` | 自动保留现有值 |
+
+> **推荐**：`update` 命令只更新代码框架，不触碰 env 和记忆，适合日常开发迭代。
+
+### 安装后验证
+
+```bash
+openclaw skills list
+# 或
+openclaw skills check
+```
+
+---
+
 ## 快速开始
 
 ### 安装依赖
@@ -78,13 +127,17 @@ npm install
 npm run build
 ```
 
-### 运行
+### 运行（开发模式）
 
 ```bash
-alive                    # 交互式选择内置角色
-alive --create           # 随机生成新角色
-alive --create --guided  # 引导模式创建角色
+node bin/cli.js                    # 交互式选择内置角色
+node bin/cli.js --create           # 随机生成新角色
+node bin/cli.js --create --guided  # 引导模式创建角色
 ```
+
+> **注意**：`alive` 作为全局命令仅在安装到 OpenClaw 后可用。开发调试阶段使用 `node bin/cli.js`。
+
+---
 
 ## 创建角色
 
@@ -92,13 +145,13 @@ alive --create --guided  # 引导模式创建角色
 
 ```bash
 # 纯随机
-alive --create
+node bin/cli.js --create
 
 # 指定名字和定位
-alive --create --name "陈小鱼" --tagline "爱吃甜食的插画师"
+node bin/cli.js --create --name "陈小鱼" --tagline "爱吃甜食的插画师"
 
 # 引导模式
-alive --create --guided
+node bin/cli.js --create --guided
 ```
 
 ### 方式二：手动编写 YAML
@@ -108,23 +161,36 @@ alive --create --guided
 cp alive/personas/minase.yaml my-persona.yaml
 
 # 2. 安装
-alive --persona ./my-persona.yaml
+node bin/cli.js --persona ./my-persona.yaml
 ```
 
 参考 `alive/persona-schema.yaml` 了解所有可配置字段。
+
+---
 
 ## CLI 命令
 
 | 命令 | 说明 |
 |------|------|
-| `alive` | 交互式选择内置角色 |
-| `alive --persona <path>` | 安装自定义角色 |
-| `alive --update --persona <path>` | 更新框架代码，保留记忆 |
-| `alive --reinstall --persona <path>` | 完全重置 |
-| `alive --uninstall --persona <path>` | 卸载角色 |
-| `alive --switch-persona --persona <path>` | 切换角色 |
-| `alive --real-day-test --persona <path>` | E2E 全天测试 |
-| `alive --help` | 显示帮助 |
+| `node bin/cli.js` | 交互式选择内置角色并安装 |
+| `node bin/cli.js --persona <path>` | 安装指定 persona（完整安装） |
+| `node bin/cli.js --update --persona <path>` | 更新框架代码，**保留** env 和记忆 |
+| `node bin/cli.js --reinstall --persona <path>` | 完全重置（代码+记忆+cron） |
+| `node bin/cli.js --uninstall --persona <path>` | 卸载 skill 和 cron |
+| `node bin/cli.js --switch-persona --persona <path>` | 热切换角色（保留各自记忆） |
+| `node bin/cli.js --setup-references --persona <path>` | 生成参考图（需提供原图） |
+| `node bin/cli.js --real-day-test --persona <path>` | E2E 全天测试 |
+| `node bin/cli.js --real-day-test --persona <path> --dry-run` | E2E 测试（跳过 API 调用） |
+| `node bin/cli.js --help` | 显示帮助 |
+
+### 各命令对数据的影响
+
+| 命令 | 代码 | env | 记忆 | cron |
+|------|------|-----|------|------|
+| `update` | ✅ 更新 | ❌ 保留 | ❌ 保留 | ❌ 保留 |
+| `reinstall` | ✅ 更新 | ✅ 覆盖 | ⚠️ 清空 | ✅ 重建 |
+| `uninstall` | ❌ 删除 | ❌ 删除 |可选保留 | ❌ 删除 |
+| `switch-persona` | ❌ | ❌ | ✅ 各自独立 | ✅ 各自独立 |
 
 ## 管理面板（斜杠命令）
 
