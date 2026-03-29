@@ -1,0 +1,10 @@
+{
+  "id": "alive-admin",
+  "name": "Alive Admin",
+  "description": "Alive 管理面板命令处理器 — /alive slash commands",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
