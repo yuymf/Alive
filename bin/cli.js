@@ -1165,6 +1165,24 @@ async function reinstall() {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
 
+  // Install alive-admin plugin
+  if (isOpenClawCLIAvailable()) {
+    const pluginDir = path.join(skillDest, 'plugin');
+    if (fs.existsSync(pluginDir)) {
+      try {
+        execFileSync('openclaw', ['plugins', 'install', '--link', pluginDir], {
+          timeout: 15000, encoding: 'utf8', stdio: 'pipe',
+        });
+        ok('alive-admin plugin installed');
+      } catch (err) {
+        warn(`Failed to install alive-admin plugin: ${err.message}`);
+        warn('You can install it manually: openclaw plugins install --link ~/.openclaw/skills/alive/plugin');
+      }
+    } else {
+      warn('Plugin directory not found — skipping plugin install');
+    }
+  }
+
   rl.close();
 
   // Write persona identity to SOUL.md
