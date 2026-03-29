@@ -1596,7 +1596,10 @@ async function switchPersona() {
         ok('alive-admin plugin installed');
       } catch (err) {
         warn(`Failed to install alive-admin plugin: ${err.message}`);
+        warn('You can install it manually: openclaw plugins install --link ~/.openclaw/skills/alive/plugin');
       }
+    } else {
+      warn('Plugin directory not found — skipping plugin install');
     }
   }
 
