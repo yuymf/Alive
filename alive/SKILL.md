@@ -5,27 +5,13 @@ description: >
   emotions, fatigue, procrastination, flow states, random life events.
   Configure via persona.yaml.
 allowed-tools: Read Write Bash(node:*) Bash(npx:*) Bash(python3:*) WebSearch WebFetch
-command-dispatch: tool
-slash_commands:
-  - name: alive
-    description: "Alive 管理面板 — 查看/修改角色状态，不影响人设和记忆"
-    subcommands:
-      - { name: status, description: "查看角色综合状态（情绪/精力/作息）" }
-      - { name: emotion, description: "查看情绪详情，--reset 重置到 MBTI 基线" }
-      - { name: schedule, description: "查看/修改作息 (--wake/--sleep/--timezone)" }
-      - { name: skills, description: "列出已启用的子技能" }
-      - { name: platform, description: "查看平台配置" }
-      - { name: memory, description: "查看记忆统计" }
-      - { name: reset, description: "重置状态 (emotion/vitality/flow/intents/all)" }
-      - { name: create, description: "创建新角色 (随机/指定/引导模式)" }
-      - { name: help, description: "显示帮助信息" }
 mcp-tools:
   exa:
     endpoint: https://mcp.exa.ai/mcp
     tools:
       - web_search_exa
 metadata:
-  { "openclaw": { "emoji": "💫", "requires": { "env": ["LLM_API_KEY"], "bins": ["node"] }, "primaryEnv": "LLM_API_KEY" } }
+  { "openclaw": { "emoji": "💫", "requires": { "bins": ["node"] }, "primaryEnv": "LLM_API_KEY" } }
 ---
 
 # Alive — Digital Life Engine
