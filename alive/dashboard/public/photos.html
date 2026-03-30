@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>相册 — Alive Photo Roll</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Shippori+Mincho:wght@400;500;600&family=Zen+Kaku+Gothic+New:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================
+   ALIVE PHOTO ROLL
+   Japanese film photography × personal diary aesthetic
+   Warm, nostalgic, intimate — like flipping through
+   polaroids on a lazy Sunday afternoon
+   ============================================ */
+
+:root {
+  --bg-base: #F8F5F0;
+  --bg-warm: #FBF8F3;
+  --bg-cream: #F3EDE4;
+  --bg-film: #EEEBE4;
+  --bg-dark: #2C2824;
+  --bg-overlay: rgba(44, 40, 36, 0.92);
+
+  --text-ink: #2C2824;
+  --text-body: #5A5249;
+  --text-muted: #9B9189;
+  --text-ghost: #C5BDAF;
+  --text-light: #F3EDE4;
+
+  --accent-rose: #C4706E;
+  --accent-rose-soft: #E8B4B1;
+  --accent-sage: #7E9B82;
+  --accent-sage-soft: #B5CCAF;
+  --accent-ochre: #C8A65E;
+  --accent-ochre-soft: #E4D5A6;
+  --accent-indigo: #7B8DA8;
+  --accent-indigo-soft: #B1C0D4;
+
+  --border-fine: rgba(44, 40, 36, 0.08);
+  --border-medium: rgba(44, 40, 36, 0.12);
+  --border-strong: rgba(44, 40, 36, 0.20);
+
+  --shadow-soft: 0 2px 20px rgba(44, 40, 36, 0.06);
+  --shadow-card: 0 4px 24px rgba(44, 40, 36, 0.08), 0 1px 3px rgba(44, 40, 36, 0.04);
+  --shadow-float: 0 12px 48px rgba(44, 40, 36, 0.12), 0 4px 12px rgba(44, 40, 36, 0.06);
+
+  --font-display: 'Cormorant Garamond', 'Shippori Mincho', serif;
+  --font-jp: 'Shippori Mincho', 'Hiragino Mincho Pro', serif;
+  --font-body: 'Zen Kaku Gothic New', 'Hiragino Sans', sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+
+  --transition-smooth: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-spring: 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* === RESET === */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg-base);
+  color: var(--text-body);
+  font-family: var(--font-body);
+  font-weight: 300;
+  font-size: 15px;
+  line-height: 1.7;
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* === ATMOSPHERIC BACKGROUND === */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 15% 20%, rgba(196, 112, 110, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 80%, rgba(126, 155, 130, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(200, 166, 94, 0.02) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Subtle paper grain texture */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  opacity: 0.3;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* === LAYOUT === */
+.app {
+  position: relative;
+  z-index: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* === HEADER === */
+.header {
+  padding: 48px 0 32px;
+  text-align: center;
+  position: relative;
+}
+
+.header-nav {
+  position: absolute;
+  top: 24px;
+  left: 0;
+}
+
+.header-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 6px 14px;
+  border: 1px solid var(--border-fine);
+  border-radius: 20px;
+  transition: all var(--transition-smooth);
+  letter-spacing: 0.3px;
+}
+.header-nav a:hover {
+  color: var(--text-body);
+  border-color: var(--border-medium);
+  background: var(--bg-warm);
+}
+.header-nav a svg {
+  width: 14px;
+  height: 14px;
+}
+
+.header-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 16px;
+  position: relative;
+}
+.header-icon::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--border-fine);
+  animation: iconPulse 4s ease-in-out infinite;
+}
+@keyframes iconPulse {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.08); opacity: 0.7; }
+}
+.header-icon svg {
+  width: 100%;
+  height: 100%;
+  color: var(--accent-rose);
+}
+
+.header-title {
+  font-family: var(--font-display);
+  font-size: 42px;
+  font-weight: 300;
+  font-style: italic;
+  color: var(--text-ink);
+  letter-spacing: 2px;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.header-subtitle {
+  font-family: var(--font-jp);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-ghost);
+  letter-spacing: 6px;
+  text-indent: 6px;
+}
+
+.header-count {
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+.header-count .num {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text-body);
+  margin: 0 3px;
+}
+
+.header-line {
+  width: 40px;
+  height: 1px;
+  background: var(--border-medium);
+  margin: 24px auto 0;
+}
+
+/* === DATE GROUP === */
+.date-group {
+  margin-bottom: 48px;
+  opacity: 0;
+  transform: translateY(20px);
+  animation: fadeUp 0.6s ease-out forwards;
+}
+.date-group:nth-child(1) { animation-delay: 0.1s; }
+.date-group:nth-child(2) { animation-delay: 0.2s; }
+.date-group:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes fadeUp {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.date-label {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-left: 4px;
+}
+
+.date-label-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-rose-soft);
+  flex-shrink: 0;
+}
+
+.date-label-text {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--text-ink);
+  letter-spacing: 1px;
+}
+
+.date-label-jp {
+  font-family: var(--font-jp);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-ghost);
+  letter-spacing: 2px;
+}
+
+.date-label-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--border-fine), transparent);
+}
+
+/* === PHOTO GRID === */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+/* === PHOTO CARD === */
+.photo-card {
+  position: relative;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-warm);
+  box-shadow: var(--shadow-card);
+  transition: all var(--transition-smooth);
+  transform-origin: center center;
+}
+.photo-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-fine);
+  z-index: 2;
+  pointer-events: none;
+  transition: border-color var(--transition-smooth);
+}
+.photo-card:hover {
+  box-shadow: var(--shadow-float);
+  transform: translateY(-4px);
+}
+.photo-card:hover::before {
+  border-color: var(--accent-rose-soft);
+}
+
+.photo-card-img-wrap {
+  position: relative;
+  width: 100%;
+  padding-bottom: 125%; /* 4:5 ratio — Instagram portrait */
+  overflow: hidden;
+  background: var(--bg-cream);
+}
+
+.photo-card-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+.photo-card:hover .photo-card-img {
+  transform: scale(1.04);
+}
+
+/* Film strip perforation overlay */
+.photo-card-film {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(to top, rgba(44, 40, 36, 0.5), transparent);
+  z-index: 1;
+  pointer-events: none;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 10px 8px;
+}
+
+.photo-card-meta {
+  font-family: var(--font-display);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 1px;
+}
+
+/* Loading skeleton */
+.photo-card-skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, var(--bg-cream) 30%, var(--bg-film) 50%, var(--bg-cream) 70%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s ease-in-out infinite;
+}
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.photo-card-img.loaded + .photo-card-skeleton {
+  display: none;
+}
+
+/* === EMPTY STATE === */
+.empty-state {
+  text-align: center;
+  padding: 100px 24px;
+  position: relative;
+}
+
+.empty-illustration {
+  width: 160px;
+  height: 160px;
+  margin: 0 auto 32px;
+  position: relative;
+}
+
+/* Animated empty camera illustration */
+.empty-cam {
+  width: 120px;
+  height: 90px;
+  border: 2px solid var(--border-medium);
+  border-radius: var(--radius-lg);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-5deg);
+  background: var(--bg-warm);
+}
+.empty-cam::before {
+  content: '';
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--border-medium);
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.empty-cam::after {
+  content: '';
+  width: 16px;
+  height: 10px;
+  border: 2px solid var(--border-medium);
+  border-radius: 3px 3px 0 0;
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Floating polaroid shapes */
+.empty-polaroid {
+  position: absolute;
+  width: 50px;
+  height: 60px;
+  background: var(--bg-warm);
+  border: 1px solid var(--border-fine);
+  box-shadow: var(--shadow-soft);
+  animation: polaroidFloat 6s ease-in-out infinite;
+}
+.empty-polaroid::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  height: 36px;
+  background: var(--bg-cream);
+}
+.empty-polaroid:nth-child(1) {
+  top: 10px;
+  left: 10px;
+  transform: rotate(-15deg);
+  animation-delay: 0s;
+}
+.empty-polaroid:nth-child(2) {
+  top: 5px;
+  right: 15px;
+  transform: rotate(12deg);
+  animation-delay: -2s;
+}
+.empty-polaroid:nth-child(3) {
+  bottom: 15px;
+  left: 35%;
+  transform: rotate(-8deg);
+  animation-delay: -4s;
+}
+
+@keyframes polaroidFloat {
+  0%, 100% { transform: translateY(0) rotate(var(--r, -15deg)); }
+  50% { transform: translateY(-8px) rotate(calc(var(--r, -15deg) + 3deg)); }
+}
+.empty-polaroid:nth-child(1) { --r: -15deg; }
+.empty-polaroid:nth-child(2) { --r: 12deg; }
+.empty-polaroid:nth-child(3) { --r: -8deg; }
+
+.empty-title {
+  font-family: var(--font-jp);
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--text-ink);
+  margin-bottom: 8px;
+}
+
+.empty-desc {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.8;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
+.empty-hint {
+  margin-top: 24px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-ghost);
+  letter-spacing: 0.5px;
+  padding: 8px 20px;
+  border: 1px dashed var(--border-fine);
+  border-radius: 20px;
+  display: inline-block;
+}
+
+/* === LIGHTBOX === */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-overlay);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.lightbox.active {
+  display: flex;
+  opacity: 1;
+}
+.lightbox.closing {
+  opacity: 0;
+}
+
+.lightbox-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: lightboxIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes lightboxIn {
+  from { transform: scale(0.92) translateY(20px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.lightbox-img {
+  max-width: 90vw;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+}
+
+.lightbox-info {
+  margin-top: 16px;
+  text-align: center;
+}
+.lightbox-filename {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-style: italic;
+  color: var(--text-light);
+  letter-spacing: 1px;
+  opacity: 0.8;
+}
+.lightbox-date {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-ghost);
+  margin-top: 4px;
+  letter-spacing: 0.5px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: -48px;
+  right: -12px;
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  color: var(--text-light);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-smooth);
+}
+.lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: rotate(90deg);
+}
+
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: var(--text-light);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-smooth);
+  opacity: 0.6;
+}
+.lightbox-nav:hover {
+  background: rgba(255, 255, 255, 0.12);
+  opacity: 1;
+}
+.lightbox-prev { left: -60px; }
+.lightbox-next { right: -60px; }
+
+/* === FOOTER === */
+.footer {
+  text-align: center;
+  padding: 48px 0 40px;
+  border-top: 1px solid var(--border-fine);
+  margin-top: 24px;
+}
+
+.footer-text {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-ghost);
+  letter-spacing: 2px;
+}
+
+.footer-dash {
+  display: inline-block;
+  width: 20px;
+  height: 1px;
+  background: var(--border-fine);
+  vertical-align: middle;
+  margin: 0 12px;
+}
+
+/* === SCROLL TO TOP === */
+.scroll-top {
+  position: fixed;
+  bottom: 32px;
+  right: 32px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--bg-warm);
+  border: 1px solid var(--border-medium);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 18px;
+  transition: all var(--transition-smooth);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 100;
+}
+.scroll-top.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.scroll-top:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-float);
+  color: var(--accent-rose);
+  border-color: var(--accent-rose-soft);
+}
+
+/* === LOADING === */
+.loading-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+  gap: 8px;
+}
+.loading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-ghost);
+  animation: loadDot 1.2s ease-in-out infinite;
+}
+.loading-dot:nth-child(2) { animation-delay: 0.15s; }
+.loading-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes loadDot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 768px) {
+  .app { padding: 0 16px; }
+  .header { padding: 36px 0 24px; }
+  .header-title { font-size: 32px; }
+  .photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+  }
+  .lightbox-prev { left: 8px; }
+  .lightbox-next { right: 8px; }
+  .lightbox-close { top: 8px; right: 8px; }
+  .lightbox-nav { width: 36px; height: 36px; }
+}
+
+@media (min-width: 1024px) {
+  .photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 20px;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <nav class="header-nav">
+      <a href="/">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Dashboard
+      </a>
+    </nav>
+
+    <div class="header-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/>
+        <circle cx="8.5" cy="8.5" r="1.5"/>
+        <path d="m21 15-5-5L5 21"/>
+      </svg>
+    </div>
+
+    <h1 class="header-title">Photo Roll</h1>
+    <p class="header-subtitle">水瀬の相册</p>
+
+    <div class="header-count" id="headerCount" style="display:none;">
+      <span class="num" id="photoCount">0</span> memories captured
+    </div>
+
+    <div class="header-line"></div>
+  </header>
+
+  <!-- Content -->
+  <main id="mainContent">
+    <div class="loading-spinner" id="loadingSpinner">
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span class="footer-text">
+      <span id="footerPersona">persona</span>
+      <span class="footer-dash"></span>
+      photo roll
+      <span class="footer-dash"></span>
+      日常の記録
+    </span>
+  </footer>
+</div>
+
+<!-- Scroll to top -->
+<button class="scroll-top" id="scrollTop" title="回到顶部">↑</button>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox">
+  <div class="lightbox-content">
+    <button class="lightbox-close" id="lightboxClose">×</button>
+    <button class="lightbox-nav lightbox-prev" id="lightboxPrev">‹</button>
+    <button class="lightbox-nav lightbox-next" id="lightboxNext">›</button>
+    <img class="lightbox-img" id="lightboxImg" src="" alt="" />
+    <div class="lightbox-info">
+      <div class="lightbox-filename" id="lightboxFilename"></div>
+      <div class="lightbox-date" id="lightboxDate"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// === STATE ===
+var photos = [];
+var currentLightboxIndex = -1;
+var currentPersona = '';
+
+async function initPersona() {
+  try {
+    var res = await fetch('/api/personas');
+    if (!res.ok) return;
+    var data = await res.json();
+    currentPersona = data.active || (data.personas && data.personas[0]) || '';
+    var footerEl = document.getElementById('footerPersona');
+    if (footerEl && currentPersona) footerEl.textContent = currentPersona;
+  } catch (e) { /* silent */ }
+}
+
+// === FETCH PHOTOS ===
+async function loadPhotos() {
+  try {
+    var url = '/api/photos';
+    if (currentPersona) url += '?persona=' + encodeURIComponent(currentPersona);
+    var res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to load photos');
+    var data = await res.json();
+    photos = data.photos || [];
+    render();
+  } catch (e) {
+    document.getElementById('mainContent').innerHTML =
+      '<div class="empty-state"><div class="empty-title">无法加载相册</div><div class="empty-desc">' + escHtml(e.message) + '</div></div>';
+  }
+}
+
+// === RENDER ===
+function render() {
+  var main = document.getElementById('mainContent');
+
+  if (photos.length === 0) {
+    main.innerHTML = renderEmptyState();
+    return;
+  }
+
+  // Show count
+  document.getElementById('headerCount').style.display = 'block';
+  document.getElementById('photoCount').textContent = photos.length;
+
+  // Group by date
+  var groups = groupByDate(photos);
+  var html = '';
+
+  groups.forEach(function(group, gi) {
+    html += '<div class="date-group" style="animation-delay:' + (gi * 0.1) + 's;">';
+    html += renderDateLabel(group.date);
+    html += '<div class="photo-grid">';
+
+    group.photos.forEach(function(photo, pi) {
+      var globalIndex = photos.indexOf(photo);
+      html += renderPhotoCard(photo, globalIndex);
+    });
+
+    html += '</div></div>';
+  });
+
+  main.innerHTML = html;
+
+  // Lazy load images
+  observeImages();
+}
+
+function groupByDate(photos) {
+  var map = {};
+  var order = [];
+
+  photos.forEach(function(photo) {
+    var key = photo.date || 'unknown';
+    if (!map[key]) {
+      map[key] = [];
+      order.push(key);
+    }
+    map[key].push(photo);
+  });
+
+  return order.map(function(date) {
+    return { date: date, photos: map[date] };
+  });
+}
+
+function renderDateLabel(dateStr) {
+  if (!dateStr || dateStr === 'unknown') {
+    return '<div class="date-label">' +
+      '<div class="date-label-dot"></div>' +
+      '<span class="date-label-text">Unsorted</span>' +
+      '<span class="date-label-jp">未分類</span>' +
+      '<div class="date-label-line"></div></div>';
+  }
+
+  var parts = dateStr.split('-');
+  var months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var jpMonths = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+
+  var monthIdx = parseInt(parts[1], 10) - 1;
+  var day = parseInt(parts[2], 10);
+  var display = months[monthIdx] + ' ' + day + ', ' + parts[0];
+  var jpDisplay = parts[0] + '年' + jpMonths[monthIdx] + day + '日';
+
+  return '<div class="date-label">' +
+    '<div class="date-label-dot"></div>' +
+    '<span class="date-label-text">' + escHtml(display) + '</span>' +
+    '<span class="date-label-jp">' + escHtml(jpDisplay) + '</span>' +
+    '<div class="date-label-line"></div></div>';
+}
+
+function renderPhotoCard(photo, index) {
+  var name = photo.filename.replace(/\.[^.]+$/, '');
+  return '<div class="photo-card" onclick="openLightbox(' + index + ')">' +
+    '<div class="photo-card-img-wrap">' +
+    '<img class="photo-card-img" data-src="' + escAttr(photo.url) + '" alt="' + escAttr(name) + '" />' +
+    '<div class="photo-card-skeleton"></div>' +
+    '</div>' +
+    '<div class="photo-card-film">' +
+    '<span class="photo-card-meta">' + escHtml(name) + '</span>' +
+    '</div></div>';
+}
+
+function renderEmptyState() {
+  return '<div class="empty-state">' +
+    '<div class="empty-illustration">' +
+    '<div class="empty-polaroid"></div>' +
+    '<div class="empty-polaroid"></div>' +
+    '<div class="empty-polaroid"></div>' +
+    '<div class="empty-cam"></div>' +
+    '</div>' +
+    '<div class="empty-title">相册还是空的呢…</div>' +
+    '<div class="empty-desc">' +
+    '水瀬还没有拍下任何照片。<br>' +
+    '当她开始创作和记录日常，<br>照片会出现在这里。' +
+    '</div>' +
+    '<div class="empty-hint">📁 photo-roll 文件夹等待第一张照片</div>' +
+    '</div>';
+}
+
+// === LAZY LOADING ===
+function observeImages() {
+  if (!('IntersectionObserver' in window)) {
+    // Fallback: load all immediately
+    document.querySelectorAll('.photo-card-img[data-src]').forEach(function(img) {
+      img.src = img.dataset.src;
+      img.classList.add('loaded');
+    });
+    return;
+  }
+
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        var img = entry.target;
+        img.src = img.dataset.src;
+        img.onload = function() { img.classList.add('loaded'); };
+        img.onerror = function() {
+          // Show broken image placeholder
+          img.style.display = 'none';
+          var wrap = img.closest('.photo-card-img-wrap');
+          if (wrap) {
+            var skeleton = wrap.querySelector('.photo-card-skeleton');
+            if (skeleton) skeleton.style.display = 'none';
+            wrap.style.display = 'flex';
+            wrap.style.alignItems = 'center';
+            wrap.style.justifyContent = 'center';
+            wrap.style.color = 'var(--text-ghost)';
+            wrap.style.fontSize = '12px';
+            wrap.innerHTML = '<span>📷 无法加载</span>';
+          }
+        };
+        observer.unobserve(img);
+      }
+    });
+  }, { rootMargin: '200px' });
+
+  document.querySelectorAll('.photo-card-img[data-src]').forEach(function(img) {
+    observer.observe(img);
+  });
+}
+
+// === LIGHTBOX ===
+function openLightbox(index) {
+  if (index < 0 || index >= photos.length) return;
+  currentLightboxIndex = index;
+  var photo = photos[index];
+  var lb = document.getElementById('lightbox');
+  document.getElementById('lightboxImg').src = photo.url;
+  document.getElementById('lightboxFilename').textContent = photo.filename;
+  document.getElementById('lightboxDate').textContent = photo.date || '';
+  lb.classList.add('active');
+  lb.classList.remove('closing');
+  document.body.style.overflow = 'hidden';
+  updateNavButtons();
+}
+
+function closeLightbox() {
+  var lb = document.getElementById('lightbox');
+  lb.classList.add('closing');
+  setTimeout(function() {
+    lb.classList.remove('active', 'closing');
+    document.body.style.overflow = '';
+    currentLightboxIndex = -1;
+  }, 350);
+}
+
+function navigateLightbox(dir) {
+  var next = currentLightboxIndex + dir;
+  if (next < 0 || next >= photos.length) return;
+  currentLightboxIndex = next;
+  var photo = photos[next];
+  var img = document.getElementById('lightboxImg');
+  img.style.opacity = 0;
+  setTimeout(function() {
+    img.src = photo.url;
+    document.getElementById('lightboxFilename').textContent = photo.filename;
+    document.getElementById('lightboxDate').textContent = photo.date || '';
+    img.style.opacity = 1;
+    updateNavButtons();
+  }, 150);
+}
+
+function updateNavButtons() {
+  document.getElementById('lightboxPrev').style.display = currentLightboxIndex > 0 ? 'flex' : 'none';
+  document.getElementById('lightboxNext').style.display = currentLightboxIndex < photos.length - 1 ? 'flex' : 'none';
+}
+
+// Lightbox events
+document.getElementById('lightboxClose').addEventListener('click', closeLightbox);
+document.getElementById('lightboxPrev').addEventListener('click', function() { navigateLightbox(-1); });
+document.getElementById('lightboxNext').addEventListener('click', function() { navigateLightbox(1); });
+document.getElementById('lightbox').addEventListener('click', function(e) {
+  if (e.target === this) closeLightbox();
+});
+
+// Keyboard navigation
+document.addEventListener('keydown', function(e) {
+  if (currentLightboxIndex === -1) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft') navigateLightbox(-1);
+  if (e.key === 'ArrowRight') navigateLightbox(1);
+});
+
+// === SCROLL TO TOP ===
+var scrollTopBtn = document.getElementById('scrollTop');
+window.addEventListener('scroll', function() {
+  scrollTopBtn.classList.toggle('visible', window.scrollY > 400);
+});
+scrollTopBtn.addEventListener('click', function() {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+// === UTILS ===
+function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escAttr(s) { return String(s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+// === START ===
+initPersona().then(function() { loadPhotos(); });
+</script>
+</body>
+</html>

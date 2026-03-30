@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "dashboard": "node alive/dashboard/server.js",
+    "dashboard:dev": "node alive/dashboard/server.js"
   },
   "files": [
     "bin",

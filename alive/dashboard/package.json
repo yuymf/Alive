@@ -1,0 +1,9 @@
+{
+  "name": "alive-dashboard",
+  "version": "1.0.0",
+  "description": "Alive Dashboard — visualize persona state, heartbeat timeline, diary, and photos.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/server.test.js"
+  }
+}
