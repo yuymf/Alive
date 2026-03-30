@@ -30,6 +30,16 @@ function ask(rl, question) {
   return new Promise(resolve => rl.question(question, resolve));
 }
 
+/**
+ * Mask a secret for display in prompts.
+ * "sk-abcdefghijxyz" → "sk-a...xyz"
+ * Returns empty string if no value so callers can show a plain prompt.
+ */
+function maskSecret(val) {
+  if (!val || val.length <= 7) return val || '';
+  return `${val.slice(0, 4)}...${val.slice(-3)}`;
+}
+
 function copyDirRecursive(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
