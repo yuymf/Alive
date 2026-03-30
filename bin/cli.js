@@ -738,6 +738,8 @@ async function install() {
     const pluginDir = path.join(skillDest, 'plugin');
     if (fs.existsSync(pluginDir)) {
       try {
+        // Uninstall first to avoid "plugin already exists" error on reinstall
+        try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore' }); } catch { /* not installed yet, ok */ }
         execFileSync('openclaw', ['plugins', 'install', '--link', pluginDir], {
           timeout: 15000, encoding: 'utf8', stdio: 'pipe',
         });
@@ -1180,6 +1182,7 @@ async function reinstall() {
     const pluginDir = path.join(skillDest, 'plugin');
     if (fs.existsSync(pluginDir)) {
       try {
+        try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore' }); } catch { /* not installed yet, ok */ }
         execFileSync('openclaw', ['plugins', 'install', '--link', pluginDir], {
           timeout: 15000, encoding: 'utf8', stdio: 'pipe',
         });
@@ -1590,6 +1593,7 @@ async function switchPersona() {
     const pluginDir = path.join(skillDest, 'plugin');
     if (fs.existsSync(pluginDir)) {
       try {
+        try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore' }); } catch { /* not installed yet, ok */ }
         execFileSync('openclaw', ['plugins', 'install', '--link', pluginDir], {
           timeout: 15000, encoding: 'utf8', stdio: 'pipe',
         });

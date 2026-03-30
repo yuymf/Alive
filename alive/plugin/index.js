@@ -15,7 +15,7 @@ export default definePluginEntry({
       description: 'Alive 管理面板 — 查看/修改角色状态，不影响人设和记忆',
       acceptsArgs: true,
       handler: async (ctx) => {
-        const handlerPath = path.resolve(__dirname, '../scripts/admin/command-handler.js');
+        const handlerPath = path.resolve(__dirname, '../../skills/alive/scripts/admin/command-handler.js');
         const args = ctx.args?.trim() ?? '';
         try {
           const output = execFileSync('node', [handlerPath, args], {
