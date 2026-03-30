@@ -100,6 +100,7 @@ export interface PersonaConfig {
   };
   sub_skills?: string[];
   features?: FeaturesConfig;
+  ops?: OpsConfig;
   platform_config?: Record<string, Record<string, unknown>>;
   /** Per-intent display names, resistance overrides, and emotion coupling weights */
   intent_config?: Partial<Record<MetaIntent, IntentDisplayConfig>>;
@@ -936,4 +937,120 @@ export function isSubSkillEnabled(persona: PersonaConfig, skillName: string): bo
   const enabled = persona.sub_skills;
   if (!enabled) return false;
   return enabled.includes(skillName);
+}
+
+// ─── Ops Desk Types ──────────────────────────────────────────────────────────
+
+export type QueueItemStatus = 'pending' | 'approved' | 'published' | 'discarded' | 'editing';
+export type IdentityMode = 'esports' | 'singer' | 'racer' | 'daily';
+
+export interface QueueItemContent {
+  xhs: {
+    title: string;
+    body: string;
+    tags: string[];
+    cover_images: string[];
+  };
+  douyin: {
+    script: string;
+    bgm_suggestion: string;
+    key_captions: string[];
+    cover_images: string[];
+  };
+}
+
+export interface QueueItemEditEntry {
+  timestamp: string;
+  instruction: string;
+  field: string;
+}
+
+export interface QueueItem {
+  id: string;
+  status: QueueItemStatus;
+  topic: string;
+  trend_hook: string;
+  identity_mode: IdentityMode;
+  created_at: string;
+  updated_at: string;
+  content: QueueItemContent;
+  edit_history: QueueItemEditEntry[];
+}
+
+export interface ReviewQueue {
+  items: QueueItem[];
+  last_updated: string;
+}
+
+export interface TrendItem {
+  platform: string;
+  keyword: string;
+  current_volume: number;
+  avg_7d: number;
+  velocity_score: number;
+  rank: number;
+  cover?: string;
+  type?: string;
+}
+
+export interface TrendHistory {
+  date: string;
+  trends: TrendItem[];
+}
+
+export interface CompetitorLatestPost {
+  time: string;
+  content_type: string;
+  topic: string;
+  engagement: number;
+  summary: string;
+}
+
+export interface CompetitorUpdate {
+  account: string;
+  platform: 'xhs' | 'douyin';
+  latest_post: CompetitorLatestPost | null;
+  days_since_last_post: number;
+  fetched_at: string;
+}
+
+export interface CompetitorLog {
+  entries: CompetitorUpdate[];
+  last_updated: string;
+}
+
+export type ParsedIntentAction = 'approve' | 'discard' | 'edit' | 'list' | 'unknown';
+
+export interface ParsedIntent {
+  action: ParsedIntentAction;
+  item_id?: string;
+  field?: string;
+  instruction?: string;
+  raw?: string;
+}
+
+export interface OpsConfig {
+  enabled: boolean;
+  brief_time: string;
+  competitor_accounts: {
+    xhs: string[];
+    douyin: string[];
+  };
+  trend_score_threshold: number;
+  topic_count: number;
+  topic_filter_prompt: string;
+  platforms: {
+    xhs?: { enabled: boolean; style: string };
+    douyin?: { enabled: boolean; style: string };
+  };
+}
+
+export interface OpsBriefLogEntry {
+  date: string;
+  sent_at: string;
+  topic_count: number;
+}
+
+export interface OpsBriefLog {
+  entries: OpsBriefLogEntry[];
 }

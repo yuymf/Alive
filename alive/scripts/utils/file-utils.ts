@@ -75,6 +75,12 @@ export const PATHS = {
   // === Skill discovery ===
   get skillNeeds() { return path.join(getMemoryBase(), 'skill-needs.json'); },
 
+  // === Ops desk ===
+  get reviewQueue() { return path.join(getMemoryBase(), 'review-queue.json'); },
+  get competitorLog() { return path.join(getMemoryBase(), 'competitor-log.json'); },
+  get trendHistory() { return path.join(getMemoryBase(), 'trend-history.json'); },
+  get opsBriefLog() { return path.join(getMemoryBase(), 'ops-brief-log.json'); },
+
   // === Persona-specific infra (per-persona in memory dir) ===
   get cronSchedule() { return path.join(getMemoryBase(), 'cron-schedule.json'); },
   get personaConfig() { return path.join(getMemoryBase(), 'persona.yaml'); },
