@@ -1036,6 +1036,19 @@ async function reinstall() {
   const skillSlug = 'alive';
   ok(`Persona: ${personaName} (persona: ${personaSlug}, skill: ${skillSlug})`);
 
+  // Capture existing env keys before we wipe the config entry
+  let capturedEnv = {};
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      capturedEnv = cfg.skills?.entries?.[skillSlug]?.env || {};
+      const keyCount = Object.keys(capturedEnv).length;
+      if (keyCount > 0) {
+        ok(`Found ${keyCount} existing env keys — will offer to keep them after reinstall`);
+      }
+    } catch { /* ignore */ }
+  }
+
   const skillDest = path.join(SKILLS_DIR, skillSlug);
   const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
 
@@ -1120,13 +1133,27 @@ async function reinstall() {
 
   // Step 7: Register in OpenClaw config
   log('Step 7/9: Registering skill in OpenClaw config...');
+
+  const hintLlmKey = maskSecret(capturedEnv.LLM_API_KEY);
+  const hintBase = capturedEnv.LLM_API_BASE || '';
+  const hintModel = capturedEnv.LLM_MODEL || '';
+  const hintImageKey = maskSecret(capturedEnv.AIHUBMIX_API_KEY);
+
   console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
-  const llmApiKey = await ask(rl, '  LLM_API_KEY (press Enter to skip): ');
-  const llmApiBase = await ask(rl, '  LLM_API_BASE (default: https://aihubmix.com/v1): ');
-  const llmModel = await ask(rl, '  LLM_MODEL (default: claude-sonnet-4-20250514): ');
+  const llmApiKey = await ask(rl, hintLlmKey
+    ? `  LLM_API_KEY (current: ${hintLlmKey}, Enter to keep): `
+    : '  LLM_API_KEY (press Enter to skip): ');
+  const llmApiBase = await ask(rl, hintBase
+    ? `  LLM_API_BASE (current: ${hintBase}, Enter to keep): `
+    : '  LLM_API_BASE (default: https://aihubmix.com/v1): ');
+  const llmModel = await ask(rl, hintModel
+    ? `  LLM_MODEL (current: ${hintModel}, Enter to keep): `
+    : '  LLM_MODEL (default: claude-sonnet-4-20250514): ');
 
   console.log('\n  Optional: Configure image generation API key (for reference image generation):');
-  const imageApiKey = await ask(rl, '  AIHUBMIX_API_KEY (press Enter to skip): ');
+  const imageApiKey = await ask(rl, hintImageKey
+    ? `  AIHUBMIX_API_KEY (current: ${hintImageKey}, Enter to keep): `
+    : '  AIHUBMIX_API_KEY (press Enter to skip): ');
 
   let config = {};
   if (fs.existsSync(CONFIG_FILE)) {
@@ -1137,6 +1164,7 @@ async function reinstall() {
   config.skills.entries[skillSlug] = {
     enabled: true,
     env: {
+      ...capturedEnv,
       ...(llmApiKey && { LLM_API_KEY: llmApiKey }),
       ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
       ...(llmModel && { LLM_MODEL: llmModel }),
