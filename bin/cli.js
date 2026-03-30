@@ -722,7 +722,7 @@ async function install() {
     ];
     for (const job of cronJobs) {
       try {
-        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
         ok(`Registered cron: ${job.name} (${job.cron})`);
       } catch (err) {
         warn(`Failed to register cron ${job.name}: ${err.message}`);
@@ -1165,7 +1165,7 @@ async function reinstall() {
     ];
     for (const job of cronJobs) {
       try {
-        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
         ok(`Registered cron: ${job.name} (${job.cron})`);
       } catch (err) {
         warn(`Failed to register cron ${job.name}: ${err.message}`);
@@ -1390,7 +1390,7 @@ async function realDayTest() {
     ];
     for (const job of cronJobs) {
       try {
-        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
         ok(`Registered cron: ${job.name}`);
       } catch (err) {
         warn(`Failed to register cron ${job.name}: ${err.message}`);
@@ -1575,7 +1575,7 @@ async function switchPersona() {
     ];
     for (const job of cronJobs) {
       try {
-        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
         ok(`Registered cron: ${job.name}`);
       } catch (err) {
         warn(`Failed to register cron ${job.name}: ${err.message}`);
