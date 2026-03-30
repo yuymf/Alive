@@ -643,25 +643,50 @@ async function install() {
 
   // Step 4: Register in OpenClaw config
   log('Step 4/7: Registering skill in OpenClaw config...');
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
-  const llmApiKey = await ask(rl, '  LLM_API_KEY (press Enter to skip): ');
-  const llmApiBase = await ask(rl, '  LLM_API_BASE (default: https://aihubmix.com/v1): ');
-  const llmModel = await ask(rl, '  LLM_MODEL (default: claude-sonnet-4-20250514): ');
-
-  console.log('\n  Optional: Configure image generation API key (for reference image generation):');
-  const imageApiKey = await ask(rl, '  AIHUBMIX_API_KEY (press Enter to skip): ');
-
+  // Load any existing env keys so we can preserve them if the user presses Enter
+  let existingEnv = {};
   let config = {};
   if (fs.existsSync(CONFIG_FILE)) {
-    try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* fresh */ }
+    try {
+      config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      existingEnv = config.skills?.entries?.[skillSlug]?.env || {};
+      const keyCount = Object.keys(existingEnv).length;
+      if (keyCount > 0) {
+        ok(`Found ${keyCount} existing env keys (press Enter to keep each one)`);
+      }
+    } catch { /* fresh config */ }
   }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  const hintLlmKey = maskSecret(existingEnv.LLM_API_KEY);
+  const hintBase = existingEnv.LLM_API_BASE || '';
+  const hintModel = existingEnv.LLM_MODEL || '';
+  const hintImageKey = maskSecret(existingEnv.AIHUBMIX_API_KEY);
+
+  console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
+  const llmApiKey = await ask(rl, hintLlmKey
+    ? `  LLM_API_KEY (current: ${hintLlmKey}, Enter to keep): `
+    : '  LLM_API_KEY (press Enter to skip): ');
+  const llmApiBase = await ask(rl, hintBase
+    ? `  LLM_API_BASE (current: ${hintBase}, Enter to keep): `
+    : '  LLM_API_BASE (default: https://aihubmix.com/v1): ');
+  const llmModel = await ask(rl, hintModel
+    ? `  LLM_MODEL (current: ${hintModel}, Enter to keep): `
+    : '  LLM_MODEL (default: claude-sonnet-4-20250514): ');
+
+  console.log('\n  Optional: Configure image generation API key (for reference image generation):');
+  const imageApiKey = await ask(rl, hintImageKey
+    ? `  AIHUBMIX_API_KEY (current: ${hintImageKey}, Enter to keep): `
+    : '  AIHUBMIX_API_KEY (press Enter to skip): ');
+
   config.skills = config.skills || {};
   config.skills.entries = config.skills.entries || {};
   config.skills.entries[skillSlug] = {
     enabled: true,
     env: {
+      ...existingEnv,
       ...(llmApiKey && { LLM_API_KEY: llmApiKey }),
       ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
       ...(llmModel && { LLM_MODEL: llmModel }),
