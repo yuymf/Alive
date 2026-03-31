@@ -998,6 +998,17 @@ export interface QueueItem {
   template_spec?: QueueItemTemplateSpec;
   /** Competitor benchmarks used for context (if any) */
   competitor_benchmarks?: QueueItemCompetitorBenchmark[];
+  /** URLs where this content was published (filled after human publishes) */
+  published_urls?: {
+    xhs?: string;
+    douyin?: string;
+  };
+  /** Timestamp of first publication */
+  published_at?: string;
+  /** AI image generation prompts for human use */
+  image_prompts?: string[];
+  /** Whether performance tracking has started for this item */
+  performance_tracked?: boolean;
 }
 
 export interface ReviewQueue {
@@ -1042,7 +1053,7 @@ export interface CompetitorLog {
   last_updated: string;
 }
 
-export type ParsedIntentAction = 'approve' | 'discard' | 'edit' | 'list' | 'unknown';
+export type ParsedIntentAction = 'approve' | 'discard' | 'edit' | 'list' | 'publish' | 'unknown';
 
 export interface ParsedIntent {
   action: ParsedIntentAction;
@@ -1126,4 +1137,96 @@ export interface OpsBriefLogEntry {
 
 export interface OpsBriefLog {
   entries: OpsBriefLogEntry[];
+}
+
+// ─── Performance Tracking Types ─────────────────────────────────────────────
+
+export interface PerformanceMetrics {
+  views?: number;
+  likes: number;
+  comments: number;
+  saves?: number;
+  shares?: number;
+  forwards?: number;
+}
+
+export interface PerformanceSnapshot {
+  fetched_at: string;
+  metrics: PerformanceMetrics;
+}
+
+export interface PerformanceEntry {
+  item_id: string;
+  identity_mode: IdentityMode;
+  template_type: string;
+  topic: string;
+  platform: 'xhs' | 'douyin';
+  url: string;
+  published_at: string;
+  snapshots: PerformanceSnapshot[];
+  peak_metrics: PerformanceMetrics;
+  tags_used: string[];
+  comment_analysis?: {
+    positive_ratio: number;
+    negative_ratio: number;
+    neutral_ratio: number;
+    top_keywords: string[];
+    constructive_feedback: string[];
+  };
+}
+
+export interface PerformanceLog {
+  entries: PerformanceEntry[];
+  last_updated: string;
+}
+
+// ─── Content Strategy Types ─────────────────────────────────────────────────
+
+export interface ContentStrategy {
+  updated_at: string;
+  period: string;
+  best_performing: { identity: string; template: string; reason: string } | null;
+  worst_performing: { identity: string; template: string; reason: string } | null;
+  audience_feedback: string;
+  strategy_adjustments: string[];
+  next_week_focus: {
+    identity_weights: Record<IdentityMode, number>;
+    recommended_templates: string[];
+    avoid_templates: string[];
+    post_time_suggestion: string;
+  };
+}
+
+// ─── Content Patterns Types ─────────────────────────────────────────────────
+
+export interface ContentPattern {
+  type: string;
+  source: string;
+  source_post: string;
+  formula: string;
+  success_rate: number | null;
+  times_used: number;
+  examples: string[];
+  discovered_at: string;
+}
+
+export interface CompetitorInsight {
+  name: string;
+  platform: string;
+  recent_style_shift: string;
+  best_content_type: string;
+  posting_strategy: string;
+}
+
+export interface CoverTrend {
+  trend: string;
+  platforms: string[];
+  effectiveness: string;
+}
+
+export interface ContentPatterns {
+  updated_at: string;
+  patterns: ContentPattern[];
+  competitor_insights: CompetitorInsight[];
+  cover_trends: CoverTrend[];
 }
