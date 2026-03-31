@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:harness": "vitest run e2e/harness/suites/ --sequence.sequential --testTimeout=300000",
     "prepack": "npm run build",
     "dashboard": "node alive/dashboard/server.js",
     "dashboard:dev": "node alive/dashboard/server.js"
