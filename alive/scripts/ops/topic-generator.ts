@@ -11,11 +11,11 @@
 import { execFileSync } from 'child_process';
 import {
   OpsConfig, ContentTemplate, CompetitorProfile, IdentityMode,
-  QueueItemTemplateSpec, QueueItemCompetitorBenchmark,
+  QueueItemTemplateSpec, QueueItemCompetitorBenchmark, QueueItem, QueueItemContent,
 } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
 import { FilteredTrend } from './trend-analyzer';
-import { addItem } from './review-queue';
+import { addItem, getItem, updateItemContent } from './review-queue';
 import { buildCompetitorContext } from './competitor-tracker';
 import { PATHS, readJSON } from '../utils/file-utils';
 import { CompetitorLog, CompetitorUpdate } from '../utils/types';
@@ -142,8 +142,82 @@ ${platform === 'xhs' ? `输出格式 JSON：
   return extraContext ? `${base}\n${extraContext}` : base;
 }
 
-// ─── ClawHub skill calls ──────────────────────────────────────────────────────
+// ─── Edit regeneration ──────────────────────────────────────────────────────
 
+export function buildRegeneratePrompt(
+  originalContent: string,
+  instruction: string,
+  field: string,
+  voiceStyle: string,
+  platformStyle: string,
+  contentPatterns?: string,
+): string {
+  const fieldConstraints: Record<string, string> = {
+    'xhs.title': '20字以内，可含emoji',
+    'xhs.body': '300-500字',
+    'xhs.tags': '5-10个标签，数组格式',
+    'douyin.opening_hook': '前3秒文案，15字以内',
+    'douyin.script': '200-400字',
+    'douyin.bgm_suggestion': '一句话描述BGM风格',
+    'douyin.key_captions': '3-5个关键字幕，数组格式',
+  };
+  const constraint = fieldConstraints[field] ?? '无特殊约束';
+  const jsonKey = field.split('.').pop() ?? field;
+  const parts: string[] = [
+    `你是内容编辑助手。请根据修改指令重新生成内容。`,
+    '',
+    `【原始内容】`,
+    originalContent,
+    '',
+    `【修改指令】`,
+    instruction,
+    '',
+    `【约束】`,
+    `- 声线风格：${voiceStyle}`,
+    `- 平台风格：${platformStyle}`,
+    `- 字段：${field}`,
+    `- 字数/格式要求：${constraint}`,
+  ];
+  if (contentPatterns) {
+    parts.push('', '【参考爆款模式】', contentPatterns);
+  }
+  parts.push('', `请输出修改后的内容，JSON格式（只包含被修改的字段）：`, `{"${jsonKey}": "..."}`);
+  return parts.join('\n');
+}
+
+export async function regenerateContent(
+  itemId: string,
+  field: string,
+  instruction: string,
+  llm: LLMClient,
+  voiceStyle: string,
+  platformStyle: string,
+  contentPatterns?: string,
+): Promise<QueueItem | null> {
+  const item = await getItem(itemId);
+  if (!item) return null;
+
+  const [platform, key] = field.split('.') as ['xhs' | 'douyin', string];
+  const currentValue = (item.content[platform] as Record<string, unknown>)?.[key];
+  const originalContent = typeof currentValue === 'string'
+    ? currentValue
+    : JSON.stringify(currentValue);
+
+  const prompt = buildRegeneratePrompt(
+    originalContent, instruction, field, voiceStyle, platformStyle, contentPatterns,
+  );
+
+  const result = await llm.callJSON<Record<string, unknown>>(prompt, 1500);
+  const newFieldValue = result[key] ?? result[field] ?? currentValue;
+  const updatedPlatformContent = { ...item.content[platform], [key]: newFieldValue };
+  const newContent = platform === 'xhs'
+    ? { xhs: updatedPlatformContent as QueueItemContent['xhs'] }
+    : { douyin: updatedPlatformContent as QueueItemContent['douyin'] };
+
+  return updateItemContent(item.id, newContent, { instruction, field });
+}
+
+// ─── ClawHub skill calls ──────────────────────────────────────────────────────
 interface TiktokGrowthResult {
   hooks?: string[];
   ideas?: Array<{ title: string; format: string }>;

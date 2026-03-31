@@ -310,8 +310,16 @@ export function createRealLLMClient(caller?: string): LLMClient {
  * Create a mock LLM client that returns canned responses.
  * Useful for unit testing engines and sub-skills without hitting a real API.
  *
+ * Two call signatures:
+ *   - Array: responses are returned sequentially (first call → responses[0], etc.)
+ *   - Object: responses matched by keyword substring; `default` key as fallback
+ *
  * @example
  * ```ts
+ * // Sequential (array)
+ * const llm = createMockLLMClient(['{"title":"foo"}', '{"body":"bar"}']);
+ *
+ * // Keyword-matched (object)
  * const llm = createMockLLMClient({
  *   'morning plan': '{"schedule": []}',
  *   default: '{"action": "rest"}',
@@ -319,8 +327,27 @@ export function createRealLLMClient(caller?: string): LLMClient {
  * ```
  */
 export function createMockLLMClient(
-  responses: Record<string, string> & { default?: string },
+  responses: string[] | (Record<string, string> & { default?: string }),
 ): LLMClient {
+  if (Array.isArray(responses)) {
+    let idx = 0;
+    function nextResponse(): string {
+      if (idx < responses.length) {
+        return (responses as string[])[idx++];
+      }
+      return '{}';
+    }
+    return {
+      async call(): Promise<string> {
+        return nextResponse();
+      },
+      async callJSON<T>(): Promise<T> {
+        const raw = nextResponse();
+        return JSON.parse(raw) as T;
+      },
+    };
+  }
+
   function findResponse(prompt: string): string {
     for (const [keyword, response] of Object.entries(responses)) {
       if (keyword === 'default') continue;
@@ -328,7 +355,7 @@ export function createMockLLMClient(
         return response;
       }
     }
-    return responses.default ?? '{}';
+    return (responses as Record<string, string>).default ?? '{}';
   }
 
   return {
