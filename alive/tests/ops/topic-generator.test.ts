@@ -141,17 +141,40 @@ describe('buildCompetitorBenchmarks', () => {
     },
   ];
 
-  it('returns benchmarks for matching identity mode', () => {
-    const benchmarks = buildCompetitorBenchmarks(profiles, 'esports');
+  const templates: ContentTemplate[] = [
+    {
+      type: '赛场高燃', category: '电竞解说', priority: 'high',
+      identity_mode: 'esports', scene: 's', camera: 'c', styling: 's',
+      highlights: ['h'],
+    },
+    {
+      type: '赛事高光', category: '赛车', priority: 'high',
+      identity_mode: 'racer', scene: 's', camera: 'c', styling: 's',
+      highlights: ['h'],
+    },
+  ];
+
+  it('returns benchmarks filtered by template category matching group', () => {
+    const benchmarks = buildCompetitorBenchmarks(profiles, 'esports', templates);
     expect(benchmarks).toHaveLength(1);
     expect(benchmarks[0].name).toBe('天云');
     expect(benchmarks[0].content_mix_relevant).toContain('赛事解析40%');
   });
 
   it('excludes secondary competitors', () => {
-    // Even though no group matches, secondary should never appear
-    const benchmarks = buildCompetitorBenchmarks(profiles, 'singer');
+    const benchmarks = buildCompetitorBenchmarks(profiles, 'singer', templates);
     expect(benchmarks.every(b => b.name !== 'Yuri')).toBe(true);
+  });
+
+  it('returns all primary when no templates match identity mode', () => {
+    const benchmarks = buildCompetitorBenchmarks(profiles, 'singer', templates);
+    // No singer templates → no relevant groups → returns all primary
+    expect(benchmarks).toHaveLength(2);
+  });
+
+  it('returns all primary when no templates provided', () => {
+    const benchmarks = buildCompetitorBenchmarks(profiles, 'daily');
+    expect(benchmarks).toHaveLength(2); // all primary, no template filter
   });
 
   it('returns empty for no profiles', () => {

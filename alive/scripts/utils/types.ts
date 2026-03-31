@@ -942,7 +942,8 @@ export function isSubSkillEnabled(persona: PersonaConfig, skillName: string): bo
 // ─── Ops Desk Types ──────────────────────────────────────────────────────────
 
 export type QueueItemStatus = 'pending' | 'approved' | 'published' | 'discarded' | 'editing';
-export type IdentityMode = 'esports' | 'singer' | 'racer' | 'daily';
+/** Identity mode — persona-agnostic string, configured per persona in ops.content_templates[].identity_mode */
+export type IdentityMode = string;
 
 export interface QueueItemContent {
   xhs: {

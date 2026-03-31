@@ -17,6 +17,8 @@ import { LLMClient } from '../utils/llm-client';
 import { FilteredTrend } from './trend-analyzer';
 import { addItem } from './review-queue';
 import { buildCompetitorContext } from './competitor-tracker';
+import { PATHS, readJSON } from '../utils/file-utils';
+import { CompetitorLog, CompetitorUpdate } from '../utils/types';
 
 // ─── Pure functions (exported for testing) ───────────────────────────────────
 
@@ -60,25 +62,36 @@ export function selectContentTemplate(
 
 /**
  * Build competitor benchmark data for a queue item.
+ * Matches competitors by identity_mode on their content templates,
+ * or returns all primary competitors if no identity_mode-based filtering is possible.
  */
 export function buildCompetitorBenchmarks(
   profiles: readonly CompetitorProfile[] | undefined,
-  identityMode: IdentityMode,
+  identityMode: string,
+  templates?: readonly ContentTemplate[],
 ): QueueItemCompetitorBenchmark[] {
   if (!profiles || profiles.length === 0) return [];
 
-  // Map identity mode to relevant groups
-  const modeToGroups: Record<IdentityMode, string[]> = {
-    esports: ['硬核电竞解说'],
-    singer: ['偶像歌手'],
-    racer: ['赛道飒爽女车手'],
-    daily: ['低调轻奢富家千金'],
-  };
-  const relevantGroups = modeToGroups[identityMode] ?? [];
+  // Derive relevant groups from content templates that match this identity mode
+  const relevantGroups = templates
+    ? [...new Set(
+      templates
+        .filter(t => t.identity_mode === identityMode)
+        .map(t => t.category),
+    )]
+    : [];
 
   return profiles
     .filter(p => p.reference_type === 'primary')
-    .filter(p => relevantGroups.length === 0 || relevantGroups.includes(p.group ?? p.tag))
+    .filter(p => {
+      // If we have no template-derived groups, include all primary competitors
+      if (relevantGroups.length === 0) return true;
+      // Otherwise match group/tag against template categories
+      const profileGroup = p.group ?? p.tag;
+      return relevantGroups.some(g =>
+        profileGroup.includes(g) || g.includes(profileGroup),
+      );
+    })
     .map(p => ({
       name: p.name,
       platform: p.platform,
@@ -144,7 +157,8 @@ function callTiktokGrowth(niche: string, count: number): string[] {
     ], { timeout: 30_000, encoding: 'utf8' });
     const result = JSON.parse(raw) as TiktokGrowthResult;
     return result.hooks ?? [];
-  } catch {
+  } catch (err) {
+    console.error('[topic-generator] tiktok-growth call failed:', err);
     return [];
   }
 }
@@ -162,7 +176,8 @@ function callGenerateImage(description: string, stylePrompt: string): string[] {
     ], { timeout: 60_000, encoding: 'utf8' });
     const result = JSON.parse(raw) as { images?: string[] };
     return result.images ?? [];
-  } catch {
+  } catch (err) {
+    console.error('[topic-generator] generate-image call failed:', err);
     return [];
   }
 }
@@ -178,9 +193,13 @@ export async function generateTopics(
 ): Promise<void> {
   const topN = trends.slice(0, ops.topic_count);
 
+  // Load persisted competitor log for live data context
+  const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
+  const liveUpdates: CompetitorUpdate[] = competitorLog.entries;
+
   // Build competitor context once for all topics
   const competitorCtx = ops.competitors
-    ? buildCompetitorContext(ops.competitors, [])
+    ? buildCompetitorContext(ops.competitors, liveUpdates)
     : '';
 
   for (const trend of topN) {
@@ -193,7 +212,7 @@ export async function generateTopics(
     const templateConstraint = template ? buildTemplateConstraint(template) : '';
 
     // Build competitor benchmarks for this identity
-    const benchmarks = buildCompetitorBenchmarks(ops.competitors, identityMode);
+    const benchmarks = buildCompetitorBenchmarks(ops.competitors, identityMode, ops.content_templates);
 
     // Compose extra context: template + competitor + hooks
     const contextParts: string[] = [];
@@ -208,7 +227,9 @@ export async function generateTopics(
       xhsDraft = await llm.callJSON<XhsDraft>(
         buildContentPrompt(trend, personaDescription, 'xhs', xhsStyle, contextParts.join('\n\n')), 1500,
       );
-    } catch { /* keep empty draft */ }
+    } catch (err) {
+      console.error(`[topic-generator] XHS draft failed for "${trend.keyword}":`, err);
+    }
 
     try {
       // Enrich douyin script with tiktok-growth hooks
@@ -218,7 +239,9 @@ export async function generateTopics(
       douyinDraft = await llm.callJSON<DouyinDraft>(
         buildContentPrompt(trend, personaDescription, 'douyin', douyinStyle, douyinContext), 1500,
       );
-    } catch { /* keep empty draft */ }
+    } catch (err) {
+      console.error(`[topic-generator] Douyin draft failed for "${trend.keyword}":`, err);
+    }
 
     // Generate cover images
     const coverDescription = xhsDraft.cover_description || douyinDraft.cover_description || trend.keyword;

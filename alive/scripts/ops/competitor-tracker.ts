@@ -10,7 +10,7 @@
 
 import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
-import { now, getLocalDate } from '../utils/time-utils';
+import { now, wallNow, getLocalDate } from '../utils/time-utils';
 import { CompetitorUpdate, CompetitorLog, OpsConfig, CompetitorProfile } from '../utils/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ function fetchXhsAccount(account: string): CompetitorUpdate {
       title?: string; likes?: number; timestamp?: string;
     }>;
     if (results.length === 0) {
-      return { account, platform: 'xhs', latest_post: null, days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: now().toISOString() };
+      return { account, platform: 'xhs', latest_post: null, days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: wallNow().toISOString() };
     }
     const latest = results[0];
     const postedAt = latest.timestamp ? new Date(latest.timestamp) : now();
@@ -135,10 +135,10 @@ function fetchXhsAccount(account: string): CompetitorUpdate {
         summary: latest.title ?? '',
       },
       days_since_last_post: daysSince,
-      fetched_at: now().toISOString(),
+      fetched_at: wallNow().toISOString(),
     };
   } catch {
-    return { account, platform: 'xhs', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: now().toISOString() };
+    return { account, platform: 'xhs', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
   }
 }
 
@@ -172,10 +172,10 @@ function fetchDouyinAccount(accountId: string): CompetitorUpdate {
         summary,
       },
       days_since_last_post: daysSince,
-      fetched_at: now().toISOString(),
+      fetched_at: wallNow().toISOString(),
     };
   } catch {
-    return { account: accountId, platform: 'douyin', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: now().toISOString() };
+    return { account: accountId, platform: 'douyin', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
   }
 }
 
@@ -193,7 +193,7 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
   const withoutToday = existing.entries.filter(e => !e.fetched_at.startsWith(today));
   const log: CompetitorLog = {
     entries: [...withoutToday, ...all].slice(-MAX_COMPETITOR_LOG_ENTRIES), // keep last 200 entries
-    last_updated: now().toISOString(),
+    last_updated: wallNow().toISOString(),
   };
   writeJSON(PATHS.competitorLog, log);
   return all;

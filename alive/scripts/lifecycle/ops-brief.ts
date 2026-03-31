@@ -32,18 +32,19 @@ async function main(): Promise<void> {
 
   await cleanupOldItems();
 
-  const [trendsResult] = await Promise.allSettled([
+  const [trendsResult, competitorsResult] = await Promise.allSettled([
     analyzeTrends(ops, identities, llm),
-    Promise.resolve(trackCompetitors(ops)), // side effect: persist competitor log
+    Promise.resolve(trackCompetitors(ops)),
   ]);
 
   const trends = trendsResult.status === 'fulfilled' ? trendsResult.value : [];
+  const competitors = competitorsResult.status === 'fulfilled' ? competitorsResult.value : [];
 
   await generateTopics(trends, ops, persona.meta.name, imageStyle, llm);
 
   const queue = await loadQueue();
   const pending = queue.items.filter(i => i.status === 'pending');
-  const sent = await sendDailyBrief(trends, [], pending);
+  const sent = await sendDailyBrief(trends, competitors, pending);
 
   console.log(`[${wallNow().toISOString()}] ops-brief: brief sent=${sent}, ${pending.length} pending topics`);
 }
