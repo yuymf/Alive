@@ -123,6 +123,18 @@ export async function getPendingItems(): Promise<QueueItem[]> {
   return queue.items.filter(i => i.status === 'pending');
 }
 
+/**
+ * Get all published items that have at least one URL.
+ */
+export async function getPublishedItemsWithUrls(): Promise<QueueItem[]> {
+  const queue = await loadQueue();
+  return queue.items.filter(item =>
+    item.status === 'published' &&
+    item.published_urls &&
+    (item.published_urls.xhs || item.published_urls.douyin),
+  );
+}
+
 export async function cleanupOldItems(): Promise<void> {
   const queue = await loadQueue();
   const cutoff = new Date(now().getTime() - CLEANUP_AGE_DAYS * 24 * 60 * 60 * 1000);
