@@ -63,6 +63,63 @@ export function formatBriefCard(
   return lines.join('\n');
 }
 
+// ─── Content package formatting ──────────────────────────────────────────────
+
+/**
+ * Format a complete content package for human publishing.
+ */
+export function formatContentPackage(item: QueueItem): string {
+  const lines: string[] = [
+    `📦 内容包 #${item.id}`,
+    `模式: ${item.identity_mode} | 选题: ${item.topic}`,
+    '',
+  ];
+
+  const { xhs } = item.content;
+  lines.push('━━ 小红书 图文 ━━', `【标题】${xhs.title}`, '【正文】', xhs.body, `【标签】${xhs.tags.join(' ')}`);
+  if (xhs.cover_images.length > 0) {
+    lines.push('【封面】');
+    xhs.cover_images.forEach((url, i) => lines.push(`  图${i + 1}: ${url}`));
+  }
+  lines.push('');
+
+  const { douyin } = item.content;
+  lines.push('━━ 抖音 视频脚本 ━━', '【脚本】', douyin.script, `【BGM】${douyin.bgm_suggestion}`);
+  if (douyin.key_captions.length > 0) {
+    lines.push('【关键字幕】');
+    douyin.key_captions.forEach(c => lines.push(`  - ${c}`));
+  }
+  if (douyin.cover_images.length > 0) {
+    lines.push('【封面】');
+    douyin.cover_images.forEach((url, i) => lines.push(`  图${i + 1}: ${url}`));
+  }
+  lines.push('');
+
+  if (item.image_prompts && item.image_prompts.length > 0) {
+    lines.push('━━ AI生图提示词 ━━');
+    item.image_prompts.forEach((p, i) => lines.push(`提示词${i + 1}: ${p}`));
+    lines.push('');
+  }
+
+  lines.push('━━ 发布后请回传 ━━', '回复: 已发 xhs {笔记URL}', '回复: 已发 douyin {视频URL}');
+  return lines.join('\n');
+}
+
+export function pushContentPackage(item: QueueItem): boolean {
+  return sendToWechatWork(formatContentPackage(item));
+}
+
+export function pushEditResult(item: QueueItem, field: string, oldValue: string, newValue: string): boolean {
+  const lines = [
+    `✏️ 已修改 #${item.id}`, '',
+    `【修改内容】${field}`,
+    `  旧: ${oldValue.slice(0, 50)}${oldValue.length > 50 ? '...' : ''}`,
+    `  新: ${newValue.slice(0, 50)}${newValue.length > 50 ? '...' : ''}`,
+    '', '回复 "OK" 确认 · "再改" 继续调整',
+  ];
+  return sendToWechatWork(lines.join('\n'));
+}
+
 // ─── WeChat Work push via OpenClaw gateway ────────────────────────────────────
 
 export function sendToWechatWork(message: string): boolean {

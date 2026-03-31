@@ -60,6 +60,31 @@ export function extractIntentFromNluResponse(raw: string, itemId: string): Parse
   }
 }
 
+export function extractPlatformUrl(input: string): { platform: 'xhs' | 'douyin'; url: string } | null {
+  const urlMatch = input.match(/(https?:\/\/[^\s]+)/);
+  if (!urlMatch) return null;
+  const url = urlMatch[1];
+  if (url.includes('xiaohongshu.com') || url.includes('xhslink.com')) return { platform: 'xhs', url };
+  if (url.includes('douyin.com')) return { platform: 'douyin', url };
+  return null;
+}
+
+export function parsePublishIntent(input: string, activeItemId: string | null): ParsedIntent | null {
+  const extracted = extractPlatformUrl(input);
+  if (!extracted) return null;
+  const publishKeywords = ['已发', '发了', '发布了', '上线了', '发出去了'];
+  const hasPublishKeyword = publishKeywords.some(kw => input.includes(kw));
+  if (hasPublishKeyword || extracted.platform) {
+    return {
+      action: 'publish',
+      item_id: activeItemId ?? undefined,
+      field: extracted.platform,
+      instruction: extracted.url,
+    };
+  }
+  return null;
+}
+
 // ─── Main export ─────────────────────────────────────────────────────────────
 
 export async function parseMessage(
@@ -70,7 +95,9 @@ export async function parseMessage(
   const slash = parseSlashCommand(input);
   if (slash) return { type: 'slash', cmd: slash };
 
-  // Natural language — only interpreted when there is an active item context
+  const publishIntent = parsePublishIntent(input, activeItemId);
+  if (publishIntent) return { type: 'intent', intent: publishIntent };
+
   if (activeItemId) {
     const prompt = buildNluPrompt(input, activeItemId);
     try {
@@ -81,6 +108,5 @@ export async function parseMessage(
       return { type: 'intent', intent: { action: 'unknown', raw: input } };
     }
   }
-
   return { type: 'intent', intent: { action: 'unknown', raw: input } };
 }
