@@ -688,7 +688,15 @@ async function install() {
     : '  AIHUBMIX_API_KEY (press Enter to skip): ');
 
   config.skills = config.skills || {};
+  config.skills.allow = config.skills.allow || [];
   config.skills.entries = config.skills.entries || {};
+  config.skills.installs = config.skills.installs || {};
+
+  // Ensure skill is in allow list
+  if (!config.skills.allow.includes(skillSlug)) {
+    config.skills.allow.push(skillSlug);
+  }
+
   config.skills.entries[skillSlug] = {
     enabled: true,
     env: {
@@ -700,8 +708,17 @@ async function install() {
       ALIVE_PERSONA: personaSlug,
     },
   };
+
+  config.skills.installs[skillSlug] = {
+    source: 'path',
+    sourcePath: ALIVE_SRC,
+    installPath: skillDest,
+    version: '0.2.0',
+    installedAt: new Date().toISOString(),
+  };
+
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-  ok('openclaw.json updated');
+  ok('openclaw.json updated (allow + entries + installs)');
 
   // Step 5: Setup reference images
   log('Step 5/7: Setting up reference images for AI image generation...');
@@ -874,9 +891,15 @@ async function uninstall() {
       const config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
       if (config.skills?.entries?.[skillSlug]) {
         delete config.skills.entries[skillSlug];
-        fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-        ok(`Removed ${skillSlug} from openclaw.json`);
       }
+      if (config.skills?.installs?.[skillSlug]) {
+        delete config.skills.installs[skillSlug];
+      }
+      if (config.skills?.allow) {
+        config.skills.allow = config.skills.allow.filter(s => s !== skillSlug);
+      }
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+      ok(`Removed ${skillSlug} from openclaw.json (allow + entries + installs)`);
     } catch {
       warn('Could not parse openclaw.json — skipped');
     }
@@ -1186,7 +1209,12 @@ async function reinstall() {
     try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* fresh */ }
   }
   config.skills = config.skills || {};
+  config.skills.allow = config.skills.allow || [];
   config.skills.entries = config.skills.entries || {};
+  config.skills.installs = config.skills.installs || {};
+  if (!config.skills.allow.includes(skillSlug)) {
+    config.skills.allow.push(skillSlug);
+  }
   config.skills.entries[skillSlug] = {
     enabled: true,
     env: {
@@ -1198,8 +1226,15 @@ async function reinstall() {
       ALIVE_PERSONA: personaSlug,
     },
   };
+  config.skills.installs[skillSlug] = {
+    source: 'path',
+    sourcePath: ALIVE_SRC,
+    installPath: skillDest,
+    version: '0.2.0',
+    installedAt: new Date().toISOString(),
+  };
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-  ok('openclaw.json updated');
+  ok('openclaw.json updated (allow + entries + installs)');
 
   // Step 8: Setup reference images
   log('Step 8/9: Setting up reference images...');
@@ -1442,13 +1477,25 @@ async function realDayTest() {
     try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* fresh */ }
   }
   config.skills = config.skills || {};
+  config.skills.allow = config.skills.allow || [];
   config.skills.entries = config.skills.entries || {};
+  config.skills.installs = config.skills.installs || {};
+  if (!config.skills.allow.includes(skillSlug)) {
+    config.skills.allow.push(skillSlug);
+  }
   config.skills.entries[skillSlug] = {
     enabled: true,
     env: { ...existingEnv, ALIVE_PERSONA: personaSlug },
   };
+  config.skills.installs[skillSlug] = {
+    source: 'path',
+    sourcePath: ALIVE_SRC,
+    installPath: skillDest,
+    version: '0.2.0',
+    installedAt: new Date().toISOString(),
+  };
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-  ok('openclaw.json updated (env keys preserved)');
+  ok('openclaw.json updated (allow + entries + installs)');
 
   // Setup reference images (non-interactive — auto-detect from persona config)
   log('Setting up reference images (non-interactive)...');

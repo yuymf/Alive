@@ -300,6 +300,10 @@ export async function runNightReflect(
           .map(([tmpl, stats]) => `${tmpl}: ${stats.count}条, 平均${stats.avg_likes}赞`)
           .join('\n');
 
+        const exampleWeights = Object.fromEntries(
+          Object.keys(byIdentity).map((k, i, arr) => [k, parseFloat((1 / arr.length).toFixed(2))]),
+        );
+
         const reviewPrompt = `你是运营分析师。基于过去7天的内容数据，分析表现趋势。
 
 【按身份模式汇总】
@@ -315,7 +319,7 @@ ${templateSummary}
   "audience_feedback": "根据数据推测的受众反馈",
   "strategy_adjustments": ["调整建议1", "调整建议2"],
   "next_week_focus": {
-    "identity_weights": { "esports": 0.40, "singer": 0.25, "racer": 0.20, "daily": 0.15 },
+    "identity_weights": ${JSON.stringify(exampleWeights)},
     "recommended_templates": ["模板1"],
     "avoid_templates": ["模板2"],
     "post_time_suggestion": "18:00-20:00"
@@ -331,8 +335,8 @@ ${templateSummary}
           };
           writeJSON(PATHS.contentStrategy, contentStrategy);
           console.log(`[night-reflect] content strategy updated`);
-        } catch {
-          console.log(`[night-reflect] content strategy LLM call failed, skipping`);
+        } catch (err) {
+          console.error(`[night-reflect] content strategy LLM call failed:`, err);
         }
       }
     } catch (err) {
@@ -382,8 +386,8 @@ ${templateSummary}
             });
 
             console.log(`[night-reflect] analyzed competitor post: ${profile.name} - ${entry.latest_post.topic}`);
-          } catch {
-            console.log(`[night-reflect] competitor analysis LLM failed for ${profile.name}`);
+          } catch (err) {
+            console.error(`[night-reflect] competitor analysis LLM failed for ${profile.name}:`, err);
           }
         }
       }

@@ -67,7 +67,7 @@ describe('incrementPatternUsage', () => {
       type: '数据降维', source: '希然', source_post: '版本解读',
       formula: '用数字总结', examples: [],
     });
-    incrementPatternUsage('数据降维');
+    incrementPatternUsage('数据降维', '希然');
     const p = loadContentPatterns();
     expect(p.patterns[0].times_used).toBe(1);
   });

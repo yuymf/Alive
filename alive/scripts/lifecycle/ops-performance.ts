@@ -47,7 +47,7 @@ async function main(): Promise<void> {
             platform,
             url,
             published_at: item.published_at ?? item.updated_at,
-            tags_used: platform === 'xhs' ? (item.content.xhs.tags ?? []) : [],
+            tags_used: platform === 'xhs' ? (item.content.xhs?.tags ?? []) : [],
           },
           metrics,
         );

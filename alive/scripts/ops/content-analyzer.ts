@@ -48,29 +48,35 @@ export function addPattern(input: AddPatternInput): void {
   let patterns = [...current.patterns, newPattern];
 
   if (patterns.length > MAX_PATTERNS) {
-    // Sort: used patterns first (by times_used desc), then unused by discovered_at desc (newest first)
-    // Remove from the end (oldest unused)
     const used = patterns.filter(p => p.times_used > 0);
     const unused = patterns.filter(p => p.times_used === 0);
-    unused.sort((a, b) => b.discovered_at.localeCompare(a.discovered_at)); // newest first
-    patterns = [...used, ...unused].slice(0, MAX_PATTERNS);
+    // Sort unused: newest first (keep newer, evict older)
+    const sortedUnused = [...unused].sort((a, b) => b.discovered_at.localeCompare(a.discovered_at));
+
+    if (used.length >= MAX_PATTERNS) {
+      // Force evict least-used pattern to make room for new one
+      const sortedUsed = [...used].sort((a, b) => b.times_used - a.times_used);
+      patterns = [...sortedUsed.slice(0, MAX_PATTERNS - 1), newPattern];
+    } else {
+      patterns = [...used, ...sortedUnused].slice(0, MAX_PATTERNS);
+    }
   }
 
   saveContentPatterns({ ...current, patterns });
 }
 
-export function incrementPatternUsage(type: string): void {
+export function incrementPatternUsage(type: string, source: string): void {
   const current = loadContentPatterns();
   const updatedPatterns = current.patterns.map(p =>
-    p.type === type ? { ...p, times_used: p.times_used + 1 } : p,
+    p.type === type && p.source === source ? { ...p, times_used: p.times_used + 1 } : p,
   );
   saveContentPatterns({ ...current, patterns: updatedPatterns });
 }
 
-export function updatePatternSuccessRate(type: string, rate: number): void {
+export function updatePatternSuccessRate(type: string, source: string, rate: number): void {
   const current = loadContentPatterns();
   const updatedPatterns = current.patterns.map(p =>
-    p.type === type ? { ...p, success_rate: rate } : p,
+    p.type === type && p.source === source ? { ...p, success_rate: rate } : p,
   );
   saveContentPatterns({ ...current, patterns: updatedPatterns });
 }
@@ -146,8 +152,8 @@ ${personaSummary}
     "cta": "结尾互动方式"
   },
   "viral_factors": ["爆款因素1", "爆款因素2"],
-  "v_adaptation": {
-    "applicable_identity": "esports/singer/racer/daily",
+  "persona_adaptation": {
+    "applicable_identity": "${personaSummary}",
     "angle": "可以怎么借鉴",
     "differentiation": "差异化切入点"
   }

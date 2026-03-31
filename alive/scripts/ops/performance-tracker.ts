@@ -35,7 +35,8 @@ interface AppendSnapshotInput {
 
 export function appendSnapshot(input: AppendSnapshotInput, metrics: PerformanceMetrics): void {
   const log = loadPerformanceLog();
-  const snapshot: PerformanceSnapshot = { fetched_at: now().toISOString(), metrics };
+  const ts = now().toISOString();
+  const snapshot: PerformanceSnapshot = { fetched_at: ts, metrics };
 
   const existingIdx = log.entries.findIndex(
     e => e.item_id === input.item_id && e.platform === input.platform,
@@ -61,17 +62,22 @@ export function appendSnapshot(input: AppendSnapshotInput, metrics: PerformanceM
     updatedEntries = [...log.entries, newEntry];
   }
 
-  writeJSON(PATHS.performanceLog, { entries: updatedEntries, last_updated: now().toISOString() });
+  writeJSON(PATHS.performanceLog, { entries: updatedEntries, last_updated: ts });
+}
+
+function maxOptional(a: number | undefined, b: number | undefined): number | undefined {
+  if (a === undefined && b === undefined) return undefined;
+  return Math.max(a ?? 0, b ?? 0);
 }
 
 function mergePeakMetrics(current: PerformanceMetrics, incoming: PerformanceMetrics): PerformanceMetrics {
   return {
-    views: Math.max(current.views ?? 0, incoming.views ?? 0) || undefined,
+    views: maxOptional(current.views, incoming.views),
     likes: Math.max(current.likes, incoming.likes),
     comments: Math.max(current.comments, incoming.comments),
-    saves: Math.max(current.saves ?? 0, incoming.saves ?? 0) || undefined,
-    shares: Math.max(current.shares ?? 0, incoming.shares ?? 0) || undefined,
-    forwards: Math.max(current.forwards ?? 0, incoming.forwards ?? 0) || undefined,
+    saves: maxOptional(current.saves, incoming.saves),
+    shares: maxOptional(current.shares, incoming.shares),
+    forwards: maxOptional(current.forwards, incoming.forwards),
   };
 }
 
@@ -137,7 +143,10 @@ export function fetchXhsMetrics(url: string): PerformanceMetrics | null {
       saves: result.collected_count ?? 0,
       shares: result.share_count ?? 0,
     };
-  } catch { return null; }
+  } catch (err) {
+    console.error('[performance-tracker] fetchXhsMetrics failed:', url, err);
+    return null;
+  }
 }
 
 export function fetchDouyinMetrics(url: string): PerformanceMetrics | null {
@@ -155,7 +164,10 @@ export function fetchDouyinMetrics(url: string): PerformanceMetrics | null {
       comments: result.comment_count ?? 0,
       forwards: result.repost_count ?? 0,
     };
-  } catch { return null; }
+  } catch (err) {
+    console.error('[performance-tracker] fetchDouyinMetrics failed:', url, err);
+    return null;
+  }
 }
 
 export function fetchMetrics(platform: 'xhs' | 'douyin', url: string): PerformanceMetrics | null {
