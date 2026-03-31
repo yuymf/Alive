@@ -141,7 +141,7 @@ function migrateFromLegacySlug() {
 
   // 3. Migrate cron jobs (rename prefixes)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
       try {
         execSync(`openclaw cron remove --name "${legacySlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -763,6 +763,25 @@ async function install() {
         warn(`Failed to register cron ${job.name}: ${err.message}`);
       }
     }
+
+    // Register ops cron jobs if persona has ops.enabled
+    if (persona.ops && persona.ops.enabled) {
+      const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
+      const briefHour = parseInt(briefTimeParts[0], 10);
+      const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
+      const opsCronJobs = [
+        { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
+      ];
+      for (const job of opsCronJobs) {
+        try {
+          execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+          ok(`Registered cron: ${job.name} (${job.cron})`);
+        } catch (err) {
+          warn(`Failed to register cron ${job.name}: ${err.message}`);
+        }
+      }
+    }
   } else {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
@@ -859,14 +878,14 @@ async function uninstall() {
   log('Removing cron jobs...');
   if (isOpenClawCLIAvailable()) {
     // Remove new format cron jobs (alive:personaSlug:suffix)
-    for (const suffix of ['morning', 'tick', 'night']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
     // Also clean legacy format cron jobs (alive:suffix)
-    for (const suffix of ['morning', 'tick', 'night']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed legacy cron: ${skillSlug}:${suffix}`);
@@ -1088,14 +1107,14 @@ async function reinstall() {
   log('Step 5/9: Removing old cron jobs & cleaning SOUL.md...');
   if (isOpenClawCLIAvailable()) {
     // Remove new format cron jobs
-    for (const suffix of ['morning', 'tick', 'night']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
     // Also clean legacy format cron jobs
-    for (const suffix of ['morning', 'tick', 'night']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -1236,6 +1255,25 @@ async function reinstall() {
         warn(`Failed to register cron ${job.name}: ${err.message}`);
       }
     }
+
+    // Register ops cron jobs if persona has ops.enabled
+    if (persona.ops && persona.ops.enabled) {
+      const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
+      const briefHour = parseInt(briefTimeParts[0], 10);
+      const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
+      const opsCronJobs = [
+        { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
+      ];
+      for (const job of opsCronJobs) {
+        try {
+          execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+          ok(`Registered cron: ${job.name} (${job.cron})`);
+        } catch (err) {
+          warn(`Failed to register cron ${job.name}: ${err.message}`);
+        }
+      }
+    }
   } else {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
@@ -1348,7 +1386,7 @@ async function realDayTest() {
   }
   // Remove cron (both new and legacy format)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -1460,6 +1498,25 @@ async function realDayTest() {
         ok(`Registered cron: ${job.name}`);
       } catch (err) {
         warn(`Failed to register cron ${job.name}: ${err.message}`);
+      }
+    }
+
+    // Register ops cron jobs if persona has ops.enabled
+    if (persona.ops && persona.ops.enabled) {
+      const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
+      const briefHour = parseInt(briefTimeParts[0], 10);
+      const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
+      const opsCronJobs = [
+        { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
+      ];
+      for (const job of opsCronJobs) {
+        try {
+          execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+          ok(`Registered cron: ${job.name} (${job.cron})`);
+        } catch (err) {
+          warn(`Failed to register cron ${job.name}: ${err.message}`);
+        }
       }
     }
   }
@@ -1645,6 +1702,25 @@ async function switchPersona() {
         ok(`Registered cron: ${job.name}`);
       } catch (err) {
         warn(`Failed to register cron ${job.name}: ${err.message}`);
+      }
+    }
+
+    // Register ops cron jobs if persona has ops.enabled
+    if (persona.ops && persona.ops.enabled) {
+      const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
+      const briefHour = parseInt(briefTimeParts[0], 10);
+      const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
+      const opsCronJobs = [
+        { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
+      ];
+      for (const job of opsCronJobs) {
+        try {
+          execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
+          ok(`Registered cron: ${job.name} (${job.cron})`);
+        } catch (err) {
+          warn(`Failed to register cron ${job.name}: ${err.message}`);
+        }
       }
     }
   } else {
