@@ -3,20 +3,108 @@
  * Given filtered trends + competitor data, generates N content drafts
  * (xhs + douyin) using content-writer and tiktok-growth ClawHub skills,
  * then pushes each draft into the review queue.
+ *
+ * Enhanced: Now injects content templates (scene/camera/styling constraints)
+ * and competitor benchmarks into LLM prompts for better-targeted content.
  */
 
 import { execFileSync } from 'child_process';
-import { OpsConfig } from '../utils/types';
+import {
+  OpsConfig, ContentTemplate, CompetitorProfile, IdentityMode,
+  QueueItemTemplateSpec, QueueItemCompetitorBenchmark,
+} from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
 import { FilteredTrend } from './trend-analyzer';
 import { addItem } from './review-queue';
+import { buildCompetitorContext } from './competitor-tracker';
 
 // ─── Pure functions (exported for testing) ───────────────────────────────────
 
 export function selectIdentityMode(
   trend: FilteredTrend,
-): 'esports' | 'singer' | 'racer' | 'daily' {
+): IdentityMode {
   return trend.identity_mode;
+}
+
+/**
+ * Select the best matching content template for a trend.
+ * Strategy: match by identity_mode first, then prefer high-priority templates.
+ * Returns null if no templates configured.
+ */
+export function selectContentTemplate(
+  templates: readonly ContentTemplate[] | undefined,
+  identityMode: IdentityMode,
+  trendKeyword: string,
+): ContentTemplate | null {
+  if (!templates || templates.length === 0) return null;
+
+  // Filter by identity mode
+  const modeTemplates = templates.filter(t =>
+    t.identity_mode === identityMode || !t.identity_mode,
+  );
+
+  if (modeTemplates.length === 0) return null;
+
+  // Prefer high-priority templates
+  const highPriority = modeTemplates.filter(t => t.priority === 'high');
+  const pool = highPriority.length > 0 ? highPriority : modeTemplates;
+
+  // Simple keyword matching: check if trend keyword overlaps with template category
+  const keywordMatch = pool.find(t =>
+    trendKeyword.includes(t.category) || trendKeyword.includes(t.type),
+  );
+
+  // Return keyword match or random from pool
+  return keywordMatch ?? pool[Math.floor(Math.random() * pool.length)];
+}
+
+/**
+ * Build competitor benchmark data for a queue item.
+ */
+export function buildCompetitorBenchmarks(
+  profiles: readonly CompetitorProfile[] | undefined,
+  identityMode: IdentityMode,
+): QueueItemCompetitorBenchmark[] {
+  if (!profiles || profiles.length === 0) return [];
+
+  // Map identity mode to relevant groups
+  const modeToGroups: Record<IdentityMode, string[]> = {
+    esports: ['硬核电竞解说'],
+    singer: ['偶像歌手'],
+    racer: ['赛道飒爽女车手'],
+    daily: ['低调轻奢富家千金'],
+  };
+  const relevantGroups = modeToGroups[identityMode] ?? [];
+
+  return profiles
+    .filter(p => p.reference_type === 'primary')
+    .filter(p => relevantGroups.length === 0 || relevantGroups.includes(p.group ?? p.tag))
+    .map(p => ({
+      name: p.name,
+      platform: p.platform,
+      content_mix_relevant: p.content_mix
+        ? Object.entries(p.content_mix).map(([k, v]) => `${k}${v}%`).join('、')
+        : '未知',
+      audience: p.audience ?? '未知',
+      interaction_style: p.interaction_style ?? '未知',
+    }));
+}
+
+/**
+ * Build a template constraint string for LLM prompt injection.
+ */
+export function buildTemplateConstraint(template: ContentTemplate): string {
+  return `【内容模板约束】
+类型：${template.type}（${template.category}）
+场景：${template.scene}
+镜头语言：${template.camera}
+人物形象/造型：${template.styling}
+内容亮点：${template.highlights.join('、')}
+${template.reference_links && template.reference_links.length > 0
+    ? `参考案例：${template.reference_links.join(' / ')}`
+    : ''}
+
+请严格按照以上场景、镜头、造型要求来构思内容。`;
 }
 
 export function buildContentPrompt(
@@ -90,10 +178,27 @@ export async function generateTopics(
 ): Promise<void> {
   const topN = trends.slice(0, ops.topic_count);
 
+  // Build competitor context once for all topics
+  const competitorCtx = ops.competitors
+    ? buildCompetitorContext(ops.competitors, [])
+    : '';
+
   for (const trend of topN) {
     const identityMode = selectIdentityMode(trend);
     const xhsStyle = ops.platforms.xhs?.style ?? '图文为主';
     const douyinStyle = ops.platforms.douyin?.style ?? '视频脚本';
+
+    // Select matching content template
+    const template = selectContentTemplate(ops.content_templates, identityMode, trend.keyword);
+    const templateConstraint = template ? buildTemplateConstraint(template) : '';
+
+    // Build competitor benchmarks for this identity
+    const benchmarks = buildCompetitorBenchmarks(ops.competitors, identityMode);
+
+    // Compose extra context: template + competitor + hooks
+    const contextParts: string[] = [];
+    if (templateConstraint) contextParts.push(templateConstraint);
+    if (competitorCtx) contextParts.push(`【对标竞品参考】\n${competitorCtx}`);
 
     // Generate XHS content via LLM
     let xhsDraft: XhsDraft = { title: '', body: '', tags: [], cover_description: '' };
@@ -101,22 +206,36 @@ export async function generateTopics(
 
     try {
       xhsDraft = await llm.callJSON<XhsDraft>(
-        buildContentPrompt(trend, personaDescription, 'xhs', xhsStyle), 1500,
+        buildContentPrompt(trend, personaDescription, 'xhs', xhsStyle, contextParts.join('\n\n')), 1500,
       );
     } catch { /* keep empty draft */ }
 
     try {
       // Enrich douyin script with tiktok-growth hooks
       const hooks = callTiktokGrowth(identityMode, 3);
-      const hookContext = hooks.length > 0 ? `参考钩子公式：${hooks.slice(0, 2).join(' / ')}` : undefined;
+      const hookContext = hooks.length > 0 ? `参考钩子公式：${hooks.slice(0, 2).join(' / ')}` : '';
+      const douyinContext = [...contextParts, hookContext].filter(Boolean).join('\n\n');
       douyinDraft = await llm.callJSON<DouyinDraft>(
-        buildContentPrompt(trend, personaDescription, 'douyin', douyinStyle, hookContext), 1500,
+        buildContentPrompt(trend, personaDescription, 'douyin', douyinStyle, douyinContext), 1500,
       );
     } catch { /* keep empty draft */ }
 
     // Generate cover images
     const coverDescription = xhsDraft.cover_description || douyinDraft.cover_description || trend.keyword;
     const coverImages = callGenerateImage(coverDescription, imageStylePrompt);
+
+    // Build template spec for review queue
+    const templateSpec: QueueItemTemplateSpec | undefined = template
+      ? {
+        content_type: template.type,
+        category: template.category,
+        scene: template.scene,
+        camera: template.camera,
+        styling: template.styling,
+        highlights: template.highlights,
+        reference_links: template.reference_links ?? [],
+      }
+      : undefined;
 
     await addItem({
       topic: `蹭 ${trend.keyword}：${trend.hook_angle}`,
@@ -136,6 +255,8 @@ export async function generateTopics(
           cover_images: [...coverImages],
         },
       },
+      template_spec: templateSpec,
+      competitor_benchmarks: benchmarks.length > 0 ? benchmarks : undefined,
     });
   }
 }

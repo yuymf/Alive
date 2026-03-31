@@ -965,6 +965,24 @@ export interface QueueItemEditEntry {
   field: string;
 }
 
+export interface QueueItemTemplateSpec {
+  content_type: string;
+  category: string;
+  scene: string;
+  camera: string;
+  styling: string;
+  highlights: readonly string[];
+  reference_links: readonly string[];
+}
+
+export interface QueueItemCompetitorBenchmark {
+  name: string;
+  platform: string;
+  content_mix_relevant: string;
+  audience: string;
+  interaction_style: string;
+}
+
 export interface QueueItem {
   id: string;
   status: QueueItemStatus;
@@ -975,6 +993,10 @@ export interface QueueItem {
   updated_at: string;
   content: QueueItemContent;
   edit_history: QueueItemEditEntry[];
+  /** Content template spec that guided generation (if any) */
+  template_spec?: QueueItemTemplateSpec;
+  /** Competitor benchmarks used for context (if any) */
+  competitor_benchmarks?: QueueItemCompetitorBenchmark[];
 }
 
 export interface ReviewQueue {
@@ -1029,6 +1051,52 @@ export interface ParsedIntent {
   raw?: string;
 }
 
+// ─── Competitor Profile Types ────────────────────────────────────────────────
+
+export interface CompetitorContentMix {
+  /** Content category name → percentage (0-100) */
+  readonly [category: string]: number;
+}
+
+export interface CompetitorProfile {
+  readonly name: string;
+  readonly platform: 'xhs' | 'douyin' | 'bilibili' | 'weibo' | 'instagram' | 'youtube';
+  readonly url?: string;
+  readonly tag: string;
+  readonly tag_desc: string;
+  readonly followers?: string;
+  readonly content_mix?: CompetitorContentMix;
+  readonly audience?: string;
+  readonly interaction_style?: string;
+  /** primary = core benchmark, secondary = supplementary reference */
+  readonly reference_type: 'primary' | 'secondary';
+  /** Optional grouping tag (e.g. '硬核电竞解说', '低调轻奢富家千金') */
+  readonly group?: string;
+  /** Key takeaways from this competitor */
+  readonly takeaways?: readonly string[];
+  /** Anti-patterns to avoid from this competitor */
+  readonly avoid?: readonly string[];
+}
+
+// ─── Content Template Types ─────────────────────────────────────────────────
+
+export interface ContentTemplate {
+  readonly type: string;
+  readonly category: string;
+  /** high = ⭐ priority content type */
+  readonly priority: 'high' | 'normal';
+  readonly scene: string;
+  readonly camera: string;
+  readonly styling: string;
+  readonly highlights: readonly string[];
+  readonly reference_links?: readonly string[];
+  readonly platforms?: readonly ('xhs' | 'douyin')[];
+  /** Which identity mode this template belongs to */
+  readonly identity_mode?: IdentityMode;
+}
+
+// ─── Ops Config ─────────────────────────────────────────────────────────────
+
 export interface OpsConfig {
   enabled: boolean;
   brief_time: string;
@@ -1036,6 +1104,10 @@ export interface OpsConfig {
     xhs: string[];
     douyin: string[];
   };
+  /** Structured competitor profiles with rich metadata */
+  competitors?: readonly CompetitorProfile[];
+  /** Content type templates with scene/camera/styling constraints */
+  content_templates?: readonly ContentTemplate[];
   trend_score_threshold: number;
   topic_count: number;
   topic_filter_prompt: string;

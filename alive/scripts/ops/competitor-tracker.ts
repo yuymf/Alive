@@ -3,12 +3,15 @@
  * Monitors competitor accounts by fetching their latest content via
  * xhs-bridge (search) and yt-dlp-downloader + video-summary ClawHub skills.
  * All failures are graceful — missing data is noted but never fatal.
+ *
+ * Enhanced: Now consumes rich CompetitorProfile from persona config
+ * to provide structured summaries with content mix, audience, and takeaways.
  */
 
 import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now, getLocalDate } from '../utils/time-utils';
-import { CompetitorUpdate, CompetitorLog, OpsConfig } from '../utils/types';
+import { CompetitorUpdate, CompetitorLog, OpsConfig, CompetitorProfile } from '../utils/types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -25,6 +28,83 @@ export function buildCompetitorSummary(updates: CompetitorUpdate[]): string {
     const { topic, engagement } = u.latest_post;
     return `@${u.account}  今日发布「${topic}」互动${engagement}`;
   }).join('\n');
+}
+
+/**
+ * Build a rich competitor context string for LLM prompts.
+ * Includes profile metadata (tag, audience, content mix, interaction style)
+ * alongside live tracking data (latest posts).
+ */
+export function buildCompetitorContext(
+  profiles: readonly CompetitorProfile[],
+  updates: CompetitorUpdate[],
+): string {
+  if (profiles.length === 0) return '';
+
+  // Group profiles by group tag
+  const groups = new Map<string, CompetitorProfile[]>();
+  for (const p of profiles) {
+    const key = p.group ?? p.tag;
+    const existing = groups.get(key) ?? [];
+    groups.set(key, [...existing, p]);
+  }
+
+  const sections: string[] = [];
+  for (const [groupName, members] of groups) {
+    const memberLines = members.map(p => {
+      const mixStr = p.content_mix
+        ? Object.entries(p.content_mix).map(([k, v]) => `${k}${v}%`).join('、')
+        : '未知';
+      const liveData = updates.find(u => u.account === p.name && u.platform === p.platform);
+      const liveStr = liveData?.latest_post
+        ? `最新：「${liveData.latest_post.topic}」互动${liveData.latest_post.engagement}`
+        : '暂无实时数据';
+      return `  @${p.name}（${p.platform}）${p.followers ? `粉丝${p.followers}` : ''}
+    人设：${p.tag_desc}
+    内容比例：${mixStr}
+    受众：${p.audience ?? '未知'}
+    互动风格：${p.interaction_style ?? '未知'}
+    ${liveStr}`;
+    }).join('\n');
+    sections.push(`【${groupName}】\n${memberLines}`);
+  }
+
+  // Add takeaways summary for primary competitors
+  const primaryTakeaways = profiles
+    .filter(p => p.reference_type === 'primary' && p.takeaways && p.takeaways.length > 0)
+    .flatMap(p => (p.takeaways ?? []).map(t => `- ${p.name}：${t}`));
+
+  const avoidPoints = profiles
+    .filter(p => p.avoid && p.avoid.length > 0)
+    .flatMap(p => (p.avoid ?? []).map(a => `- 避免（${p.name}）：${a}`));
+
+  let result = sections.join('\n\n');
+  if (primaryTakeaways.length > 0) {
+    result += `\n\n【借鉴要点】\n${primaryTakeaways.join('\n')}`;
+  }
+  if (avoidPoints.length > 0) {
+    result += `\n\n【避坑提醒】\n${avoidPoints.join('\n')}`;
+  }
+
+  return result;
+}
+
+/**
+ * Get all competitor account names by platform from both
+ * legacy competitor_accounts and new competitors[] profiles.
+ */
+export function resolveCompetitorAccounts(ops: OpsConfig): { xhs: string[]; douyin: string[] } {
+  const xhs = new Set(ops.competitor_accounts.xhs);
+  const douyin = new Set(ops.competitor_accounts.douyin);
+
+  if (ops.competitors) {
+    for (const c of ops.competitors) {
+      if (c.platform === 'xhs') xhs.add(c.name);
+      if (c.platform === 'douyin') douyin.add(c.name);
+    }
+  }
+
+  return { xhs: [...xhs], douyin: [...douyin] };
 }
 
 // ─── ClawHub skill calls ──────────────────────────────────────────────────────
@@ -102,8 +182,9 @@ function fetchDouyinAccount(accountId: string): CompetitorUpdate {
 // ─── Main export ─────────────────────────────────────────────────────────────
 
 export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
-  const xhsUpdates = ops.competitor_accounts.xhs.map(fetchXhsAccount);
-  const douyinUpdates = ops.competitor_accounts.douyin.map(fetchDouyinAccount);
+  const accounts = resolveCompetitorAccounts(ops);
+  const xhsUpdates = accounts.xhs.map(fetchXhsAccount);
+  const douyinUpdates = accounts.douyin.map(fetchDouyinAccount);
   const all = [...xhsUpdates, ...douyinUpdates];
 
   // Persist

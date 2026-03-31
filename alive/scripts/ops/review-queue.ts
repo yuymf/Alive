@@ -9,7 +9,7 @@ import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import {
   QueueItem, QueueItemStatus, IdentityMode, QueueItemContent,
-  ReviewQueue,
+  ReviewQueue, QueueItemTemplateSpec, QueueItemCompetitorBenchmark,
 } from '../utils/types';
 
 export { ReviewQueue };
@@ -40,6 +40,8 @@ export interface AddItemInput {
   trend_hook: string;
   identity_mode: IdentityMode;
   content: QueueItemContent;
+  template_spec?: QueueItemTemplateSpec;
+  competitor_benchmarks?: QueueItemCompetitorBenchmark[];
 }
 
 export async function addItem(input: AddItemInput): Promise<QueueItem> {
@@ -55,6 +57,8 @@ export async function addItem(input: AddItemInput): Promise<QueueItem> {
     updated_at: ts,
     content: input.content,
     edit_history: [],
+    ...(input.template_spec ? { template_spec: input.template_spec } : {}),
+    ...(input.competitor_benchmarks ? { competitor_benchmarks: input.competitor_benchmarks } : {}),
   };
   await saveQueue({ ...queue, items: [...queue.items, item] });
   return item;

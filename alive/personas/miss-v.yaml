@@ -120,6 +120,566 @@ ops:
       enabled: true
       style: "视频脚本，前3秒必须有冲突感或反差，BGM卡点，字幕简洁，结尾引导互动"
 
+  # ─── 结构化对标账号画像 ─────────────────────────────────────────────────
+  competitors:
+    # === 硬核电竞解说 ===
+    - name: "天云"
+      platform: "douyin"
+      tag: "硬核电竞解说"
+      tag_desc: "KPL官方双语解说，知性犀利，BP拆解透彻，温柔有力量、中英文丝滑切换"
+      audience: "理性电竞粉、职场女性/大学生，偏爱专业且有质感的内容"
+      interaction_style: "回应赛事争议，耐心解答粉丝疑问，偶尔分享双语小知识，互动氛围正向温和"
+      content_mix:
+        深度赛事解析: 35
+        双语电竞内容: 25
+        生活日常: 20
+        个人感悟: 20
+      reference_type: "primary"
+      group: "硬核电竞解说"
+      takeaways:
+        - "专业硬核解说功底＋女性细腻视角，打破性别刻板印象"
+        - "双语能力降低观赛门槛，拓宽受众"
+        - "颜值＋实力反差感引发讨论"
+
+    - name: "希然"
+      platform: "douyin"
+      tag: "硬核电竞解说"
+      tag_desc: "LPL首位中英韩三语主持人，冷御酷姐风格、专业硬实力和多语言优势成为电竞圈标志性人物"
+      followers: "未知"
+      audience: "65%男性（电竞核心用户），35%女性（关注穿搭与专业成长）"
+      interaction_style: "专业认可类评论高频（三语天花板、LPL主持业务能力前二），风格欣赏（冷御酷姐太可了），内容期待（求更多多语言挑战视频）"
+      content_mix:
+        穿搭OOTD: 35
+        旅行攻略: 25
+        工作日常: 20
+        生活好物: 20
+      reference_type: "primary"
+      group: "硬核电竞解说"
+      takeaways:
+        - "冷御风格拒绝甜美人设，树立女解说标杆"
+        - "三语能力是核心差异化竞争力"
+
+    - name: "小鹿"
+      platform: "douyin"
+      tag: "硬核电竞解说"
+      tag_desc: "KPL解说，严谨硬核，擅长数据/局势分析，专业度拉满"
+      audience: "男性理性电竞粉居多，兼有喜爱国风穿搭的女性粉丝"
+      interaction_style: "回复战术/版本类提问，以干货互动为主"
+      content_mix:
+        赛事干货复盘: 30
+        版本解读: 25
+        解说幕后: 15
+        旗袍穿搭: 15
+        爱好分享: 15
+      reference_type: "primary"
+      group: "硬核电竞解说"
+      takeaways:
+        - "国风穿搭跨界是差异化记忆点"
+        - "数据分析专业度建立信任"
+
+    # === 偶像歌手 ===
+    - name: "Rosé（朴彩英）"
+      platform: "instagram"
+      tag: "偶像歌手"
+      tag_desc: "主动掌控节奏，不迎合市场，以才华立住底气。从团队到solo主动突破边界，舞台与商业清醒选择不被流量绑架"
+      audience: "16-28岁女性，偏爱温柔治愈、清冷高级的质感风格"
+      interaction_style: "夸声线、氛围感，全球粉温和应援，圈层认可度高"
+      content_mix:
+        音乐舞台: 40
+        时尚造型: 30
+        生活随拍: 20
+        品牌商务: 10
+      reference_type: "primary"
+      group: "偶像歌手"
+      takeaways:
+        - "清冷高级路线＋温柔治愈内核"
+        - "不被流量绑架的清醒人设"
+
+    - name: "Taylor Swift"
+      platform: "instagram"
+      tag: "偶像歌手"
+      tag_desc: "事业掌控权拉满，用作品代替争吵，清醒自洽有力量。重录专辑夺回版权，温柔的反抗——面对抹黑把经历写进歌里"
+      audience: "18-35岁全年龄段，独立女性、文艺青年、职场人居多"
+      interaction_style: "才华膜拜、事业认可（重录专辑太酷了）、情感共鸣、氛围追随（求同款复古穿搭）"
+      content_mix:
+        音乐创作幕后: 40
+        舞台巡演高光: 25
+        生活创作营: 20
+        品牌荣誉: 15
+      reference_type: "primary"
+      group: "偶像歌手"
+      takeaways:
+        - "用作品回应争议比直接对抗更有力"
+        - "清醒划分公私边界"
+        - "既为女性发声也以松弛状态平衡事业与生活"
+
+    # === 赛道飒爽女车手 ===
+    - name: "谷爱凌"
+      platform: "xhs"
+      tag: "赛道飒爽女车手"
+      tag_desc: "跨界全能顶尖运动员，赛场果敢飒爽，生活中阳光鲜活。赛场硬核登顶＋自律坚韧＋清醒独立＋反差松弛软萌"
+      audience: "14-30岁学生、运动爱好者为主，男女受众分布均衡"
+      interaction_style: "夸竞技实力表达'又飒又强'崇拜，好奇如何平衡学业/训练/生活，喜欢多元生活方式"
+      content_mix:
+        运动专业领域: 40
+        生活随拍: 25
+        时尚造型: 20
+        品牌商务: 15
+      reference_type: "primary"
+      group: "赛道飒爽女车手"
+      takeaways:
+        - "天才+努力的励志故事戳中情绪"
+        - "多元魅力（运动+时尚+学业）满足期待"
+        - "反差点（赛场刚毅→私下软萌）极具记忆点"
+        - "传递自信勇敢正向价值观"
+
+    # === 低调轻奢富家千金 ===
+    - name: "annie（文徐允）"
+      platform: "xhs"
+      tag: "低调轻奢富家千金"
+      tag_desc: "三星家族背景，哥伦比亚大学学霸。穿搭无大logo平价+奢品混搭，态度清醒靠自己不拼家境，放弃独栋别墅住练习生宿舍"
+      audience: "16-26岁女性，偏爱清醒养成系、低调质感人设"
+      interaction_style: "夸学霸、高级感，氛围友好，多聊穿搭与生活态度"
+      content_mix:
+        轻奢日常: 40
+        时尚穿搭: 30
+        学业分享: 15
+        艺人工作: 10
+        生活碎片: 5
+      reference_type: "primary"
+      group: "低调轻奢富家千金"
+      takeaways:
+        - "低调不炫富建立亲和感"
+        - "清醒养成系人设引发共鸣"
+
+    - name: "张元英"
+      platform: "xhs"
+      tag: "低调轻奢富家千金"
+      tag_desc: "颜值实力双栖偶像。穿搭显贵偏爱小香风轻奢，仪态优雅身姿挺拔，生活低调有质感不刻意炫富"
+      audience: "14-25岁年轻女性为主，颜值党、时尚爱好者占比居多"
+      interaction_style: "疯狂夸颜值身材（神颜、公主本人），求同款穿搭妆容链接，舞台粉夸业务能力催回归"
+      content_mix:
+        时尚穿搭: 40
+        舞台偶像业务: 30
+        轻奢日常: 20
+        品牌商务: 10
+      reference_type: "primary"
+      group: "低调轻奢富家千金"
+      takeaways:
+        - "轻奢高奢少大logo的穿搭策略"
+        - "仪态优雅是持续记忆点"
+
+    - name: "碳酸饮料拜拜"
+      platform: "xhs"
+      tag: "低调轻奢富家千金"
+      tag_desc: "颜值与风格兼具的时尚博主。复古鬼马+甜酷少年感，擅长奢牌与平价混搭，标志性短发+灵动身形，传递不被定义、自信独立的价值观"
+      audience: "18-25岁Z世代年轻女性，追求个性表达、反容貌焦虑的时尚爱好者"
+      interaction_style: "夸少年感鬼马气质穿搭太会了，求同款单品混搭公式，夸性格真实不做作认同反爆款态度"
+      content_mix:
+        时尚穿搭: 60
+        生活随拍日常vlog: 20
+        品牌商务时尚活动: 15
+        价值观态度分享: 5
+      reference_type: "primary"
+      group: "低调轻奢富家千金"
+      takeaways:
+        - "反容貌焦虑、反爆款的态度标签"
+        - "混搭公式是高互动内容类型"
+        - "少年感鬼马气质是强记忆点"
+
+    # === AI类账号参考（主要） ===
+    - name: "Yuri尤栗"
+      platform: "douyin"
+      url: "https://v.douyin.com/2n6wvKtBb8s/"
+      tag: "AI虚拟偶像"
+      tag_desc: "超现实AI歌手，蓝挑染+赛博少女感，不回避AI身份，强调AI与人类创造力的探索"
+      followers: "3.7w"
+      audience: "技术爱好者与AI创作粉"
+      interaction_style: "AI逼真度、技术细节、歌曲创作讨论，评论多为以为是真人、技术太牛，也有AI伦理探讨"
+      content_mix:
+        全AI制作音乐MV: 40
+        技术幕后揭秘: 30
+        AI与人类关系实验性内容: 30
+      reference_type: "secondary"
+      group: "AI虚拟偶像"
+      takeaways:
+        - "蓝挑染视觉符号一眼识别"
+        - "不回避AI身份反而成为卖点"
+        - "技术揭秘内容吸引垂直粉丝"
+      avoid:
+        - "人设同质化，未突破AI虚拟偶像基础框架"
+        - "流量依赖单条技术奇观，缺乏持续爆款逻辑"
+
+    - name: "Miyaki米芽奇"
+      platform: "douyin"
+      url: "https://v.douyin.com/VHc8vjiLQN8/"
+      tag: "AI虚拟偶像"
+      tag_desc: "甜酷街头虚拟少女，灰粉挑染+美式复古穿搭，走温暖治愈邻家路线，强调公益属性"
+      followers: "0.4w"
+      audience: "追求元气活力、温暖治愈内容的年轻用户"
+      interaction_style: "可爱、元气、公益暖心互动，多为情感共鸣+颜值夸赞"
+      content_mix:
+        生活感短视频: 25
+        流浪动物公益: 25
+        潮流穿搭: 20
+        轻歌舞: 15
+        日常随拍: 15
+      reference_type: "secondary"
+      group: "AI虚拟偶像"
+      takeaways:
+        - "灰粉挑染差异化视觉符号"
+        - "公益属性增加情感深度"
+
+    - name: "叶妮Yennie"
+      platform: "douyin"
+      url: "https://v.douyin.com/3eooP9V0ECk/"
+      tag: "AI虚拟偶像"
+      tag_desc: "酷黑朋克初恋脸少女，朋克造型+软萌初恋脸反差，靠音乐戳中情绪点"
+      followers: "1.2w"
+      audience: "音乐爱好者、国风/摇滚圈层粉丝"
+      interaction_style: "AI音乐质感、歌词共鸣、技术实现讨论，评论多为太燃了、AI也能唱摇滚"
+      content_mix:
+        原创摇滚MV: 30
+        国漫IP翻唱: 25
+        技术幕后: 20
+        生活vlog: 15
+        情感向歌词: 10
+      reference_type: "secondary"
+      group: "AI虚拟偶像"
+      takeaways:
+        - "朋克+初恋脸反差是强记忆点"
+        - "聚焦音乐垂直赛道精准触达圈层"
+
+    # === AI类账号参考（次要） ===
+    - name: "林离Olivia"
+      platform: "bilibili"
+      url: "https://space.bilibili.com/3546934956526060"
+      tag: "AI虚拟偶像"
+      tag_desc: "都市写实风文艺AI数字人，清冷疏离+细腻肢体表达，延续米哈游鹿鸣技术路线"
+      followers: "13w"
+      audience: "关注写实技术、文艺氛围的用户"
+      interaction_style: "惊叹太像真人了、肢体细节太细腻，讨论写实技术、文艺氛围感"
+      content_mix:
+        写实弹琴片段: 30
+        都市生活vlog: 25
+        光影氛围感短片: 25
+        技术幕后: 20
+      reference_type: "secondary"
+      group: "AI虚拟偶像"
+
+    - name: "老F和小爱"
+      platform: "bilibili"
+      url: "https://space.bilibili.com/4354564"
+      tag: "AI虚拟偶像"
+      tag_desc: "简约二次元清新甜美AI，温柔机灵接地气强陪伴"
+      followers: "2.5w"
+      audience: "轻松搞笑、实用干货、学习向用户"
+      interaction_style: "轻松搞笑、实用干货、磕搭档感、学习向"
+      content_mix:
+        音乐MV: 30
+        AI创作技巧: 30
+        双人短剧: 20
+        生活互动: 20
+      reference_type: "secondary"
+      group: "AI虚拟偶像"
+
+  # ─── 内容类型模板 ──────────────────────────────────────────────────────
+  content_templates:
+    # === 音乐板块 ===
+    - type: "MV切片"
+      category: "音乐"
+      priority: "high"
+      identity_mode: "singer"
+      scene: "多场景叙事MV（都市/旷野/室内等）"
+      camera: "慢镜头氛围感特写、多场景转切、情绪细节捕捉"
+      styling: "多元造型切换（酷飒/温柔/复古）、表情随剧情流转、肢体动作贴合氛围"
+      highlights:
+        - "强故事感"
+        - "人设多面性"
+        - "氛围感拉满"
+      reference_links:
+        - "https://v.douyin.com/ucO_pzp9uL4/"
+      platforms: ["douyin", "xhs"]
+
+    - type: "日常弹唱"
+      category: "音乐"
+      priority: "normal"
+      identity_mode: "singer"
+      scene: "居家/私人练习室"
+      camera: "手写歌词本特写、弹唱近景、即兴创作跟拍"
+      styling: "慵懒私服（宽松针织/休闲卫衣）、松弛随性表情、抱吉他/弹钢琴动作、简约配饰"
+      highlights:
+        - "即兴创作"
+        - "清唱实力"
+        - "松弛感"
+        - "生活化"
+      reference_links:
+        - "https://v.douyin.com/pXCsmF3wZPs/"
+      platforms: ["douyin", "xhs"]
+
+    - type: "舞台高光/封神舞台"
+      category: "音乐"
+      priority: "high"
+      identity_mode: "singer"
+      scene: "正式演出舞台（演唱会/打歌舞台）"
+      camera: "高光时刻特写、舞台全景、造型/舞美镜头"
+      styling: "高定舞台造型（亮片/利落剪裁）、自信凌厉表情、张力演唱/舞蹈动作、夸张舞台配饰"
+      highlights:
+        - "神级现场"
+        - "造型舞美"
+        - "气场拉满"
+        - "魅力高光"
+      reference_links:
+        - "https://v.douyin.com/GyHbgjEZXF4/"
+      platforms: ["douyin", "xhs"]
+
+    - type: "饭撒片段"
+      category: "音乐"
+      priority: "normal"
+      identity_mode: "singer"
+      scene: "舞台ending/粉丝互动环节"
+      camera: "ending pose特写、耳钉反光细节、对视粉丝近景"
+      styling: "保留舞台妆造但更柔和、温柔微笑表情、ending比V/挥手动作、单边麦耳钉细节"
+      highlights:
+        - "饭撒互动"
+        - "活人感"
+        - "宠粉细节"
+        - "流行复刻"
+      reference_links:
+        - "https://www.xiaohongshu.com/discovery/item/66e64fd30000000025031bdd"
+      platforms: ["xhs", "douyin"]
+
+    - type: "幕后片段"
+      category: "音乐"
+      priority: "normal"
+      identity_mode: "singer"
+      scene: "幕后空间（彩排候场、化妆间、录音棚、休息室）"
+      camera: "妆造过程跟拍、彩排花絮、下台后松弛状态抓拍"
+      styling: "舒适便服/宽松外套、素颜/淡妆、放松慵懒表情、瘫坐/补妆/闲聊随性动作"
+      highlights:
+        - "真实反差"
+        - "幕后花絮"
+        - "松弛状态"
+        - "立体人设"
+      platforms: ["douyin", "xhs"]
+
+    # === 赛车板块 ===
+    - type: "赛事高光"
+      category: "赛车"
+      priority: "high"
+      identity_mode: "racer"
+      scene: "专业赛车赛道、赛事冲线区域"
+      camera: "冲线瞬间抓拍、摘头盔特写、专属手势近景"
+      styling: "专业赛车服、利落飒爽、眼神锐利、随性撩发"
+      highlights:
+        - "速度氛围感"
+        - "酷飒人设"
+        - "赛车专业感"
+        - "标志性记忆点"
+      reference_links:
+        - "https://www.xiaohongshu.com/discovery/item/68820e55000000001502293f"
+      platforms: ["xhs", "douyin"]
+
+    - type: "训练片段"
+      category: "赛车"
+      priority: "normal"
+      identity_mode: "racer"
+      scene: "赛车训练场地、维修区、数据分析室"
+      camera: "赛车贴纸特写、过弯跟拍、修车/看数据镜头"
+      styling: "训练私服、专注认真、动作专业、随性干练"
+      highlights:
+        - "赛车专业力"
+        - "音乐跨界融合"
+        - "细节真实"
+        - "自律态度"
+      reference_links:
+        - "https://www.xiaohongshu.com/discovery/item/6909d8230000000005001394"
+      platforms: ["xhs", "douyin"]
+
+    - type: "赛车相关"
+      category: "赛车"
+      priority: "normal"
+      identity_mode: "racer"
+      scene: "赛车场、日常出行、私人空间"
+      camera: "妆容特写、周边展示、生活习惯跟拍"
+      styling: "简约穿搭、精致细节、随性自然、酷感兼具"
+      highlights:
+        - "人设细节落地"
+        - "生活化真实感"
+        - "赛车标签强化"
+      reference_links:
+        - "https://www.xiaohongshu.com/discovery/item/6864a7c3000000000d0185fa"
+      platforms: ["xhs", "douyin"]
+
+    # === 生活日常板块 ===
+    - type: "服装变装"
+      category: "生活日常"
+      priority: "high"
+      identity_mode: "daily"
+      scene: "赛道旁、室内换装空间、舞台后台"
+      camera: "变装转场、服饰细节特写、赛道灰尘抓拍"
+      styling: "赛车服→高定礼服、淡颜→精致、风格反差"
+      highlights:
+        - "三重身份反差"
+        - "流量变装密码"
+        - "轻奢质感"
+        - "视觉冲击"
+      reference_links:
+        - "https://www.xiaohongshu.com/discovery/item/68caa95e000000001101c8ef"
+      platforms: ["xhs", "douyin"]
+
+    - type: "妆面变装"
+      category: "生活日常"
+      priority: "high"
+      identity_mode: "daily"
+      scene: "居家化妆台、室内简约空间"
+      camera: "手搓变装转场、素颜→全妆对比特写"
+      styling: "素颜干净、全妆凌厉、神态反差、自然灵动"
+      highlights:
+        - "热门话题反差"
+        - "真人感拉满"
+        - "颜值记忆点"
+        - "传播性强"
+      reference_links:
+        - "https://v.douyin.com/ttMvf1nMGas/"
+      platforms: ["douyin", "xhs"]
+
+    - type: "手势舞"
+      category: "生活日常"
+      priority: "high"
+      identity_mode: "daily"
+      scene: "简约室内、赛道旁、舞台侧方"
+      camera: "手势特写、动作转场、结尾比V抓拍"
+      styling: "姿态利落、动作连贯、专属手势、灵动自然"
+      highlights:
+        - "专属IP符号"
+        - "热门BGM适配"
+        - "简单易传播"
+        - "身份联动"
+      reference_links:
+        - "https://www.xiaohongshu.com/discovery/item/673478dc000000001b02dc51"
+      platforms: ["xhs", "douyin"]
+
+    - type: "瞳孔转场"
+      category: "生活日常"
+      priority: "normal"
+      identity_mode: "daily"
+      scene: "居家、赛道、舞台多场景"
+      camera: "瞳孔特写转场、身份切换镜头、AI特效叠加"
+      styling: "神态切换、眼神多变、三重身份气质融合"
+      highlights:
+        - "极致身份反差"
+        - "AI特效吸睛"
+        - "人设统一性"
+        - "创意记忆点"
+      reference_links:
+        - "https://v.douyin.com/HlwSGnZlXcw/"
+      platforms: ["douyin"]
+
+    - type: "运动健身/普拉提/体态管理"
+      category: "生活日常"
+      priority: "high"
+      identity_mode: "daily"
+      scene: "健身室、居家运动空间"
+      camera: "体态特写、动作跟拍、环境空镜"
+      styling: "休闲运动装、专注自律、身姿舒展、气质淡然"
+      highlights:
+        - "自律人设"
+        - "治愈氛围感"
+        - "正向价值"
+        - "生活化质感"
+      reference_links:
+        - "https://www.xiaohongshu.com/discovery/item/67e0a4e7000000001d02cea2"
+      platforms: ["xhs", "douyin"]
+
+    - type: "朋友聚会/闺蜜局"
+      category: "生活日常"
+      priority: "normal"
+      identity_mode: "daily"
+      scene: "休闲社交场所、私人聚会空间"
+      camera: "互动抓拍、场景全景、氛围特写"
+      styling: "日常私服、轻松随性、亲和自然、社交感拉满"
+      highlights:
+        - "生活化场景"
+        - "人设立体"
+        - "活人感"
+        - "社交形象展示"
+      platforms: ["xhs", "douyin"]
+
+    - type: "美容护肤/美甲/美发"
+      category: "生活日常"
+      priority: "normal"
+      identity_mode: "daily"
+      scene: "居家护肤区、化妆台"
+      camera: "美甲特写、护肤过程跟拍、素颜记录"
+      styling: "素颜状态、精致细节、随性吐槽、温柔亲和"
+      highlights:
+        - "互联网闺蜜感"
+        - "沉浸式氛围"
+        - "活人感"
+        - "细节人设落地"
+      reference_links:
+        - "https://v.douyin.com/Ll7lfHw50U8/"
+      platforms: ["douyin", "xhs"]
+
+    - type: "roomtour/居家照"
+      category: "生活日常"
+      priority: "normal"
+      identity_mode: "daily"
+      scene: "私人居家空间"
+      camera: "环境全景、细节特写、宠物/软装抓拍"
+      styling: "居家私服、松弛慵懒、简约质感、低调雅致"
+      highlights:
+        - "松弛贵气"
+        - "质感生活"
+        - "生活化真实"
+        - "低调人设强化"
+      reference_links:
+        - "https://v.douyin.com/Ep9Go_q9XE0/"
+      platforms: ["douyin", "xhs"]
+
+    # === 电竞解说板块 ===
+    - type: "赛场氛围感"
+      category: "电竞解说"
+      priority: "normal"
+      identity_mode: "esports"
+      scene: "职业电竞对战台、线下赛事观赛位、沉浸式电竞包间"
+      camera: "侧颜凝神特写、赛场光影抓拍、环境空镜"
+      styling: "专业解说装、神情专注、气场沉稳、利落干练"
+      highlights:
+        - "职业解说质感"
+        - "赛场氛围"
+        - "专业人设"
+        - "视觉高级感"
+      platforms: ["xhs", "douyin"]
+
+    - type: "赛场高燃瞬间"
+      category: "电竞解说"
+      priority: "high"
+      identity_mode: "esports"
+      scene: "电竞比赛现场、解说台"
+      camera: "眼神特写、战绩卡点、团战/捧杯画面抓拍"
+      styling: "神情锐利、情绪饱满、专业从容、气场拉满"
+      highlights:
+        - "高燃竞技感"
+        - "解说专业力"
+        - "赛事名场面"
+        - "人设高光"
+      platforms: ["douyin", "xhs"]
+
+    - type: "深夜氛围感/独战时刻"
+      category: "电竞解说"
+      priority: "normal"
+      identity_mode: "esports"
+      scene: "深夜独居电竞房"
+      camera: "暗调空镜、屏幕光映脸特写、敲键侧影记录"
+      styling: "休闲私服、沉静专注、清冷氛围感、随性淡然"
+      highlights:
+        - "深夜治愈感"
+        - "独处人设"
+        - "电竞氛围感拉满"
+      platforms: ["douyin", "xhs"]
+
 sub_skills:
   - ops-desk
   - generate-image

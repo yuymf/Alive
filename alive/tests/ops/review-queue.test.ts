@@ -135,6 +135,73 @@ describe('getPendingItems', () => {
   });
 });
 
+describe('addItem with template_spec and competitor_benchmarks', () => {
+  it('stores template_spec when provided', async () => {
+    const item = await addItem({
+      topic: '蹭 #电竞',
+      trend_hook: '#电竞 (douyin, 3.0x)',
+      identity_mode: 'esports',
+      content: {
+        xhs: { title: 'test', body: 'body', tags: [], cover_images: [] },
+        douyin: { script: 'script', bgm_suggestion: '', key_captions: [], cover_images: [] },
+      },
+      template_spec: {
+        content_type: '赛场高燃瞬间',
+        category: '电竞解说',
+        scene: '电竞比赛现场、解说台',
+        camera: '眼神特写、战绩卡点',
+        styling: '神情锐利、专业从容',
+        highlights: ['高燃竞技感', '解说专业力'],
+        reference_links: ['https://example.com'],
+      },
+    });
+    expect(item.template_spec).toBeDefined();
+    expect(item.template_spec!.content_type).toBe('赛场高燃瞬间');
+    expect(item.template_spec!.highlights).toContain('高燃竞技感');
+
+    // Verify persistence
+    const loaded = await getItem(item.id);
+    expect(loaded?.template_spec?.scene).toBe('电竞比赛现场、解说台');
+  });
+
+  it('stores competitor_benchmarks when provided', async () => {
+    const item = await addItem({
+      topic: 'test',
+      trend_hook: 'hook',
+      identity_mode: 'racer',
+      content: {
+        xhs: { title: '', body: '', tags: [], cover_images: [] },
+        douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] },
+      },
+      competitor_benchmarks: [
+        {
+          name: '谷爱凌',
+          platform: 'xhs',
+          content_mix_relevant: '运动40%、时尚20%',
+          audience: '14-30岁学生',
+          interaction_style: '夸竞技实力',
+        },
+      ],
+    });
+    expect(item.competitor_benchmarks).toHaveLength(1);
+    expect(item.competitor_benchmarks![0].name).toBe('谷爱凌');
+  });
+
+  it('omits optional fields when not provided', async () => {
+    const item = await addItem({
+      topic: 'basic',
+      trend_hook: 'hook',
+      identity_mode: 'daily',
+      content: {
+        xhs: { title: '', body: '', tags: [], cover_images: [] },
+        douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] },
+      },
+    });
+    expect(item.template_spec).toBeUndefined();
+    expect(item.competitor_benchmarks).toBeUndefined();
+  });
+});
+
 describe('updateItemContent', () => {
   it('merges content and appends edit_history entry', async () => {
     const item = await addItem({

@@ -313,6 +313,67 @@ schema:
       personality: { type: string, required: true }
       system_prompt: { type: string, required: false }
 
+  ops:
+    type: object
+    required: false
+    description: "运营台配置 — 人机协作内容运营层"
+    properties:
+      enabled: { type: boolean, required: true }
+      brief_time: { type: string, required: true, description: "每日简报时间 (HH:MM)" }
+      competitor_accounts:
+        type: object
+        required: true
+        description: "对标账号 ID 列表（兼容旧格式）"
+        properties:
+          xhs: { type: array, items: string }
+          douyin: { type: array, items: string }
+      competitors:
+        type: array
+        required: false
+        description: "结构化对标账号画像"
+        items:
+          name: { type: string, required: true, description: "账号名" }
+          platform: { type: string, required: true, enum: [xhs, douyin, bilibili, weibo, instagram, youtube] }
+          url: { type: string, required: false, description: "账号链接" }
+          tag: { type: string, required: true, description: "人设标签 (如 '硬核电竞解说')" }
+          tag_desc: { type: string, required: true, description: "标签详细描述" }
+          followers: { type: string, required: false, description: "粉丝量 (如 '3.7w')" }
+          content_mix:
+            type: object
+            required: false
+            description: "内容比例 { category: percentage }"
+            additionalProperties: { type: number }
+          audience: { type: string, required: false, description: "粉丝画像描述" }
+          interaction_style: { type: string, required: false, description: "评论互动风格" }
+          reference_type: { type: string, required: true, enum: [primary, secondary] }
+          group: { type: string, required: false, description: "分组标签" }
+          takeaways: { type: array, items: string, required: false, description: "值得借鉴的点" }
+          avoid: { type: array, items: string, required: false, description: "需要避免的点" }
+      content_templates:
+        type: array
+        required: false
+        description: "内容类型模板 — 场景/镜头/造型约束"
+        items:
+          type: { type: string, required: true, description: "内容类型名 (如 'MV切片')" }
+          category: { type: string, required: true, description: "所属板块 (如 '音乐', '赛车', '生活日常')" }
+          priority: { type: string, required: true, enum: [high, normal], description: "优先级 (high = ⭐)" }
+          scene: { type: string, required: true, description: "场景描述" }
+          camera: { type: string, required: true, description: "镜头语言" }
+          styling: { type: string, required: true, description: "人物形象/造型关键词" }
+          highlights: { type: array, items: string, required: true, description: "内容亮点" }
+          reference_links: { type: array, items: string, required: false, description: "参考链接" }
+          platforms: { type: array, items: string, required: false, description: "适用平台" }
+          identity_mode: { type: string, required: false, enum: [esports, singer, racer, daily] }
+      trend_score_threshold: { type: number, required: true }
+      topic_count: { type: number, required: true }
+      topic_filter_prompt: { type: string, required: true }
+      platforms:
+        type: object
+        required: true
+        properties:
+          xhs: { type: object, properties: { enabled: { type: boolean }, style: { type: string } } }
+          douyin: { type: object, properties: { enabled: { type: boolean }, style: { type: string } } }
+
   content_sources:
     type: object
     required: false
