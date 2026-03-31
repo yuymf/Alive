@@ -18,7 +18,7 @@ import { FilteredTrend } from './trend-analyzer';
 import { addItem, getItem, updateItemContent } from './review-queue';
 import { buildCompetitorContext } from './competitor-tracker';
 import { PATHS, readJSON } from '../utils/file-utils';
-import { CompetitorLog, CompetitorUpdate } from '../utils/types';
+import { CompetitorLog, CompetitorUpdate, ContentStrategy, ContentPatterns } from '../utils/types';
 
 // ─── Pure functions (exported for testing) ───────────────────────────────────
 
@@ -58,6 +58,32 @@ export function selectContentTemplate(
 
   // Return keyword match or random from pool
   return keywordMatch ?? pool[Math.floor(Math.random() * pool.length)];
+}
+
+export function applyStrategyToTemplateSelection(
+  templates: readonly ContentTemplate[] | undefined,
+  identityMode: IdentityMode,
+  trendKeyword: string,
+  strategy: ContentStrategy | null,
+): ContentTemplate | null {
+  if (!strategy) return selectContentTemplate(templates, identityMode, trendKeyword);
+  if (!templates || templates.length === 0) return null;
+
+  const filtered = templates.filter(
+    t => !strategy.next_week_focus.avoid_templates.includes(t.type),
+  );
+
+  const recommended = filtered.filter(
+    t => strategy.next_week_focus.recommended_templates.includes(t.type),
+  );
+
+  if (recommended.length > 0) {
+    const modeMatch = recommended.filter(t => t.identity_mode === identityMode || !t.identity_mode);
+    if (modeMatch.length > 0) return modeMatch[0];
+    return recommended[0];
+  }
+
+  return selectContentTemplate(filtered, identityMode, trendKeyword);
 }
 
 /**
@@ -267,6 +293,14 @@ export async function generateTopics(
 ): Promise<void> {
   const topN = trends.slice(0, ops.topic_count);
 
+  const strategy = readJSON<ContentStrategy | null>(PATHS.contentStrategy, null);
+  const patterns = readJSON<ContentPatterns | null>(PATHS.contentPatterns, null);
+  const patternsContext = patterns && patterns.patterns.length > 0
+    ? `【参考爆款模式】\n${patterns.patterns.slice(0, 5).map(
+        p => `- ${p.type}：${p.formula}（来源：${p.source}）`
+      ).join('\n')}`
+    : '';
+
   // Load persisted competitor log for live data context
   const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
   const liveUpdates: CompetitorUpdate[] = competitorLog.entries;
@@ -282,7 +316,7 @@ export async function generateTopics(
     const douyinStyle = ops.platforms.douyin?.style ?? '视频脚本';
 
     // Select matching content template
-    const template = selectContentTemplate(ops.content_templates, identityMode, trend.keyword);
+    const template = applyStrategyToTemplateSelection(ops.content_templates, identityMode, trend.keyword, strategy);
     const templateConstraint = template ? buildTemplateConstraint(template) : '';
 
     // Build competitor benchmarks for this identity
@@ -292,6 +326,7 @@ export async function generateTopics(
     const contextParts: string[] = [];
     if (templateConstraint) contextParts.push(templateConstraint);
     if (competitorCtx) contextParts.push(`【对标竞品参考】\n${competitorCtx}`);
+    if (patternsContext) contextParts.push(patternsContext);
 
     // Generate XHS content via LLM
     let xhsDraft: XhsDraft = { title: '', body: '', tags: [], cover_description: '' };

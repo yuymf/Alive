@@ -141,7 +141,7 @@ function migrateFromLegacySlug() {
 
   // 3. Migrate cron jobs (rename prefixes)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
       try {
         execSync(`openclaw cron remove --name "${legacySlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -237,14 +237,16 @@ function runGenerateReferences(sourcePath, outputDir, env) {
  * @param {object} options
  * @param {object} options.persona - Parsed persona config
  * @param {string} options.personaYamlDir - Directory of persona YAML (for resolving relative paths)
- * @param {string} options.skillDest - Installed skill destination path
+ * @param {string} options.skillDest - Installed skill destination path (skill dir, NOT memory dir)
  * @param {object} options.rl - readline interface
  * @param {object} [options.env] - Extra env vars (API keys etc.)
  * @param {boolean} [options.nonInteractive] - Skip prompts (for real-day-test etc.)
  * @returns {Promise<boolean>} Whether references are ready
  */
 async function setupReferenceImages({ persona, personaYamlDir, skillDest, rl, env = {}, nonInteractive = false }) {
-  const referencesDir = path.join(skillDest, 'assets', 'references');
+  // ALWAYS use skill directory for references (shared across all personas)
+  const actualSkillDir = path.join(SKILLS_DIR, 'alive');
+  const referencesDir = path.join(actualSkillDir, 'assets', 'references');
   const { existing, total, missing } = checkReferenceImages(referencesDir);
 
   if (existing === total) {
@@ -334,6 +336,7 @@ async function setupReferenceImages({ persona, personaYamlDir, skillDest, rl, en
  */
 function writeSoulSection(persona) {
   const skillSlug = 'alive';
+  const personaId = (persona.meta.id || (persona.meta.name_reading || persona.meta.name)).toLowerCase().replace(/\s+/g, '-');
   const marker = `<!-- ${skillSlug}-soul-start -->`;
   const markerEnd = `<!-- ${skillSlug}-soul-end -->`;
   const personaName = persona.meta.name;
@@ -367,15 +370,17 @@ function writeSoulSection(persona) {
 
   let soul = fs.readFileSync(SOUL_FILE, 'utf8');
 
-  // Remove old section if present
+  // Remove old section if present (safe regex escape)
   if (soul.includes(marker)) {
-    soul = soul.replace(new RegExp(`\n*${marker}[\\s\\S]*?${markerEnd}\n*`), '\n');
+    const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedMarkerEnd = markerEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    soul = soul.replace(new RegExp(`\n*${escapedMarker}[\\s\\S]*?${escapedMarkerEnd}\n*`), '\n');
   }
 
   // Append new section
   soul = soul.trimEnd() + '\n' + section;
   fs.writeFileSync(SOUL_FILE, soul);
-  ok(`SOUL.md updated with ${personaName} identity (from soul-injection.md)`);
+  ok(`SOUL.md updated with ${personaName} identity (${personaId}) from soul-injection.md`);
 }
 
 /**
@@ -386,7 +391,8 @@ function injectPersonaTemplate(template, p) {
   const behaviorsTable = generateBehaviorsTableCLI(p);
   const sampleLinesFormatted = (p.voice?.sample_lines || []).map(s => `- 「${s}」`).join('\n');
   const mixedLanguagesTable = generateMixedLanguagesTableCLI(p);
-  const personaId = (p.meta.id || (p.meta.name_reading || p.meta.name)).toLowerCase().replace(/\s+/g, '-');
+  // Consistent with personaSlug generation: id OR name_reading OR name
+  const personaId = (p.meta.id || (p.meta.name_reading || p.meta.name)).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
 
   // conversation style
   const convStyle = p.conversation_style || { mode: 'balanced', traits: [] };
@@ -772,6 +778,7 @@ async function install() {
       const opsCronJobs = [
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
+        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -878,14 +885,14 @@ async function uninstall() {
   log('Removing cron jobs...');
   if (isOpenClawCLIAvailable()) {
     // Remove new format cron jobs (alive:personaSlug:suffix)
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
     // Also clean legacy format cron jobs (alive:suffix)
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed legacy cron: ${skillSlug}:${suffix}`);
@@ -1107,14 +1114,14 @@ async function reinstall() {
   log('Step 5/9: Removing old cron jobs & cleaning SOUL.md...');
   if (isOpenClawCLIAvailable()) {
     // Remove new format cron jobs
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
     // Also clean legacy format cron jobs
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -1264,6 +1271,7 @@ async function reinstall() {
       const opsCronJobs = [
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
+        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -1386,7 +1394,7 @@ async function realDayTest() {
   }
   // Remove cron (both new and legacy format)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -1509,6 +1517,7 @@ async function realDayTest() {
       const opsCronJobs = [
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
+        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -1677,12 +1686,11 @@ async function switchPersona() {
       existingEnv = cfg.skills?.entries?.[skillSlug]?.env || {};
     } catch { /* ignore */ }
   }
-  // Use memory dir for reference images (per-persona)
-  const personaRefsDir = path.join(memoryDir, 'assets', 'references');
+  // Reference images go to shared skill directory (NOT per-persona memory dir)
   await setupReferenceImages({
     persona,
     personaYamlDir: path.dirname(resolvedPersonaPath),
-    skillDest: memoryDir, // references go to memory dir now
+    skillDest,  // Pass shared skill directory, not memory dir
     rl,
     env: existingEnv,
   });
@@ -1713,6 +1721,7 @@ async function switchPersona() {
       const opsCronJobs = [
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
+        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
       ];
       for (const job of opsCronJobs) {
         try {

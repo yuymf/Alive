@@ -14,6 +14,7 @@ import {
   ChainAndCooldownState, DEFAULT_CHAIN_STATE,
   IntentPool,
   isFeatureEnabled,
+  ContentStrategy,
 } from '../utils/types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from '../utils/file-utils';
 import { now, getLocalDate, formatLocalTime, setTimezone } from '../utils/time-utils';
@@ -279,6 +280,64 @@ export async function runNightReflect(
     logs: [...heartbeatLog.logs, nightLogEntry],
   };
   writeJSON(PATHS.heartbeatLog, updatedLog);
+
+  // ─── Content performance review (ops desk) ──────────────────────────────
+  if (persona.ops?.enabled) {
+    try {
+      const { getEntriesForPeriod, aggregateByIdentity, aggregateByTemplate } = await import('../ops/performance-tracker');
+
+      const entries7d = getEntriesForPeriod(7);
+      if (entries7d.length > 0) {
+        const byIdentity = aggregateByIdentity(entries7d);
+        const byTemplate = aggregateByTemplate(entries7d);
+
+        const identitySummary = Object.entries(byIdentity)
+          .map(([mode, stats]) => `${mode}: ${stats.count}条, 平均${stats.avg_likes}赞 ${stats.avg_comments}评`)
+          .join('\n');
+
+        const templateSummary = Object.entries(byTemplate)
+          .map(([tmpl, stats]) => `${tmpl}: ${stats.count}条, 平均${stats.avg_likes}赞`)
+          .join('\n');
+
+        const reviewPrompt = `你是运营分析师。基于过去7天的内容数据，分析表现趋势。
+
+【按身份模式汇总】
+${identitySummary}
+
+【按模板类型汇总】
+${templateSummary}
+
+请输出JSON:
+{
+  "best_performing": { "identity": "...", "template": "...", "reason": "..." },
+  "worst_performing": { "identity": "...", "template": "...", "reason": "..." },
+  "audience_feedback": "根据数据推测的受众反馈",
+  "strategy_adjustments": ["调整建议1", "调整建议2"],
+  "next_week_focus": {
+    "identity_weights": { "esports": 0.40, "singer": 0.25, "racer": 0.20, "daily": 0.15 },
+    "recommended_templates": ["模板1"],
+    "avoid_templates": ["模板2"],
+    "post_time_suggestion": "18:00-20:00"
+  }
+}`;
+
+        try {
+          const strategy = await llm.callJSON<ContentStrategy>(reviewPrompt, 1500);
+          const contentStrategy = {
+            ...strategy,
+            updated_at: now().toISOString(),
+            period: `${getLocalDate(new Date(now().getTime() - 7 * 24 * 3600 * 1000))} ~ ${getLocalDate(now())}`,
+          };
+          writeJSON(PATHS.contentStrategy, contentStrategy);
+          console.log(`[night-reflect] content strategy updated`);
+        } catch {
+          console.log(`[night-reflect] content strategy LLM call failed, skipping`);
+        }
+      }
+    } catch (err) {
+      console.log(`[night-reflect] content performance review failed:`, err);
+    }
+  }
 
   // Rebalance social graph tiers at end of day (generic, not platform-specific)
   const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { following: {}, stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
