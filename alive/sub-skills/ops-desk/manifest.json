@@ -1,0 +1,18 @@
+{
+  "name": "ops-desk",
+  "display_name": "运营工作台",
+  "version": "0.1.0",
+  "description": "人机协作内容运营工作台 — 热点监控、选题生成、审核队列、企业微信推送",
+  "intent_bindings": [
+    { "intent": "produce", "action": "generate-topics", "priority": 3 },
+    { "intent": "consume", "action": "refresh-trends", "priority": 3 }
+  ],
+  "vitality_cost": { "base": 10 },
+  "config_schema": {
+    "ops_enabled": {
+      "type": "boolean",
+      "required": false,
+      "description": "Must be true in persona.yaml ops.enabled for this skill to activate"
+    }
+  }
+}
