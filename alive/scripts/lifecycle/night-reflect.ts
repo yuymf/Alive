@@ -15,6 +15,7 @@ import {
   IntentPool,
   isFeatureEnabled,
   ContentStrategy,
+  CompetitorLog,
 } from '../utils/types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from '../utils/file-utils';
 import { now, getLocalDate, formatLocalTime, setTimezone } from '../utils/time-utils';
@@ -336,6 +337,58 @@ ${templateSummary}
       }
     } catch (err) {
       console.log(`[night-reflect] content performance review failed:`, err);
+    }
+
+    // ─── Competitor deep analysis (Phase 2 network sense) ─────────────────
+    try {
+      const { addPattern, buildAnalysisPrompt } = await import('../ops/content-analyzer');
+      const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
+
+      const oneDayAgo = new Date(now().getTime() - 24 * 3600 * 1000).toISOString();
+      const recentEntries = competitorLog.entries
+        .filter(e => e.fetched_at >= oneDayAgo && e.latest_post)
+        .sort((a, b) => (b.latest_post?.engagement ?? 0) - (a.latest_post?.engagement ?? 0))
+        .slice(0, 3);
+
+      if (recentEntries.length > 0 && persona.ops?.competitors) {
+        const personaSummary = `${persona.meta.name}: ${persona.personality.mbti}, ${persona.personality.core_traits.join('、')}`;
+
+        for (const entry of recentEntries) {
+          if (!entry.latest_post) continue;
+
+          const profile = persona.ops.competitors.find(
+            c => c.name === entry.account || c.url?.includes(entry.account),
+          );
+          if (!profile) continue;
+
+          const prompt = buildAnalysisPrompt(
+            { name: profile.name, platform: profile.platform, tag_desc: profile.tag_desc, content_mix: profile.content_mix as Record<string, number> | undefined },
+            { title: entry.latest_post.topic, content: entry.latest_post.summary, likes: entry.latest_post.engagement, comments: 0 },
+            personaSummary,
+          );
+
+          try {
+            const analysis = await llm.callJSON<{
+              title_formula: { type: string; pattern: string; example: string };
+              viral_factors: string[];
+            }>(prompt, 1500);
+
+            addPattern({
+              type: analysis.title_formula.type,
+              source: profile.name,
+              source_post: entry.latest_post.topic,
+              formula: analysis.title_formula.pattern,
+              examples: [analysis.title_formula.example],
+            });
+
+            console.log(`[night-reflect] analyzed competitor post: ${profile.name} - ${entry.latest_post.topic}`);
+          } catch {
+            console.log(`[night-reflect] competitor analysis LLM failed for ${profile.name}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.log(`[night-reflect] competitor deep analysis failed:`, err);
     }
   }
 

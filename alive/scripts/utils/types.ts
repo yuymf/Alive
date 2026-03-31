@@ -1046,6 +1046,12 @@ export interface CompetitorUpdate {
   latest_post: CompetitorLatestPost | null;
   days_since_last_post: number;
   fetched_at: string;
+  /** Number of posts in the last 7 days */
+  post_frequency?: number;
+  /** Average engagement (likes) over last 7 days */
+  avg_engagement_7d?: number;
+  /** High-frequency topic keywords from recent posts */
+  trending_topics?: string[];
 }
 
 export interface CompetitorLog {
