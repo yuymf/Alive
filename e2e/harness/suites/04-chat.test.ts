@@ -12,7 +12,7 @@ import {
   startTiming,
   endTiming,
 } from '../harness-context';
-import { chat } from '../openclaw-driver';
+import { chat, ensureGateway } from '../openclaw-driver';
 import { loadAndApplyApiKeys } from '../../shared/setup';
 import { callLLMJSON } from '../../../alive/scripts/utils/llm-client';
 
@@ -93,6 +93,11 @@ describe('04-Chat', () => {
     expect(fs.existsSync(config.skillDir), 'Alive skill must be installed').toBe(true);
     personaVoice = loadPersonaVoiceSection(config.persona);
     loadAndApplyApiKeys('alive');
+
+    // Chat requires the openclaw gateway + agent
+    const gatewayOk = ensureGateway();
+    expect(gatewayOk, 'OpenClaw gateway must be running for chat tests').toBe(true);
+
     startTiming('04-chat');
   });
 
@@ -126,6 +131,8 @@ describe('04-Chat', () => {
 
       console.log(`\n  💬 Sending: "${message}"`);
       const result = await chat(message);
+
+      console.log(`  📝 Response (${result.durationMs}ms, ${result.response.length} chars)`);
 
       track(`message ${i + 1}: got response`, () => {
         expect(result.response.length).toBeGreaterThan(0);
