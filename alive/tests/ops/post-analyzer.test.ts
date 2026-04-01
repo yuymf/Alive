@@ -284,3 +284,84 @@ describe('saveAnalysis', () => {
     expect(log.entries[0].item_id).toBe('q_test');
   });
 });
+
+// ─── Task 7: analyzePublishedPosts Orchestration ──────────────────────────────
+
+describe('analyzePublishedPosts', () => {
+  it('should analyze pending posts and save results', async () => {
+    // Set up performance log with one publishable entry
+    const perfLog: PerformanceLog = {
+      entries: [makePerformanceEntry({
+        item_id: 'q_analyze_me',
+        published_at: '2026-03-31T08:00:00Z',
+        peak_metrics: { likes: 5000, comments: 200, saves: 300 },
+      })],
+      last_updated: '',
+    };
+    writeJSON(PATHS.performanceLog, perfLog);
+
+    // Set up review queue with matching item
+    const queue: ReviewQueue = {
+      items: [{
+        id: 'q_analyze_me',
+        status: 'published' as const,
+        topic: 'test',
+        trend_hook: 'hook',
+        identity_mode: 'esports',
+        created_at: '2026-03-31T07:00:00Z',
+        updated_at: '2026-03-31T08:00:00Z',
+        content: {
+          xhs: { title: '电竞女孩', body: '正文内容', tags: [], cover_images: [] },
+          douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] },
+        },
+        edit_history: [],
+        published_at: '2026-03-31T08:00:00Z',
+      }],
+      last_updated: '',
+    };
+    writeJSON(PATHS.reviewQueue, queue);
+
+    const mockLLM = {
+      call: vi.fn().mockResolvedValue(''),
+      callJSON: vi.fn().mockResolvedValue({
+        performance_tier: 'above_avg',
+        engagement_score: 75,
+        pattern_analysis: {
+          hook_effectiveness: 8, emotional_resonance: 7, trending_alignment: 6,
+          visual_impact: 7, call_to_action: 5,
+          key_success_factors: ['good hook'], improvement_areas: ['cta'],
+        },
+        extracted_patterns: [{
+          pattern_type: '电竞情绪共鸣', description: 'desc',
+          applicable_templates: ['赛场高燃瞬间'], confidence: 0.8,
+        }],
+        persona_alignment: {
+          score: 9, identity_mode_match: true,
+          tone_consistency: 'on_brand', specific_notes: 'great',
+        },
+      }),
+    };
+
+    const { analyzePublishedPosts, loadAnalysisLog } = await import('../../scripts/ops/post-analyzer');
+    const count = await analyzePublishedPosts(mockLLM as any, 'V姐：ENTJ', 24, 7);
+
+    expect(count).toBe(1);
+    expect(mockLLM.callJSON).toHaveBeenCalledTimes(1);
+
+    const log = loadAnalysisLog();
+    expect(log.entries).toHaveLength(1);
+    expect(log.entries[0].item_id).toBe('q_analyze_me');
+    expect(log.entries[0].performance_tier).toBe('above_avg');
+  });
+
+  it('should skip when no pending posts', async () => {
+    writeJSON(PATHS.performanceLog, { entries: [], last_updated: '' });
+
+    const mockLLM = { call: vi.fn(), callJSON: vi.fn() };
+    const { analyzePublishedPosts } = await import('../../scripts/ops/post-analyzer');
+    const count = await analyzePublishedPosts(mockLLM as any, 'V姐', 24, 7);
+
+    expect(count).toBe(0);
+    expect(mockLLM.callJSON).not.toHaveBeenCalled();
+  });
+});

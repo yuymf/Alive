@@ -245,3 +245,80 @@ export function saveAnalysis(analysis: ContentAnalysis): void {
   };
   saveAnalysisLog(updated);
 }
+
+// ─── Content Text Extraction ──────────────────────────────────────────────────
+
+function getContentText(item: Awaited<ReturnType<typeof loadQueue>>['items'][number], platform: 'xhs' | 'douyin'): string {
+  if (platform === 'xhs') {
+    return `标题: ${item.content.xhs.title}\n正文: ${item.content.xhs.body}`;
+  }
+  return `脚本: ${item.content.douyin.script}`;
+}
+
+// ─── Main Orchestration ───────────────────────────────────────────────────────
+
+export async function analyzePublishedPosts(
+  llm: LLMClient,
+  personaSummary: string,
+  delayHours: number,
+  baselineWindowDays: number,
+): Promise<number> {
+  const perfLog = readJSON<PerformanceLog>(PATHS.performanceLog, { entries: [], last_updated: '' });
+  const analysisLog = loadAnalysisLog();
+  const queue = await loadQueue();
+
+  const pending = findPendingAnalysis(perfLog, analysisLog, delayHours);
+  if (pending.length === 0) return 0;
+
+  let analyzedCount = 0;
+
+  for (const entry of pending) {
+    const queueItem = queue.items.find(i => i.id === entry.item_id);
+    if (!queueItem) continue;
+
+    const contentText = getContentText(queueItem, entry.platform);
+    const baseline = computeBaseline(perfLog.entries, entry.platform, baselineWindowDays);
+
+    const prompt = buildPostAnalysisPrompt({
+      contentText,
+      platform: entry.platform,
+      metrics: entry.peak_metrics,
+      templateType: entry.template_type,
+      identityMode: entry.identity_mode,
+      baseline,
+      personaSummary,
+    });
+
+    try {
+      const response = await llm.callJSON<Record<string, unknown>>(prompt, 2000);
+      const analysis = parseAnalysisResponse(response, {
+        item_id: entry.item_id,
+        platform: entry.platform,
+        identity_mode: entry.identity_mode,
+        template_type: entry.template_type,
+      });
+
+      saveAnalysis(analysis);
+
+      // Bridge to existing pattern store for viral/above_avg content
+      if (analysis.extracted_patterns && analysis.extracted_patterns.length > 0) {
+        for (const pattern of analysis.extracted_patterns) {
+          addPattern({
+            type: pattern.pattern_type,
+            source: 'self',
+            source_post: queueItem.topic,
+            formula: pattern.description,
+            examples: pattern.applicable_templates,
+          });
+        }
+      }
+
+      analyzedCount++;
+    } catch (err) {
+      console.error(`[post-analyzer] Failed to analyze ${entry.item_id}:`, (err as Error).message);
+      // Skip this entry, retry on next cycle
+    }
+  }
+
+  return analyzedCount;
+}
