@@ -139,6 +139,34 @@ ${template.reference_links && template.reference_links.length > 0
 请严格按照以上场景、镜头、造型要求来构思内容。`;
 }
 
+// ─── Platform writing guidelines (inspired by content-writer skill) ──────────
+
+const XHS_GUIDELINES = `【小红书写作规范】
+- 标题：20字以内，必须含emoji开头或穿插，制造好奇心缺口（疑问/数字/反转）
+- 正文：300-800字，每2-3句换行，段落间用emoji分隔，口语化但有信息密度
+- 节奏：开头3行定生死→痛点共鸣→干货/故事→总结金句→互动引导（点赞收藏暗示）
+- 标签：5-10个，前3个为精准长尾词，后面为热门大词，自然穿插正文关键词做SEO
+- 封面：高对比、大字报风格或真实生活感，避免过度精修
+
+【质量红线】
+- 禁止"最好/第一/绝对"等绝对化表述
+- 禁止虚构数据或伪造引用
+- 禁止硬广口吻，要像朋友分享不像销售推荐`;
+
+const DOUYIN_GUIDELINES = `【抖音脚本写作规范】
+- 钩子：前3秒决定生死，15字以内，用反问/冲突/悬念/数字冲击制造停留
+- 脚本：200-500字，口语化、短句为主，每句≤15字，像跟朋友聊天不像念稿
+- 节奏：钩子→建立共鸣→核心内容（故事/干货/反转）→情绪高点→行动号召
+- 字幕：3-5个关键要点，每条≤10字，强化记忆点
+- BGM：匹配内容情绪，优先热门音频提升推荐权重
+
+【质量红线】
+- 禁止"最好/第一/绝对"等绝对化表述
+- 禁止虚构数据或伪造引用
+- 脚本必须适合口播，避免书面语和长从句`;
+
+// ─── Prompt builder ─────────────────────────────────────────────────────────
+
 export function buildContentPrompt(
   trend: FilteredTrend,
   personaDescription: string,
@@ -146,6 +174,8 @@ export function buildContentPrompt(
   platformStyle: string,
   extraContext?: string,
 ): string {
+  const guidelines = platform === 'xhs' ? XHS_GUIDELINES : DOUYIN_GUIDELINES;
+
   const base = `你是内容创作者 "${personaDescription}"。
 
 当前热点：${trend.keyword}（${trend.platform}，速度分 ${trend.velocity_score.toFixed(1)}x）
@@ -153,11 +183,13 @@ export function buildContentPrompt(
 目标平台：${platform}
 平台风格：${platformStyle}
 
-请生成一条完整的 ${platform === 'xhs' ? '小红书图文' : '抖音视频脚本'} 内容草稿。
+${guidelines}
+
+请严格按照以上写作规范，生成一条完整的 ${platform === 'xhs' ? '小红书图文' : '抖音视频脚本'} 内容草稿。
 
 ${platform === 'xhs' ? `输出格式 JSON：
-{"title":"...","body":"...（正文300-500字）","tags":["#标签1","#标签2"],"cover_description":"封面图画面描述（用于AI生图）"}` : `输出格式 JSON：
-{"opening_hook":"前3秒钩子（一句话）","script":"完整脚本（200-400字）","bgm_suggestion":"推荐BGM风格或歌名","key_captions":["字幕要点1","字幕要点2"],"cover_description":"封面图画面描述（用于AI生图）"}`}`;
+{"title":"...（20字以内，含emoji）","body":"...（正文300-800字，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"],"cover_description":"封面图画面描述（用于AI生图）"}` : `输出格式 JSON：
+{"opening_hook":"前3秒钩子（15字以内，反问/冲突/悬念）","script":"完整口播脚本（200-500字，短句口语化）","bgm_suggestion":"推荐BGM风格或歌名","key_captions":["字幕要点1（≤10字）","字幕要点2"],"cover_description":"封面图画面描述（用于AI生图）"}`}`;
   return extraContext ? `${base}\n${extraContext}` : base;
 }
 
@@ -172,13 +204,13 @@ export function buildRegeneratePrompt(
   contentPatterns?: string,
 ): string {
   const fieldConstraints: Record<string, string> = {
-    'xhs.title': '20字以内，可含emoji',
-    'xhs.body': '300-500字',
-    'xhs.tags': '5-10个标签，数组格式',
-    'douyin.opening_hook': '前3秒文案，15字以内',
-    'douyin.script': '200-400字',
-    'douyin.bgm_suggestion': '一句话描述BGM风格',
-    'douyin.key_captions': '3-5个关键字幕，数组格式',
+    'xhs.title': '20字以内，必须含emoji，制造好奇心缺口（疑问/数字/反转）',
+    'xhs.body': '300-800字，每2-3句换行，段落间用emoji分隔，口语化但有信息密度',
+    'xhs.tags': '5-10个标签，前3个精准长尾词，后面热门大词',
+    'douyin.opening_hook': '前3秒文案，15字以内，用反问/冲突/悬念/数字冲击',
+    'douyin.script': '200-500字，口语化短句，每句≤15字，像聊天不像念稿',
+    'douyin.bgm_suggestion': '匹配内容情绪的BGM，优先热门音频',
+    'douyin.key_captions': '3-5个关键字幕，每条≤10字，强化记忆点',
   };
   const constraint = fieldConstraints[field] ?? '无特殊约束';
   const jsonKey = field.split('.').pop() ?? field;
