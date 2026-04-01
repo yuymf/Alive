@@ -20,6 +20,8 @@ import { buildCompetitorContext } from './competitor-tracker';
 import { PATHS, readJSON } from '../utils/file-utils';
 import { CompetitorLog, CompetitorUpdate, ContentStrategy, ContentPatterns } from '../utils/types';
 
+import { matchesTaxonomy } from './ops-taxonomy';
+
 // ─── Pure functions (exported for testing) ───────────────────────────────────
 
 export function selectIdentityMode(
@@ -70,11 +72,11 @@ export function applyStrategyToTemplateSelection(
   if (!templates || templates.length === 0) return null;
 
   const filtered = templates.filter(
-    t => !strategy.next_week_focus.avoid_templates.includes(t.type),
+    t => !strategy.next_week_recommendations.avoid_templates.includes(t.type),
   );
 
   const recommended = filtered.filter(
-    t => strategy.next_week_focus.recommended_templates.includes(t.type),
+    t => strategy.next_week_recommendations.recommended_templates.includes(t.type),
   );
 
   if (recommended.length > 0) {
@@ -98,25 +100,15 @@ export function buildCompetitorBenchmarks(
 ): QueueItemCompetitorBenchmark[] {
   if (!profiles || profiles.length === 0) return [];
 
-  // Derive relevant groups from content templates that match this identity mode
-  const relevantGroups = templates
-    ? [...new Set(
-      templates
-        .filter(t => t.identity_mode === identityMode)
-        .map(t => t.category),
-    )]
-    : [];
+  // Use taxonomy to match competitors by identity mode
+  const mode = identityMode as import('../utils/types').IdentityMode;
 
   return profiles
     .filter(p => p.reference_type === 'primary')
     .filter(p => {
-      // If we have no template-derived groups, include all primary competitors
-      if (relevantGroups.length === 0) return true;
-      // Otherwise match group/tag against template categories
       const profileGroup = p.group ?? p.tag;
-      return relevantGroups.some(g =>
-        profileGroup.includes(g) || g.includes(profileGroup),
-      );
+      // Use taxonomy mapping for reliable matching
+      return matchesTaxonomy(mode, profileGroup);
     })
     .map(p => ({
       name: p.name,

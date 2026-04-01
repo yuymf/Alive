@@ -1133,6 +1133,16 @@ export interface OpsConfig {
     xhs?: { enabled: boolean; style: string };
     douyin?: { enabled: boolean; style: string };
   };
+  /** Hours after publish before analysis (default: 24) */
+  analysis_delay_hours?: number;
+  /** Day of week for strategy (1=Mon, default: 1) */
+  strategy_day?: number;
+  /** Time for strategy computation (default: "08:00") */
+  strategy_time?: string;
+  /** Maximum stored patterns (default: 30) */
+  max_patterns?: number;
+  /** Rolling baseline window in days (default: 7) */
+  baseline_window_days?: number;
 }
 
 export interface OpsBriefLogEntry {
@@ -1189,17 +1199,41 @@ export interface PerformanceLog {
 // ─── Content Strategy Types ─────────────────────────────────────────────────
 
 export interface ContentStrategy {
-  updated_at: string;
-  period: string;
-  best_performing: { identity: string; template: string; reason: string } | null;
-  worst_performing: { identity: string; template: string; reason: string } | null;
-  audience_feedback: string;
-  strategy_adjustments: string[];
-  next_week_focus: {
-    identity_weights: Record<IdentityMode, number>;
+  generated_at: string;
+  period: { start: string; end: string };
+  status: 'pending' | 'confirmed' | 'expired';
+  performance_summary: {
+    total_posts: number;
+    tier_distribution: Record<PerformanceTier, number>;
+    best_performing_template: string;
+    worst_performing_template: string;
+    best_identity_mode: string;
+    engagement_trend: 'rising' | 'stable' | 'declining';
+    week_over_week_change: number;
+  };
+  content_mix_recommendation: {
+    current_mix: Record<string, number>;
+    target_mix: Record<string, number>;
+    recommended_mix: Record<string, number>;
+    reasoning: string;
+  };
+  top_patterns: {
+    pattern_type: string;
+    success_rate: number;
+    usage_count: number;
+    recommended_frequency: string;
+  }[];
+  persona_health: {
+    overall_score: number;
+    drift_areas: string[];
+    correction_suggestions: string[];
+    strongest_identity: string;
+  };
+  next_week_recommendations: {
     recommended_templates: string[];
     avoid_templates: string[];
-    post_time_suggestion: string;
+    content_direction: string;
+    experiment_suggestion?: string;
   };
 }
 
@@ -1235,4 +1269,50 @@ export interface ContentPatterns {
   patterns: ContentPattern[];
   competitor_insights: CompetitorInsight[];
   cover_trends: CoverTrend[];
+}
+
+// ─── Post Analysis Types ─────────────────────────────────────────────────
+
+export interface PatternAnalysis {
+  hook_effectiveness: number;       // 0-10
+  emotional_resonance: number;      // 0-10
+  trending_alignment: number;       // 0-10
+  visual_impact: number;            // 0-10
+  call_to_action: number;           // 0-10
+  key_success_factors: string[];    // 3-5 items
+  improvement_areas: string[];      // 2-3 items
+}
+
+export interface ExtractedPattern {
+  pattern_type: string;
+  description: string;
+  applicable_templates: string[];
+  confidence: number;               // 0-1
+}
+
+export interface PersonaAlignment {
+  score: number;                    // 0-10
+  identity_mode_match: boolean;
+  tone_consistency: 'on_brand' | 'slight_drift' | 'off_brand';
+  specific_notes: string;
+}
+
+export type PerformanceTier = 'viral' | 'above_avg' | 'normal' | 'below_avg';
+
+export interface ContentAnalysis {
+  item_id: string;
+  analyzed_at: string;
+  performance_tier: PerformanceTier;
+  engagement_score: number;         // 0-100
+  platform: 'xhs' | 'douyin';
+  identity_mode: IdentityMode;
+  template_type: string;
+  pattern_analysis: PatternAnalysis;
+  extracted_patterns?: ExtractedPattern[];
+  persona_alignment: PersonaAlignment;
+}
+
+export interface AnalysisLog {
+  entries: ContentAnalysis[];
+  last_updated: string;
 }
