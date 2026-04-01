@@ -6,7 +6,7 @@
  */
 
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
-import { now } from '../utils/time-utils';
+import { now, wallNow } from '../utils/time-utils';
 import { LLMClient } from '../utils/llm-client';
 import {
   PerformanceMetrics, PerformanceEntry, PerformanceLog,
@@ -22,6 +22,15 @@ const ANALYSIS_LOG_RETENTION_DAYS = 30;
 const DEFAULT_ANALYSIS_LOG: AnalysisLog = { entries: [], last_updated: '' };
 const DEFAULT_BASELINE = 50;
 
+// ─── Platform Engagement Weights ──────────────────────────────────────────────
+const XHS_WEIGHTS = { likes: 1.0, comments: 3.0, saves: 5.0, shares: 4.0 } as const;
+const DOUYIN_WEIGHTS = { likes: 1.0, comments: 2.0, saves: 3.0, shares: 5.0, views: 0.01 } as const;
+
+// ─── Tier Classification Thresholds ───────────────────────────────────────────
+const TIER_VIRAL_MULTIPLIER = 2.0;
+const TIER_ABOVE_AVG_MULTIPLIER = 1.3;
+const TIER_BELOW_AVG_MULTIPLIER = 0.7;
+
 // ─── Engagement Scoring ───────────────────────────────────────────────────────
 
 export function computeEngagementScore(
@@ -35,19 +44,20 @@ export function computeEngagementScore(
   const views = metrics.views ?? 0;
 
   if (platform === 'douyin') {
-    return likes * 1.0 + comments * 2.0 + saves * 3.0 + shares * 5.0 + views * 0.01;
+    const w = DOUYIN_WEIGHTS;
+    return likes * w.likes + comments * w.comments + saves * w.saves + shares * w.shares + views * w.views;
   }
-  // XHS
-  return likes * 1.0 + comments * 3.0 + saves * 5.0 + shares * 4.0;
+  const w = XHS_WEIGHTS;
+  return likes * w.likes + comments * w.comments + saves * w.saves + shares * w.shares;
 }
 
 // ─── Tier Classification ──────────────────────────────────────────────────────
 
 export function classifyTier(score: number, baseline: number): PerformanceTier {
   const effectiveBaseline = baseline > 0 ? baseline : DEFAULT_BASELINE;
-  if (score > effectiveBaseline * 2.0) return 'viral';
-  if (score > effectiveBaseline * 1.3) return 'above_avg';
-  if (score >= effectiveBaseline * 0.7) return 'normal';
+  if (score > effectiveBaseline * TIER_VIRAL_MULTIPLIER) return 'viral';
+  if (score > effectiveBaseline * TIER_ABOVE_AVG_MULTIPLIER) return 'above_avg';
+  if (score >= effectiveBaseline * TIER_BELOW_AVG_MULTIPLIER) return 'normal';
   return 'below_avg';
 }
 
@@ -58,7 +68,7 @@ export function loadAnalysisLog(): AnalysisLog {
 }
 
 export function saveAnalysisLog(log: AnalysisLog): void {
-  writeJSON(PATHS.analysisLog, { ...log, last_updated: now().toISOString() });
+  writeJSON(PATHS.analysisLog, { ...log, last_updated: wallNow().toISOString() });
 }
 
 // ─── Baseline Computation ─────────────────────────────────────────────────────
@@ -241,7 +251,7 @@ export function saveAnalysis(analysis: ContentAnalysis): void {
   const updated: AnalysisLog = {
     ...cleaned,
     entries: [...cleaned.entries, analysis],
-    last_updated: now().toISOString(),
+    last_updated: wallNow().toISOString(),
   };
   saveAnalysisLog(updated);
 }
@@ -260,6 +270,41 @@ function getContentText(item: Awaited<ReturnType<typeof loadQueue>>['items'][num
 }
 
 // ─── Main Orchestration ───────────────────────────────────────────────────────
+
+async function analyzeSinglePost(
+  entry: PerformanceEntry,
+  queueItem: Awaited<ReturnType<typeof loadQueue>>['items'][number],
+  perfEntries: PerformanceEntry[],
+  llm: LLMClient,
+  personaSummary: string,
+  baselineWindowDays: number,
+): Promise<ContentAnalysis | null> {
+  const contentText = getContentText(queueItem, entry.platform);
+  const baseline = computeBaseline(perfEntries, entry.platform, baselineWindowDays);
+
+  const prompt = buildPostAnalysisPrompt({
+    contentText,
+    platform: entry.platform,
+    metrics: entry.peak_metrics,
+    templateType: entry.template_type,
+    identityMode: entry.identity_mode,
+    baseline,
+    personaSummary,
+  });
+
+  try {
+    const response = await llm.callJSON<Record<string, unknown>>(prompt, 2000);
+    return parseAnalysisResponse(response, {
+      item_id: entry.item_id,
+      platform: entry.platform,
+      identity_mode: entry.identity_mode,
+      template_type: entry.template_type,
+    });
+  } catch (err) {
+    console.error(`[post-analyzer] Failed to analyze ${entry.item_id}:`, (err as Error).message);
+    return null;
+  }
+}
 
 export async function analyzePublishedPosts(
   llm: LLMClient,
@@ -280,48 +325,24 @@ export async function analyzePublishedPosts(
     const queueItem = queue.items.find(i => i.id === entry.item_id);
     if (!queueItem) continue;
 
-    const contentText = getContentText(queueItem, entry.platform);
-    const baseline = computeBaseline(perfLog.entries, entry.platform, baselineWindowDays);
+    const analysis = await analyzeSinglePost(entry, queueItem, perfLog.entries, llm, personaSummary, baselineWindowDays);
+    if (!analysis) continue;
 
-    const prompt = buildPostAnalysisPrompt({
-      contentText,
-      platform: entry.platform,
-      metrics: entry.peak_metrics,
-      templateType: entry.template_type,
-      identityMode: entry.identity_mode,
-      baseline,
-      personaSummary,
-    });
+    saveAnalysis(analysis);
 
-    try {
-      const response = await llm.callJSON<Record<string, unknown>>(prompt, 2000);
-      const analysis = parseAnalysisResponse(response, {
-        item_id: entry.item_id,
-        platform: entry.platform,
-        identity_mode: entry.identity_mode,
-        template_type: entry.template_type,
-      });
-
-      saveAnalysis(analysis);
-
-      // Bridge to existing pattern store for viral/above_avg content
-      if (analysis.extracted_patterns && analysis.extracted_patterns.length > 0) {
-        for (const pattern of analysis.extracted_patterns) {
-          addPattern({
-            type: pattern.pattern_type,
-            source: 'self',
-            source_post: queueItem.topic,
-            formula: pattern.description,
-            examples: pattern.applicable_templates,
-          });
-        }
+    if (analysis.extracted_patterns && analysis.extracted_patterns.length > 0) {
+      for (const pattern of analysis.extracted_patterns) {
+        addPattern({
+          type: pattern.pattern_type,
+          source: 'self',
+          source_post: queueItem.topic,
+          formula: pattern.description,
+          examples: pattern.applicable_templates,
+        });
       }
-
-      analyzedCount++;
-    } catch (err) {
-      console.error(`[post-analyzer] Failed to analyze ${entry.item_id}:`, (err as Error).message);
-      // Skip this entry, retry on next cycle
     }
+
+    analyzedCount++;
   }
 
   return analyzedCount;

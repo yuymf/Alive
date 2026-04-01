@@ -22,6 +22,11 @@ const DEFAULT_CONTENT_PATTERNS: ContentPatterns = {
 };
 const DEFAULT_COMPETITOR_LOG: CompetitorLog = { entries: [], last_updated: '' };
 
+const TOP_PATTERNS_LIMIT = 5;
+const COMPETITOR_LOG_WINDOW = 20;
+const STRATEGY_EXPIRY_DAYS = 7;
+const STRATEGY_EXPIRY_MS = STRATEGY_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+
 // ─── Aggregation Functions ────────────────────────────────────────────────────
 
 export function computeTierDistribution(
@@ -240,7 +245,7 @@ export function loadStrategy(): ContentStrategy | null {
   // Auto-expire pending strategies older than 7 days
   if (data.status === 'pending') {
     const age = now().getTime() - new Date(data.generated_at).getTime();
-    if (age > 7 * 24 * 60 * 60 * 1000) {
+    if (age > STRATEGY_EXPIRY_MS) {
       saveStrategy({ ...data, status: 'expired' });
       return { ...data, status: 'expired' };
     }
@@ -286,30 +291,18 @@ function computeWeekOverWeek(entries: ContentAnalysis[]): number {
 
 // ─── Main Orchestration ───────────────────────────────────────────────────────
 
-export async function computeStrategy(
-  llm: LLMClient,
-  personaSummary: string,
+function buildStrategyInput(
+  recentAnalysis: ContentAnalysis[],
+  allAnalysis: ContentAnalysis[],
+  patterns: ContentPatterns,
+  competitorLog: CompetitorLog,
   targetMix: Record<string, number>,
-): Promise<boolean> {
-  const analysisLog = readJSON<AnalysisLog>(PATHS.analysisLog, DEFAULT_ANALYSIS_LOG);
-  const patterns = readJSON<ContentPatterns>(PATHS.contentPatterns, DEFAULT_CONTENT_PATTERNS);
-  const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, DEFAULT_COMPETITOR_LOG);
-
-  // Filter to last 7 days of analysis
-  const oneWeekAgo = new Date(now().getTime() - 7 * 24 * 60 * 60 * 1000);
-  const recentAnalysis = analysisLog.entries.filter(
-    e => new Date(e.analyzed_at) >= oneWeekAgo,
-  );
-
-  if (recentAnalysis.length === 0) {
-    console.log('[strategy-engine] No analysis data from last 7 days, skipping');
-    return false;
-  }
-
+  personaSummary: string,
+): StrategyPromptInput {
   const tierDistribution = computeTierDistribution(recentAnalysis);
   const currentMix = computeContentMix(recentAnalysis);
   const { best, worst } = findBestWorstTemplate(recentAnalysis);
-  const weekOverWeek = computeWeekOverWeek(analysisLog.entries);
+  const weekOverWeek = computeWeekOverWeek(allAnalysis);
 
   const alignmentScores = recentAnalysis.map(e => e.persona_alignment.score);
   const alignmentAvg = alignmentScores.reduce((a, b) => a + b, 0) / alignmentScores.length;
@@ -318,13 +311,13 @@ export async function computeStrategy(
     .map(e => e.persona_alignment.specific_notes)
     .filter(Boolean);
 
-  const topPatterns = patterns.patterns
+  const topPatterns = [...patterns.patterns]
     .sort((a, b) => (b.success_rate ?? 0) - (a.success_rate ?? 0))
-    .slice(0, 5);
+    .slice(0, TOP_PATTERNS_LIMIT);
 
-  const competitorSummary = buildCompetitorSummary(competitorLog.entries.slice(-20));
+  const competitorSummary = buildCompetitorSummary(competitorLog.entries.slice(-COMPETITOR_LOG_WINDOW));
 
-  const prompt = buildStrategyPrompt({
+  return {
     tierDistribution,
     currentMix,
     targetMix,
@@ -336,19 +329,51 @@ export async function computeStrategy(
     competitorSummary,
     personaSummary,
     weekOverWeek,
-  });
+  };
+}
+
+export async function computeStrategy(
+  llm: LLMClient,
+  personaSummary: string,
+  targetMix: Record<string, number>,
+): Promise<boolean> {
+  const analysisLog = readJSON<AnalysisLog>(PATHS.analysisLog, DEFAULT_ANALYSIS_LOG);
+  const patterns = readJSON<ContentPatterns>(PATHS.contentPatterns, DEFAULT_CONTENT_PATTERNS);
+  const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, DEFAULT_COMPETITOR_LOG);
+
+  // Filter to last 7 days of analysis
+  const oneWeekAgo = new Date(now().getTime() - STRATEGY_EXPIRY_MS);
+  const recentAnalysis = analysisLog.entries.filter(
+    e => new Date(e.analyzed_at) >= oneWeekAgo,
+  );
+
+  if (recentAnalysis.length === 0) {
+    console.log('[strategy-engine] No analysis data from last 7 days, skipping');
+    return false;
+  }
+
+  const input = buildStrategyInput(
+    recentAnalysis,
+    analysisLog.entries,
+    patterns,
+    competitorLog,
+    targetMix,
+    personaSummary,
+  );
+
+  const prompt = buildStrategyPrompt(input);
 
   try {
     const response = await llm.callJSON<Record<string, unknown>>(prompt, 2000);
     const strategy = parseStrategyResponse(response, {
       totalPosts: recentAnalysis.length,
-      tierDistribution,
-      currentMix,
+      tierDistribution: input.tierDistribution,
+      currentMix: input.currentMix,
       targetMix,
-      bestTemplate: best,
-      worstTemplate: worst,
-      topPatterns,
-      weekOverWeek,
+      bestTemplate: input.bestTemplate,
+      worstTemplate: input.worstTemplate,
+      topPatterns: input.topPatterns,
+      weekOverWeek: input.weekOverWeek,
     });
 
     saveStrategy(strategy);

@@ -12,6 +12,9 @@ import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
 import { analyzePublishedPosts } from '../ops/post-analyzer';
 
+const DEFAULT_DELAY_HOURS = 24;
+const DEFAULT_BASELINE_WINDOW_DAYS = 7;
+
 async function main(): Promise<void> {
   const persona = await loadPersona();
   const ops = persona.ops;
@@ -23,8 +26,8 @@ async function main(): Promise<void> {
 
   const llm = createRealLLMClient('ops-analyze');
   const personaSummary = `${persona.meta.name}：${persona.personality.mbti}，${persona.meta.tagline}`;
-  const delayHours = ops.analysis_delay_hours ?? 24;
-  const baselineWindow = ops.baseline_window_days ?? 7;
+  const delayHours = ops.analysis_delay_hours ?? DEFAULT_DELAY_HOURS;
+  const baselineWindow = ops.baseline_window_days ?? DEFAULT_BASELINE_WINDOW_DAYS;
 
   console.log(`[${wallNow().toISOString()}] ops-analyze: starting for ${persona.meta.id}`);
 
