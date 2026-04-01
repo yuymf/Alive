@@ -7,12 +7,17 @@
 
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
+import { LLMClient } from '../utils/llm-client';
 import {
   PerformanceMetrics, PerformanceEntry, PerformanceLog,
   AnalysisLog, PerformanceTier, ContentAnalysis,
 } from '../utils/types';
+import { loadQueue } from './review-queue';
+import { addPattern } from './content-analyzer';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+const ANALYSIS_LOG_RETENTION_DAYS = 90;
 
 const DEFAULT_ANALYSIS_LOG: AnalysisLog = { entries: [], last_updated: '' };
 const DEFAULT_BASELINE = 50;
@@ -220,4 +225,23 @@ export function parseAnalysisResponse(
       specific_notes: (alignment?.specific_notes as string) ?? '',
     },
   };
+}
+
+// ─── Analysis Log Management ──────────────────────────────────────────────────
+
+export function cleanupAnalysisLog(log: AnalysisLog, retentionDays: number): AnalysisLog {
+  const cutoff = new Date(now().getTime() - retentionDays * 24 * 60 * 60 * 1000);
+  const filtered = log.entries.filter(e => new Date(e.analyzed_at) >= cutoff);
+  return { ...log, entries: filtered };
+}
+
+export function saveAnalysis(analysis: ContentAnalysis): void {
+  const current = loadAnalysisLog();
+  const cleaned = cleanupAnalysisLog(current, ANALYSIS_LOG_RETENTION_DAYS);
+  const updated: AnalysisLog = {
+    ...cleaned,
+    entries: [...cleaned.entries, analysis],
+    last_updated: now().toISOString(),
+  };
+  saveAnalysisLog(updated);
 }

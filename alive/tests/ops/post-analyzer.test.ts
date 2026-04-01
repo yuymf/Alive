@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { setBasePaths, resetBasePaths } from '../../scripts/utils/file-utils';
+import { vi } from 'vitest';
+import { setBasePaths, resetBasePaths, writeJSON, PATHS } from '../../scripts/utils/file-utils';
 import { setTimeOverride } from '../../scripts/utils/time-utils';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { PerformanceLog, PerformanceEntry, ReviewQueue } from '../../scripts/utils/types';
+import { PerformanceLog, PerformanceEntry, ReviewQueue, AnalysisLog, ContentAnalysis } from '../../scripts/utils/types';
 
 const tmpDir = path.join(os.tmpdir(), 'alive-post-analyzer-test-' + Date.now());
 
@@ -233,5 +234,53 @@ describe('parseAnalysisResponse', () => {
 
     expect(result.extracted_patterns).toBeUndefined();
     expect(result.performance_tier).toBe('normal');
+  });
+});
+
+// ─── Task 6: Analysis Log Management ─────────────────────────────────────────
+
+describe('cleanupAnalysisLog', () => {
+  it('should remove entries older than retention period', async () => {
+    const { cleanupAnalysisLog } = await import('../../scripts/ops/post-analyzer');
+    const log: AnalysisLog = {
+      entries: [
+        { item_id: 'old', analyzed_at: '2026-02-01T00:00:00Z' } as ContentAnalysis,
+        { item_id: 'recent', analyzed_at: '2026-03-30T00:00:00Z' } as ContentAnalysis,
+      ],
+      last_updated: '',
+    };
+    // At 2026-04-02T12:00:00Z, 'old' is >30 days, 'recent' is 3 days
+    const cleaned = cleanupAnalysisLog(log, 30);
+    expect(cleaned.entries).toHaveLength(1);
+    expect(cleaned.entries[0].item_id).toBe('recent');
+  });
+});
+
+describe('saveAnalysis', () => {
+  it('should append analysis to log and persist', async () => {
+    const { saveAnalysis, loadAnalysisLog } = await import('../../scripts/ops/post-analyzer');
+    const analysis: ContentAnalysis = {
+      item_id: 'q_test',
+      analyzed_at: '2026-04-02T12:00:00Z',
+      performance_tier: 'above_avg',
+      engagement_score: 70,
+      platform: 'xhs',
+      identity_mode: 'esports',
+      template_type: '赛场高燃瞬间',
+      pattern_analysis: {
+        hook_effectiveness: 8, emotional_resonance: 7, trending_alignment: 6,
+        visual_impact: 7, call_to_action: 5,
+        key_success_factors: ['strong hook'], improvement_areas: ['cta'],
+      },
+      persona_alignment: {
+        score: 8, identity_mode_match: true,
+        tone_consistency: 'on_brand', specific_notes: 'good',
+      },
+    };
+    saveAnalysis(analysis);
+
+    const log = loadAnalysisLog();
+    expect(log.entries).toHaveLength(1);
+    expect(log.entries[0].item_id).toBe('q_test');
   });
 });
