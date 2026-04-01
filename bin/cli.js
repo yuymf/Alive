@@ -22,6 +22,14 @@ const TEMPLATES_DIR = path.join(ALIVE_SRC, 'templates');
 
 const REFERENCE_FILES = ['front.png', 'half-body.png', 'full-body.png', 'left-profile.png'];
 
+// External ClawHub skills required by ops scripts
+const REQUIRED_CLAWHUB_SKILLS = [
+  'daily-hot-news',      // trend-analyzer: 微博/知乎/B站热榜
+  'douyin-hot-trend',    // trend-analyzer: 抖音热搜
+  'yt-dlp-downloader',   // competitor-tracker, performance-tracker: 抖音视频信息
+  'tiktok-growth',       // topic-generator: 短视频 hook 创意
+];
+
 function log(msg) { console.log(`\n  ${msg}`); }
 function ok(msg) { console.log(`  ✓ ${msg}`); }
 function warn(msg) { console.log(`  ! ${msg}`); }
@@ -94,6 +102,91 @@ function isOpenClawCLIAvailable() {
 }
 
 /**
+ * Check which external ClawHub skills are installed and install missing ones.
+ * Only runs when ops is enabled for the persona.
+ */
+function installRequiredClawHubSkills() {
+  if (!isOpenClawCLIAvailable()) {
+    warn('OpenClaw CLI not available — skipping ClawHub skill dependency check');
+    return;
+  }
+
+  // Get list of installed skills
+  let installedSkills = [];
+  try {
+    // openclaw skills list --json outputs JSON to stderr, not stdout
+    const result = require('child_process').spawnSync('openclaw', ['skills', 'list', '--json'], {
+      encoding: 'utf8', timeout: 15000, maxBuffer: 10 * 1024 * 1024,
+    });
+    // Try stdout first, fall back to stderr (openclaw may output JSON to either)
+    const listOutput = (result.stdout && result.stdout.trim()) || (result.stderr && result.stderr.trim()) || '';
+    const parsed = JSON.parse(listOutput);
+    // Handle both array format and { skills: [...] } format
+    const skillList = Array.isArray(parsed) ? parsed : (parsed.skills || []);
+    installedSkills = skillList.map(s => (typeof s === 'string' ? s : s.name || s.slug || '')).filter(Boolean);
+  } catch {
+    // If listing fails, try installing all — install is idempotent
+    warn('Could not list installed skills — will attempt to install all dependencies');
+  }
+
+  const missing = REQUIRED_CLAWHUB_SKILLS.filter(s => !installedSkills.includes(s));
+
+  if (missing.length === 0) {
+    ok(`All ${REQUIRED_CLAWHUB_SKILLS.length} ClawHub skill dependencies are installed`);
+    return;
+  }
+
+  log(`Installing ${missing.length} missing ClawHub skill dependencies...`);
+  let installed = 0;
+  let failed = 0;
+  const MAX_RETRIES = 3;
+
+  for (let i = 0; i < missing.length; i++) {
+    const skill = missing[i];
+    let success = false;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        execSync(`openclaw skills install ${skill}`, {
+          encoding: 'utf8',
+          timeout: 60000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        ok(`Installed ClawHub skill: ${skill}`);
+        installed++;
+        success = true;
+        break;
+      } catch (err) {
+        const msg = err.message || '';
+        const is429 = msg.includes('429') || msg.includes('Rate limit') || msg.includes('rate limit');
+        if (is429 && attempt < MAX_RETRIES) {
+          const delay = attempt * 5; // 5s, 10s backoff
+          warn(`Rate limited installing ${skill} — retrying in ${delay}s (attempt ${attempt}/${MAX_RETRIES})...`);
+          execSync(`sleep ${delay}`);
+        } else {
+          warn(`Failed to install ClawHub skill: ${skill} — ${msg || 'unknown error'}`);
+          failed++;
+          break;
+        }
+      }
+    }
+
+    // Delay between skills to avoid rate limiting
+    if (success && i < missing.length - 1) {
+      execSync('sleep 3');
+    }
+  }
+
+  if (failed > 0) {
+    warn(`${failed} skill(s) failed to install. Some ops features may be limited.`);
+    console.log('  You can install them manually: openclaw skills install <name>');
+  }
+  if (installed > 0) {
+    ok(`${installed} ClawHub skill(s) newly installed`);
+  }
+}
+
+/**
  * Migrate from legacy skill slug (e.g. "minase") to "alive".
  * Renames skill directory and moves config entry in openclaw.json.
  * Called once before any command runs.
@@ -141,7 +234,7 @@ function migrateFromLegacySlug() {
 
   // 3. Migrate cron jobs (rename prefixes)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
       try {
         execSync(`openclaw cron remove --name "${legacySlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -688,14 +781,7 @@ async function install() {
     : '  AIHUBMIX_API_KEY (press Enter to skip): ');
 
   config.skills = config.skills || {};
-  config.skills.allow = config.skills.allow || [];
   config.skills.entries = config.skills.entries || {};
-  config.skills.installs = config.skills.installs || {};
-
-  // Ensure skill is in allow list
-  if (!config.skills.allow.includes(skillSlug)) {
-    config.skills.allow.push(skillSlug);
-  }
 
   config.skills.entries[skillSlug] = {
     enabled: true,
@@ -709,16 +795,12 @@ async function install() {
     },
   };
 
-  config.skills.installs[skillSlug] = {
-    source: 'path',
-    sourcePath: ALIVE_SRC,
-    installPath: skillDest,
-    version: '0.2.0',
-    installedAt: new Date().toISOString(),
-  };
+  // Clean up legacy keys that are no longer recognized by OpenClaw
+  delete config.skills.allow;
+  delete config.skills.installs;
 
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-  ok('openclaw.json updated (allow + entries + installs)');
+  ok('openclaw.json updated (entries)');
 
   // Step 5: Setup reference images
   log('Step 5/7: Setting up reference images for AI image generation...');
@@ -770,8 +852,14 @@ async function install() {
   }
   ok(`Memory initialized at ${memoryDir}`);
 
-  // Step 7: Register cron (if OpenClaw CLI available)
-  log('Step 7/7: Registering heartbeat cron jobs...');
+  // Step 7: Install external ClawHub skill dependencies (if ops enabled)
+  if (persona.ops && persona.ops.enabled) {
+    log('Step 7/8: Installing ClawHub skill dependencies for ops...');
+    installRequiredClawHubSkills();
+  }
+
+  // Step 8: Register cron (if OpenClaw CLI available)
+  log(`Step ${persona.ops && persona.ops.enabled ? '8/8' : '7/7'}: Registering heartbeat cron jobs...`);
   if (isOpenClawCLIAvailable()) {
     const cronJobs = [
       { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
@@ -792,10 +880,16 @@ async function install() {
       const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
       const briefHour = parseInt(briefTimeParts[0], 10);
       const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
+      const strategyDay = persona.ops.strategy_day ?? 1;
+      const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
+      const stratHour = parseInt(stratTimeParts[0], 10);
+      const stratMin = parseInt(stratTimeParts[1] || '0', 10);
       const opsCronJobs = [
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '0 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -816,8 +910,15 @@ async function install() {
     const pluginDir = path.join(skillDest, 'plugin');
     if (fs.existsSync(pluginDir)) {
       try {
-        // Uninstall first to avoid "plugin already exists" error on reinstall
-        try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore' }); } catch { /* not installed yet, ok */ }
+        // Remove existing plugin to avoid "plugin already exists" error
+        const existingPluginDir = path.join(OPENCLAW_DIR, 'extensions', 'alive-admin');
+        if (fs.existsSync(existingPluginDir)) {
+          try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore', timeout: 10000 }); } catch { /* ignore */ }
+          // If uninstall didn't remove it, force-remove the directory
+          if (fs.existsSync(existingPluginDir)) {
+            fs.rmSync(existingPluginDir, { recursive: true, force: true });
+          }
+        }
         execFileSync('openclaw', ['plugins', 'install', '--link', pluginDir], {
           timeout: 15000, encoding: 'utf8', stdio: 'pipe',
         });
@@ -892,14 +993,10 @@ async function uninstall() {
       if (config.skills?.entries?.[skillSlug]) {
         delete config.skills.entries[skillSlug];
       }
-      if (config.skills?.installs?.[skillSlug]) {
-        delete config.skills.installs[skillSlug];
-      }
-      if (config.skills?.allow) {
-        config.skills.allow = config.skills.allow.filter(s => s !== skillSlug);
-      }
+      // Clean up legacy keys that are no longer recognized by OpenClaw
+      if (config.skills) { delete config.skills.allow; delete config.skills.installs; }
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-      ok(`Removed ${skillSlug} from openclaw.json (allow + entries + installs)`);
+      ok(`Removed ${skillSlug} from openclaw.json (entries)`);
     } catch {
       warn('Could not parse openclaw.json — skipped');
     }
@@ -908,14 +1005,14 @@ async function uninstall() {
   log('Removing cron jobs...');
   if (isOpenClawCLIAvailable()) {
     // Remove new format cron jobs (alive:personaSlug:suffix)
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
     // Also clean legacy format cron jobs (alive:suffix)
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed legacy cron: ${skillSlug}:${suffix}`);
@@ -1137,14 +1234,14 @@ async function reinstall() {
   log('Step 5/9: Removing old cron jobs & cleaning SOUL.md...');
   if (isOpenClawCLIAvailable()) {
     // Remove new format cron jobs
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
     // Also clean legacy format cron jobs
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -1209,12 +1306,7 @@ async function reinstall() {
     try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* fresh */ }
   }
   config.skills = config.skills || {};
-  config.skills.allow = config.skills.allow || [];
   config.skills.entries = config.skills.entries || {};
-  config.skills.installs = config.skills.installs || {};
-  if (!config.skills.allow.includes(skillSlug)) {
-    config.skills.allow.push(skillSlug);
-  }
   config.skills.entries[skillSlug] = {
     enabled: true,
     env: {
@@ -1226,15 +1318,11 @@ async function reinstall() {
       ALIVE_PERSONA: personaSlug,
     },
   };
-  config.skills.installs[skillSlug] = {
-    source: 'path',
-    sourcePath: ALIVE_SRC,
-    installPath: skillDest,
-    version: '0.2.0',
-    installedAt: new Date().toISOString(),
-  };
+  // Clean up legacy keys that are no longer recognized by OpenClaw
+  delete config.skills.allow;
+  delete config.skills.installs;
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-  ok('openclaw.json updated (allow + entries + installs)');
+  ok('openclaw.json updated (entries)');
 
   // Step 8: Setup reference images
   log('Step 8/9: Setting up reference images...');
@@ -1303,10 +1391,16 @@ async function reinstall() {
       const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
       const briefHour = parseInt(briefTimeParts[0], 10);
       const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
+      const strategyDay = persona.ops.strategy_day ?? 1;
+      const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
+      const stratHour = parseInt(stratTimeParts[0], 10);
+      const stratMin = parseInt(stratTimeParts[1] || '0', 10);
       const opsCronJobs = [
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '0 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -1326,7 +1420,14 @@ async function reinstall() {
     const pluginDir = path.join(skillDest, 'plugin');
     if (fs.existsSync(pluginDir)) {
       try {
-        try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore' }); } catch { /* not installed yet, ok */ }
+        // Remove existing plugin to avoid "plugin already exists" error
+        const existingPluginDir = path.join(OPENCLAW_DIR, 'extensions', 'alive-admin');
+        if (fs.existsSync(existingPluginDir)) {
+          try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore', timeout: 10000 }); } catch { /* ignore */ }
+          if (fs.existsSync(existingPluginDir)) {
+            fs.rmSync(existingPluginDir, { recursive: true, force: true });
+          }
+        }
         execFileSync('openclaw', ['plugins', 'install', '--link', pluginDir], {
           timeout: 15000, encoding: 'utf8', stdio: 'pipe',
         });
@@ -1429,7 +1530,7 @@ async function realDayTest() {
   }
   // Remove cron (both new and legacy format)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -1477,25 +1578,16 @@ async function realDayTest() {
     try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* fresh */ }
   }
   config.skills = config.skills || {};
-  config.skills.allow = config.skills.allow || [];
   config.skills.entries = config.skills.entries || {};
-  config.skills.installs = config.skills.installs || {};
-  if (!config.skills.allow.includes(skillSlug)) {
-    config.skills.allow.push(skillSlug);
-  }
   config.skills.entries[skillSlug] = {
     enabled: true,
     env: { ...existingEnv, ALIVE_PERSONA: personaSlug },
   };
-  config.skills.installs[skillSlug] = {
-    source: 'path',
-    sourcePath: ALIVE_SRC,
-    installPath: skillDest,
-    version: '0.2.0',
-    installedAt: new Date().toISOString(),
-  };
+  // Clean up legacy keys that are no longer recognized by OpenClaw
+  delete config.skills.allow;
+  delete config.skills.installs;
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-  ok('openclaw.json updated (allow + entries + installs)');
+  ok('openclaw.json updated (entries)');
 
   // Setup reference images (non-interactive — auto-detect from persona config)
   log('Setting up reference images (non-interactive)...');
@@ -1561,10 +1653,16 @@ async function realDayTest() {
       const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
       const briefHour = parseInt(briefTimeParts[0], 10);
       const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
+      const strategyDay = persona.ops.strategy_day ?? 1;
+      const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
+      const stratHour = parseInt(stratTimeParts[0], 10);
+      const stratMin = parseInt(stratTimeParts[1] || '0', 10);
       const opsCronJobs = [
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '0 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -1765,10 +1863,16 @@ async function switchPersona() {
       const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
       const briefHour = parseInt(briefTimeParts[0], 10);
       const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
+      const strategyDay = persona.ops.strategy_day ?? 1;
+      const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
+      const stratHour = parseInt(stratTimeParts[0], 10);
+      const stratMin = parseInt(stratTimeParts[1] || '0', 10);
       const opsCronJobs = [
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '0 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -1788,7 +1892,14 @@ async function switchPersona() {
     const pluginDir = path.join(skillDest, 'plugin');
     if (fs.existsSync(pluginDir)) {
       try {
-        try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore' }); } catch { /* not installed yet, ok */ }
+        // Remove existing plugin to avoid "plugin already exists" error
+        const existingPluginDir = path.join(OPENCLAW_DIR, 'extensions', 'alive-admin');
+        if (fs.existsSync(existingPluginDir)) {
+          try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore', timeout: 10000 }); } catch { /* ignore */ }
+          if (fs.existsSync(existingPluginDir)) {
+            fs.rmSync(existingPluginDir, { recursive: true, force: true });
+          }
+        }
         execFileSync('openclaw', ['plugins', 'install', '--link', pluginDir], {
           timeout: 15000, encoding: 'utf8', stdio: 'pipe',
         });
