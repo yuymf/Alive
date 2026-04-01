@@ -7,7 +7,7 @@
 import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
-import { QueueItem, CompetitorUpdate, OpsBriefLog } from '../utils/types';
+import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy } from '../utils/types';
 import { FilteredTrend } from './trend-analyzer';
 
 // ─── Pure formatting (exported for testing) ──────────────────────────────────
@@ -120,6 +120,23 @@ export function pushEditResult(item: QueueItem, field: string, oldValue: string,
   return sendToWechatWork(lines.join('\n'));
 }
 
+// ─── Strategy section formatting ─────────────────────────────────────────────
+
+export function formatStrategySection(strategy: ContentStrategy | null): string {
+  if (!strategy) return '';
+  const { performance_summary: ps, next_week_recommendations: rec, status } = strategy;
+  const statusLabel = status === 'confirmed' ? '✅ 已确认' : status === 'expired' ? '⌛ 已过期' : '⏳ 待确认';
+  const trendIcon = ps.engagement_trend === 'rising' ? '📈' : ps.engagement_trend === 'declining' ? '📉' : '➡️';
+  const lines = [
+    `━━ 本周策略 ${statusLabel} ━━`,
+    `互动趋势: ${trendIcon} ${ps.engagement_trend}  周变化: ${ps.week_over_week_change >= 0 ? '+' : ''}${ps.week_over_week_change}%`,
+    `下周方向: ${rec.content_direction}`,
+    `推荐模板: ${rec.recommended_templates.join('、')}`,
+    '',
+  ];
+  return lines.join('\n');
+}
+
 // ─── WeChat Work push via OpenClaw gateway ────────────────────────────────────
 
 export function sendToWechatWork(message: string): boolean {
@@ -151,7 +168,13 @@ export async function sendDailyBrief(
   queueItems: QueueItem[],
 ): Promise<boolean> {
   const date = now().toISOString().slice(0, 10);
-  const card = formatBriefCard(date, trends, competitors, queueItems);
+  let card = formatBriefCard(date, trends, competitors, queueItems);
+
+  const { loadStrategy } = await import('./strategy-engine');
+  const strategy = loadStrategy();
+  const strategySection = formatStrategySection(strategy);
+  if (strategySection) card = `${card}\n${strategySection}`;
+
   const sent = sendToWechatWork(card);
   if (sent) logBriefSent(date, queueItems.filter(i => i.status === 'pending').length);
   return sent;
