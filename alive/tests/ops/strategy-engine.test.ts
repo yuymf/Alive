@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { vi } from 'vitest';
 import { setBasePaths, resetBasePaths, writeJSON, PATHS } from '../../scripts/utils/file-utils';
 import { setTimeOverride } from '../../scripts/utils/time-utils';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { ContentAnalysis, PerformanceTier } from '../../scripts/utils/types';
+import { ContentAnalysis, ContentStrategy, PerformanceTier } from '../../scripts/utils/types';
 
 const tmpDir = path.join(os.tmpdir(), 'alive-strategy-test-' + Date.now());
 
@@ -157,5 +158,117 @@ describe('parseStrategyResponse', () => {
     expect(strategy.content_mix_recommendation.recommended_mix.esports).toBe(45);
     expect(strategy.persona_health.overall_score).toBe(8);
     expect(strategy.next_week_recommendations.recommended_templates).toContain('赛场高燃瞬间');
+  });
+});
+
+describe('loadStrategy / saveStrategy', () => {
+  it('should persist and load strategy', async () => {
+    const { saveStrategy, loadStrategy } = await import('../../scripts/ops/strategy-engine');
+
+    const strategy: ContentStrategy = {
+      generated_at: '2026-04-07T08:00:00Z',
+      period: { start: '2026-04-07', end: '2026-04-14' },
+      status: 'pending',
+      performance_summary: {
+        total_posts: 5, tier_distribution: { viral: 1, above_avg: 1, normal: 2, below_avg: 1 },
+        best_performing_template: 'A', worst_performing_template: 'B',
+        best_identity_mode: 'esports', engagement_trend: 'rising', week_over_week_change: 10,
+      },
+      content_mix_recommendation: {
+        current_mix: { esports: 50 }, target_mix: { esports: 40 },
+        recommended_mix: { esports: 45 }, reasoning: 'test',
+      },
+      top_patterns: [],
+      persona_health: {
+        overall_score: 8, drift_areas: [], correction_suggestions: [], strongest_identity: 'esports',
+      },
+      next_week_recommendations: {
+        recommended_templates: [], avoid_templates: [], content_direction: 'test',
+      },
+    };
+    saveStrategy(strategy);
+
+    const loaded = loadStrategy();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.status).toBe('pending');
+  });
+});
+
+describe('confirmStrategy', () => {
+  it('should set status to confirmed', async () => {
+    const { saveStrategy, confirmStrategy, loadStrategy } = await import('../../scripts/ops/strategy-engine');
+    saveStrategy({
+      generated_at: '2026-04-07T08:00:00Z',
+      period: { start: '2026-04-07', end: '2026-04-14' },
+      status: 'pending',
+      performance_summary: {
+        total_posts: 5, tier_distribution: { viral: 1, above_avg: 1, normal: 2, below_avg: 1 },
+        best_performing_template: 'A', worst_performing_template: 'B',
+        best_identity_mode: 'esports', engagement_trend: 'rising', week_over_week_change: 10,
+      },
+      content_mix_recommendation: {
+        current_mix: {}, target_mix: {}, recommended_mix: {}, reasoning: '',
+      },
+      top_patterns: [],
+      persona_health: { overall_score: 8, drift_areas: [], correction_suggestions: [], strongest_identity: '' },
+      next_week_recommendations: { recommended_templates: [], avoid_templates: [], content_direction: '' },
+    } as ContentStrategy);
+
+    const result = confirmStrategy();
+    expect(result).toBe(true);
+
+    const loaded = loadStrategy();
+    expect(loaded!.status).toBe('confirmed');
+  });
+
+  it('should return false when no pending strategy', async () => {
+    const { confirmStrategy } = await import('../../scripts/ops/strategy-engine');
+    expect(confirmStrategy()).toBe(false);
+  });
+});
+
+describe('computeStrategy', () => {
+  it('should compute strategy from analysis data', async () => {
+    // Set up analysis log
+    const analysisLog = {
+      entries: [
+        makeAnalysis({ item_id: 'a', performance_tier: 'viral' as PerformanceTier, engagement_score: 90, identity_mode: 'esports', template_type: 'A' }),
+        makeAnalysis({ item_id: 'b', performance_tier: 'normal' as PerformanceTier, engagement_score: 50, identity_mode: 'singer', template_type: 'B' }),
+      ],
+      last_updated: '',
+    };
+    writeJSON(PATHS.analysisLog, analysisLog);
+    writeJSON(PATHS.performanceLog, { entries: [], last_updated: '' });
+    writeJSON(PATHS.contentPatterns, { updated_at: '', patterns: [], competitor_insights: [], cover_trends: [] });
+    writeJSON(PATHS.competitorLog, { entries: [], last_updated: '' });
+
+    const mockLLM = {
+      call: vi.fn(),
+      callJSON: vi.fn().mockResolvedValue({
+        performance_summary: { engagement_trend: 'rising', best_identity_mode: 'esports' },
+        content_mix_recommendation: { recommended_mix: { esports: 60, singer: 40 }, reasoning: 'good' },
+        top_patterns: [],
+        persona_health: { overall_score: 8, drift_areas: [], correction_suggestions: [], strongest_identity: 'esports' },
+        next_week_recommendations: {
+          recommended_templates: ['A'], avoid_templates: ['B'],
+          content_direction: 'more esports', experiment_suggestion: 'try collab',
+        },
+      }),
+    };
+
+    const { computeStrategy, loadStrategy } = await import('../../scripts/ops/strategy-engine');
+    const success = await computeStrategy(
+      mockLLM as any,
+      'V姐：ENTJ',
+      { esports: 40, singer: 25, racer: 20, daily: 15 },
+    );
+
+    expect(success).toBe(true);
+    expect(mockLLM.callJSON).toHaveBeenCalledTimes(1);
+
+    const strategy = loadStrategy();
+    expect(strategy).not.toBeNull();
+    expect(strategy!.status).toBe('pending');
+    expect(strategy!.performance_summary.total_posts).toBe(2);
   });
 });

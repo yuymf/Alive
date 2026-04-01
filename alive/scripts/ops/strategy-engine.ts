@@ -12,6 +12,7 @@ import {
   PerformanceLog, ContentPatterns, CompetitorLog,
   PersonaConfig, OpsConfig,
 } from '../utils/types';
+import { buildCompetitorSummary } from './competitor-tracker';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -228,4 +229,120 @@ export function parseStrategyResponse(
       experiment_suggestion: (recs?.experiment_suggestion as string) ?? undefined,
     },
   };
+}
+
+// ─── Strategy I/O ─────────────────────────────────────────────────────────────
+
+export function loadStrategy(): ContentStrategy | null {
+  const data = readJSON<ContentStrategy | null>(PATHS.contentStrategy, null);
+  return data;
+}
+
+export function saveStrategy(strategy: ContentStrategy): void {
+  writeJSON(PATHS.contentStrategy, strategy);
+}
+
+export function confirmStrategy(): boolean {
+  const current = loadStrategy();
+  if (!current || current.status !== 'pending') return false;
+  saveStrategy({ ...current, status: 'confirmed' });
+  return true;
+}
+
+// ─── Week-over-Week Calculation ───────────────────────────────────────────────
+
+function computeWeekOverWeek(entries: ContentAnalysis[]): number {
+  const currentTime = now();
+  const oneWeekAgo = new Date(currentTime.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const twoWeeksAgo = new Date(currentTime.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+  const thisWeek = entries.filter(e => new Date(e.analyzed_at) >= oneWeekAgo);
+  const lastWeek = entries.filter(e => {
+    const d = new Date(e.analyzed_at);
+    return d >= twoWeeksAgo && d < oneWeekAgo;
+  });
+
+  if (lastWeek.length === 0) return 0;
+
+  const thisAvg = thisWeek.length > 0
+    ? thisWeek.reduce((s, e) => s + e.engagement_score, 0) / thisWeek.length
+    : 0;
+  const lastAvg = lastWeek.reduce((s, e) => s + e.engagement_score, 0) / lastWeek.length;
+
+  return Math.round(((thisAvg - lastAvg) / lastAvg) * 100);
+}
+
+// ─── Main Orchestration ───────────────────────────────────────────────────────
+
+export async function computeStrategy(
+  llm: LLMClient,
+  personaSummary: string,
+  targetMix: Record<string, number>,
+): Promise<boolean> {
+  const analysisLog = readJSON<AnalysisLog>(PATHS.analysisLog, DEFAULT_ANALYSIS_LOG);
+  const patterns = readJSON<ContentPatterns>(PATHS.contentPatterns, DEFAULT_CONTENT_PATTERNS);
+  const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, DEFAULT_COMPETITOR_LOG);
+
+  // Filter to last 7 days of analysis
+  const oneWeekAgo = new Date(now().getTime() - 7 * 24 * 60 * 60 * 1000);
+  const recentAnalysis = analysisLog.entries.filter(
+    e => new Date(e.analyzed_at) >= oneWeekAgo,
+  );
+
+  if (recentAnalysis.length === 0) {
+    console.log('[strategy-engine] No analysis data from last 7 days, skipping');
+    return false;
+  }
+
+  const tierDistribution = computeTierDistribution(recentAnalysis);
+  const currentMix = computeContentMix(recentAnalysis);
+  const { best, worst } = findBestWorstTemplate(recentAnalysis);
+  const weekOverWeek = computeWeekOverWeek(analysisLog.entries);
+
+  const alignmentScores = recentAnalysis.map(e => e.persona_alignment.score);
+  const alignmentAvg = alignmentScores.reduce((a, b) => a + b, 0) / alignmentScores.length;
+  const driftAreas = recentAnalysis
+    .filter(e => e.persona_alignment.tone_consistency !== 'on_brand')
+    .map(e => e.persona_alignment.specific_notes)
+    .filter(Boolean);
+
+  const topPatterns = patterns.patterns
+    .sort((a, b) => (b.success_rate ?? 0) - (a.success_rate ?? 0))
+    .slice(0, 5);
+
+  const competitorSummary = buildCompetitorSummary(competitorLog.entries.slice(-20));
+
+  const prompt = buildStrategyPrompt({
+    tierDistribution,
+    currentMix,
+    targetMix,
+    bestTemplate: best,
+    worstTemplate: worst,
+    topPatterns,
+    personaAlignmentAvg: alignmentAvg,
+    driftAreas: [...new Set(driftAreas)],
+    competitorSummary,
+    personaSummary,
+    weekOverWeek,
+  });
+
+  try {
+    const response = await llm.callJSON<Record<string, unknown>>(prompt, 2000);
+    const strategy = parseStrategyResponse(response, {
+      totalPosts: recentAnalysis.length,
+      tierDistribution,
+      currentMix,
+      targetMix,
+      bestTemplate: best,
+      worstTemplate: worst,
+      topPatterns,
+      weekOverWeek,
+    });
+
+    saveStrategy(strategy);
+    return true;
+  } catch (err) {
+    console.error('[strategy-engine] Failed to compute strategy:', (err as Error).message);
+    return false;
+  }
 }
