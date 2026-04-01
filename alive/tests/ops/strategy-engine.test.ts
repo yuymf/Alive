@@ -86,3 +86,76 @@ describe('findBestWorstTemplate', () => {
     expect(worst).toBe('B');
   });
 });
+
+describe('buildStrategyPrompt', () => {
+  it('should include aggregated data and persona context', async () => {
+    const { buildStrategyPrompt } = await import('../../scripts/ops/strategy-engine');
+    const prompt = buildStrategyPrompt({
+      tierDistribution: { viral: 1, above_avg: 2, normal: 3, below_avg: 1 },
+      currentMix: { esports: 50, singer: 25, daily: 25 },
+      targetMix: { esports: 40, singer: 25, racer: 20, daily: 15 },
+      bestTemplate: '赛场高燃瞬间',
+      worstTemplate: '房间tour',
+      topPatterns: [{ type: '反转式开头', success_rate: 0.8, times_used: 5 }],
+      personaAlignmentAvg: 8.5,
+      driftAreas: ['racer身份偏少'],
+      competitorSummary: '天云发布频率提升',
+      personaSummary: 'V姐：ENTJ三栖虚拟偶像',
+      weekOverWeek: 15,
+    });
+    expect(prompt).toContain('viral: 1');
+    expect(prompt).toContain('赛场高燃瞬间');
+    expect(prompt).toContain('反转式开头');
+    expect(prompt).toContain('V姐');
+    expect(prompt).toContain('content_mix_recommendation');
+  });
+});
+
+describe('parseStrategyResponse', () => {
+  it('should parse LLM response into ContentStrategy', async () => {
+    const { parseStrategyResponse } = await import('../../scripts/ops/strategy-engine');
+    const response = {
+      performance_summary: {
+        engagement_trend: 'rising',
+        best_identity_mode: 'esports',
+      },
+      content_mix_recommendation: {
+        recommended_mix: { esports: 45, singer: 25, racer: 15, daily: 15 },
+        reasoning: '电竞内容表现最好',
+      },
+      top_patterns: [{
+        pattern_type: '反转式开头',
+        recommended_frequency: '每周2-3次',
+      }],
+      persona_health: {
+        overall_score: 8,
+        drift_areas: ['racer偏少'],
+        correction_suggestions: ['增加赛车相关内容'],
+        strongest_identity: 'esports',
+      },
+      next_week_recommendations: {
+        recommended_templates: ['赛场高燃瞬间', 'MV片段'],
+        avoid_templates: ['房间tour'],
+        content_direction: '加强电竞+音乐交叉',
+        experiment_suggestion: '尝试赛车+电竞联动',
+      },
+    };
+
+    const strategy = parseStrategyResponse(response, {
+      totalPosts: 7,
+      tierDistribution: { viral: 1, above_avg: 2, normal: 3, below_avg: 1 },
+      currentMix: { esports: 50, singer: 25, daily: 25 },
+      targetMix: { esports: 40, singer: 25, racer: 20, daily: 15 },
+      bestTemplate: '赛场高燃瞬间',
+      worstTemplate: '房间tour',
+      topPatterns: [{ type: '反转式开头', success_rate: 0.8, times_used: 5 }],
+      weekOverWeek: 15,
+    });
+
+    expect(strategy.status).toBe('pending');
+    expect(strategy.performance_summary.total_posts).toBe(7);
+    expect(strategy.content_mix_recommendation.recommended_mix.esports).toBe(45);
+    expect(strategy.persona_health.overall_score).toBe(8);
+    expect(strategy.next_week_recommendations.recommended_templates).toContain('赛场高燃瞬间');
+  });
+});
