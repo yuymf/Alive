@@ -235,6 +235,17 @@ export function parseStrategyResponse(
 
 export function loadStrategy(): ContentStrategy | null {
   const data = readJSON<ContentStrategy | null>(PATHS.contentStrategy, null);
+  if (!data) return null;
+
+  // Auto-expire pending strategies older than 7 days
+  if (data.status === 'pending') {
+    const age = now().getTime() - new Date(data.generated_at).getTime();
+    if (age > 7 * 24 * 60 * 60 * 1000) {
+      saveStrategy({ ...data, status: 'expired' });
+      return { ...data, status: 'expired' };
+    }
+  }
+
   return data;
 }
 
@@ -269,6 +280,7 @@ function computeWeekOverWeek(entries: ContentAnalysis[]): number {
     : 0;
   const lastAvg = lastWeek.reduce((s, e) => s + e.engagement_score, 0) / lastWeek.length;
 
+  if (lastAvg === 0) return thisAvg > 0 ? 100 : 0;
   return Math.round(((thisAvg - lastAvg) / lastAvg) * 100);
 }
 

@@ -17,7 +17,7 @@ import { addPattern } from './content-analyzer';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ANALYSIS_LOG_RETENTION_DAYS = 90;
+const ANALYSIS_LOG_RETENTION_DAYS = 30;
 
 const DEFAULT_ANALYSIS_LOG: AnalysisLog = { entries: [], last_updated: '' };
 const DEFAULT_BASELINE = 50;
@@ -250,9 +250,13 @@ export function saveAnalysis(analysis: ContentAnalysis): void {
 
 function getContentText(item: Awaited<ReturnType<typeof loadQueue>>['items'][number], platform: 'xhs' | 'douyin'): string {
   if (platform === 'xhs') {
-    return `标题: ${item.content.xhs.title}\n正文: ${item.content.xhs.body}`;
+    const xhs = item.content?.xhs;
+    if (!xhs) return '';
+    return `标题: ${xhs.title}\n正文: ${xhs.body}`;
   }
-  return `脚本: ${item.content.douyin.script}`;
+  const douyin = item.content?.douyin;
+  if (!douyin) return '';
+  return `脚本: ${douyin.script}`;
 }
 
 // ─── Main Orchestration ───────────────────────────────────────────────────────

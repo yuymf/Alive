@@ -888,7 +888,7 @@ async function install() {
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '0 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
@@ -1399,7 +1399,7 @@ async function reinstall() {
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '0 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
@@ -1661,7 +1661,7 @@ async function realDayTest() {
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '0 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
@@ -1871,7 +1871,7 @@ async function switchPersona() {
         { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '0 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {

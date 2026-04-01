@@ -341,9 +341,7 @@ export async function generateTopics(
     ? buildCompetitorContext(ops.competitors, liveUpdates)
     : '';
 
-  // Load confirmed strategy for prompt injection
-  const confirmedStrategy = loadConfirmedStrategy();
-  const strategyContext = confirmedStrategy ? buildStrategyContext(confirmedStrategy) : '';
+  const strategyContext = strategy ? buildStrategyContext(strategy) : '';
 
   for (const trend of topN) {
     const identityMode = selectIdentityMode(trend);

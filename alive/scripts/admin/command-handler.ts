@@ -814,7 +814,7 @@ async function cmdOpsStrategy(_cmd: ParsedCommand): Promise<CommandResult> {
     `最差模板: ${ps.worst_performing_template}`,
     '',
     '━━ 角色健康度 ━━',
-    `综合评分: ${(ph.overall_score * 100).toFixed(0)}分`,
+    `综合评分: ${ph.overall_score}/10`,
     '',
     '━━ 下周推荐 ━━',
     `方向: ${rec.content_direction}`,
