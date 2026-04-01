@@ -60,6 +60,10 @@ describe('file-utils path override', () => {
     expect(PATHS.outboundHistory).toBe('/tmp/test-memory/outbound-history.json');
     resetBasePaths();
   });
+
+  it('should have analysisLog path', () => {
+    expect(PATHS.analysisLog).toContain('analysis-log.json');
+  });
 });
 
 describe('persona-sensitive paths should use memory base (not skill base)', () => {

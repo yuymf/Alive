@@ -83,6 +83,7 @@ export const PATHS = {
   get performanceLog() { return path.join(getMemoryBase(), 'performance-log.json'); },
   get contentStrategy() { return path.join(getMemoryBase(), 'content-strategy.json'); },
   get contentPatterns() { return path.join(getMemoryBase(), 'content-patterns.json'); },
+  get analysisLog() { return path.join(getMemoryBase(), 'analysis-log.json'); },
 
   // === Persona-specific infra (per-persona in memory dir) ===
   get cronSchedule() { return path.join(getMemoryBase(), 'cron-schedule.json'); },
