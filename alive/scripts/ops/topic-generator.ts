@@ -19,6 +19,7 @@ import { addItem, getItem, updateItemContent } from './review-queue';
 import { buildCompetitorContext } from './competitor-tracker';
 import { PATHS, readJSON } from '../utils/file-utils';
 import { CompetitorLog, CompetitorUpdate, ContentStrategy, ContentPatterns } from '../utils/types';
+import { now } from '../utils/time-utils';
 
 import { matchesTaxonomy } from './ops-taxonomy';
 
@@ -276,6 +277,44 @@ function callGenerateImage(description: string, stylePrompt: string): string[] {
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
+const STRATEGY_MAX_AGE_DAYS = 7;
+
+export function loadConfirmedStrategy(): ContentStrategy | null {
+  const strategy = readJSON<ContentStrategy | null>(PATHS.contentStrategy, null);
+  if (!strategy) return null;
+  if (strategy.status !== 'confirmed') return null;
+
+  const age = now().getTime() - new Date(strategy.generated_at).getTime();
+  if (age > STRATEGY_MAX_AGE_DAYS * 24 * 60 * 60 * 1000) return null;
+
+  return strategy;
+}
+
+export function buildStrategyContext(strategy: ContentStrategy): string {
+  const recs = strategy.next_week_recommendations;
+  const mix = strategy.content_mix_recommendation;
+  const patterns = strategy.top_patterns;
+  const health = strategy.persona_health;
+
+  const parts: string[] = [
+    '## 本周内容策略 (已确认)',
+    `- 推荐模板: ${recs.recommended_templates.join('、')}`,
+    `- 避免模板: ${recs.avoid_templates.join('、')}`,
+    `- 内容方向: ${recs.content_direction}`,
+    `- 配比建议: ${Object.entries(mix.recommended_mix).map(([k, v]) => `${k}:${v}%`).join('、')}`,
+  ];
+
+  if (patterns.length > 0) {
+    parts.push(`- 高效模式: ${patterns.slice(0, 3).map(p => p.pattern_type).join('、')}`);
+  }
+
+  if (health.overall_score < 7 && health.correction_suggestions.length > 0) {
+    parts.push(`- 人设提醒: ${health.correction_suggestions.join('、')}`);
+  }
+
+  return parts.join('\n');
+}
+
 export async function generateTopics(
   trends: FilteredTrend[],
   ops: OpsConfig,
@@ -285,7 +324,7 @@ export async function generateTopics(
 ): Promise<void> {
   const topN = trends.slice(0, ops.topic_count);
 
-  const strategy = readJSON<ContentStrategy | null>(PATHS.contentStrategy, null);
+  const strategy = loadConfirmedStrategy();
   const patterns = readJSON<ContentPatterns | null>(PATHS.contentPatterns, null);
   const patternsContext = patterns && patterns.patterns.length > 0
     ? `【参考爆款模式】\n${patterns.patterns.slice(0, 5).map(
@@ -301,6 +340,10 @@ export async function generateTopics(
   const competitorCtx = ops.competitors
     ? buildCompetitorContext(ops.competitors, liveUpdates)
     : '';
+
+  // Load confirmed strategy for prompt injection
+  const confirmedStrategy = loadConfirmedStrategy();
+  const strategyContext = confirmedStrategy ? buildStrategyContext(confirmedStrategy) : '';
 
   for (const trend of topN) {
     const identityMode = selectIdentityMode(trend);
@@ -319,6 +362,7 @@ export async function generateTopics(
     if (templateConstraint) contextParts.push(templateConstraint);
     if (competitorCtx) contextParts.push(`【对标竞品参考】\n${competitorCtx}`);
     if (patternsContext) contextParts.push(patternsContext);
+    if (strategyContext) contextParts.push(strategyContext);
 
     // Generate XHS content via LLM
     let xhsDraft: XhsDraft = { title: '', body: '', tags: [], cover_description: '' };
