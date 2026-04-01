@@ -141,6 +141,10 @@ const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<C
   memory: cmdMemory,
   reset: cmdReset,
   create: cmdCreate,
+  strategy: cmdOpsStrategy,
+  'confirm-strategy': cmdOpsConfirmStrategy,
+  insights: cmdOpsInsights,
+  patterns: cmdOpsPatterns,
 };
 
 /**
@@ -785,4 +789,112 @@ ${scheduleTable}
 > - 切换到此角色: \`alive --switch-persona --persona ${savedPath}\`
 > - 重新生成: \`/alive create --guided --name "${name}" --tagline "${tagline}"\``,
   };
+}
+
+// ── Ops: strategy ──────────────────────────────────────────────────
+
+async function cmdOpsStrategy(_cmd: ParsedCommand): Promise<CommandResult> {
+  const { loadStrategy } = await import('../ops/strategy-engine');
+  const strategy = loadStrategy();
+  if (!strategy) {
+    return {
+      output: '📊 暂无内容策略。\n\n策略将在每周日深夜由 `ops-strategy` cron 任务自动生成，或运行 `/alive confirm-strategy` 手动触发。',
+    };
+  }
+  const { performance_summary: ps, persona_health: ph, next_week_recommendations: rec, status } = strategy;
+  const statusLabel = status === 'confirmed' ? '✅ 已确认' : status === 'expired' ? '⌛ 已过期' : '⏳ 待确认';
+  const trendIcon = ps.engagement_trend === 'rising' ? '📈' : ps.engagement_trend === 'declining' ? '📉' : '➡️';
+  const lines = [
+    `📊 本周内容策略  ${statusLabel}`,
+    `生成时间: ${strategy.generated_at.slice(0, 10)}`,
+    '',
+    '━━ 表现摘要 ━━',
+    `总发布: ${ps.total_posts} 篇  互动趋势: ${trendIcon} ${ps.engagement_trend}  周变化: ${ps.week_over_week_change >= 0 ? '+' : ''}${ps.week_over_week_change}%`,
+    `最佳模板: ${ps.best_performing_template}`,
+    `最差模板: ${ps.worst_performing_template}`,
+    '',
+    '━━ 角色健康度 ━━',
+    `综合评分: ${(ph.overall_score * 100).toFixed(0)}分`,
+    '',
+    '━━ 下周推荐 ━━',
+    `方向: ${rec.content_direction}`,
+    `推荐模板: ${rec.recommended_templates.join('、')}`,
+    `避免模板: ${rec.avoid_templates.join('、')}`,
+  ];
+  if (status === 'pending') {
+    lines.push('', '回复 `/alive confirm-strategy` 确认策略并生效');
+  }
+  return { output: lines.join('\n') };
+}
+
+// ── Ops: confirm-strategy ──────────────────────────────────────────
+
+async function cmdOpsConfirmStrategy(_cmd: ParsedCommand): Promise<CommandResult> {
+  const { confirmStrategy } = await import('../ops/strategy-engine');
+  const ok = confirmStrategy();
+  if (!ok) {
+    return {
+      output: '❌ 未找到待确认的策略。请等待 `ops-strategy` cron 任务生成新策略后再确认。',
+      error: true,
+    };
+  }
+  return {
+    output: '✅ 策略已确认！下周内容生成将按此策略执行。\n\n使用 `/alive strategy` 查看策略详情。',
+  };
+}
+
+// ── Ops: insights ──────────────────────────────────────────────────
+
+async function cmdOpsInsights(_cmd: ParsedCommand): Promise<CommandResult> {
+  const { loadAnalysisLog } = await import('../ops/post-analyzer');
+  const log = loadAnalysisLog();
+  if (!log || log.entries.length === 0) {
+    return {
+      output: '📈 暂无内容表现数据。\n\n数据将由 `ops-analyze` cron 任务每4小时自动采集。',
+    };
+  }
+  const recent = log.entries.slice(-10);
+  const avgEngagement = recent.reduce((s, e) => s + e.engagement_score, 0) / recent.length;
+  const tierCounts: Record<string, number> = {};
+  for (const e of recent) {
+    tierCounts[e.performance_tier] = (tierCounts[e.performance_tier] ?? 0) + 1;
+  }
+  const tierSummary = Object.entries(tierCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([tier, count]) => `${tier}: ${count}篇`)
+    .join('  ');
+  const lines = [
+    `📈 内容表现洞察（最近${recent.length}篇）`,
+    '',
+    `平均互动分: ${avgEngagement.toFixed(1)}`,
+    `层级分布: ${tierSummary}`,
+    '',
+    '━━ 最近发布 ━━',
+    ...recent.slice(-5).reverse().map(e =>
+      `#${e.item_id}  ${e.performance_tier}  互动${e.engagement_score.toFixed(1)}`
+    ),
+  ];
+  return { output: lines.join('\n') };
+}
+
+// ── Ops: patterns ──────────────────────────────────────────────────
+
+async function cmdOpsPatterns(_cmd: ParsedCommand): Promise<CommandResult> {
+  const { loadContentPatterns } = await import('../ops/content-analyzer');
+  const patterns = loadContentPatterns();
+  if (!patterns || patterns.patterns.length === 0) {
+    return {
+      output: '🔍 暂无内容模式数据。\n\n模式分析将随 `ops-analyze` 任务自动更新。',
+    };
+  }
+  const sorted = [...patterns.patterns].sort((a, b) => (b.success_rate ?? 0) - (a.success_rate ?? 0));
+  const lines = [
+    `🔍 内容模式分析（共${sorted.length}个）`,
+    '',
+    '━━ 成功率排行 ━━',
+    ...sorted.slice(0, 8).map((p, i) =>
+      `${i + 1}. ${p.type}  来源:${p.source}  使用${p.times_used}次  成功率${p.success_rate != null ? (p.success_rate * 100).toFixed(0) + '%' : '未知'}`
+    ),
+  ];
+  return { output: lines.join('\n') };
 }
