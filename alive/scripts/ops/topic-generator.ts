@@ -1,7 +1,7 @@
 /**
  * topic-generator.ts
  * Given filtered trends + competitor data, generates N content drafts
- * (xhs + douyin) using content-writer and tiktok-growth ClawHub skills,
+ * (xhs + douyin) using tiktok-growth ClawHub skill for hook enrichment,
  * then pushes each draft into the review queue.
  *
  * Enhanced: Now injects content templates (scene/camera/styling constraints)
@@ -12,6 +12,7 @@ import { execFileSync } from 'child_process';
 import {
   OpsConfig, ContentTemplate, CompetitorProfile, IdentityMode,
   QueueItemTemplateSpec, QueueItemCompetitorBenchmark, QueueItem, QueueItemContent,
+  CompetitorAnalysisStore,
 } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
 import { FilteredTrend } from './trend-analyzer';
@@ -90,6 +91,29 @@ export function applyStrategyToTemplateSelection(
 }
 
 /**
+ * Build a natural-language cluster context string from competitor analysis data.
+ * Returns '' if no auto_cluster data is available — caller should fallback to static content_mix.
+ */
+export function buildClusterContext(
+  accountKey: string,
+  analysisStore: CompetitorAnalysisStore,
+): string {
+  const analysis = analysisStore.analyses[accountKey];
+  if (!analysis?.auto_cluster) return '';
+  if (analysis.topic_clusters.length === 0) return '';
+
+  const accountName = accountKey.split(':')[0];
+  const lines: string[] = [`${accountName} 内容聚类（自动分析）：`];
+
+  for (const cluster of analysis.topic_clusters) {
+    const titles = cluster.representative_titles.slice(0, 2).map(t => `「${t}」`).join('');
+    lines.push(`• ${cluster.cluster_name}（${cluster.post_count}条，均互动${cluster.avg_engagement}）：${titles}`);
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * Build competitor benchmark data for a queue item.
  * Matches competitors by identity_mode on their content templates,
  * or returns all primary competitors if no identity_mode-based filtering is possible.
@@ -98,6 +122,7 @@ export function buildCompetitorBenchmarks(
   profiles: readonly CompetitorProfile[] | undefined,
   identityMode: string,
   templates?: readonly ContentTemplate[],
+  analysisStore?: CompetitorAnalysisStore,
 ): QueueItemCompetitorBenchmark[] {
   if (!profiles || profiles.length === 0) return [];
 
@@ -111,15 +136,26 @@ export function buildCompetitorBenchmarks(
       // Use taxonomy mapping for reliable matching
       return matchesTaxonomy(mode, profileGroup);
     })
-    .map(p => ({
-      name: p.name,
-      platform: p.platform,
-      content_mix_relevant: p.content_mix
-        ? Object.entries(p.content_mix).map(([k, v]) => `${k}${v}%`).join('、')
-        : '未知',
-      audience: p.audience ?? '未知',
-      interaction_style: p.interaction_style ?? '未知',
-    }));
+    .map(p => {
+      // A v2: prefer dynamic cluster context over static content_mix
+      const accountKey = `${p.name}:${p.platform}`;
+      const clusterCtx = analysisStore
+        ? buildClusterContext(accountKey, analysisStore)
+        : '';
+
+      const content_mix_relevant = clusterCtx
+        || (p.content_mix
+          ? Object.entries(p.content_mix).map(([k, v]) => `${k}${v}%`).join('、')
+          : '未知');
+
+      return {
+        name: p.name,
+        platform: p.platform,
+        content_mix_relevant,
+        audience: p.audience ?? '未知',
+        interaction_style: p.interaction_style ?? '未知',
+      };
+    });
 }
 
 /**
@@ -143,7 +179,7 @@ ${template.reference_links && template.reference_links.length > 0
 
 const XHS_GUIDELINES = `【小红书写作规范】
 - 标题：20字以内，必须含emoji开头或穿插，制造好奇心缺口（疑问/数字/反转）
-- 正文：300-800字，每2-3句换行，段落间用emoji分隔，口语化但有信息密度
+- 正文：500字以内，每2-3句换行，段落间用emoji分隔，口语化但有信息密度
 - 节奏：开头3行定生死→痛点共鸣→干货/故事→总结金句→互动引导（点赞收藏暗示）
 - 标签：5-10个，前3个为精准长尾词，后面为热门大词，自然穿插正文关键词做SEO
 - 封面：高对比、大字报风格或真实生活感，避免过度精修
@@ -188,7 +224,7 @@ ${guidelines}
 请严格按照以上写作规范，生成一条完整的 ${platform === 'xhs' ? '小红书图文' : '抖音视频脚本'} 内容草稿。
 
 ${platform === 'xhs' ? `输出格式 JSON：
-{"title":"...（20字以内，含emoji）","body":"...（正文300-800字，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"],"cover_description":"封面图画面描述（用于AI生图）"}` : `输出格式 JSON：
+{"title":"...（20字以内，含emoji）","body":"...（正文500字以内，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"],"cover_description":"封面图画面描述（用于AI生图）"}` : `输出格式 JSON：
 {"opening_hook":"前3秒钩子（15字以内，反问/冲突/悬念）","script":"完整口播脚本（200-500字，短句口语化）","bgm_suggestion":"推荐BGM风格或歌名","key_captions":["字幕要点1（≤10字）","字幕要点2"],"cover_description":"封面图画面描述（用于AI生图）"}`}`;
   return extraContext ? `${base}\n${extraContext}` : base;
 }
@@ -205,7 +241,7 @@ export function buildRegeneratePrompt(
 ): string {
   const fieldConstraints: Record<string, string> = {
     'xhs.title': '20字以内，必须含emoji，制造好奇心缺口（疑问/数字/反转）',
-    'xhs.body': '300-800字，每2-3句换行，段落间用emoji分隔，口语化但有信息密度',
+    'xhs.body': '500字以内，每2-3句换行，段落间用emoji分隔，口语化但有信息密度',
     'xhs.tags': '5-10个标签，前3个精准长尾词，后面热门大词',
     'douyin.opening_hook': '前3秒文案，15字以内，用反问/冲突/悬念/数字冲击',
     'douyin.script': '200-500字，口语化短句，每句≤15字，像聊天不像念稿',
@@ -354,7 +390,9 @@ export async function generateTopics(
   imageStylePrompt: string,
   llm: LLMClient,
 ): Promise<void> {
+  console.log(`[topic-generator] generateTopics called with ${trends.length} trends, topic_count=${ops.topic_count}`);
   const topN = trends.slice(0, ops.topic_count);
+  console.log(`[topic-generator] topN=${topN.length} trends to process`);
 
   const strategy = loadConfirmedStrategy();
   const patterns = readJSON<ContentPatterns | null>(PATHS.contentPatterns, null);
@@ -375,7 +413,12 @@ export async function generateTopics(
 
   const strategyContext = strategy ? buildStrategyContext(strategy) : '';
 
+  // A v2: load competitor analysis for dynamic cluster context
+  const { loadCompetitorAnalysis } = await import('./competitor-analyzer');
+  const analysisStore = loadCompetitorAnalysis();
+
   for (const trend of topN) {
+    console.log(`[topic-generator] Processing trend: ${trend.keyword}`);
     const identityMode = selectIdentityMode(trend);
     const xhsStyle = ops.platforms.xhs?.style ?? '图文为主';
     const douyinStyle = ops.platforms.douyin?.style ?? '视频脚本';
@@ -385,7 +428,7 @@ export async function generateTopics(
     const templateConstraint = template ? buildTemplateConstraint(template) : '';
 
     // Build competitor benchmarks for this identity
-    const benchmarks = buildCompetitorBenchmarks(ops.competitors, identityMode, ops.content_templates);
+    const benchmarks = buildCompetitorBenchmarks(ops.competitors, identityMode, ops.content_templates, analysisStore);
 
     // Compose extra context: template + competitor + hooks
     const contextParts: string[] = [];
@@ -456,5 +499,6 @@ export async function generateTopics(
       template_spec: templateSpec,
       competitor_benchmarks: benchmarks.length > 0 ? benchmarks : undefined,
     });
+    console.log(`[topic-generator] Added item for trend: ${trend.keyword}`);
   }
 }
