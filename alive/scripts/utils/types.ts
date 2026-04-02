@@ -1059,6 +1059,113 @@ export interface CompetitorLog {
   last_updated: string;
 }
 
+// ─── Competitor Analysis v2/v3 Types ─────────────────────────────────────────
+
+export interface CompetitorPost {
+  readonly account_name: string;
+  readonly platform: 'xhs' | 'douyin' | 'instagram';
+  readonly post_id: string;
+  readonly title: string;
+  readonly engagement: number;
+  readonly comment_count?: number;
+  readonly posted_at?: string;
+  readonly cover_url?: string;
+  readonly fetched_at: string;
+}
+
+export interface CompetitorPostsStore {
+  readonly version: 1;
+  readonly last_fetched: string;
+  readonly accounts: Readonly<Record<string, readonly CompetitorPost[]>>;
+}
+
+export interface FetchResult {
+  readonly success: readonly string[];
+  readonly failed: readonly string[];
+}
+
+export interface HookPatternAnalysis {
+  readonly pattern: string;
+  readonly examples: readonly string[];
+  readonly frequency: string;
+}
+
+export interface CoverFormulaAnalysis {
+  readonly formula: string;
+  readonly usage_ratio: string;
+  readonly effectiveness: string;
+}
+
+export interface TopicClusterAnalysis {
+  readonly cluster_name: string;
+  readonly post_count: number;
+  readonly avg_engagement: number;
+  readonly representative_titles: readonly string[];
+}
+
+export interface EngagementPatternAnalysis {
+  readonly best_performing_type: string;
+  readonly avg_engagement: number;
+  readonly posting_frequency: string;
+  readonly peak_days?: readonly string[];
+}
+
+export interface AccountAnalysis {
+  readonly account_name: string;
+  readonly platform: string;
+  readonly analyzed_at: string;
+  readonly post_count: number;
+  readonly hook_patterns: readonly HookPatternAnalysis[];
+  readonly cover_formulas: readonly CoverFormulaAnalysis[];
+  readonly topic_clusters: readonly TopicClusterAnalysis[];
+  readonly engagement_pattern: EngagementPatternAnalysis;
+  readonly key_insight: string;
+}
+
+export interface CompetitorAnalysisStore {
+  readonly version: 1;
+  readonly analyses: Readonly<Record<string, AccountAnalysis>>;
+  readonly insufficient_data: readonly string[];
+  readonly last_analyzed: string;
+}
+
+export interface PositioningCompetitorEntry {
+  readonly account_name: string;
+  readonly platform: string;
+  readonly strengths: readonly string[];
+  readonly weaknesses: readonly string[];
+  readonly content_focus: string;
+  readonly avg_engagement: number;
+}
+
+export interface PositioningGapAnalysis {
+  readonly underserved_niches: readonly string[];
+  readonly oversaturated_areas: readonly string[];
+  readonly miss_v_advantages: readonly string[];
+}
+
+export interface PositioningRecommendation {
+  readonly recommendation: string;
+  readonly identity_mode: string;
+  readonly priority: 'high' | 'medium';
+  readonly rationale: string;
+}
+
+export interface WeeklyDirection {
+  readonly focus_identities: readonly string[];
+  readonly avoid_topics: readonly string[];
+  readonly suggested_templates: readonly string[];
+}
+
+export interface PositioningReport {
+  readonly generated_at: string;
+  readonly report_period: string;
+  readonly competitor_matrix: readonly PositioningCompetitorEntry[];
+  readonly gap_analysis: PositioningGapAnalysis;
+  readonly recommendations: readonly PositioningRecommendation[];
+  readonly weekly_direction: WeeklyDirection;
+}
+
 export type ParsedIntentAction = 'approve' | 'discard' | 'edit' | 'list' | 'publish' | 'unknown';
 
 export interface ParsedIntent {
@@ -1269,6 +1376,81 @@ export interface ContentPatterns {
   patterns: ContentPattern[];
   competitor_insights: CompetitorInsight[];
   cover_trends: CoverTrend[];
+}
+
+// ─── C v1: 爆款拆解 Types ────────────────────────────────────────────────
+
+export type PostPlatform = 'xhs' | 'douyin' | 'generic';
+
+export interface PostContent {
+  platform: PostPlatform;
+  url: string;
+  title: string;
+  description: string;
+  images: string[];
+  likes: number;
+  comments: string[];
+  collected_count: number;
+  share_count: number;
+}
+
+export interface HookPattern {
+  formula: string;
+  example: string;
+  effectiveness_score: number;  // 0-10
+}
+
+export interface PostAnalysisResult {
+  url: string;
+  platform: PostPlatform;
+  title: string;
+  hook_patterns: HookPattern[];
+  core_selling_points: string[];
+  comment_sentiment: {
+    positive_ratio: number;
+    negative_ratio: number;
+    neutral_ratio: number;
+    top_keywords: string[];
+    emotional_triggers: string[];
+  };
+  content_structure: {
+    opening_hook: string;
+    body_flow: string;
+    closing_cta: string;
+    visual_strategy: string;
+  };
+  analyzed_at: string;
+}
+
+export interface PostAnalysisLog {
+  entries: PostAnalysisResult[];
+}
+
+// ─── D v1: 人设建议 Types ────────────────────────────────────────────────
+
+export interface IdentityAlignment {
+  identity: string;
+  fit_score: number;  // 0-10
+  reasoning: string;
+}
+
+export interface TopicSuggestion {
+  direction: string;
+  identity_mode: string;
+  hook: string;
+  reasoning: string;
+}
+
+export interface PersonaAlignmentReport {
+  alignment_score: number;  // 0-10
+  identity_analysis: IdentityAlignment[];
+  topic_suggestions: TopicSuggestion[];
+  warnings: string[];
+  generated_at: string;
+}
+
+export interface PersonaReportLog {
+  entries: PersonaAlignmentReport[];
 }
 
 // ─── Post Analysis Types ─────────────────────────────────────────────────

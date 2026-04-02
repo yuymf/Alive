@@ -84,6 +84,12 @@ export const PATHS = {
   get contentStrategy() { return path.join(getMemoryBase(), 'content-strategy.json'); },
   get contentPatterns() { return path.join(getMemoryBase(), 'content-patterns.json'); },
   get analysisLog() { return path.join(getMemoryBase(), 'analysis-log.json'); },
+  get postAnalysisLog() { return path.join(getMemoryBase(), 'post-analysis-log.json'); },
+  get personaReportLog() { return path.join(getMemoryBase(), 'persona-report-log.json'); },
+  get competitorPosts() { return path.join(getMemoryBase(), 'competitor-posts.json'); },
+  get competitorAnalysis() { return path.join(getMemoryBase(), 'competitor-analysis.json'); },
+  get positioningReport() { return path.join(getMemoryBase(), 'positioning-report.json'); },
+  get positioningReportPrev() { return path.join(getMemoryBase(), 'positioning-report.prev.json'); },
 
   // === Persona-specific infra (per-persona in memory dir) ===
   get cronSchedule() { return path.join(getMemoryBase(), 'cron-schedule.json'); },
