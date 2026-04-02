@@ -234,7 +234,7 @@ function migrateFromLegacySlug() {
 
   // 3. Migrate cron jobs (rename prefixes)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
       try {
         execSync(`openclaw cron remove --name "${legacySlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -890,6 +890,7 @@ async function install() {
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
+        { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -1005,14 +1006,14 @@ async function uninstall() {
   log('Removing cron jobs...');
   if (isOpenClawCLIAvailable()) {
     // Remove new format cron jobs (alive:personaSlug:suffix)
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
     // Also clean legacy format cron jobs (alive:suffix)
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed legacy cron: ${skillSlug}:${suffix}`);
@@ -1234,14 +1235,14 @@ async function reinstall() {
   log('Step 5/9: Removing old cron jobs & cleaning SOUL.md...');
   if (isOpenClawCLIAvailable()) {
     // Remove new format cron jobs
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
         ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
       } catch { /* may not exist */ }
     }
     // Also clean legacy format cron jobs
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -1401,6 +1402,7 @@ async function reinstall() {
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
+        { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -1530,7 +1532,7 @@ async function realDayTest() {
   }
   // Remove cron (both new and legacy format)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy']) {
+    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
       try {
         execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
       } catch { /* may not exist */ }
@@ -1663,6 +1665,7 @@ async function realDayTest() {
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
+        { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
         try {
@@ -1873,6 +1876,7 @@ async function switchPersona() {
         { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
         { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
+        { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
       ];
       for (const job of opsCronJobs) {
         try {
