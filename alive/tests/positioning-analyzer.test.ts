@@ -71,6 +71,7 @@ function makeQueueItem(id: string, status: QueueItemStatus = 'published'): Queue
   return {
     id,
     status,
+    topic: `选题 ${id}`,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     content: {
@@ -180,7 +181,7 @@ describe('buildPositioningPrompt', () => {
     });
     const items = [makeQueueItem('item-1', 'published'), makeQueueItem('item-2', 'published')];
     const prompt = buildPositioningPrompt(analysisStore, minimalPersona, items);
-    expect(prompt).toContain('内容标题 item-1');
+    expect(prompt).toContain('选题 item-1');
   });
 
   it('includes JSON output schema fields', () => {
