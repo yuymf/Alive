@@ -89,6 +89,7 @@ export function extractDouyinVideoId(url: string): string | null {
 export function buildAnalysisPrompt(
   post: PostContent,
   personaIdentities: string,
+  signals?: EngagementSignals,
 ): string {
   const platformLabel = post.platform === 'xhs' ? '小红书'
     : post.platform === 'douyin' ? '抖音'
@@ -98,13 +99,36 @@ export function buildAnalysisPrompt(
     ? `评论区精选（${post.comments.length}条）：\n${post.comments.slice(0, 20).map(c => `- ${c}`).join('\n')}`
     : '评论区：暂无评论数据';
 
+  // C v2: engagement signal block (only when signals provided)
+  const signalBlock = signals ? `
+【互动信号解读】
+- 收藏率: ${signals.save_rate.toFixed(2)}（${signals.save_rate > 0.3 ? '高' : signals.save_rate > 0.1 ? '中' : '低'} → ${signals.save_rate > 0.3 ? '实用/干货价值强' : signals.save_rate > 0.1 ? '有一定收藏价值' : '收藏意愿弱'}）
+- 分享率: ${signals.share_rate.toFixed(2)}（${signals.share_rate > 0.2 ? '高' : signals.share_rate > 0.05 ? '中' : '低'} → ${signals.share_rate > 0.2 ? '情绪共鸣强，易传播' : signals.share_rate > 0.05 ? '有传播潜力' : '传播欲弱'}）
+- 评论率: ${signals.comment_rate.toFixed(2)}（${signals.comment_rate > 0.1 ? '高' : signals.comment_rate > 0.03 ? '中' : '低'} → ${signals.comment_rate > 0.1 ? '话题争议性强' : signals.comment_rate > 0.03 ? '有一定互动深度' : '互动深度弱'}）
+- 综合互动分: ${signals.engagement_score}
+
+` : '';
+
+  // C v2: attribution instruction section (only when signals provided)
+  const attributionSection = signals ? `
+5. attribution（基于以上互动信号，输出爆款因子归因，四项相加必须=100）：
+   - cover_appeal: 封面吸引力贡献（整数 0-100）
+   - hook_quality: 钩子质量贡献（整数 0-100）
+   - content_value: 内容价值贡献（整数 0-100）
+   - topic_fit: 话题契合度贡献（整数 0-100）
+   - rationale: 一句话说明最主要的归因依据` : '';
+
+  // C v2: attribution JSON example (only when signals provided)
+  const attributionJson = signals ? `,
+  "attribution": {"cover_appeal":40,"hook_quality":30,"content_value":25,"topic_fit":5,"rationale":"收藏率高说明内容实用价值是主因"}` : '';
+
   return `你是一个爆款内容分析师。请深度拆解以下${platformLabel}帖子：
 
 【标题】${post.title}
 【正文】${post.description.slice(0, 2000)}
 【互动数据】点赞${post.likes} | 收藏${post.collected_count} | 分享${post.share_count}
 ${commentSection}
-
+${signalBlock}
 分析人设背景：${personaIdentities}
 
 请从以下维度分析，返回 JSON：
@@ -119,14 +143,14 @@ ${commentSection}
    - opening_hook: 开头钩子策略
    - body_flow: 正文叙事流
    - closing_cta: 结尾行动号召
-   - visual_strategy: 视觉策略（封面/图片/排版）
+   - visual_strategy: 视觉策略（封面/图片/排版）${attributionSection}
 
 \`\`\`json
 {
   "hook_patterns": [{"formula":"...","example":"...","effectiveness_score":8}],
   "core_selling_points": ["..."],
   "comment_sentiment": {"positive_ratio":0.6,"negative_ratio":0.1,"neutral_ratio":0.3,"top_keywords":["..."],"emotional_triggers":["..."]},
-  "content_structure": {"opening_hook":"...","body_flow":"...","closing_cta":"...","visual_strategy":"..."}
+  "content_structure": {"opening_hook":"...","body_flow":"...","closing_cta":"...","visual_strategy":"..."}${attributionJson}
 }
 \`\`\``;
 }
@@ -365,19 +389,23 @@ export async function analyzePost(
       post = await fetchGenericPost(url);
   }
 
+  // C v2: compute engagement signals from fetched post
+  const signals = computeEngagementSignals(post);
+
   // Build persona identities string
   const identities = [
     persona.meta.tagline,
     ...(persona.personality?.core_traits ?? []),
   ].filter(Boolean).join('、');
 
-  // LLM analysis
-  const prompt = buildAnalysisPrompt(post, identities);
+  // LLM analysis — pass signals for v2 attribution
+  const prompt = buildAnalysisPrompt(post, identities, signals);
   const analysis = await llm.callJSON<{
     hook_patterns: PostAnalysisResult['hook_patterns'];
     core_selling_points: PostAnalysisResult['core_selling_points'];
     comment_sentiment: PostAnalysisResult['comment_sentiment'];
     content_structure: PostAnalysisResult['content_structure'];
+    attribution?: PostAttribution;
   }>(prompt, 4000);
 
   const result: PostAnalysisResult = {
@@ -400,6 +428,8 @@ export async function analyzePost(
       visual_strategy: '',
     },
     analyzed_at: now().toISOString(),
+    engagement_signals: signals,                      // ← new
+    attribution: analysis.attribution ?? undefined,   // ← new
   };
 
   persistAnalysis(result);

@@ -327,3 +327,31 @@ describe('computeEngagementSignals', () => {
     expect(s.engagement_score).toBe(200 * 1 + 0 * 5 + 10 * 4 + 0 * 3);
   });
 });
+
+// ─── buildAnalysisPrompt with signals ────────────────────────────────────────
+
+describe('buildAnalysisPrompt with signals', () => {
+  const basePost: PostContent = {
+    platform: 'xhs', url: 'https://x.com/1', title: '电竞女生必看',
+    description: '正文内容', images: [], comments: ['好看', '厉害'],
+    likes: 1000, collected_count: 400, share_count: 150, comment_count: 80,
+  };
+  const signals: EngagementSignals = {
+    save_rate: 0.40, share_rate: 0.15, comment_rate: 0.08,
+    engagement_score: 1000 + 400 * 5 + 150 * 4 + 80 * 3,
+  };
+
+  it('传入 signals 时 prompt 包含互动信号解读块', () => {
+    const prompt = buildAnalysisPrompt(basePost, 'ENTJ三栖', signals);
+    expect(prompt).toContain('互动信号解读');
+    expect(prompt).toContain('收藏率');
+    expect(prompt).toContain('0.40');
+    expect(prompt).toContain('attribution');
+  });
+
+  it('不传 signals 时 prompt 不含互动信号解读块', () => {
+    const prompt = buildAnalysisPrompt(basePost, 'ENTJ三栖');
+    expect(prompt).not.toContain('互动信号解读');
+    expect(prompt).not.toContain('attribution');
+  });
+});
