@@ -2,7 +2,7 @@
  * message-parser.ts
  * Parses incoming WeChat Work messages into structured intents.
  * Two modes:
- *   1. Slash command: /post, /trends, /status, /brief, /idea, /help
+ *   1. Slash command: /post, /trends, /status, /brief, /idea, /help, /competitors, /positioning
  *   2. Natural language (LLM): used when a queue item is "active" in context
  */
 
