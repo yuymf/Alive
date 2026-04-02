@@ -181,3 +181,16 @@ export async function getXhsNoteDetail(noteId: string, xsecToken: string): Promi
   const result = await callXhsCli('get-feed-detail', ['--feed-id', noteId, '--xsec-token', xsecToken]);
   return mapDetailToNoteDetail(result as Record<string, unknown>);
 }
+
+/** Fetch a user's recent notes by account name. Falls back to search if CLI command unsupported. */
+export async function getUserNotes(accountName: string, limit = 20): Promise<XhsNote[]> {
+  try {
+    const result = await callXhsCli('get-user-notes', ['--user', accountName, '--limit', String(limit)]);
+    const data = result as Record<string, unknown>;
+    const notes = (data.notes ?? []) as Array<Record<string, unknown>>;
+    return notes.map(mapFeedToNote);
+  } catch {
+    console.error(`[xhs-bridge] get-user-notes not supported, falling back to search for "${accountName}"`);
+    return searchXhsNotes(accountName, { sortBy: 'time_descending' });
+  }
+}

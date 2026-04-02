@@ -18,6 +18,7 @@ describe('xhs-bridge-client', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    mockExecFile.mockReset();
   });
 
   describe('isXhsAvailable', () => {
@@ -79,6 +80,45 @@ describe('xhs-bridge-client', () => {
         expect.any(Object),
         expect.any(Function),
       );
+    });
+  });
+
+  describe('getUserNotes', () => {
+    it('should parse user notes from CLI response', async () => {
+      const cliResponse = {
+        notes: [
+          { id: 'n1', xsecToken: 'tok1', displayTitle: '赛车日记', user: { nickname: 'miss_v' }, interactInfo: { likedCount: '1.2万' } },
+          { id: 'n2', xsecToken: 'tok2', displayTitle: '今日穿搭', user: { nickname: 'miss_v' }, interactInfo: { likedCount: '800' } },
+        ],
+      };
+      simulateExecFile(JSON.stringify(cliResponse));
+      const { getUserNotes } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      const notes = await getUserNotes('miss_v', 20);
+      expect(notes).toHaveLength(2);
+      expect(notes[0].id).toBe('n1');
+      expect(notes[0].title).toBe('赛车日记');
+      expect(notes[0].likes).toBe(12000);
+      expect(notes[0].user).toBe('miss_v');
+      expect(mockExecFile).toHaveBeenCalledWith(
+        'uv',
+        expect.arrayContaining(['run', 'python', 'get-user-notes', '--user', 'miss_v', '--limit', '20']),
+        expect.any(Object),
+        expect.any(Function),
+      );
+    });
+
+    it('should fall back to search on CLI error', async () => {
+      // First call (get-user-notes) fails, second call (search fallback) returns empty feeds
+      mockExecFile
+        .mockImplementationOnce((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+          cb(new Error('exit code 1'), '', 'command not found');
+        })
+        .mockImplementationOnce((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+          cb(null, JSON.stringify({ feeds: [], count: 0 }), '');
+        });
+      const { getUserNotes } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      const notes = await getUserNotes('miss_v');
+      expect(notes).toEqual([]);
     });
   });
 
