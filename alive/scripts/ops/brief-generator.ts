@@ -7,8 +7,20 @@
 import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
-import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy } from '../utils/types';
+import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy, PersonaAlignmentReport, CompetitorAnalysisStore } from '../utils/types';
 import { FilteredTrend } from './trend-analyzer';
+import { formatAlignmentBriefSection } from './persona-advisor';
+
+// ─── Brief Enrichment (optional, backward-compatible) ────────────────────────
+
+export interface BriefEnrichment {
+  /** Persona alignment report for 💡人设建议 section */
+  personaReport?: PersonaAlignmentReport | null;
+  /** Full queue items for 🎨生图Prompt + 🎬视频分镜 extraction */
+  fullQueueItems?: readonly QueueItem[];
+  /** Competitor analysis store for enriched competitor insights */
+  competitorAnalysis?: CompetitorAnalysisStore | null;
+}
 
 // ─── Pure formatting (exported for testing) ──────────────────────────────────
 
@@ -17,6 +29,7 @@ export function formatBriefCard(
   trends: FilteredTrend[],
   competitors: CompetitorUpdate[],
   queueItems: QueueItem[],
+  enrichment?: BriefEnrichment,
 ): string {
   const lines: string[] = [`📊 今日简报  ${date}`, ''];
 
@@ -38,7 +51,13 @@ export function formatBriefCard(
         lines.push(`@${c.account}  ${c.days_since_last_post}天未更新`);
       } else {
         const { topic, engagement } = c.latest_post;
-        lines.push(`@${c.account}  今日「${topic}」互动${engagement}`);
+        const analysisKey = `${c.account}:${c.platform}`;
+        const analysis = enrichment?.competitorAnalysis?.analyses?.[analysisKey];
+        if (analysis?.key_insight) {
+          lines.push(`@${c.account}  核心洞察：${analysis.key_insight} | 最新「${topic}」互动${engagement}`);
+        } else {
+          lines.push(`@${c.account}  今日「${topic}」互动${engagement}`);
+        }
       }
     }
     lines.push('');
@@ -53,6 +72,50 @@ export function formatBriefCard(
       lines.push(`   ${item.trend_hook}`);
     });
     lines.push('');
+  }
+
+  // ─── Enrichment sections (new: 生图Prompt, 视频分镜, 人设建议) ────────────
+
+  const enrichItems = enrichment?.fullQueueItems
+    ?? pending;
+  const firstPending = enrichItems.find(i => i.status === 'pending');
+
+  // 🎨 今日生图 Prompt
+  if (firstPending) {
+    const imagePrompt = firstPending.image_prompts?.[0]
+      ?? firstPending.content?.xhs?.cover_images?.[0]
+      ?? null;
+    if (imagePrompt) {
+      lines.push('━━ 🎨 今日生图 Prompt ━━');
+      lines.push(imagePrompt);
+      lines.push('');
+    }
+  }
+
+  // 🎬 今日视频分镜
+  if (firstPending) {
+    const douyin = firstPending.content?.douyin;
+    if (douyin && (douyin.key_captions.length > 0 || douyin.bgm_suggestion)) {
+      lines.push('━━ 🎬 今日视频分镜 ━━');
+      if (douyin.key_captions.length > 0) {
+        douyin.key_captions.forEach((cap, idx) => lines.push(`  ${idx + 1}. ${cap}`));
+      }
+      if (douyin.bgm_suggestion) {
+        lines.push(`  🎵 BGM: ${douyin.bgm_suggestion}`);
+      }
+      lines.push('');
+    }
+  }
+
+  // 💡 人设建议
+  if (enrichment?.personaReport) {
+    lines.push(formatAlignmentBriefSection(enrichment.personaReport));
+    lines.push('');
+  }
+
+  // ─── Actions ────────────────────────────────────────────────────────────────
+
+  if (pending.length > 0) {
     lines.push('━━ 操作 ━━');
     lines.push('回复 1~N 选择 · /post 查看详情 · 跳过 今天不发');
   } else {
@@ -166,9 +229,10 @@ export async function sendDailyBrief(
   trends: FilteredTrend[],
   competitors: CompetitorUpdate[],
   queueItems: QueueItem[],
+  enrichment?: BriefEnrichment,
 ): Promise<boolean> {
   const date = now().toISOString().slice(0, 10);
-  let card = formatBriefCard(date, trends, competitors, queueItems);
+  let card = formatBriefCard(date, trends, competitors, queueItems, enrichment);
 
   const { loadStrategy } = await import('./strategy-engine');
   const strategy = loadStrategy();
