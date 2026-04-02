@@ -328,6 +328,61 @@ describe('computeEngagementSignals', () => {
   });
 });
 
+// ─── formatAnalysisCard attribution block ────────────────────────────────────
+
+describe('formatAnalysisCard attribution block', () => {
+  const baseResult: PostAnalysisResult = {
+    url: 'https://x.com/1',
+    platform: 'xhs',
+    title: '测试帖子',
+    hook_patterns: [],
+    core_selling_points: [],
+    comment_sentiment: {
+      positive_ratio: 0.6, negative_ratio: 0.1, neutral_ratio: 0.3,
+      top_keywords: [], emotional_triggers: [],
+    },
+    content_structure: {
+      opening_hook: '', body_flow: '', closing_cta: '', visual_strategy: '',
+    },
+    analyzed_at: '2026-04-02T10:00:00.000Z',
+  };
+
+  it('attribution 存在时卡片包含爆款归因块', () => {
+    const result: PostAnalysisResult = {
+      ...baseResult,
+      attribution: {
+        cover_appeal: 40, hook_quality: 30, content_value: 25, topic_fit: 5,
+        rationale: '收藏率高是主因',
+      },
+    };
+    const card = formatAnalysisCard(result);
+    expect(card).toContain('爆款归因');
+    expect(card).toContain('封面吸引力');
+    expect(card).toContain('40%');
+    expect(card).toContain('收藏率高是主因');
+    // 进度条：40% → 4个填充块
+    expect(card).toContain('████');
+  });
+
+  it('attribution 缺失时卡片不含归因块', () => {
+    const card = formatAnalysisCard(baseResult);
+    expect(card).not.toContain('爆款归因');
+  });
+
+  it('进度条：10格总长，filled=round(pct/10)', () => {
+    const result: PostAnalysisResult = {
+      ...baseResult,
+      attribution: {
+        cover_appeal: 100, hook_quality: 0, content_value: 0, topic_fit: 0,
+        rationale: '全靠封面',
+      },
+    };
+    const card = formatAnalysisCard(result);
+    // 100% → 10个填充块
+    expect(card).toContain('██████████');
+  });
+});
+
 // ─── buildAnalysisPrompt with signals ────────────────────────────────────────
 
 describe('buildAnalysisPrompt with signals', () => {

@@ -209,6 +209,26 @@ export function formatAnalysisCard(result: PostAnalysisResult): string {
   lines.push(`📢 结尾：${st.closing_cta}`);
   lines.push(`🎨 视觉：${st.visual_strategy}`);
 
+  // C v2: attribution block
+  if (result.attribution) {
+    const attr = result.attribution;
+    lines.push('');
+    lines.push('━━ 爆款归因 ━━');
+
+    const renderBar = (label: string, emoji: string, pct: number): string => {
+      const filled = Math.round(pct / 10);
+      const empty = 10 - filled;
+      const bar = '█'.repeat(filled) + '░'.repeat(empty);
+      return `${emoji} ${label.padEnd(6)} ${bar}  ${pct}%`;
+    };
+
+    lines.push(renderBar('封面吸引力', '🎨', attr.cover_appeal));
+    lines.push(renderBar('钩子质量',   '🎣', attr.hook_quality));
+    lines.push(renderBar('内容价值',   '💡', attr.content_value));
+    lines.push(renderBar('话题契合',   '🔥', attr.topic_fit));
+    lines.push(`→ ${attr.rationale}`);
+  }
+
   return lines.join('\n');
 }
 
