@@ -18,6 +18,8 @@ import { LLMClient } from '../utils/llm-client';
 import { FilteredTrend } from './trend-analyzer';
 import { addItem, getItem, updateItemContent } from './review-queue';
 import { buildCompetitorContext } from './competitor-tracker';
+import { loadCompetitorAnalysis } from './competitor-analyzer';
+import { parseAccountKey } from './competitor-fetcher';
 import { PATHS, readJSON } from '../utils/file-utils';
 import { CompetitorLog, CompetitorUpdate, ContentStrategy, ContentPatterns } from '../utils/types';
 import { now } from '../utils/time-utils';
@@ -102,7 +104,7 @@ export function buildClusterContext(
   if (!analysis?.auto_cluster) return '';
   if (analysis.topic_clusters.length === 0) return '';
 
-  const accountName = accountKey.split(':')[0];
+  const { name: accountName } = parseAccountKey(accountKey);
   const lines: string[] = [`${accountName} 内容聚类（自动分析）：`];
 
   for (const cluster of analysis.topic_clusters) {
@@ -390,9 +392,7 @@ export async function generateTopics(
   imageStylePrompt: string,
   llm: LLMClient,
 ): Promise<void> {
-  console.log(`[topic-generator] generateTopics called with ${trends.length} trends, topic_count=${ops.topic_count}`);
   const topN = trends.slice(0, ops.topic_count);
-  console.log(`[topic-generator] topN=${topN.length} trends to process`);
 
   const strategy = loadConfirmedStrategy();
   const patterns = readJSON<ContentPatterns | null>(PATHS.contentPatterns, null);
@@ -413,12 +413,13 @@ export async function generateTopics(
 
   const strategyContext = strategy ? buildStrategyContext(strategy) : '';
 
-  // A v2: load competitor analysis for dynamic cluster context
-  const { loadCompetitorAnalysis } = await import('./competitor-analyzer');
+  // A v2: load competitor analysis once for dynamic cluster context
   const analysisStore = loadCompetitorAnalysis();
 
+  // Cache benchmarks by identityMode — only identityMode varies per trend
+  const benchmarkCache = new Map<string, ReturnType<typeof buildCompetitorBenchmarks>>();
+
   for (const trend of topN) {
-    console.log(`[topic-generator] Processing trend: ${trend.keyword}`);
     const identityMode = selectIdentityMode(trend);
     const xhsStyle = ops.platforms.xhs?.style ?? '图文为主';
     const douyinStyle = ops.platforms.douyin?.style ?? '视频脚本';
@@ -427,8 +428,13 @@ export async function generateTopics(
     const template = applyStrategyToTemplateSelection(ops.content_templates, identityMode, trend.keyword, strategy);
     const templateConstraint = template ? buildTemplateConstraint(template) : '';
 
-    // Build competitor benchmarks for this identity
-    const benchmarks = buildCompetitorBenchmarks(ops.competitors, identityMode, ops.content_templates, analysisStore);
+    // Build competitor benchmarks for this identity (cached by mode)
+    const benchmarks = benchmarkCache.get(identityMode)
+      ?? (() => {
+        const b = buildCompetitorBenchmarks(ops.competitors, identityMode, ops.content_templates, analysisStore);
+        benchmarkCache.set(identityMode, b);
+        return b;
+      })();
 
     // Compose extra context: template + competitor + hooks
     const contextParts: string[] = [];
@@ -499,6 +505,5 @@ export async function generateTopics(
       template_spec: templateSpec,
       competitor_benchmarks: benchmarks.length > 0 ? benchmarks : undefined,
     });
-    console.log(`[topic-generator] Added item for trend: ${trend.keyword}`);
   }
 }

@@ -17,7 +17,7 @@ import type {
   CompetitorAnalysisStore,
 } from '../utils/types';
 import type { LLMClient } from '../utils/llm-client';
-import { buildAccountKey } from './competitor-fetcher';
+import { buildAccountKey, parseAccountKey } from './competitor-fetcher';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -45,16 +45,12 @@ export function buildAnalysisPrompt(
   profile: CompetitorProfile,
   posts: readonly CompetitorPost[],
 ): string {
-  const historicalMixNote = profile.content_mix
-    ? `（历史参考，仅供背景了解，请勿以此限制聚类：${
+  const contentMixSection = profile.content_mix
+    ? `\n- 历史内容标注 （历史参考，仅供背景了解，请勿以此限制聚类：${
         Object.entries(profile.content_mix)
           .map(([k, v]) => `${k} ${v}%`)
           .join('、')
-      }）`
-    : '';
-
-  const contentMixSection = historicalMixNote
-    ? `\n- 历史内容标注 ${historicalMixNote}（请从帖子标题自行归纳内容簇）`
+      }）（请从帖子标题自行归纳内容簇）`
     : '';
 
   const postLines = posts
@@ -178,9 +174,7 @@ export async function analyzeCompetitors(
     }
 
     // Derive account name and platform from the key ("name:platform")
-    const colonIdx = accountKey.lastIndexOf(':');
-    const accountName = colonIdx >= 0 ? accountKey.slice(0, colonIdx) : accountKey;
-    const platform = colonIdx >= 0 ? accountKey.slice(colonIdx + 1) : 'xhs';
+    const { name: accountName, platform } = parseAccountKey(accountKey);
 
     // Find matching profile
     const profile = profiles.find(

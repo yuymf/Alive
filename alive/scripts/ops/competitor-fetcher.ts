@@ -29,6 +29,16 @@ export function buildAccountKey(name: string, platform: string): string {
 }
 
 /**
+ * Parse an account key back into name and platform.
+ * Uses lastIndexOf to correctly handle account names that contain colons.
+ */
+export function parseAccountKey(key: string): { name: string; platform: string } {
+  const colonIdx = key.lastIndexOf(':');
+  if (colonIdx < 0) return { name: key, platform: 'xhs' };
+  return { name: key.slice(0, colonIdx), platform: key.slice(colonIdx + 1) };
+}
+
+/**
  * Merge existing and incoming posts, deduplicating by post_id.
  * Incoming wins on conflict. Result is sorted by engagement desc and capped at maxPosts.
  */
