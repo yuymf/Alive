@@ -45,11 +45,17 @@ export function buildAnalysisPrompt(
   profile: CompetitorProfile,
   posts: readonly CompetitorPost[],
 ): string {
-  const contentMixLines = profile.content_mix
-    ? Object.entries(profile.content_mix)
-        .map(([category, pct]) => `  - ${category}: ${pct}%`)
-        .join('\n')
-    : '  - 未知';
+  const historicalMixNote = profile.content_mix
+    ? `（历史参考，仅供背景了解，请勿以此限制聚类：${
+        Object.entries(profile.content_mix)
+          .map(([k, v]) => `${k} ${v}%`)
+          .join('、')
+      }）`
+    : '';
+
+  const contentMixSection = historicalMixNote
+    ? `\n- 历史内容标注 ${historicalMixNote}（请从帖子标题自行归纳内容簇）`
+    : '';
 
   const postLines = posts
     .map((p, i) => {
@@ -64,9 +70,7 @@ export function buildAnalysisPrompt(
 
 - 账号名称: ${profile.name}
 - 平台: ${profile.platform}
-- 内容定位: ${profile.tag_desc}
-- 内容比例:
-${contentMixLines}${profile.audience ? `\n- 目标受众: ${profile.audience}` : ''}${profile.interaction_style ? `\n- 互动风格: ${profile.interaction_style}` : ''}
+- 内容定位: ${profile.tag_desc}${contentMixSection}${profile.audience ? `\n- 目标受众: ${profile.audience}` : ''}${profile.interaction_style ? `\n- 互动风格: ${profile.interaction_style}` : ''}
 
 ## 近期帖子列表 (共 ${posts.length} 条)
 
@@ -195,7 +199,7 @@ export async function analyzeCompetitors(
       const raw = await llm.call(prompt, ANALYSIS_MAX_TOKENS);
       const analysis = parseAnalysisResponse(raw, accountName, platform);
       if (analysis !== null) {
-        analyses[accountKey] = analysis;
+        analyses[accountKey] = { ...analysis, auto_cluster: true } as AccountAnalysis;
       }
     } catch {
       // Individual account failure never blocks the rest

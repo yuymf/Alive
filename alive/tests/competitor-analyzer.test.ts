@@ -423,6 +423,55 @@ describe('loadCompetitorAnalysis / saveCompetitorAnalysis', () => {
   });
 });
 
+// ─── buildAnalysisPrompt — content_mix de-anchoring ──────────────────────────
+
+describe('buildAnalysisPrompt — content_mix de-anchoring', () => {
+  it('有 content_mix 时 prompt 包含「历史参考」而非直接列比例', () => {
+    const profile = makeProfile({
+      content_mix: { '电竞解说': 40, '歌手': 25 },
+    });
+    const posts = makePosts(10);
+    const prompt = buildAnalysisPrompt(profile, posts);
+    expect(prompt).toContain('历史参考');
+    expect(prompt).not.toMatch(/内容比例：\n.*电竞解说: 40%/s);
+  });
+
+  it('无 content_mix 时 prompt 不含「历史参考」', () => {
+    const profile = makeProfile({ content_mix: undefined });
+    const posts = makePosts(10);
+    const prompt = buildAnalysisPrompt(profile, posts);
+    expect(prompt).not.toContain('历史参考');
+  });
+});
+
+// ─── analyzeCompetitors — auto_cluster flag ───────────────────────────────────
+
+describe('analyzeCompetitors — auto_cluster flag', () => {
+  it('成功分析后 AccountAnalysis 包含 auto_cluster: true', async () => {
+    const mockLlm: LLMClient = {
+      call: vi.fn().mockResolvedValue(`\`\`\`json
+{
+  "hook_patterns": [],
+  "cover_formulas": [],
+  "topic_clusters": [{"cluster_name":"电竞","post_count":5,"avg_engagement":500,"representative_titles":["T1"]}],
+  "engagement_pattern": {"best_performing_type":"电竞","avg_engagement":500,"posting_frequency":"每日1条","peak_days":["周三"]},
+  "key_insight": "测试洞察"
+}
+\`\`\``),
+      callJSON: vi.fn(),
+    } as unknown as LLMClient;
+
+    const store: CompetitorPostsStore = {
+      version: 1,
+      last_fetched: new Date().toISOString(),
+      accounts: { '@v姐:xhs': makePosts(10) },
+    };
+    const profiles = [makeProfile()];
+    const result = await analyzeCompetitors(store, profiles, mockLlm);
+    expect(result.analyses['@v姐:xhs']?.auto_cluster).toBe(true);
+  });
+});
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 describe('constants', () => {
