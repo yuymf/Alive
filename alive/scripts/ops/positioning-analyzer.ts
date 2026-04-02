@@ -57,8 +57,8 @@ ${hookPatterns}`;
     .join('\n\n');
 
   // Build persona info section
-  const identitiesLine = (persona.ops as Record<string, unknown> | undefined)?.identities
-    ? `- 三重身份：${JSON.stringify((persona.ops as Record<string, unknown>).identities)}`
+  const identitiesLine = (persona.ops as unknown as Record<string, unknown> | undefined)?.identities
+    ? `- 三重身份：${JSON.stringify((persona.ops as unknown as Record<string, unknown>).identities)}`
     : '';
 
   const coreTraits = persona.personality.core_traits.join('、');
@@ -67,7 +67,7 @@ ${hookPatterns}`;
   const recentItems = publishedItems.slice(-10);
   const publishedLines = recentItems.length > 0
     ? recentItems
-        .map((item, i) => `${i + 1}. ${item.content.title ?? '(无标题)'}`)
+        .map((item, i) => `${i + 1}. ${item.topic}`)
         .join('\n')
     : '（暂无已发布内容）';
 
@@ -212,5 +212,5 @@ export function savePositioningReport(report: PositioningReport): void {
  * Load the current positioning report. Returns null if the file doesn't exist.
  */
 export function loadPositioningReport(): PositioningReport | null {
-  return readJSON<PositioningReport>(PATHS.positioningReport) ?? null;
+  return readJSON<PositioningReport | null>(PATHS.positioningReport, null);
 }
