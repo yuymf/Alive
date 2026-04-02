@@ -1120,6 +1120,7 @@ export interface AccountAnalysis {
   readonly topic_clusters: readonly TopicClusterAnalysis[];
   readonly engagement_pattern: EngagementPatternAnalysis;
   readonly key_insight: string;
+  readonly auto_cluster?: boolean;  // true = 由帖子标题自动归纳
 }
 
 export interface CompetitorAnalysisStore {
@@ -1392,6 +1393,7 @@ export interface PostContent {
   comments: string[];
   collected_count: number;
   share_count: number;
+  comment_count?: number;
 }
 
 export interface HookPattern {
@@ -1420,10 +1422,29 @@ export interface PostAnalysisResult {
     visual_strategy: string;
   };
   analyzed_at: string;
+  engagement_signals?: EngagementSignals;  // C v2
+  attribution?: PostAttribution;           // C v2
 }
 
 export interface PostAnalysisLog {
   entries: PostAnalysisResult[];
+}
+
+// ─── C v2: 量化归因 Types ────────────────────────────────────────────────
+
+export interface EngagementSignals {
+  readonly save_rate: number;        // collected_count / (likes + 1)
+  readonly share_rate: number;       // share_count / (likes + 1)
+  readonly comment_rate: number;     // comment_count / (likes + 1)，comment_count 缺失时为 0
+  readonly engagement_score: number; // likes×1 + collected×5 + share×4 + comment×3
+}
+
+export interface PostAttribution {
+  readonly cover_appeal: number;  // 0-100，封面吸引力
+  readonly hook_quality: number;  // 0-100，钩子质量
+  readonly content_value: number; // 0-100，内容实用/情绪价值
+  readonly topic_fit: number;     // 0-100，话题契合度
+  readonly rationale: string;     // LLM 一句话解释最主要的归因依据
 }
 
 // ─── D v1: 人设建议 Types ────────────────────────────────────────────────
