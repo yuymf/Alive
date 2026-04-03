@@ -191,6 +191,6 @@ export async function getUserNotes(accountName: string, limit = 20): Promise<Xhs
     return notes.map(mapFeedToNote);
   } catch {
     console.error(`[xhs-bridge] get-user-notes not supported, falling back to search for "${accountName}"`);
-    return searchXhsNotes(accountName, { sortBy: 'time_descending' });
+    return searchXhsNotes(accountName, { sortBy: '最新' });
   }
 }

@@ -9,13 +9,25 @@
 import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
-import { analyzeTrends } from '../ops/trend-analyzer';
+import { loadSkillEnvVars, setPersonaName } from '../utils/file-utils';
+import { analyzeTrends, buildPersonaIdentities } from '../ops/trend-analyzer';
 import { trackCompetitors } from '../ops/competitor-tracker';
 import { generateTopics } from '../ops/topic-generator';
 import { sendDailyBrief } from '../ops/brief-generator';
 import { loadQueue, cleanupOldItems } from '../ops/review-queue';
+import { generatePersonaReport } from '../ops/persona-advisor';
 
 async function main(): Promise<void> {
+  // Load environment variables from openclaw.json (needed for isolated cron sessions)
+  loadSkillEnvVars('alive');
+
+  // If --persona <slug> was passed (e.g. from cron), override the persona context
+  // so this job operates on the correct persona's memory directory.
+  const personaArgIdx = process.argv.indexOf('--persona');
+  if (personaArgIdx !== -1 && process.argv[personaArgIdx + 1]) {
+    setPersonaName(process.argv[personaArgIdx + 1]);
+  }
+
   const persona = await loadPersona();
   const ops = persona.ops;
 
@@ -25,7 +37,7 @@ async function main(): Promise<void> {
   }
 
   const llm = createRealLLMClient('ops-brief');
-  const identities = (persona.personality?.core_traits ?? []).join('、');
+  const identities = buildPersonaIdentities(persona);
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
   console.log(`[${wallNow().toISOString()}] ops-brief: starting for ${persona.meta.id}`);
@@ -40,13 +52,29 @@ async function main(): Promise<void> {
   const trends = trendsResult.status === 'fulfilled' ? trendsResult.value : [];
   const competitors = competitorsResult.status === 'fulfilled' ? competitorsResult.value : [];
 
+  console.log(`[${wallNow().toISOString()}] ops-brief: trends=${trends.length}, calling generateTopics...`);
   await generateTopics(trends, ops, persona.meta.name, imageStyle, llm);
 
   const queue = await loadQueue();
   const pending = queue.items.filter(i => i.status === 'pending');
-  const sent = await sendDailyBrief(trends, competitors, pending);
+  console.log(`[${wallNow().toISOString()}] ops-brief: after generateTopics, pending=${pending.length} items`);
 
-  console.log(`[${wallNow().toISOString()}] ops-brief: brief sent=${sent}, ${pending.length} pending topics`);
+  // Generate persona alignment report for brief enrichment
+  let personaReport = null;
+  try {
+    personaReport = await generatePersonaReport(persona, trends, competitors, llm);
+  } catch (err) {
+    console.error(`[${wallNow().toISOString()}] ops-brief: persona report failed:`, (err as Error).message);
+  }
+
+  const deliveryMode = ops.automation?.brief_delivery ?? 'wecom-target';
+
+  const sent = await sendDailyBrief(trends, competitors, pending, {
+    personaReport,
+    fullQueueItems: pending,
+  }, deliveryMode);
+
+  console.log(`[${wallNow().toISOString()}] ops-brief: brief sent=${sent} (mode=${deliveryMode}), ${pending.length} pending topics`);
 }
 
 main().catch(err => {

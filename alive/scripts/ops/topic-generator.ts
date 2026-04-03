@@ -18,6 +18,7 @@ import { LLMClient } from '../utils/llm-client';
 import { FilteredTrend } from './trend-analyzer';
 import { addItem, getItem, updateItemContent } from './review-queue';
 import { buildCompetitorContext } from './competitor-tracker';
+import { buildMemoryContext } from './competitor-memory';
 import { loadCompetitorAnalysis } from './competitor-analyzer';
 import { parseAccountKey } from './competitor-fetcher';
 import { PATHS, readJSON } from '../utils/file-utils';
@@ -296,7 +297,7 @@ export async function regenerateContent(
     originalContent, instruction, field, voiceStyle, platformStyle, contentPatterns,
   );
 
-  const result = await llm.callJSON<Record<string, unknown>>(prompt, 1500);
+  const result = await llm.callJSON<Record<string, unknown>>(prompt, 3000);
   const newFieldValue = result[key] ?? result[field] ?? currentValue;
   const updatedPlatformContent = { ...item.content[platform], [key]: newFieldValue };
   const newContent = platform === 'xhs'
@@ -315,7 +316,7 @@ interface TiktokGrowthResult {
 function callTiktokGrowth(niche: string, count: number): string[] {
   try {
     const raw = execFileSync('openclaw', [
-      'skill', 'run', 'tiktok-growth',
+      'skills', 'run', 'tiktok-growth',
       '--args', JSON.stringify({ niche, count, action: 'generate_hooks' }),
     ], { timeout: 30_000, encoding: 'utf8' });
     const result = JSON.parse(raw) as TiktokGrowthResult;
@@ -334,7 +335,7 @@ interface DouyinDraft { opening_hook: string; script: string; bgm_suggestion: st
 function callGenerateImage(description: string, stylePrompt: string): string[] {
   try {
     const raw = execFileSync('openclaw', [
-      'skill', 'run', 'generate-image',
+      'skills', 'run', 'generate-image',
       '--args', JSON.stringify({ prompt: `${stylePrompt}, ${description}`, count: 3 }),
     ], { timeout: 60_000, encoding: 'utf8' });
     const result = JSON.parse(raw) as { images?: string[] };
@@ -402,14 +403,9 @@ export async function generateTopics(
       ).join('\n')}`
     : '';
 
-  // Load persisted competitor log for live data context
+  // Load persisted competitor log for live data context (used by brief-generator)
   const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
   const liveUpdates: CompetitorUpdate[] = competitorLog.entries;
-
-  // Build competitor context once for all topics
-  const competitorCtx = ops.competitors
-    ? buildCompetitorContext(ops.competitors, liveUpdates)
-    : '';
 
   const strategyContext = strategy ? buildStrategyContext(strategy) : '';
 
@@ -436,7 +432,11 @@ export async function generateTopics(
         return b;
       })();
 
-    // Compose extra context: template + competitor + hooks
+    // Compose extra context: template + competitor memory + hooks
+    const competitorCtx = buildMemoryContext(identityMode, {
+      maxProfiles: 5,
+      maxBreakdowns: 3,
+    });
     const contextParts: string[] = [];
     if (templateConstraint) contextParts.push(templateConstraint);
     if (competitorCtx) contextParts.push(`【对标竞品参考】\n${competitorCtx}`);
@@ -449,7 +449,7 @@ export async function generateTopics(
 
     try {
       xhsDraft = await llm.callJSON<XhsDraft>(
-        buildContentPrompt(trend, personaDescription, 'xhs', xhsStyle, contextParts.join('\n\n')), 1500,
+        buildContentPrompt(trend, personaDescription, 'xhs', xhsStyle, contextParts.join('\n\n')), 4000,
       );
     } catch (err) {
       console.error(`[topic-generator] XHS draft failed for "${trend.keyword}":`, err);
@@ -461,7 +461,7 @@ export async function generateTopics(
       const hookContext = hooks.length > 0 ? `参考钩子公式：${hooks.slice(0, 2).join(' / ')}` : '';
       const douyinContext = [...contextParts, hookContext].filter(Boolean).join('\n\n');
       douyinDraft = await llm.callJSON<DouyinDraft>(
-        buildContentPrompt(trend, personaDescription, 'douyin', douyinStyle, douyinContext), 1500,
+        buildContentPrompt(trend, personaDescription, 'douyin', douyinStyle, douyinContext), 3000,
       );
     } catch (err) {
       console.error(`[topic-generator] Douyin draft failed for "${trend.keyword}":`, err);

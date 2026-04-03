@@ -332,9 +332,10 @@ schema:
         required: false
         description: "结构化对标账号画像"
         items:
-          name: { type: string, required: true, description: "账号名" }
+          name: { type: string, required: true, description: "账号名（展示用）" }
           platform: { type: string, required: true, enum: [xhs, douyin, bilibili, weibo, instagram, youtube] }
           url: { type: string, required: false, description: "账号链接" }
+          external_id: { type: string, required: false, description: "平台 API 标识符（如抖音 sec_user_id），区分展示名 name。若设置则 API 调用优先使用此字段。" }
           tag: { type: string, required: true, description: "人设标签 (如 '硬核电竞解说')" }
           tag_desc: { type: string, required: true, description: "标签详细描述" }
           followers: { type: string, required: false, description: "粉丝量 (如 '3.7w')" }
@@ -373,6 +374,14 @@ schema:
         properties:
           xhs: { type: object, properties: { enabled: { type: boolean }, style: { type: string } } }
           douyin: { type: object, properties: { enabled: { type: boolean }, style: { type: string } } }
+      automation:
+        type: object
+        required: false
+        description: "自动化投递配置 — 控制哪些 cron 存在以及如何投递"
+        properties:
+          brief_delivery: { type: string, required: false, enum: [session, wecom-target], description: "简报投递模式: session=当前会话, wecom-target=定向企微" }
+          enable_heartbeat_cron: { type: boolean, required: false, description: "是否注册心跳 cron (morning/tick/night)，默认 true" }
+          silent_background_jobs: { type: boolean, required: false, description: "后台运营任务是否禁止 announce 投递，默认 false" }
 
   content_sources:
     type: object

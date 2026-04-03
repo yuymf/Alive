@@ -3,6 +3,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveLlmLogPath } from '../../alive/scripts/utils/file-utils';
 import type { Interaction, Phase } from './harness-context';
 
 export interface LLMLogEntry {
@@ -19,24 +20,25 @@ export interface LLMLogEntry {
   readonly finish_reason?: string;
 }
 
-const LOG_PATH = path.join(
-  process.env.HOME || '~',
-  '.openclaw/workspace/memory/llm-call-log.jsonl',
-);
+function getLogPath(): string {
+  return resolveLlmLogPath();
+}
 
 let _lastLineCount = 0;
 
 export function markLogPosition(): number {
-  if (!fs.existsSync(LOG_PATH)) return 0;
-  const content = fs.readFileSync(LOG_PATH, 'utf8');
+  const logPath = getLogPath();
+  if (!fs.existsSync(logPath)) return 0;
+  const content = fs.readFileSync(logPath, 'utf8');
   const lines = content.split('\n').filter(l => l.trim().length > 0);
   _lastLineCount = lines.length;
   return _lastLineCount;
 }
 
 export function readNewEntries(): LLMLogEntry[] {
-  if (!fs.existsSync(LOG_PATH)) return [];
-  const content = fs.readFileSync(LOG_PATH, 'utf8');
+  const logPath = getLogPath();
+  if (!fs.existsSync(logPath)) return [];
+  const content = fs.readFileSync(logPath, 'utf8');
   const lines = content.split('\n').filter(l => l.trim().length > 0);
   const newLines = lines.slice(_lastLineCount);
 

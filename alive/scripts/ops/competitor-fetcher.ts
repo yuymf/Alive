@@ -108,24 +108,105 @@ interface YtDlpVideo {
 function fetchDouyinPosts(accountId: string): CompetitorPost[] {
   const fetchedAt = wallNow().toISOString();
 
-  const raw = execFileSync(
-    'openclaw',
-    ['skill', 'yt-dlp-downloader', '--json', JSON.stringify({ account_id: accountId, limit: MAX_POSTS_PER_ACCOUNT })],
-    { timeout: DOUYIN_FETCH_TIMEOUT, encoding: 'utf8' },
-  );
+  // Strategy 1: try yt-dlp-downloader skill
+  try {
+    const raw = execFileSync(
+      'openclaw',
+      ['skills', 'run', 'yt-dlp-downloader', '--args', JSON.stringify({ account_id: accountId, limit: MAX_POSTS_PER_ACCOUNT })],
+      { timeout: DOUYIN_FETCH_TIMEOUT, encoding: 'utf8' },
+    );
 
-  const parsed = JSON.parse(raw.trim()) as { videos?: YtDlpVideo[] };
-  const videos = parsed.videos ?? [];
+    const parsed = JSON.parse(raw.trim()) as { videos?: YtDlpVideo[] };
+    const videos = parsed.videos ?? [];
 
-  return videos.map(video => ({
-    account_name: accountId,
+    if (videos.length > 0) {
+      return videos.map(video => ({
+        account_name: accountId,
+        platform: 'douyin' as const,
+        post_id: video.id ?? `douyin_${accountId}_${Math.random().toString(36).slice(2)}`,
+        title: video.title ?? '',
+        engagement: video.like_count ?? 0,
+        comment_count: video.comment_count,
+        posted_at: video.upload_date,
+        cover_url: video.thumbnail,
+        fetched_at: fetchedAt,
+      }));
+    }
+    console.warn(`[competitor-fetcher] yt-dlp-downloader returned 0 videos for ${accountId}, trying curl fallback`);
+  } catch (err) {
+    console.warn(
+      `[competitor-fetcher] yt-dlp-downloader failed for ${accountId}: ${err instanceof Error ? err.message : err} — trying curl fallback`,
+    );
+  }
+
+  // Strategy 2: fallback to curl + Douyin Web API (requires sec_user_id and cookies)
+  try {
+    return fetchDouyinPostsViaCurl(accountId, fetchedAt);
+  } catch (err) {
+    console.error(
+      `[competitor-fetcher] curl fallback also failed for ${accountId}: ${err instanceof Error ? err.message : err}`,
+    );
+    throw err; // propagate to let caller record as failed
+  }
+}
+
+/**
+ * Fallback: Fetch Douyin posts via curl + Web API.
+ * Uses DOUYIN_COOKIES_FILE for authentication.
+ * The accountId should be a sec_user_id for this method to work.
+ */
+function fetchDouyinPostsViaCurl(secUid: string, fetchedAt: string): CompetitorPost[] {
+  const cookiesFile = process.env.DOUYIN_COOKIES_FILE ?? '';
+  let cookieHeader = '';
+  if (cookiesFile) {
+    try {
+      const fs = require('fs') as typeof import('fs');
+      cookieHeader = fs.readFileSync(cookiesFile, 'utf8').trim();
+    } catch {
+      console.warn(`[competitor-fetcher] Cookie file not found: ${cookiesFile}`);
+    }
+  }
+
+  const url = `https://www.douyin.com/aweme/v1/web/aweme/post/?sec_user_id=${encodeURIComponent(secUid)}&count=${MAX_POSTS_PER_ACCOUNT}&max_cursor=0&aid=6383&device_platform=webapp&source=channel_pc_web`;
+  const curlArgs = [
+    '-s', '--max-time', '20',
+    url,
+    '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    '-H', 'Accept: application/json',
+    '-H', 'Referer: https://www.douyin.com/',
+  ];
+  if (cookieHeader) curlArgs.push('-H', `Cookie: ${cookieHeader}`);
+
+  const raw = execFileSync('curl', curlArgs, { timeout: 25_000, encoding: 'utf8' });
+  if (!raw.trim() || raw.trim().startsWith('<')) {
+    console.warn(`[competitor-fetcher] curl fallback: empty or HTML response for ${secUid}`);
+    return [];
+  }
+
+  const d = JSON.parse(raw.trim()) as {
+    status_code?: number;
+    aweme_list?: Array<{
+      aweme_id?: string;
+      desc?: string;
+      statistics?: { digg_count?: number; comment_count?: number };
+      create_time?: number;
+      video?: { cover?: { url_list?: string[] } };
+    }>;
+  };
+  const list = d.aweme_list ?? [];
+  if (list.length === 0) {
+    console.warn(`[competitor-fetcher] curl fallback: aweme_list empty for ${secUid} (status_code=${d.status_code ?? 'N/A'})`);
+  }
+
+  return list.map(v => ({
+    account_name: secUid,
     platform: 'douyin' as const,
-    post_id: video.id ?? `douyin_${accountId}_${Math.random().toString(36).slice(2)}`,
-    title: video.title ?? '',
-    engagement: video.like_count ?? 0,
-    comment_count: video.comment_count,
-    posted_at: video.upload_date,
-    cover_url: video.thumbnail,
+    post_id: v.aweme_id ?? `douyin_${secUid}_${Math.random().toString(36).slice(2)}`,
+    title: v.desc ?? '',
+    engagement: v.statistics?.digg_count ?? 0,
+    comment_count: v.statistics?.comment_count,
+    posted_at: v.create_time ? new Date(v.create_time * 1000).toISOString() : undefined,
+    cover_url: v.video?.cover?.url_list?.[0],
     fetched_at: fetchedAt,
   }));
 }

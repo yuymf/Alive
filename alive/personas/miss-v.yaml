@@ -94,10 +94,12 @@ schedule:
     - 21
 
 content_sources:
-  - daily-hot-news
-  - douyin-hot-trend
+  # Actual trend platforms are in trend-analyzer.ts: douyin, weibo, bilibili, toutiao, baidu
+  - douyin
   - weibo
   - bilibili
+  - toutiao
+  - baidu
 
 ops:
   enabled: true
@@ -105,7 +107,7 @@ ops:
   competitor_accounts:
     xhs: []
     douyin: []
-  trend_score_threshold: 1.8
+  trend_score_threshold: 1.0
   topic_count: 3
   topic_filter_prompt: |
     与以下任一赛道相关或可借势：电竞、音乐/歌手、赛车/运动、女性力量/大女主、轻奢生活
@@ -119,12 +121,17 @@ ops:
     douyin:
       enabled: true
       style: "视频脚本，前3秒必须有冲突感或反差，BGM卡点，字幕简洁，结尾引导互动"
+  automation:
+    brief_delivery: session
+    enable_heartbeat_cron: false
+    silent_background_jobs: false
 
   # ─── 结构化对标账号画像 ─────────────────────────────────────────────────
   competitors:
     # === 硬核电竞解说 ===
-    - name: "天云"
+    - name: "灵儿双语解说"
       platform: "douyin"
+      external_id: "MS4wLjABAAAAPsz-XDNrels90bU94cLKVrLIL97qUp1n8z7DpdFV1RY"
       tag: "硬核电竞解说"
       tag_desc: "KPL官方双语解说，知性犀利，BP拆解透彻，温柔有力量、中英文丝滑切换"
       audience: "理性电竞粉、职场女性/大学生，偏爱专业且有质感的内容"
@@ -141,8 +148,9 @@ ops:
         - "双语能力降低观赛门槛，拓宽受众"
         - "颜值＋实力反差感引发讨论"
 
-    - name: "希然"
+    - name: "冷御三语主持"
       platform: "douyin"
+      external_id: "MS4wLjABAAAAla_53EWwrYkunmP4-So1cigUE79N8tANUfz_cy12Ju0"
       tag: "硬核电竞解说"
       tag_desc: "LPL首位中英韩三语主持人，冷御酷姐风格、专业硬实力和多语言优势成为电竞圈标志性人物"
       followers: "未知"
@@ -159,8 +167,9 @@ ops:
         - "冷御风格拒绝甜美人设，树立女解说标杆"
         - "三语能力是核心差异化竞争力"
 
-    - name: "小鹿"
+    - name: "国风数据解说"
       platform: "douyin"
+      external_id: "MS4wLjABAAAAZfKKV8KSia448SSJpsHATgEzJypdnetVhIXEf79pHnVPXzW7l1bwU0HxXBL-gmpp"
       tag: "硬核电竞解说"
       tag_desc: "KPL解说，严谨硬核，擅长数据/局势分析，专业度拉满"
       audience: "男性理性电竞粉居多，兼有喜爱国风穿搭的女性粉丝"
@@ -686,8 +695,15 @@ sub_skills:
   - xhs-bridge
 
 features:
-  skill_discovery: false
-  random_events: true
+  # 运营助手模式 — 关闭所有"活着"引擎，只保留 ops 功能
+  emotion: false
+  intent: false
+  vitality: false
+  confidence: false
+  flow_states: false
+  random_events: false
   social_graph: false
-  flow_states: true
   procrastination: false
+  personality_drift: false
+  skill_discovery: false
+  content_browse: false

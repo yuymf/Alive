@@ -200,19 +200,77 @@ export function formatStrategySection(strategy: ContentStrategy | null): string 
   return lines.join('\n');
 }
 
-// ─── WeChat Work push via OpenClaw gateway ────────────────────────────────────
+// ─── WeChat Work push ─────────────────────────────────────────────────────────
+// Uses openclaw message send --channel wecom --target <WECOM_TARGET_ID>
+// WECOM_TARGET_ID = enterprise WeChat member userid (e.g. "zhangsan")
+// Set via: openclaw.json → skills.entries.alive.env.WECOM_TARGET_ID
 
-export function sendToWechatWork(message: string): boolean {
+export type BriefDeliveryMode = 'session' | 'wecom-target';
+
+/**
+ * Send brief to the current/last OpenClaw session (no channel/target needed).
+ * This is the preferred mode for personas using automation.brief_delivery = 'session'.
+ */
+export function sendBriefToSession(message: string): boolean {
+  // openclaw message send requires -t (target); for session delivery, use the
+  // OPENCLAW_SESSION_TARGET env var set by the cron runner, or fall back to stdout.
+  const sessionTarget = process.env.OPENCLAW_SESSION_TARGET ?? '';
+  if (!sessionTarget) {
+    console.log('\n[Session 投递内容]\n' + message + '\n');
+    console.log('[brief-generator] OPENCLAW_SESSION_TARGET not set — printed to stdout only');
+    return true;
+  }
   try {
     execFileSync('openclaw', [
-      'wechat', 'send',
+      'message', 'send',
+      '-t', sessionTarget,
       '--message', message,
-    ], { timeout: 15_000, encoding: 'utf8' });
+    ], { timeout: 20_000, encoding: 'utf8' });
     return true;
   } catch (err) {
-    console.error('[brief-generator] sendToWechatWork failed:', err);
+    console.error('[brief-generator] session send failed:', err);
+    // Fallback: print to stdout so cron deliver can pick it up
+    console.log('\n[Session 投递内容（fallback）]\n' + message + '\n');
     return false;
   }
+}
+
+/**
+ * Send brief to a specific WeChat Work target via WECOM_TARGET_ID.
+ */
+export function sendToWechatWork(message: string): boolean {
+  const targetId = process.env.WECOM_TARGET_ID ?? '';
+
+  if (!targetId) {
+    // Graceful fallback: print to stdout
+    console.log('\n[WeChat Work 推送内容]\n' + message + '\n');
+    console.log('[brief-generator] WECOM_TARGET_ID not set — printed to stdout only');
+    console.log('[brief-generator] 设置方式: openclaw.json → skills.entries.alive.env.WECOM_TARGET_ID = "你的企微userid"');
+    return true;
+  }
+
+  try {
+    execFileSync('openclaw', [
+      'message', 'send',
+      '--channel', 'wecom',
+      '--target', targetId,
+      '--message', message,
+    ], { timeout: 20_000, encoding: 'utf8' });
+    return true;
+  } catch (err) {
+    console.error('[brief-generator] wecom send failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Deliver brief card using the specified mode.
+ */
+export function deliverBrief(message: string, mode: BriefDeliveryMode): boolean {
+  if (mode === 'session') {
+    return sendBriefToSession(message);
+  }
+  return sendToWechatWork(message);
 }
 
 // ─── Log ─────────────────────────────────────────────────────────────────────
@@ -230,6 +288,7 @@ export async function sendDailyBrief(
   competitors: CompetitorUpdate[],
   queueItems: QueueItem[],
   enrichment?: BriefEnrichment,
+  deliveryMode?: BriefDeliveryMode,
 ): Promise<boolean> {
   const date = now().toISOString().slice(0, 10);
   let card = formatBriefCard(date, trends, competitors, queueItems, enrichment);
@@ -239,7 +298,8 @@ export async function sendDailyBrief(
   const strategySection = formatStrategySection(strategy);
   if (strategySection) card = `${card}\n${strategySection}`;
 
-  const sent = sendToWechatWork(card);
+  const mode = deliveryMode ?? 'wecom-target';
+  const sent = deliverBrief(card, mode);
   if (sent) logBriefSent(date, queueItems.filter(i => i.status === 'pending').length);
   return sent;
 }

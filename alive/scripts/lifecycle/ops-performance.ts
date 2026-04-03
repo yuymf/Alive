@@ -59,6 +59,15 @@ async function main(): Promise<void> {
   cleanupOldEntries();
 
   console.log(`[${wallNow().toISOString()}] ops-performance: ${publishedItems.length} items checked, ${snapshotCount} snapshots appended`);
+
+  // === 摘要输出（cron deliver 会投递 stdout） ===
+  console.log(`\n📈 内容表现速报`);
+  console.log(`- 已发布内容: ${publishedItems.length} 篇`);
+  console.log(`- 本轮采集快照: ${snapshotCount} 条`);
+  if (snapshotCount > 0) {
+    const tracked = publishedItems.filter(it => it.published_urls).slice(0, 3);
+    tracked.forEach(it => console.log(`  · ${it.topic}（${Object.keys(it.published_urls!).join('/')}）`));
+  }
 }
 
 main().catch(err => {

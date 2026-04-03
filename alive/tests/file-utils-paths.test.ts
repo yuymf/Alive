@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { PATHS, setBasePaths, resetBasePaths, readJSON, writeJSON, setPersonaName } from '../scripts/utils/file-utils';
+import { PATHS, setBasePaths, resetBasePaths, readJSON, writeJSON, setPersonaName, resolveLlmLogPath } from '../scripts/utils/file-utils';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -119,5 +119,40 @@ describe('persona-sensitive paths should use memory base (not skill base)', () =
 
     // Reset
     setPersonaName('default');
+  });
+});
+
+describe('runtime log path separation', () => {
+  afterEach(() => resetBasePaths());
+
+  it('PATHS.llmCallLog lives outside persona memory (default mode)', () => {
+    setPersonaName('miss-v');
+    const home = process.env.HOME!;
+    expect(PATHS.llmCallLog).toBe(path.join(home, '.openclaw', 'workspace', 'runtime', 'llm-call-log.jsonl'));
+    expect(PATHS.llmCallLog).not.toContain('/workspace/memory/miss-v');
+    setPersonaName('default');
+  });
+
+  it('PATHS.runtimeDir uses sibling _runtime when base paths overridden', () => {
+    setBasePaths('/tmp/test-memory', '/tmp/test-skill');
+    expect(PATHS.runtimeDir).toBe(path.resolve('/tmp/test-memory', '..', '_runtime'));
+    expect(PATHS.llmCallLog).toBe(path.join(PATHS.runtimeDir, 'llm-call-log.jsonl'));
+  });
+
+  it('two different personas share the same llmCallLog path', () => {
+    setPersonaName('miss-v');
+    const pathA = PATHS.llmCallLog;
+    setPersonaName('minase');
+    const pathB = PATHS.llmCallLog;
+    expect(pathA).toBe(pathB);
+    setPersonaName('default');
+  });
+
+  it('resolveLlmLogPath returns canonical runtime path when no file exists', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-log-test-'));
+    setBasePaths(path.join(tmpDir, 'memory'), path.join(tmpDir, 'skill'));
+    const resolved = resolveLlmLogPath();
+    expect(resolved).toBe(PATHS.llmCallLog);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });

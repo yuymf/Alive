@@ -3,7 +3,7 @@
 
 import type { ContentItem, ContentProvider, ContentProviderMeta } from '../content-provider';
 
-const DEFAULT_API_URL = 'https://dailyhot.hkg1.zeabur.app';
+const DEFAULT_API_URL = 'https://dailyhot-rho-nine.vercel.app';
 const DEFAULT_PLATFORMS = ['zhihu', 'weibo', 'bilibili'];
 const FETCH_TIMEOUT = 10_000;
 

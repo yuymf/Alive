@@ -760,9 +760,24 @@ export interface SubSkill {
 // === Hydration Functions (backward compat) ===
 
 export function hydrateEmotionState(raw: Record<string, unknown>): EmotionState {
-  const state = raw as Partial<EmotionState> & Pick<EmotionState, 'mood' | 'energy' | 'stress' | 'creativity' | 'sociability' | 'last_updated' | 'recent_cause'>;
+  const state = raw as Partial<EmotionState> & Record<string, unknown>;
+
+  // Backward compat: flatten format (valence/arousal at top level, no mood object)
+  const mood = state.mood ?? {
+    valence: (raw.valence as number) ?? 0,
+    arousal: (raw.arousal as number) ?? 0.5,
+    description: (raw.description as string) ?? '',
+  };
+
   return {
     ...state,
+    mood: mood as EmotionState['mood'],
+    energy: state.energy ?? (raw.energy as number) ?? 0.5,
+    stress: state.stress ?? (raw.stress as number) ?? 0.2,
+    creativity: state.creativity ?? (raw.creativity as number) ?? 0.4,
+    sociability: state.sociability ?? (raw.sociability as number) ?? 0.5,
+    last_updated: state.last_updated ?? (raw.lastUpdate as string) ?? null,
+    recent_cause: state.recent_cause ?? '',
     momentum: state.momentum ?? { ...DEFAULT_MOMENTUM },
     undertone: state.undertone ?? { ...DEFAULT_UNDERTONE },
     impulse_history: state.impulse_history ?? [],
@@ -1042,7 +1057,7 @@ export interface CompetitorLatestPost {
 
 export interface CompetitorUpdate {
   account: string;
-  platform: 'xhs' | 'douyin';
+  platform: 'xhs' | 'douyin' | 'bilibili';
   latest_post: CompetitorLatestPost | null;
   days_since_last_post: number;
   fetched_at: string;
@@ -1188,6 +1203,12 @@ export interface CompetitorProfile {
   readonly name: string;
   readonly platform: 'xhs' | 'douyin' | 'bilibili' | 'weibo' | 'instagram' | 'youtube';
   readonly url?: string;
+  /**
+   * Platform-specific API identifier, distinct from the display name.
+   * For Douyin: `sec_user_id` (the Base64 string used in web API requests).
+   * When present, tracker/fetcher use this instead of `name` for API calls.
+   */
+  readonly external_id?: string;
   readonly tag: string;
   readonly tag_desc: string;
   readonly followers?: string;
@@ -1202,6 +1223,52 @@ export interface CompetitorProfile {
   readonly takeaways?: readonly string[];
   /** Anti-patterns to avoid from this competitor */
   readonly avoid?: readonly string[];
+}
+
+// ─── Competitor Memory Knowledge Base Types ─────────────────────────────────
+
+export interface CompetitorDocFrontmatter {
+  readonly platform: string;
+  readonly track: string;
+  readonly reference_type: 'primary' | 'secondary';
+  readonly name: string;
+  readonly updated_at: string;
+}
+
+export interface CompetitorDoc {
+  readonly frontmatter: CompetitorDocFrontmatter;
+  readonly content: string;
+  readonly takeaways: readonly string[];
+  readonly avoids: readonly string[];
+  readonly filePath: string;
+}
+
+export interface BreakdownDocFrontmatter {
+  readonly platform: string;
+  readonly track: string;
+  readonly competitor: string;
+  readonly date: string;
+  readonly engagement: number;
+  readonly content_type: string;
+  readonly source: 'auto' | 'manual';
+}
+
+export interface BreakdownDoc {
+  readonly frontmatter: BreakdownDocFrontmatter;
+  readonly content: string;
+  readonly filePath: string;
+}
+
+export interface BreakdownInput {
+  readonly platform: string;
+  readonly track: string;
+  readonly competitor: string;
+  readonly title: string;
+  readonly engagement: number;
+  readonly content_type: string;
+  readonly source: 'auto' | 'manual';
+  readonly body: string;
+  readonly link?: string;
 }
 
 // ─── Content Template Types ─────────────────────────────────────────────────
@@ -1251,6 +1318,15 @@ export interface OpsConfig {
   max_patterns?: number;
   /** Rolling baseline window in days (default: 7) */
   baseline_window_days?: number;
+  /** Automation delivery config — controls which cron jobs exist and how they deliver */
+  automation?: {
+    /** How daily brief is delivered: 'session' = send to current session, 'wecom-target' = use WECOM_TARGET_ID direct send */
+    brief_delivery?: 'session' | 'wecom-target';
+    /** Whether to register heartbeat cron jobs (morning/tick/night). Default: true */
+    enable_heartbeat_cron?: boolean;
+    /** Whether background ops jobs (performance/trends/analyze etc.) should suppress announce delivery. Default: false */
+    silent_background_jobs?: boolean;
+  };
 }
 
 export interface OpsBriefLogEntry {

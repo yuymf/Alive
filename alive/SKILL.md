@@ -131,6 +131,8 @@ When a message starts with `/alive`, it is an **admin command** — NOT a conver
 
 **Execution:** Run `node {baseDir}/scripts/admin/command-handler.js` with the raw message and return the Markdown output directly.
 
+**CRITICAL: ALWAYS execute the command unconditionally.** Do NOT judge whether a subcommand is valid — the handler itself returns appropriate errors. Never say "command not found" without actually running the handler first. The handler knows all valid commands including recent additions.
+
 **Available commands:**
 
 | Command | Script function | Description |
@@ -148,3 +150,16 @@ When a message starts with `/alive`, it is an **admin command** — NOT a conver
 | `/alive create <name> <tagline>` | `dispatch(...)` | Generate persona with name+tagline |
 | `/alive create --guided` | `dispatch('/alive create --guided')` | Guided persona creation questionnaire |
 | `/alive help` | `dispatch('/alive help')` | Show command help |
+
+**运营工作台命令（同样通过 `/alive` 前缀触发）：**
+
+| Command | Script function | Description |
+|---------|-----------------|-------------|
+| `/alive brief` | `dispatch('/alive brief')` | 生成今日运营简报（热点+选题+人设建议） |
+| `/alive trends` | `dispatch('/alive trends')` | 查看当前热点趋势 |
+| `/alive idea [方向]` | `dispatch('/alive idea ...')` | 手动生成选题（可指定方向，如 `/alive idea 电竞`） |
+| `/alive post [N]` | `dispatch('/alive post')` | 查看选题列表 / 第N个选题详情 |
+| `/alive analyze <URL>` | `dispatch('/alive analyze <URL>')` | 爆款帖子拆解分析 |
+| `/alive advice` | `dispatch('/alive advice')` | 人设契合度建议 |
+
+> **Note:** `/alive brief`, `/alive trends`, `/alive idea`, `/alive analyze`, `/alive advice` involve LLM calls and may take 30-60 seconds to complete. `/alive post` is instant (reads from local queue).

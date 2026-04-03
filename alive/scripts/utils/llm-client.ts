@@ -7,6 +7,7 @@ import { now, wallNow } from './time-utils';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { PATHS } from './file-utils';
 
 // === Core Interface ===
 
@@ -112,10 +113,7 @@ const LLM_LOG_MAX_BYTES = LLM_CONFIG.LLM_LOG_MAX_BYTES;
 
 function getLlmLogPath(): string {
   if (!_llmLogPath) {
-    _llmLogPath = path.join(
-      process.env.HOME || '~',
-      '.openclaw/workspace/memory/llm-call-log.jsonl'
-    );
+    _llmLogPath = PATHS.llmCallLog;
   }
   return _llmLogPath;
 }
@@ -272,6 +270,20 @@ export async function callLLMJSON<T>(
   };
   const result = await callLLM(prompt, maxTokens, caller, effectiveOptions);
 
+  // Check for empty response (either length truncation or unknown/anomalous finish reason)
+  if (!result.content.trim()) {
+    let msg = '';
+    if (result.finishReason === 'length') {
+      msg = `[llm-client] LLM returned empty content with finish_reason=length (maxTokens=${maxTokens}). This usually indicates an upstream issue.`;
+    } else if (result.finishReason === 'unknown') {
+      msg = `[llm-client] LLM returned empty content with finish_reason=unknown. The backend may have encountered an internal error or the API endpoint is misconfigured.`;
+    } else {
+      msg = `[llm-client] LLM returned empty content with finish_reason=${result.finishReason}.`;
+    }
+    console.error(msg);
+    throw new Error(msg);
+  }
+
   // If truncated, retry with doubled budget (capped)
   if (result.finishReason === 'length' && maxTokens < MAX_RETRY_TOKENS) {
     const retryTokens = Math.min(maxTokens * 2, MAX_RETRY_TOKENS);
@@ -330,10 +342,11 @@ export function createMockLLMClient(
   responses: string[] | (Record<string, string> & { default?: string }),
 ): LLMClient {
   if (Array.isArray(responses)) {
+    const arr = responses as string[];
     let idx = 0;
     function nextResponse(): string {
-      if (idx < responses.length) {
-        return (responses as string[])[idx++];
+      if (idx < arr.length) {
+        return arr[idx++];
       }
       return '{}';
     }

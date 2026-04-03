@@ -31,6 +31,7 @@ import {
   DEFAULT_FLOW_STATE,
   DEFAULT_FEATURES,
   isFeatureEnabled,
+  hydrateEmotionState,
 } from '../utils/types';
 
 // ── Result type ────────────────────────────────────────────────────
@@ -130,6 +131,28 @@ function tokenize(input: string): string[] {
 
 // ── Dispatcher ─────────────────────────────────────────────────────
 
+/**
+ * Proxy ops sub-commands to ops-command-handler.
+ * E.g. "/alive brief" → node ops-command-handler.js brief
+ *      "/alive post 1" → node ops-command-handler.js post 1
+ */
+function cmdOpsProxy(cmd: ParsedCommand): CommandResult {
+  const { execFileSync } = require('child_process') as typeof import('child_process');
+  const opsHandlerPath = path.resolve(__dirname, '../ops/ops-command-handler.js');
+  const opsArgs = [cmd.subcommand, ...cmd.args];
+  try {
+    const output = execFileSync('node', [opsHandlerPath, ...opsArgs], {
+      timeout: 120_000,
+      encoding: 'utf8' as const,
+      env: { ...process.env },
+    });
+    return { output: (output as string).trim() || '✅ Done.' };
+  } catch (err) {
+    const stderr = (err as { stderr?: Buffer | string }).stderr?.toString().trim() ?? '';
+    return { output: `❌ ${stderr || (err as Error).message}`, error: true };
+  }
+}
+
 const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<CommandResult>> = {
   help: cmdHelp,
   status: cmdStatus,
@@ -145,6 +168,13 @@ const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<C
   'confirm-strategy': cmdOpsConfirmStrategy,
   insights: cmdOpsInsights,
   patterns: cmdOpsPatterns,
+  // ── Ops 子命令 — 转发到 ops-command-handler ──────────────────
+  brief: cmdOpsProxy,
+  trends: cmdOpsProxy,
+  idea: cmdOpsProxy,
+  post: cmdOpsProxy,
+  analyze: cmdOpsProxy,
+  advice: cmdOpsProxy,
 };
 
 /**
@@ -201,6 +231,17 @@ function cmdHelp(): CommandResult {
 | \`/alive create <name> <tagline>\` | 用指定名字和定位生成角色 |
 | \`/alive create --guided\` | 引导模式，逐步填写角色信息 |
 
+## 📊 运营工作台命令
+
+| Command | Description |
+|---------|-------------|
+| \`/alive brief\` | 生成今日运营简报（热点+选题+建议） |
+| \`/alive trends\` | 查看当前热点趋势 |
+| \`/alive idea [方向]\` | 手动生成选题（可指定方向） |
+| \`/alive post [N]\` | 查看选题列表 / 第N个选题详情 |
+| \`/alive analyze <URL>\` | 爆款帖子拆解分析 |
+| \`/alive advice\` | 人设契合度建议 |
+
 > ⚡ 这些命令不经过角色人格、不写入日记、不影响记忆。`,
   };
 }
@@ -209,9 +250,15 @@ function cmdStatus(): CommandResult {
   const persona = safeLoadPersona();
   if (!persona) return personaNotFound();
 
-  const emotion = readJSON<EmotionState>(PATHS.emotionState, null as unknown as EmotionState);
-  const vitality = readJSON<VitalityState>(PATHS.vitalityState, { vitality: 100, last_updated: null, consecutive_low_days: 0 });
-  const confidence = readJSON<ConfidenceState>(PATHS.confidenceState, { confidence: 1.0, streak: 0, last_updated: null });
+  const rawEmotion = readJSON<Record<string, unknown>>(PATHS.emotionState, null as unknown as Record<string, unknown>);
+  const emotion = rawEmotion ? hydrateEmotionState(rawEmotion) : null;
+  const rawVitality = readJSON<Record<string, unknown>>(PATHS.vitalityState, { vitality: 100 });
+  const vitalityVal = (rawVitality as { vitality?: number }).vitality ?? (rawVitality as { health?: number }).health ?? 100;
+  const vitality = { vitality: vitalityVal, last_updated: null, consecutive_low_days: 0 };
+  const rawConfidence = readJSON<Record<string, unknown>>(PATHS.confidenceState, { confidence: 1.0 });
+  const confidenceVal = (rawConfidence as { confidence?: number }).confidence ?? 1.0;
+  const streakVal = (rawConfidence as { streak?: number }).streak ?? 0;
+  const confidence = { confidence: confidenceVal, streak: streakVal, last_updated: null };
   const flow = readJSON<FlowState>(PATHS.flowState, DEFAULT_FLOW_STATE);
   const schedule = getScheduleConfig(persona);
 
@@ -242,10 +289,11 @@ function cmdEmotion(cmd: ParsedCommand): CommandResult {
     return resetEmotion();
   }
 
-  const emotion = readJSON<EmotionState>(PATHS.emotionState, null as unknown as EmotionState);
-  if (!emotion) {
+  const rawEmotion = readJSON<Record<string, unknown>>(PATHS.emotionState, null as unknown as Record<string, unknown>);
+  if (!rawEmotion) {
     return { output: '⚠️ No emotion state found. The heartbeat has not run yet.' };
   }
+  const emotion = hydrateEmotionState(rawEmotion);
 
   const momentum = emotion.momentum;
   const recentImpulses = (emotion.impulse_history ?? []).slice(-5);
@@ -897,4 +945,25 @@ async function cmdOpsPatterns(_cmd: ParsedCommand): Promise<CommandResult> {
     ),
   ];
   return { output: lines.join('\n') };
+}
+
+// ── CLI Entry Point ────────────────────────────────────────────────
+// When executed as `node command-handler.js <rawArgs>`, parse argv and
+// dispatch, printing the result to stdout so the plugin can capture it.
+
+async function main(): Promise<void> {
+  const raw = process.argv.slice(2).join(' ').trim() || 'help';
+  const result = await dispatch(`/alive ${raw}`);
+  if (result.output) {
+    process.stdout.write(result.output);
+  }
+  process.exit(result.error ? 1 : 0);
+}
+
+// Only run when invoked directly (not imported as a module)
+if (typeof require !== 'undefined' && require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`❌ ${err.message}\n`);
+    process.exit(1);
+  });
 }

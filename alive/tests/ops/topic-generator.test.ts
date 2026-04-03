@@ -166,15 +166,17 @@ describe('buildCompetitorBenchmarks', () => {
     expect(benchmarks.every(b => b.name !== 'Yuri')).toBe(true);
   });
 
-  it('returns all primary when no templates match identity mode', () => {
+  it('returns only taxonomy-matched primary for singer (no match in test data)', () => {
     const benchmarks = buildCompetitorBenchmarks(profiles, 'singer', templates);
-    // No singer templates → no relevant groups → returns all primary
-    expect(benchmarks).toHaveLength(2);
+    // singer taxonomy: ['音乐', '偶像歌手'] — test data has '硬核电竞解说' and '赛道飒爽女车手'
+    // Neither matches singer, so result is empty (correct taxonomy behavior)
+    expect(benchmarks).toHaveLength(0);
   });
 
-  it('returns all primary when no templates provided', () => {
+  it('returns only taxonomy-matched primary for daily (no match in test data)', () => {
     const benchmarks = buildCompetitorBenchmarks(profiles, 'daily');
-    expect(benchmarks).toHaveLength(2); // all primary, no template filter
+    // daily taxonomy: ['生活日常', '低调轻奢富家千金'] — no match in test data
+    expect(benchmarks).toHaveLength(0);
   });
 
   it('returns empty for no profiles', () => {

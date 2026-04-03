@@ -4,7 +4,7 @@
 import type { ContentItem, ContentProvider, ContentProviderMeta } from '../content-provider';
 
 const ZHIHU_HOT_URL = 'https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total';
-const DAILYHOT_DEFAULT_URL = 'https://dailyhot.hkg1.zeabur.app';
+const DAILYHOT_DEFAULT_URL = 'https://dailyhot-rho-nine.vercel.app';
 const FETCH_TIMEOUT = 10_000;
 
 interface ZhihuHotItem {

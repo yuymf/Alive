@@ -144,3 +144,90 @@ export async function cleanupOldItems(): Promise<void> {
   });
   await saveQueue({ ...queue, items: filtered });
 }
+
+// ─── Domain-level lifecycle APIs ─────────────────────────────────────────────
+// These enforce valid state transitions and set the correct metadata fields.
+// Callers should prefer these over the generic updateItemStatus().
+
+/** Valid transitions: pending → approved, editing → approved */
+export async function markApproved(id: string): Promise<QueueItem | null> {
+  const item = await getItem(id);
+  if (!item) return null;
+  if (item.status !== 'pending' && item.status !== 'editing') return null;
+  return updateItemStatus(id, 'approved');
+}
+
+/** Valid transitions: pending → discarded, approved → discarded, editing → discarded */
+export async function markDiscarded(id: string): Promise<QueueItem | null> {
+  const item = await getItem(id);
+  if (!item) return null;
+  if (item.status === 'published' || item.status === 'discarded') return null;
+  return updateItemStatus(id, 'discarded');
+}
+
+export interface MarkPublishedInput {
+  platform: 'xhs' | 'douyin';
+  url: string;
+  publishedAt?: string;
+}
+
+/**
+ * Mark a queue item as published on a specific platform.
+ * - Merges URLs per platform (calling twice with xhs then douyin is supported).
+ * - Sets published_at on first publish.
+ * - Sets performance_tracked = false so the performance cron picks it up.
+ * Valid transitions: pending → published, approved → published (already published items can add more URLs).
+ */
+export async function markPublished(id: string, input: MarkPublishedInput): Promise<QueueItem | null> {
+  const queue = await loadQueue();
+  const idx = queue.items.findIndex(i => i.id === id);
+  if (idx === -1) return null;
+
+  const existing = queue.items[idx];
+  if (existing.status === 'discarded') return null;
+
+  const ts = now().toISOString();
+  const existingUrls = existing.published_urls ?? {};
+  const mergedUrls = { ...existingUrls, [input.platform]: input.url };
+
+  const updated: QueueItem = {
+    ...existing,
+    status: 'published',
+    published_urls: mergedUrls,
+    published_at: existing.published_at ?? input.publishedAt ?? ts,
+    performance_tracked: existing.performance_tracked ?? false,
+    updated_at: ts,
+  };
+
+  const newItems = [
+    ...queue.items.slice(0, idx),
+    updated,
+    ...queue.items.slice(idx + 1),
+  ];
+  await saveQueue({ ...queue, items: newItems });
+  return updated;
+}
+
+/** Mark that performance tracking has started for this published item. */
+export async function markPerformanceTracked(id: string): Promise<QueueItem | null> {
+  const queue = await loadQueue();
+  const idx = queue.items.findIndex(i => i.id === id);
+  if (idx === -1) return null;
+
+  const existing = queue.items[idx];
+  if (existing.status !== 'published') return null;
+
+  const updated: QueueItem = {
+    ...existing,
+    performance_tracked: true,
+    updated_at: now().toISOString(),
+  };
+
+  const newItems = [
+    ...queue.items.slice(0, idx),
+    updated,
+    ...queue.items.slice(idx + 1),
+  ];
+  await saveQueue({ ...queue, items: newItems });
+  return updated;
+}

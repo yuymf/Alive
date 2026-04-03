@@ -88,6 +88,8 @@ export const PATHS = {
   get personaReportLog() { return path.join(getMemoryBase(), 'persona-report-log.json'); },
   get competitorPosts() { return path.join(getMemoryBase(), 'competitor-posts.json'); },
   get competitorAnalysis() { return path.join(getMemoryBase(), 'competitor-analysis.json'); },
+  get competitorsDir() { return path.join(getMemoryBase(), 'competitors'); },
+  get hitBreakdownsDir() { return path.join(getMemoryBase(), 'hit-breakdowns'); },
   get positioningReport() { return path.join(getMemoryBase(), 'positioning-report.json'); },
   get positioningReportPrev() { return path.join(getMemoryBase(), 'positioning-report.prev.json'); },
 
@@ -100,6 +102,10 @@ export const PATHS = {
   get skillRegistry() { return path.join(getSkillBase(), 'skill-registry.json'); },
   get subSkillsDir() { return path.join(getSkillBase(), 'sub-skills'); },
   get assetsDir() { return path.join(getSkillBase(), 'assets'); },
+
+  // === Global runtime logs (shared across all personas) ===
+  get runtimeDir() { return _memoryBaseOverride ? path.join(_memoryBaseOverride, '..', '_runtime') : path.join(process.env.HOME!, '.openclaw', 'workspace', 'runtime'); },
+  get llmCallLog() { return path.join(this.runtimeDir, 'llm-call-log.jsonl'); },
 
   // === Legacy fallback paths (skill directory — for migration compat) ===
   get skillPersonaConfig() { return path.join(getSkillBase(), 'persona.yaml'); },
@@ -175,4 +181,60 @@ export function readAllJSON<T>(dirPath: string): T[] {
 
 export function writeSocialRelation(dirPath: string, relation: { id: string }): void {
   writeJSON(path.join(dirPath, `${relation.id}.json`), relation);
+}
+
+/**
+ * Resolve the LLM call log path.
+ * Uses PATHS.llmCallLog (global runtime dir) by default.
+ * Falls back to the legacy memory-level path if the new file doesn't exist yet.
+ */
+export function resolveLlmLogPath(): string {
+  const newPath = PATHS.llmCallLog;
+  if (fs.existsSync(newPath)) return newPath;
+
+  // Legacy fallback: old location was memory root (parent of persona dirs).
+  // Use getMemoryBase()'s parent so that test overrides (setBasePaths) are respected.
+  const memoryRoot = path.dirname(getMemoryBase());
+  const legacyPath = path.join(memoryRoot, 'llm-call-log.jsonl');
+  if (fs.existsSync(legacyPath)) return legacyPath;
+
+  // Neither exists; return the new canonical path (will be created on first write)
+  return newPath;
+}
+
+/**
+ * Load skill environment variables from ~/.openclaw/openclaw.json
+ * This is needed for cron jobs that run in isolated session mode where process.env
+ * is not automatically populated with skill environment variables.
+ *
+ * Usage: Call this early in cron job entry points (e.g., in ops-brief.ts, ops-trends.ts)
+ */
+export function loadSkillEnvVars(skillName: string = 'alive'): void {
+  try {
+    const openclawConfigPath = path.join(process.env.HOME!, '.openclaw', 'openclaw.json');
+    if (!fs.existsSync(openclawConfigPath)) {
+      console.warn(`[loadSkillEnvVars] openclaw.json not found at ${openclawConfigPath}`);
+      return;
+    }
+
+    const config = JSON.parse(fs.readFileSync(openclawConfigPath, 'utf8'));
+    const skillEnv = config?.skills?.entries?.[skillName]?.env;
+    if (!skillEnv || typeof skillEnv !== 'object') {
+      console.warn(`[loadSkillEnvVars] No env found for skill "${skillName}" in openclaw.json`);
+      return;
+    }
+
+    // Load all environment variables from openclaw.json into process.env
+    // Only override if not already set (allows command-line or parent process env to take precedence)
+    let loadedCount = 0;
+    for (const [key, value] of Object.entries(skillEnv)) {
+      if (typeof value === 'string' && !process.env[key]) {
+        process.env[key] = value;
+        loadedCount++;
+      }
+    }
+    console.log(`[loadSkillEnvVars] Loaded ${loadedCount} environment variables for skill "${skillName}"`);
+  } catch (err) {
+    console.error(`[loadSkillEnvVars] Failed to load environment variables:`, err);
+  }
 }

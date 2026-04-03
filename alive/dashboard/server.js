@@ -28,6 +28,19 @@ function readJsonSafe(filePath, defaultValue) {
 
 const STALENESS_MS = 2 * 60 * 60 * 1000; // 2 hours
 
+/**
+ * Resolve LLM call log path.
+ * New canonical location: ~/.openclaw/workspace/runtime/llm-call-log.jsonl (shared across personas).
+ * Falls back to legacy per-persona path if the new file doesn't exist yet.
+ */
+function resolveLlmLogForDashboard(memoryDir) {
+  const runtimePath = resolveHome('~/.openclaw/workspace/runtime/llm-call-log.jsonl');
+  if (fs.existsSync(runtimePath)) return runtimePath;
+  const legacyPath = path.join(memoryDir, 'llm-call-log.jsonl');
+  if (fs.existsSync(legacyPath)) return legacyPath;
+  return runtimePath;
+}
+
 function extractDateKey(text) {
   if (!text) return null;
   const direct = String(text).match(/\b(\d{4}-\d{2}-\d{2})\b/);
@@ -445,7 +458,7 @@ function buildStateResponse(memoryDir, filterDate) {
     };
   });
   const diaryEntries = parseDiaryMd(path.join(memoryDir, 'diary.md'));
-  const searchFeed = parseSearchFeed(path.join(memoryDir, 'llm-call-log.jsonl'));
+  const searchFeed = parseSearchFeed(resolveLlmLogForDashboard(memoryDir));
   const insCommentFeed = parseInsCommentFeed(memoryDir);
   const redditTrends = parseWorldMd(path.join(memoryDir, 'world.md'));
 
@@ -797,7 +810,7 @@ function createServer(options = {}) {
       const limit = Math.min(parseInt(urlObj.searchParams.get('limit') || '50', 10) || 50, 200);
       const offset = Math.max(parseInt(urlObj.searchParams.get('offset') || '0', 10) || 0, 0);
       const memoryDir = personaSlug ? getPersonaDir(personaSlug) : memoryBase;
-      const logPath = path.join(memoryDir, 'llm-call-log.jsonl');
+      const logPath = resolveLlmLogForDashboard(memoryDir);
       try {
         const result = parseLlmLog(logPath, limit, offset);
         res.writeHead(200, { 'Content-Type': 'application/json' });

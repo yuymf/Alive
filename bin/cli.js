@@ -101,6 +101,150 @@ function isOpenClawCLIAvailable() {
   }
 }
 
+// ─── Cron Helpers ────────────────────────────────────────────────────────────
+
+/**
+ * List all cron jobs from OpenClaw CLI (returns [] on failure).
+ */
+function listCronJobs() {
+  try {
+    const raw = execFileSync('openclaw', ['cron', 'list', '--json'], { timeout: 10000, encoding: 'utf8' });
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : (parsed?.jobs ?? []);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Remove a cron job by its exact name.
+ * `openclaw cron remove` only accepts <id>, so we list jobs first and match by name.
+ */
+function removeCronByName(name) {
+  const jobs = listCronJobs();
+  const matches = jobs.filter(j => j.name === name);
+  for (const job of matches) {
+    try {
+      execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+    } catch { /* may already be gone */ }
+  }
+  return matches.length;
+}
+
+// ─── Cron Reconciliation ─────────────────────────────────────────────────────
+
+/**
+ * Build the desired cron job specs for a persona.
+ * Respects automation config: brief_delivery, enable_heartbeat_cron, silent_background_jobs.
+ */
+function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
+  const automation = persona.ops?.automation ?? {};
+  const enableHeartbeat = automation.enable_heartbeat_cron !== false; // default true
+  const silentBg = automation.silent_background_jobs === true;
+  const briefDelivery = automation.brief_delivery ?? 'wecom-target';
+
+  const specs = [];
+
+  // Heartbeat jobs (morning/tick/night) — skip if persona disables them
+  if (enableHeartbeat) {
+    specs.push(
+      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180, noDeliver: false },
+      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120, noDeliver: false },
+      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300, noDeliver: false },
+    );
+  }
+
+  // Ops jobs (only if ops.enabled)
+  if (persona.ops && persona.ops.enabled) {
+    const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
+    // Use total-minutes subtraction to handle hour borrow correctly (e.g. 08:05 → 07:55)
+    const rawHour = parseInt(briefTimeParts[0], 10);
+    const rawMin = parseInt(briefTimeParts[1] || '30', 10);
+    const totalMinutes = ((rawHour * 60 + rawMin) - 10 + 1440) % 1440; // +1440 handles midnight wrap
+    const briefHour = Math.floor(totalMinutes / 60);
+    const briefMin = totalMinutes % 60;
+    const strategyDay = persona.ops.strategy_day ?? 1;
+    const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
+    const stratHour = parseInt(stratTimeParts[0], 10);
+    const stratMin = parseInt(stratTimeParts[1] || '0', 10);
+
+    // ops-brief: for session delivery, use isolated + --no-deliver
+    // (the brief script itself handles sending via openclaw message send)
+    const briefNoDeliver = briefDelivery === 'session';
+    const briefSession = 'isolated';
+
+    specs.push(
+      { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180, noDeliver: briefNoDeliver, session: briefSession },
+    );
+
+    // Background ops jobs
+    const bgJobs = [
+      { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
+      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
+    ];
+    for (const job of bgJobs) {
+      specs.push({ ...job, noDeliver: silentBg });
+    }
+  }
+
+  return specs;
+}
+
+/**
+ * Reconcile cron jobs: remove all existing jobs for this persona prefix, then add desired specs.
+ * This ensures idempotent registration — no duplicates.
+ */
+function reconcileCronJobs({ specs, skillSlug, personaSlug }) {
+  const prefix = `${skillSlug}:${personaSlug}:`;
+
+  // 1. List all existing jobs
+  let existingJobs = [];
+  try {
+    const raw = execFileSync('openclaw', ['cron', 'list', '--json'], { timeout: 10000, encoding: 'utf8' });
+    const parsed = JSON.parse(raw);
+    existingJobs = Array.isArray(parsed) ? parsed : (parsed?.jobs ?? []);
+  } catch (err) {
+    warn(`Could not list cron jobs: ${err.message}`);
+  }
+
+  // 2. Remove all jobs matching this persona's prefix (by id for reliability)
+  const toRemove = existingJobs.filter(j => String(j.name || '').startsWith(prefix));
+  for (const job of toRemove) {
+    try {
+      execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+    } catch { /* may already be gone */ }
+  }
+  if (toRemove.length > 0) {
+    ok(`Removed ${toRemove.length} existing cron jobs for ${prefix}*`);
+  }
+
+  // 3. Add desired specs
+  for (const spec of specs) {
+    const args = [
+      'cron', 'add',
+      '--name', spec.name,
+      '--cron', spec.cron,
+      '--session', spec.session || 'isolated',
+      '--message', spec.message,
+      '--timeout-seconds', String(spec.timeout),
+      '--exact',
+      '--json',
+    ];
+    if (spec.noDeliver) {
+      args.push('--no-deliver');
+    }
+    try {
+      execFileSync('openclaw', args, { timeout: 10000, encoding: 'utf8' });
+      ok(`Registered cron: ${spec.name} (${spec.cron})${spec.noDeliver ? ' [no-deliver]' : ''}`);
+    } catch (err) {
+      warn(`Failed to register cron ${spec.name}: ${err.message}`);
+    }
+  }
+}
+
 /**
  * Check which external ClawHub skills are installed and install missing ones.
  * Only runs when ops is enabled for the persona.
@@ -125,8 +269,64 @@ function installRequiredClawHubSkills() {
     const skillList = Array.isArray(parsed) ? parsed : (parsed.skills || []);
     installedSkills = skillList.map(s => (typeof s === 'string' ? s : s.name || s.slug || '')).filter(Boolean);
   } catch {
-    // If listing fails, try installing all — install is idempotent
-    warn('Could not list installed skills — will attempt to install all dependencies');
+    // If listing fails, we cannot determine which skills are already installed.
+    // Instead of assuming all are missing (which would re-install everything),
+    // we fall back to trying to install each skill directly — the install
+    // command is idempotent and will skip already-installed skills.
+    warn('Could not list installed skills — will check each dependency individually');
+    const missing = [...REQUIRED_CLAWHUB_SKILLS]; // all need to be checked
+    if (missing.length === 0) {
+      ok(`All ${REQUIRED_CLAWHUB_SKILLS.length} ClawHub skill dependencies are installed`);
+      return;
+    }
+    log(`Checking ${missing.length} ClawHub skill dependencies individually...`);
+    let installed = 0;
+    let failed = 0;
+    const MAX_RETRIES = 3;
+
+    for (let i = 0; i < missing.length; i++) {
+      const skill = missing[i];
+      let success = false;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          execSync(`openclaw skills install ${skill}`, {
+            encoding: 'utf8',
+            timeout: 60000,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          ok(`ClawHub skill ready: ${skill}`);
+          installed++;
+          success = true;
+          break;
+        } catch (err) {
+          const msg = err.message || '';
+          const is429 = msg.includes('429') || msg.includes('Rate limit') || msg.includes('rate limit');
+          if (is429 && attempt < MAX_RETRIES) {
+            const delay = attempt * 5;
+            warn(`Rate limited checking ${skill} — retrying in ${delay}s (attempt ${attempt}/${MAX_RETRIES})...`);
+            execSync(`sleep ${delay}`);
+          } else {
+            warn(`Failed to check ClawHub skill: ${skill} — ${msg || 'unknown error'}`);
+            failed++;
+            break;
+          }
+        }
+      }
+
+      if (success && i < missing.length - 1) {
+        execSync('sleep 3');
+      }
+    }
+
+    if (failed > 0) {
+      warn(`${failed} skill(s) failed to install. Some ops features may be limited.`);
+      console.log('  You can install them manually: openclaw skills install <name>');
+    }
+    if (installed > 0) {
+      ok(`${installed} ClawHub skill(s) ready`);
+    }
+    return;
   }
 
   const missing = REQUIRED_CLAWHUB_SKILLS.filter(s => !installedSkills.includes(s));
@@ -232,14 +432,19 @@ function migrateFromLegacySlug() {
     }
   }
 
-  // 3. Migrate cron jobs (rename prefixes)
+  // 3. Migrate cron jobs (remove all jobs whose name starts with the legacy slug prefix)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
+    const allJobs = listCronJobs();
+    const legacyJobs = allJobs.filter(j => String(j.name || '').startsWith(legacySlug + ':'));
+    for (const job of legacyJobs) {
       try {
-        execSync(`openclaw cron remove --name "${legacySlug}:${suffix}"`, { stdio: 'ignore' });
-      } catch { /* may not exist */ }
+        execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+      } catch { /* may already be gone */ }
     }
-    warn(`Removed legacy cron jobs for "${legacySlug}" — they will be re-registered on next install/reinstall.`);
+    if (legacyJobs.length > 0) {
+      ok(`Removed ${legacyJobs.length} legacy cron jobs for "${legacySlug}:*"`);
+    }
+    warn('Legacy cron jobs removed — they will be re-registered on next install/reinstall.');
   }
 
   // 4. Migrate SOUL.md markers
@@ -330,16 +535,19 @@ function runGenerateReferences(sourcePath, outputDir, env) {
  * @param {object} options
  * @param {object} options.persona - Parsed persona config
  * @param {string} options.personaYamlDir - Directory of persona YAML (for resolving relative paths)
- * @param {string} options.skillDest - Installed skill destination path (skill dir, NOT memory dir)
+ * @param {string} options.skillDest - Installed skill destination path (skill dir)
+ * @param {string} [options.memoryDir] - Per-persona memory directory (preferred for references)
  * @param {object} options.rl - readline interface
  * @param {object} [options.env] - Extra env vars (API keys etc.)
  * @param {boolean} [options.nonInteractive] - Skip prompts (for real-day-test etc.)
  * @returns {Promise<boolean>} Whether references are ready
  */
-async function setupReferenceImages({ persona, personaYamlDir, skillDest, rl, env = {}, nonInteractive = false }) {
-  // ALWAYS use skill directory for references (shared across all personas)
-  const actualSkillDir = path.join(SKILLS_DIR, 'alive');
-  const referencesDir = path.join(actualSkillDir, 'assets', 'references');
+async function setupReferenceImages({ persona, personaYamlDir, skillDest, memoryDir: memDir, rl, env = {}, nonInteractive = false }) {
+  // Use per-persona memory directory for references (matches PATHS.referencesDir at runtime).
+  // Falls back to skill directory only if no memoryDir is provided.
+  const referencesDir = memDir
+    ? path.join(memDir, 'assets', 'references')
+    : path.join(skillDest, 'assets', 'references');
   const { existing, total, missing } = checkReferenceImages(referencesDir);
 
   if (existing === total) {
@@ -724,6 +932,25 @@ async function install() {
   const skillDest = path.join(SKILLS_DIR, skillSlug);
   const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
 
+  // Step 2.5: Build TypeScript → dist-alive (ensures JS is up-to-date)
+  log('Step 2.5/7: Building TypeScript...');
+  const tsconfig = path.join(__dirname, '..', 'tsconfig.alive.json');
+  if (fs.existsSync(tsconfig)) {
+    try {
+      execSync('npx tsc -p tsconfig.alive.json', {
+        cwd: path.join(__dirname, '..'),
+        stdio: 'pipe',
+        timeout: 60000,
+      });
+      ok('TypeScript compiled successfully');
+    } catch (err) {
+      warn(`TypeScript compilation failed: ${err.stderr?.toString().slice(0, 200) || err.message}`);
+      warn('Continuing — runtime may fail if .js files are missing in dist-alive/');
+    }
+  } else {
+    warn('tsconfig.alive.json not found — skipping build');
+  }
+
   // Step 3: Copy alive framework files
   log('Step 3/7: Installing alive framework files...');
   if (fs.existsSync(skillDest)) {
@@ -739,6 +966,20 @@ async function install() {
   fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona.yaml'));
   ok(`Alive framework copied to ${skillDest}`);
   ok(`Persona config copied to ${path.join(memoryDir, 'persona.yaml')}`);
+
+  // Initialize competitor profiles markdown from persona config
+  try {
+    const { initProfilesFromPersona } = require(path.join(skillDest, 'scripts', 'ops', 'competitor-memory.js'));
+    const { setBasePaths } = require(path.join(skillDest, 'scripts', 'utils', 'file-utils.js'));
+    setBasePaths(memoryDir, skillDest);
+    if (persona.ops?.competitors?.length) {
+      initProfilesFromPersona(persona.ops.competitors);
+      ok(`Initialized ${persona.ops.competitors.length} competitor profile docs`);
+    }
+  } catch (err) {
+    // Non-fatal: profiles will be initialized on first ops-trends run if build exists
+    warn(`Could not initialize competitor profiles: ${err.message}`);
+  }
 
   // Step 4: Register in OpenClaw config
   log('Step 4/7: Registering skill in OpenClaw config...');
@@ -811,6 +1052,7 @@ async function install() {
     persona,
     personaYamlDir: path.dirname(resolvedPersonaPath),
     skillDest,
+    memoryDir,
     rl,
     env: envForRefs,
   });
@@ -861,46 +1103,8 @@ async function install() {
   // Step 8: Register cron (if OpenClaw CLI available)
   log(`Step ${persona.ops && persona.ops.enabled ? '8/8' : '7/7'}: Registering heartbeat cron jobs...`);
   if (isOpenClawCLIAvailable()) {
-    const cronJobs = [
-      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
-      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
-      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
-    ];
-    for (const job of cronJobs) {
-      try {
-        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
-        ok(`Registered cron: ${job.name} (${job.cron})`);
-      } catch (err) {
-        warn(`Failed to register cron ${job.name}: ${err.message}`);
-      }
-    }
-
-    // Register ops cron jobs if persona has ops.enabled
-    if (persona.ops && persona.ops.enabled) {
-      const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
-      const briefHour = parseInt(briefTimeParts[0], 10);
-      const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
-      const strategyDay = persona.ops.strategy_day ?? 1;
-      const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
-      const stratHour = parseInt(stratTimeParts[0], 10);
-      const stratMin = parseInt(stratTimeParts[1] || '0', 10);
-      const opsCronJobs = [
-        { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
-        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
-        { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
-      ];
-      for (const job of opsCronJobs) {
-        try {
-          execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
-          ok(`Registered cron: ${job.name} (${job.cron})`);
-        } catch (err) {
-          warn(`Failed to register cron ${job.name}: ${err.message}`);
-        }
-      }
-    }
+    const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
+    reconcileCronJobs({ specs, skillSlug, personaSlug });
   } else {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
@@ -1005,19 +1209,17 @@ async function uninstall() {
 
   log('Removing cron jobs...');
   if (isOpenClawCLIAvailable()) {
-    // Remove new format cron jobs (alive:personaSlug:suffix)
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
+    const allJobs = listCronJobs();
+    // Only remove jobs for this specific persona prefix (not all alive:* jobs)
+    const toRemove = allJobs.filter(j => {
+      const name = String(j.name || '');
+      return name.startsWith(`${skillSlug}:${personaSlug}:`);
+    });
+    for (const job of toRemove) {
       try {
-        execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
-        ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
-      } catch { /* may not exist */ }
-    }
-    // Also clean legacy format cron jobs (alive:suffix)
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
-      try {
-        execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
-        ok(`Removed legacy cron: ${skillSlug}:${suffix}`);
-      } catch { /* may not exist */ }
+        execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+        ok(`Removed cron: ${job.name}`);
+      } catch { /* may already be gone */ }
     }
   }
 
@@ -1234,18 +1436,17 @@ async function reinstall() {
   // Step 5: Remove old cron jobs & clean SOUL.md
   log('Step 5/9: Removing old cron jobs & cleaning SOUL.md...');
   if (isOpenClawCLIAvailable()) {
-    // Remove new format cron jobs
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
+    const allJobs = listCronJobs();
+    // Only remove jobs for this specific persona prefix (not all alive:* jobs)
+    const toRemove = allJobs.filter(j => {
+      const name = String(j.name || '');
+      return name.startsWith(`${skillSlug}:${personaSlug}:`);
+    });
+    for (const job of toRemove) {
       try {
-        execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
-        ok(`Removed cron: ${skillSlug}:${personaSlug}:${suffix}`);
-      } catch { /* may not exist */ }
-    }
-    // Also clean legacy format cron jobs
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
-      try {
-        execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
-      } catch { /* may not exist */ }
+        execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+        ok(`Removed cron: ${job.name}`);
+      } catch { /* may already be gone */ }
     }
   } else {
     warn('OpenClaw CLI not found — skipping cron removal.');
@@ -1264,6 +1465,25 @@ async function reinstall() {
   }
 
   // ─── Fresh install begins ───
+
+  // Step 5.5: Build TypeScript → dist-alive (ensures JS is up-to-date)
+  log('Step 5.5/9: Building TypeScript...');
+  const tsconfig = path.join(__dirname, '..', 'tsconfig.alive.json');
+  if (fs.existsSync(tsconfig)) {
+    try {
+      execSync('npx tsc -p tsconfig.alive.json', {
+        cwd: path.join(__dirname, '..'),
+        stdio: 'pipe',
+        timeout: 60000,
+      });
+      ok('TypeScript compiled successfully');
+    } catch (err) {
+      warn(`TypeScript compilation failed: ${err.stderr?.toString().slice(0, 200) || err.message}`);
+      warn('Continuing — runtime may fail if .js files are missing in dist-alive/');
+    }
+  } else {
+    warn('tsconfig.alive.json not found — skipping build');
+  }
 
   // Step 6: Install framework files
   log('Step 6/9: Installing alive framework files...');
@@ -1334,6 +1554,7 @@ async function reinstall() {
     persona,
     personaYamlDir: path.dirname(resolvedPersonaPath),
     skillDest,
+    memoryDir,
     rl,
     env: envForRefs,
   });
@@ -1373,46 +1594,8 @@ async function reinstall() {
 
   // Register cron
   if (isOpenClawCLIAvailable()) {
-    const cronJobs = [
-      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
-      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
-      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
-    ];
-    for (const job of cronJobs) {
-      try {
-        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
-        ok(`Registered cron: ${job.name} (${job.cron})`);
-      } catch (err) {
-        warn(`Failed to register cron ${job.name}: ${err.message}`);
-      }
-    }
-
-    // Register ops cron jobs if persona has ops.enabled
-    if (persona.ops && persona.ops.enabled) {
-      const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
-      const briefHour = parseInt(briefTimeParts[0], 10);
-      const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
-      const strategyDay = persona.ops.strategy_day ?? 1;
-      const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
-      const stratHour = parseInt(stratTimeParts[0], 10);
-      const stratMin = parseInt(stratTimeParts[1] || '0', 10);
-      const opsCronJobs = [
-        { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
-        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
-        { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
-      ];
-      for (const job of opsCronJobs) {
-        try {
-          execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
-          ok(`Registered cron: ${job.name} (${job.cron})`);
-        } catch (err) {
-          warn(`Failed to register cron ${job.name}: ${err.message}`);
-        }
-      }
-    }
+    const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
+    reconcileCronJobs({ specs, skillSlug, personaSlug });
   } else {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
@@ -1530,15 +1713,17 @@ async function realDayTest() {
   if (fs.existsSync(memoryDir)) {
     removeDirSafe(memoryDir, 'Memory data');
   }
-  // Remove cron (both new and legacy format)
+  // Remove cron jobs for this persona only (not all alive:* jobs)
   if (isOpenClawCLIAvailable()) {
-    for (const suffix of ['morning', 'tick', 'night', 'ops-trends', 'ops-brief', 'ops-performance', 'ops-analyze', 'ops-strategy', 'ops-competitor-analysis']) {
+    const allJobs = listCronJobs();
+    const toRemove = allJobs.filter(j => {
+      const name = String(j.name || '');
+      return name.startsWith(`${skillSlug}:${personaSlug}:`);
+    });
+    for (const job of toRemove) {
       try {
-        execSync(`openclaw cron remove --name "${skillSlug}:${personaSlug}:${suffix}"`, { stdio: 'ignore' });
-      } catch { /* may not exist */ }
-      try {
-        execSync(`openclaw cron remove --name "${skillSlug}:${suffix}"`, { stdio: 'ignore' });
-      } catch { /* may not exist */ }
+        execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+      } catch { /* may already be gone */ }
     }
   }
   // Clean SOUL.md
@@ -1597,6 +1782,7 @@ async function realDayTest() {
     persona,
     personaYamlDir: path.dirname(resolvedPersonaPath),
     skillDest,
+    memoryDir,
     rl: null,
     env: existingEnv,
     nonInteractive: true,
@@ -1636,46 +1822,8 @@ async function realDayTest() {
 
   // Register cron (optional)
   if (isOpenClawCLIAvailable()) {
-    const cronJobs = [
-      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
-      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
-      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
-    ];
-    for (const job of cronJobs) {
-      try {
-        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
-        ok(`Registered cron: ${job.name}`);
-      } catch (err) {
-        warn(`Failed to register cron ${job.name}: ${err.message}`);
-      }
-    }
-
-    // Register ops cron jobs if persona has ops.enabled
-    if (persona.ops && persona.ops.enabled) {
-      const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
-      const briefHour = parseInt(briefTimeParts[0], 10);
-      const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
-      const strategyDay = persona.ops.strategy_day ?? 1;
-      const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
-      const stratHour = parseInt(stratTimeParts[0], 10);
-      const stratMin = parseInt(stratTimeParts[1] || '0', 10);
-      const opsCronJobs = [
-        { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
-        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
-        { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
-      ];
-      for (const job of opsCronJobs) {
-        try {
-          execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
-          ok(`Registered cron: ${job.name} (${job.cron})`);
-        } catch (err) {
-          warn(`Failed to register cron ${job.name}: ${err.message}`);
-        }
-      }
-    }
+    const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
+    reconcileCronJobs({ specs, skillSlug, personaSlug });
   }
 
   ok('Fresh install complete');
@@ -1758,6 +1906,9 @@ async function switchPersona() {
 
   log(`Switching to persona: ${personaName} (${personaSlug})...`);
 
+  // Check if this is a new persona BEFORE creating the directory
+  const isNewPersonaMemory = !fs.existsSync(memoryDir);
+
   // 1. Copy persona.yaml to memory directory (per-persona isolation)
   fs.mkdirSync(memoryDir, { recursive: true });
   fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona.yaml'));
@@ -1785,7 +1936,7 @@ async function switchPersona() {
   }
 
   // 3. Initialize memory if needed (first time switching to this persona)
-  if (!fs.existsSync(memoryDir)) {
+  if (isNewPersonaMemory) {
     log(`First time using ${personaName} — initializing memory...`);
     fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
     const today = new Date().toISOString().slice(0, 10);
@@ -1834,59 +1985,22 @@ async function switchPersona() {
       existingEnv = cfg.skills?.entries?.[skillSlug]?.env || {};
     } catch { /* ignore */ }
   }
-  // Reference images go to shared skill directory (NOT per-persona memory dir)
+  // Reference images go to per-persona memory dir (matches PATHS.referencesDir at runtime)
   await setupReferenceImages({
     persona,
     personaYamlDir: path.dirname(resolvedPersonaPath),
-    skillDest,  // Pass shared skill directory, not memory dir
+    skillDest,
+    memoryDir,
     rl,
     env: existingEnv,
   });
   rl.close();
 
-  // 5. Register cron for new persona (additive — does NOT remove other personas' cron)
+  // 5. Register cron for new persona (reconcile — removes duplicates, respects automation config)
   log('Registering cron for new persona...');
   if (isOpenClawCLIAvailable()) {
-    const cronJobs = [
-      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180 },
-      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120 },
-      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300 },
-    ];
-    for (const job of cronJobs) {
-      try {
-        execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
-        ok(`Registered cron: ${job.name}`);
-      } catch (err) {
-        warn(`Failed to register cron ${job.name}: ${err.message}`);
-      }
-    }
-
-    // Register ops cron jobs if persona has ops.enabled
-    if (persona.ops && persona.ops.enabled) {
-      const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
-      const briefHour = parseInt(briefTimeParts[0], 10);
-      const briefMin = Math.max(0, parseInt(briefTimeParts[1] || '30', 10) - 10);
-      const strategyDay = persona.ops.strategy_day ?? 1;
-      const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
-      const stratHour = parseInt(stratTimeParts[0], 10);
-      const stratMin = parseInt(stratTimeParts[1] || '0', 10);
-      const opsCronJobs = [
-        { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180 },
-        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
-        { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
-      ];
-      for (const job of opsCronJobs) {
-        try {
-          execFileSync('openclaw', ['cron', 'add', '--name', job.name, '--cron', job.cron, '--session', 'isolated', '--message', job.message, '--timeout-seconds', String(job.timeout), '--exact', '--json'], { timeout: 10000, encoding: 'utf8' });
-          ok(`Registered cron: ${job.name} (${job.cron})`);
-        } catch (err) {
-          warn(`Failed to register cron ${job.name}: ${err.message}`);
-        }
-      }
-    }
+    const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
+    reconcileCronJobs({ specs, skillSlug, personaSlug });
   } else {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
@@ -1971,6 +2085,9 @@ async function setupReferencesCommand() {
 
   ok(`Persona: ${personaName}`);
 
+  const personaSlug = (persona.meta.id || personaName).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
+  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+
   // Load existing env for API keys
   let existingEnv = {};
   if (fs.existsSync(CONFIG_FILE)) {
@@ -1986,6 +2103,7 @@ async function setupReferencesCommand() {
     persona,
     personaYamlDir: path.dirname(resolvedPersonaPath),
     skillDest,
+    memoryDir,
     rl,
     env: existingEnv,
   });

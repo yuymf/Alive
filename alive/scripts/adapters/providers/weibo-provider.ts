@@ -4,7 +4,7 @@
 import type { ContentItem, ContentProvider, ContentProviderMeta } from '../content-provider';
 
 const WEIBO_HOT_URL = 'https://weibo.com/ajax/side/hotSearch';
-const DAILYHOT_DEFAULT_URL = 'https://dailyhot.hkg1.zeabur.app';
+const DAILYHOT_DEFAULT_URL = 'https://dailyhot-rho-nine.vercel.app';
 const FETCH_TIMEOUT = 10_000;
 
 interface WeiboHotItem {
