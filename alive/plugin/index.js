@@ -19,7 +19,7 @@ function runScript(scriptPath, args, timeoutMs = 120000) {
 // Ops commands that should be routed to ops-command-handler.js
 // NOTE: 'status' belongs to admin (角色综合状态), not ops.
 const OPS_COMMANDS = new Set([
-  'brief', 'trends', 'idea', 'post', 'analyze', 'advice', 'message',
+  'brief', 'trends', 'idea', 'post', 'analyze', 'advice', 'message', 'health',
 ]);
 
 // Heuristic: detect free-text that should go to the ops review handler

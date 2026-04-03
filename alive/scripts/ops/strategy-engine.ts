@@ -9,7 +9,7 @@ import { now } from '../utils/time-utils';
 import { LLMClient } from '../utils/llm-client';
 import {
   ContentAnalysis, AnalysisLog, ContentStrategy, PerformanceTier,
-  PerformanceLog, ContentPatterns, CompetitorLog,
+  PerformanceLog, PerformanceEntry, ContentPatterns, CompetitorLog,
   PersonaConfig, OpsConfig,
 } from '../utils/types';
 import { buildCompetitorSummary } from './competitor-tracker';
@@ -85,18 +85,29 @@ export interface StrategyPromptInput {
   bestTemplate: string;
   worstTemplate: string;
   topPatterns: { type: string; success_rate: number | null; times_used: number }[];
+  /** Patterns with increasing usage or high success rate */
+  risingPatterns: string[];
+  /** Patterns with declining success rate or no recent usage */
+  decliningPatterns: string[];
   personaAlignmentAvg: number;
   driftAreas: string[];
   competitorSummary: string;
   personaSummary: string;
   weekOverWeek: number;
+  /** Aggregated user comment insights from published posts */
+  commentInsights?: {
+    topKeywords: string[];
+    constructiveFeedback: string[];
+    avgPositiveRatio: number;
+  };
 }
 
 export function buildStrategyPrompt(input: StrategyPromptInput): string {
   const {
     tierDistribution: td, currentMix, targetMix, bestTemplate, worstTemplate,
-    topPatterns, personaAlignmentAvg, driftAreas, competitorSummary,
-    personaSummary, weekOverWeek,
+    topPatterns, risingPatterns, decliningPatterns,
+    personaAlignmentAvg, driftAreas, competitorSummary,
+    personaSummary, weekOverWeek, commentInsights,
   } = input;
 
   const tierStr = Object.entries(td).map(([k, v]) => `${k}: ${v}`).join(', ');
@@ -107,8 +118,18 @@ export function buildStrategyPrompt(input: StrategyPromptInput): string {
         `- ${p.type}（成功率${p.success_rate !== null ? (p.success_rate * 100).toFixed(0) + '%' : '未知'}，使用${p.times_used}次）`,
       ).join('\n')
     : '暂无模式数据';
+  const risingStr = (risingPatterns ?? []).length > 0 ? risingPatterns.join('、') : '无';
+  const decliningStr = (decliningPatterns ?? []).length > 0 ? decliningPatterns.join('、') : '无';
   const driftStr = driftAreas.length > 0 ? driftAreas.join('、') : '无明显偏移';
   const totalPosts = Object.values(td).reduce((a, b) => a + b, 0);
+
+  // Comment insights section
+  const commentSection = commentInsights && commentInsights.topKeywords.length > 0
+    ? `\n【用户评论反馈】
+- 高频关键词: ${commentInsights.topKeywords.slice(0, 10).join('、')}
+- 好评率: ${(commentInsights.avgPositiveRatio * 100).toFixed(0)}%
+- 建设性反馈: ${commentInsights.constructiveFeedback.slice(0, 5).join('；') || '无'}`
+    : '';
 
   return `你是虚拟偶像的内容策略顾问。请根据上周表现数据，给出下周内容策略建议。
 
@@ -126,6 +147,8 @@ export function buildStrategyPrompt(input: StrategyPromptInput): string {
 
 【高效模式排名】
 ${patternStr}
+- 上升趋势: ${risingStr}
+- 衰减趋势: ${decliningStr}
 
 【人设一致性】
 - 平均分: ${personaAlignmentAvg.toFixed(1)}/10
@@ -133,6 +156,7 @@ ${patternStr}
 
 【竞品动态】
 ${competitorSummary || '无竞品数据'}
+${commentSection}
 
 请返回 JSON:
 \`\`\`json
@@ -158,8 +182,12 @@ ${competitorSummary || '无竞品数据'}
     "recommended_templates": ["模板1"],
     "avoid_templates": ["模板2"],
     "content_direction": "总体方向",
-    "experiment_suggestion": "实验建议"
-  }
+    "experiment_suggestion": "实验建议",
+    "recommended_patterns": ["推荐继续使用的模式"],
+    "declining_patterns": ["建议减少使用的衰减模式"]
+  },
+  "ops_suggestions": ["运营层面建议：发布节奏、平台侧重、热点借力等"],
+  "persona_suggestions": ["人设层面建议：语气修正、身份平衡、风格调整等"]
 }
 \`\`\``;
 }
@@ -232,7 +260,11 @@ export function parseStrategyResponse(
       avoid_templates: (recs?.avoid_templates as string[]) ?? [],
       content_direction: (recs?.content_direction as string) ?? '',
       experiment_suggestion: (recs?.experiment_suggestion as string) ?? undefined,
+      recommended_patterns: (recs?.recommended_patterns as string[]) ?? undefined,
+      declining_patterns: (recs?.declining_patterns as string[]) ?? undefined,
     },
+    ops_suggestions: (response.ops_suggestions as string[]) ?? undefined,
+    persona_suggestions: (response.persona_suggestions as string[]) ?? undefined,
   };
 }
 
@@ -315,6 +347,14 @@ function buildStrategyInput(
     .sort((a, b) => (b.success_rate ?? 0) - (a.success_rate ?? 0))
     .slice(0, TOP_PATTERNS_LIMIT);
 
+  // Compute pattern trends: rising = high success + active usage, declining = low success or stale
+  const risingPatterns = patterns.patterns
+    .filter(p => p.times_used >= 2 && (p.success_rate ?? 0) >= 0.6)
+    .map(p => p.type);
+  const decliningPatterns = patterns.patterns
+    .filter(p => p.times_used >= 1 && p.success_rate !== null && p.success_rate < 0.3)
+    .map(p => p.type);
+
   const competitorSummary = buildCompetitorSummary(competitorLog.entries.slice(-COMPETITOR_LOG_WINDOW));
 
   return {
@@ -324,6 +364,8 @@ function buildStrategyInput(
     bestTemplate: best,
     worstTemplate: worst,
     topPatterns,
+    risingPatterns,
+    decliningPatterns,
     personaAlignmentAvg: alignmentAvg,
     driftAreas: [...new Set(driftAreas)],
     competitorSummary,
@@ -340,6 +382,7 @@ export async function computeStrategy(
   const analysisLog = readJSON<AnalysisLog>(PATHS.analysisLog, DEFAULT_ANALYSIS_LOG);
   const patterns = readJSON<ContentPatterns>(PATHS.contentPatterns, DEFAULT_CONTENT_PATTERNS);
   const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, DEFAULT_COMPETITOR_LOG);
+  const perfLog = readJSON<PerformanceLog>(PATHS.performanceLog, { entries: [], last_updated: '' });
 
   // Filter to last 7 days of analysis
   const oneWeekAgo = new Date(now().getTime() - STRATEGY_EXPIRY_MS);
@@ -360,6 +403,35 @@ export async function computeStrategy(
     targetMix,
     personaSummary,
   );
+
+  // Aggregate comment insights from performance entries
+  const recentItemIds = new Set(recentAnalysis.map(a => a.item_id));
+  const recentPerfEntries = (perfLog.entries ?? []).filter(e => recentItemIds.has(e.item_id));
+  const entriesWithComments = recentPerfEntries.filter(e => e.comment_analysis);
+  if (entriesWithComments.length > 0) {
+    const allKeywords: string[] = [];
+    const allFeedback: string[] = [];
+    let totalPositive = 0;
+    for (const e of entriesWithComments) {
+      const ca = e.comment_analysis!;
+      allKeywords.push(...ca.top_keywords);
+      allFeedback.push(...ca.constructive_feedback);
+      totalPositive += ca.positive_ratio;
+    }
+    // Deduplicate keywords, count frequency
+    const kwCount = new Map<string, number>();
+    for (const kw of allKeywords) {
+      kwCount.set(kw, (kwCount.get(kw) ?? 0) + 1);
+    }
+    input.commentInsights = {
+      topKeywords: [...kwCount.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([kw]) => kw)
+        .slice(0, 15),
+      constructiveFeedback: [...new Set(allFeedback)].slice(0, 8),
+      avgPositiveRatio: totalPositive / entriesWithComments.length,
+    };
+  }
 
   const prompt = buildStrategyPrompt(input);
 

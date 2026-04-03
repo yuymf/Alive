@@ -16,12 +16,52 @@ export const DEFAULT_CONTENT_PATTERNS: ContentPatterns = {
 
 const MAX_PATTERNS = 30;
 
+/** Eviction threshold: patterns with success_rate < this AND times_used >= MIN_EVICT_USES are eligible */
+const EVICT_SUCCESS_THRESHOLD = 0.15;
+const MIN_EVICT_USES = 3;
+
 export function loadContentPatterns(): ContentPatterns {
   return readJSON<ContentPatterns>(PATHS.contentPatterns, DEFAULT_CONTENT_PATTERNS);
 }
 
 export function saveContentPatterns(patterns: ContentPatterns): void {
   writeJSON(PATHS.contentPatterns, { ...patterns, updated_at: now().toISOString() });
+}
+
+/**
+ * Evict stale/underperforming patterns.
+ * Called periodically (e.g. after addPattern or from health-check).
+ * Removes patterns with success_rate < 0.15 AND times_used >= 3.
+ */
+export function evictStalePatterns(maxPatterns?: number): number {
+  const current = loadContentPatterns();
+  const limit = maxPatterns ?? MAX_PATTERNS;
+  const before = current.patterns.length;
+
+  // Phase 1: remove truly stale patterns (low success + enough data)
+  let patterns = current.patterns.filter(p => {
+    if (p.times_used >= MIN_EVICT_USES && p.success_rate !== null && p.success_rate < EVICT_SUCCESS_THRESHOLD) {
+      return false; // evict
+    }
+    return true;
+  });
+
+  // Phase 2: if still over limit, trim by combined score (lowest first)
+  if (patterns.length > limit) {
+    patterns.sort((a, b) => {
+      const scoreA = (a.success_rate ?? 0.5) * Math.log2(a.times_used + 1);
+      const scoreB = (b.success_rate ?? 0.5) * Math.log2(b.times_used + 1);
+      return scoreB - scoreA;
+    });
+    patterns = patterns.slice(0, limit);
+  }
+
+  const evicted = before - patterns.length;
+  if (evicted > 0) {
+    saveContentPatterns({ ...current, patterns });
+    console.log(`[content-analyzer] Evicted ${evicted} stale patterns (${before} → ${patterns.length})`);
+  }
+  return evicted;
 }
 
 interface AddPatternInput {
@@ -63,6 +103,9 @@ export function addPattern(input: AddPatternInput): void {
   }
 
   saveContentPatterns({ ...current, patterns });
+
+  // Trigger eviction check after adding
+  evictStalePatterns();
 }
 
 export function incrementPatternUsage(type: string, source: string): void {

@@ -1418,7 +1418,15 @@ export interface ContentStrategy {
     avoid_templates: string[];
     content_direction: string;
     experiment_suggestion?: string;
+    /** Patterns that performed well recently — topic-generator should prioritize these */
+    recommended_patterns?: string[];
+    /** Patterns showing declining effectiveness — consider reducing usage */
+    declining_patterns?: string[];
   };
+  /** Separated ops-level suggestions (e.g. posting cadence, platform focus) */
+  ops_suggestions?: string[];
+  /** Separated persona-level suggestions (e.g. tone drift, identity balance) */
+  persona_suggestions?: string[];
 }
 
 // ─── Content Patterns Types ─────────────────────────────────────────────────
@@ -1433,6 +1441,40 @@ export interface ContentPattern {
   examples: string[];
   discovered_at: string;
 }
+
+// ─── Content Taste (网感记忆) Types ─────────────────────────────────────────
+
+export interface TastePreference {
+  readonly label: string;
+  /** Affinity score: -1.0 (dislike) to 1.0 (strong preference) */
+  affinity: number;
+  /** Number of data points that contributed to this preference */
+  sample_count: number;
+  last_updated: string;
+}
+
+export interface ContentTaste {
+  /** Platform aesthetic preferences (e.g. "high contrast covers", "clean minimalist") */
+  visual_styles: TastePreference[];
+  /** Hook/title formula preferences (e.g. "反转式", "数据冲击") */
+  hook_formulas: TastePreference[];
+  /** Content tone preferences (e.g. "轻松幽默", "干货输出") */
+  tone_preferences: TastePreference[];
+  /** Audience engagement preferences — what triggers saves/shares */
+  engagement_drivers: TastePreference[];
+  /** Anti-patterns — styles that consistently underperform */
+  anti_patterns: string[];
+  last_updated: string;
+}
+
+export const DEFAULT_CONTENT_TASTE: ContentTaste = {
+  visual_styles: [],
+  hook_formulas: [],
+  tone_preferences: [],
+  engagement_drivers: [],
+  anti_patterns: [],
+  last_updated: '',
+};
 
 export interface CompetitorInsight {
   name: string;

@@ -7,9 +7,10 @@
 import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
-import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy, PersonaAlignmentReport, CompetitorAnalysisStore } from '../utils/types';
+import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy, PersonaAlignmentReport, CompetitorAnalysisStore, PerformanceLog } from '../utils/types';
 import { FilteredTrend } from './trend-analyzer';
 import { formatAlignmentBriefSection } from './persona-advisor';
+import { buildCandidateContext } from './discovery-engine';
 
 // ─── Brief Enrichment (optional, backward-compatible) ────────────────────────
 
@@ -113,6 +114,63 @@ export function formatBriefCard(
     lines.push('');
   }
 
+  // 💡 今日灵感（from content-browse sub-skill）
+  try {
+    const inspoState = readJSON<{ last_refreshed_at: string | null; feed_highlights?: Array<{ title: string; likes: number; topic: string }> }>(
+      PATHS.inspirationState,
+      { last_refreshed_at: null },
+    );
+    if (inspoState.last_refreshed_at && inspoState.feed_highlights && inspoState.feed_highlights.length > 0) {
+      // Only show if refreshed today
+      const refreshDate = inspoState.last_refreshed_at.slice(0, 10);
+      if (refreshDate === date) {
+        lines.push('━━ 💡 今日灵感 ━━');
+        for (const h of inspoState.feed_highlights.slice(0, 3)) {
+          lines.push(`  ${h.topic}：「${h.title}」❤️${h.likes}`);
+        }
+        lines.push('');
+      }
+    }
+  } catch {
+    // inspiration-state not available, skip
+  }
+
+  // 📝 用户反馈（aggregated from recent performance entries）
+  try {
+    const perfLog = readJSON<PerformanceLog>(PATHS.performanceLog, { entries: [], last_updated: '' });
+    const recentWithComments = (perfLog.entries ?? [])
+      .filter(e => e.comment_analysis)
+      .slice(-5);
+    if (recentWithComments.length > 0) {
+      const allKeywords: string[] = [];
+      const allFeedback: string[] = [];
+      for (const e of recentWithComments) {
+        const ca = e.comment_analysis!;
+        allKeywords.push(...ca.top_keywords);
+        allFeedback.push(...ca.constructive_feedback);
+      }
+      const uniqueKeywords = [...new Set(allKeywords)].slice(0, 8);
+      const uniqueFeedback = [...new Set(allFeedback)].slice(0, 3);
+      if (uniqueKeywords.length > 0) {
+        lines.push('━━ 📝 用户反馈 ━━');
+        lines.push(`  热词: ${uniqueKeywords.join('、')}`);
+        if (uniqueFeedback.length > 0) {
+          lines.push(`  建议: ${uniqueFeedback.join('；')}`);
+        }
+        lines.push('');
+      }
+    }
+  } catch {
+    // performance-log not available, skip
+  }
+
+  // 🔍 候选对标（from discovery-engine account discovery）
+  const candidateCtx = buildCandidateContext();
+  if (candidateCtx) {
+    lines.push(candidateCtx);
+    lines.push('');
+  }
+
   // ─── Actions ────────────────────────────────────────────────────────────────
 
   if (pending.length > 0) {
@@ -195,8 +253,25 @@ export function formatStrategySection(strategy: ContentStrategy | null): string 
     `互动趋势: ${trendIcon} ${ps.engagement_trend}  周变化: ${ps.week_over_week_change >= 0 ? '+' : ''}${ps.week_over_week_change}%`,
     `下周方向: ${rec.content_direction}`,
     `推荐模板: ${rec.recommended_templates.join('、')}`,
-    '',
   ];
+
+  // Task 18: 分流显示运营建议和人设建议
+  if (strategy.ops_suggestions && strategy.ops_suggestions.length > 0) {
+    lines.push('');
+    lines.push('📊 运营建议:');
+    for (const s of strategy.ops_suggestions.slice(0, 3)) {
+      lines.push(`  • ${s}`);
+    }
+  }
+  if (strategy.persona_suggestions && strategy.persona_suggestions.length > 0) {
+    lines.push('');
+    lines.push('💅 人设建议:');
+    for (const s of strategy.persona_suggestions.slice(0, 3)) {
+      lines.push(`  • ${s}`);
+    }
+  }
+
+  lines.push('');
   return lines.join('\n');
 }
 

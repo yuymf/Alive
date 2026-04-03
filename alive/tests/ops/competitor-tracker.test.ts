@@ -162,3 +162,45 @@ describe('resolveCompetitorAccounts', () => {
     expect(result.douyin).toEqual(['b']);
   });
 });
+
+describe('bilibili platform contract', () => {
+  it('buildCompetitorSummary handles bilibili platform entries', () => {
+    const updates: CompetitorUpdate[] = [
+      {
+        account: '林离Olivia',
+        platform: 'bilibili',
+        latest_post: {
+          time: '2026-04-01T10:00:00Z',
+          content_type: '视频',
+          topic: '都市弹琴片段',
+          engagement: 8500,
+          summary: '写实弹琴',
+        },
+        days_since_last_post: 1,
+        fetched_at: '2026-04-02T06:00:00Z',
+      },
+    ];
+    const summary = buildCompetitorSummary(updates);
+    expect(summary).toContain('林离Olivia');
+    expect(summary).toContain('8500');
+  });
+
+  it('buildCompetitorContext includes bilibili competitors from profiles', () => {
+    const profiles: CompetitorProfile[] = [
+      {
+        name: '林离Olivia',
+        platform: 'bilibili',
+        url: 'https://space.bilibili.com/3546934956526060',
+        tag: 'AI虚拟偶像',
+        tag_desc: '都市写实风文艺AI数字人',
+        followers: '13w',
+        reference_type: 'secondary',
+        group: 'AI虚拟偶像',
+      },
+    ];
+    const ctx = buildCompetitorContext(profiles, []);
+    expect(ctx).toContain('林离Olivia');
+    expect(ctx).toContain('bilibili');
+    expect(ctx).toContain('粉丝13w');
+  });
+});

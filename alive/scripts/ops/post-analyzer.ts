@@ -13,7 +13,8 @@ import {
   AnalysisLog, PerformanceTier, ContentAnalysis,
 } from '../utils/types';
 import { loadQueue } from './review-queue';
-import { addPattern } from './content-analyzer';
+import { addPattern, loadContentPatterns, updatePatternSuccessRate } from './content-analyzer';
+import { updateTasteFromAnalysis } from './taste-engine';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -329,6 +330,28 @@ export async function analyzePublishedPosts(
     if (!analysis) continue;
 
     saveAnalysis(analysis);
+
+    // Update content taste memory from this analysis
+    updateTasteFromAnalysis(analysis);
+
+    // Update success rates for existing patterns based on performance tier
+    const tierToRate: Record<PerformanceTier, number> = {
+      viral: 1.0,
+      above_avg: 0.7,
+      normal: 0.4,
+      below_avg: 0.1,
+    };
+    const rate = tierToRate[analysis.performance_tier];
+    const existingPatterns = loadContentPatterns();
+    for (const ep of existingPatterns.patterns) {
+      if (ep.times_used > 0) {
+        // Update patterns that have been used (i.e. injected into generation prompts)
+        // Use exponential moving average: new_rate = old_rate * 0.7 + observed_rate * 0.3
+        const oldRate = ep.success_rate ?? rate;
+        const newRate = Math.round((oldRate * 0.7 + rate * 0.3) * 100) / 100;
+        updatePatternSuccessRate(ep.type, ep.source, newRate);
+      }
+    }
 
     if (analysis.extracted_patterns && analysis.extracted_patterns.length > 0) {
       for (const pattern of analysis.extracted_patterns) {

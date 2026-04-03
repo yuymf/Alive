@@ -43,7 +43,7 @@ import {
   updateMetaStats, reactivateRelation, classifyTier,
 } from '../world/social-graph-engine';
 import { isActiveHeartbeatHour } from '../world/heartbeat-gate';
-import { loadPersona, injectPersona, buildVoiceSignature, getEmotionCouplingConfigs } from '../persona/persona-loader';
+import { loadPersona, injectPersona, buildVoiceSignature, getEmotionCouplingConfigs, getContentSourcesConfig } from '../persona/persona-loader';
 import { resolveRoute, resolveRouteBySkillName, fuzzyResolveSkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
 import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
@@ -208,7 +208,7 @@ async function executeSimulatedAction(
 const skillConfigFactories: Record<string, () => Record<string, unknown>> = {
   'instagram': () => createInstagramConfig() as unknown as Record<string, unknown>,
   'social-engagement': () => createSocialEngagementConfig() as unknown as Record<string, unknown>,
-  'content-browse': () => createContentBrowseConfig() as unknown as Record<string, unknown>,
+  // content-browse uses a dynamic factory — see resolveSkillConfig below
 };
 
 /**
@@ -217,10 +217,26 @@ const skillConfigFactories: Record<string, () => Record<string, unknown>> = {
  * Optionally injects actionContext from the heartbeat LLM decision
  * so sub-skills can use it (e.g. content-browse uses it to generate
  * intent-driven search keywords via LLM).
+ *
+ * For content-browse: injects persona's content_sources so the browsing
+ * targets platforms and keywords configured in persona.yaml.
  */
-function resolveSkillConfig(skillName: string, actionContext?: string): Record<string, unknown> {
-  const factory = skillConfigFactories[skillName];
-  const config = factory ? factory() : {};
+function resolveSkillConfig(skillName: string, actionContext?: string, persona?: import('../utils/types').PersonaConfig): Record<string, unknown> {
+  let config: Record<string, unknown>;
+
+  if (skillName === 'content-browse') {
+    const contentSources = persona ? getContentSourcesConfig(persona) : undefined;
+    const { ContentProviderRegistry } = require('../adapters/content-provider');
+    const registry = new ContentProviderRegistry();
+    config = createContentBrowseConfig({
+      contentSources,
+      registry,
+    }) as unknown as Record<string, unknown>;
+  } else {
+    const factory = skillConfigFactories[skillName];
+    config = factory ? factory() : {};
+  }
+
   if (actionContext) {
     config.actionContext = actionContext;
   }
@@ -674,7 +690,7 @@ export async function regularTick(
           };
 
           // Inject platform config based on skill name + action context
-          const skillConfig = resolveSkillConfig(route.skillName, action.action);
+          const skillConfig = resolveSkillConfig(route.skillName, action.action, persona);
           const ctx = buildContext(persona, emotion, vitality.vitality, confidence.confidence, resolvedIntent, llm, skillConfig);
           const subResult = await executeSubSkill(route, ctx);
 
@@ -692,6 +708,20 @@ export async function regularTick(
           appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${subResult.narrative}\n情绪: ${emotion.mood.description} | 重要性: 5\n标签: heartbeat, real, ${route.skillName}\n`);
           totalImportance += 5;
           actionResults.push(`[${route.skillName}] ${action.action}`);
+
+          // Post-hook: content-browse → trigger discovery pipeline
+          if (route.skillName === 'content-browse') {
+            try {
+              const { processInspirationForDiscovery, processInspirationForAccountDiscovery } = require('../ops/discovery-engine');
+              const discovered = processInspirationForDiscovery();
+              const newCandidates = processInspirationForAccountDiscovery();
+              if (discovered > 0 || newCandidates > 0) {
+                console.log(`[discovery] +${discovered} content discoveries, +${newCandidates} candidate accounts`);
+              }
+            } catch (discErr) {
+              console.warn(`[discovery] Post-browse discovery failed: ${(discErr as Error).message}`);
+            }
+          }
         } catch (err) {
           console.error(`[router] Sub-skill ${route.skillName} failed: ${(err as Error).message}`);
           actionResults.push(`[error:${route.skillName}] ${action.action}`);

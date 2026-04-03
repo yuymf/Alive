@@ -1,11 +1,11 @@
 /**
  * trend-analyzer.ts
- * Calls daily-hot-news and douyin-hot-trend ClawHub skills,
+ * Fetches trending topics from the remote DailyHot API (douyin, weibo, bilibili, toutiao, etc.),
  * computes velocity scores vs 7-day history, filters by threshold,
  * and runs LLM relevance filter based on persona's topic_filter_prompt.
  *
- * ClawHub skill invocation pattern (mirrors xhs-client.ts execFile approach):
- *   openclaw skills run daily-hot-news --args '{"platform":"douyin"}'
+ * Data source: https://dailyhot-rho-nine.vercel.app/<platform>?limit=N
+ * (Previously used ClawHub skills — migrated to direct API calls for reliability.)
  */
 
 import { execFileSync } from 'child_process';

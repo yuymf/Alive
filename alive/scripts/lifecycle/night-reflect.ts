@@ -85,6 +85,42 @@ export async function runNightReflect(
   const preferences = readJSON<Preferences>(PATHS.preferences, { interests: [], content_style: [], active_hours: [], platforms: [] });
   const aspirations = readJSON<Aspirations>(PATHS.aspirations, { aspirations: [] });
 
+  // Build browsing insights from today's content-browse (if any)
+  let browsingInsights = '';
+  try {
+    const inspoState = readJSON<{
+      last_refreshed_at: string | null;
+      feed_highlights?: Array<{ title: string; likes: number; topic: string; takeaway?: string }>;
+      domain_insights?: string[];
+      trending_topics?: string[];
+    }>(PATHS.inspirationState, { last_refreshed_at: null });
+
+    if (inspoState.last_refreshed_at && inspoState.last_refreshed_at.startsWith(today)) {
+      const parts: string[] = [];
+      if (inspoState.feed_highlights && inspoState.feed_highlights.length > 0) {
+        parts.push('今天刷到的有趣内容：');
+        for (const h of inspoState.feed_highlights.slice(0, 5)) {
+          const takeaway = h.takeaway ? ` → ${h.takeaway}` : '';
+          parts.push(`- 「${h.title}」(${h.topic}, ❤️${h.likes})${takeaway}`);
+        }
+      }
+      if (inspoState.domain_insights && inspoState.domain_insights.length > 0) {
+        parts.push('领域洞察：');
+        for (const insight of inspoState.domain_insights.slice(0, 3)) {
+          parts.push(`- ${insight}`);
+        }
+      }
+      if (inspoState.trending_topics && inspoState.trending_topics.length > 0) {
+        parts.push(`热点话题：${inspoState.trending_topics.slice(0, 5).join('、')}`);
+      }
+      if (parts.length > 0) {
+        browsingInsights = parts.join('\n');
+      }
+    }
+  } catch {
+    // inspiration-state not available, skip
+  }
+
   // Build prompt (inject persona placeholders)
   let template = readTemplate('night-reflect-prompt.md');
   template = injectPersona(template, persona);
@@ -92,7 +128,7 @@ export async function runNightReflect(
   const prompt = template
     .replace('{current_time}', formatLocalTime(currentTime))
     .replace('{today_diary}', todayDiary || '今天似乎没写什么日记。')
-    .replace('{today_heartbeat_summary}', [logSummary, flowSummary, procrastinationSummary].filter(Boolean).join('\n') || '没有心跳记录。')
+    .replace('{today_heartbeat_summary}', [logSummary, flowSummary, procrastinationSummary, browsingInsights].filter(Boolean).join('\n') || '没有心跳记录。')
     .replace('{core_wisdom}', wisdom.wisdom.length > 0
       ? wisdom.wisdom.map(w => `- ${w.lesson} (重要性: ${w.importance})`).join('\n')
       : '还没有积累人生教训。')

@@ -11,6 +11,7 @@ import {
   incrementPatternUsage,
   getRelevantPatterns,
   buildAnalysisPrompt,
+  evictStalePatterns,
   DEFAULT_CONTENT_PATTERNS,
 } from '../../scripts/ops/content-analyzer';
 
@@ -100,5 +101,47 @@ describe('buildAnalysisPrompt', () => {
     expect(prompt).toContain('KPL复盘');
     expect(prompt).toContain('V姐');
     expect(prompt).toContain('title_formula');
+  });
+});
+
+describe('evictStalePatterns', () => {
+  it('removes patterns with low success_rate and enough usage', () => {
+    // Add a stale pattern: success_rate < 0.15, times_used >= 3
+    saveContentPatterns({
+      ...DEFAULT_CONTENT_PATTERNS,
+      patterns: [
+        { type: 'stale', source: 'test', source_post: 'p', formula: 'f', success_rate: 0.1, times_used: 5, examples: [], discovered_at: '2026-01-01' },
+        { type: 'good', source: 'test', source_post: 'p', formula: 'f', success_rate: 0.8, times_used: 3, examples: [], discovered_at: '2026-01-01' },
+        { type: 'new', source: 'test', source_post: 'p', formula: 'f', success_rate: null, times_used: 0, examples: [], discovered_at: '2026-01-01' },
+      ],
+    });
+    const evicted = evictStalePatterns();
+    expect(evicted).toBe(1);
+    const p = loadContentPatterns();
+    expect(p.patterns.map(x => x.type)).toEqual(['good', 'new']);
+  });
+
+  it('trims to maxPatterns by combined score', () => {
+    const patterns = Array.from({ length: 35 }, (_, i) => ({
+      type: `p-${i}`, source: 'test', source_post: 'post',
+      formula: 'f', success_rate: i / 35, times_used: i % 5,
+      examples: [], discovered_at: '2026-01-01',
+    }));
+    saveContentPatterns({ ...DEFAULT_CONTENT_PATTERNS, patterns });
+    const evicted = evictStalePatterns(20);
+    expect(evicted).toBeGreaterThan(0);
+    const p = loadContentPatterns();
+    expect(p.patterns.length).toBeLessThanOrEqual(20);
+  });
+
+  it('does nothing when all patterns are healthy', () => {
+    saveContentPatterns({
+      ...DEFAULT_CONTENT_PATTERNS,
+      patterns: [
+        { type: 'healthy', source: 'test', source_post: 'p', formula: 'f', success_rate: 0.8, times_used: 2, examples: [], discovered_at: '2026-01-01' },
+      ],
+    });
+    const evicted = evictStalePatterns();
+    expect(evicted).toBe(0);
   });
 });

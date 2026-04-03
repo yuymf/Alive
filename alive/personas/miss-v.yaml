@@ -94,12 +94,9 @@ schedule:
     - 21
 
 content_sources:
-  # Actual trend platforms are in trend-analyzer.ts: douyin, weibo, bilibili, toutiao, baidu
-  - douyin
-  - weibo
-  - bilibili
-  - toutiao
-  - baidu
+  platforms: [bilibili, weibo, dailyhot]
+  keywords: [电竞, 歌手, 赛车, 女性力量, 轻奢生活, AI虚拟偶像]
+  dailyhot_platforms: [douyin, weibo, bilibili, toutiao, baidu]
 
 ops:
   enabled: true
@@ -123,7 +120,7 @@ ops:
       style: "视频脚本，前3秒必须有冲突感或反差，BGM卡点，字幕简洁，结尾引导互动"
   automation:
     brief_delivery: session
-    enable_heartbeat_cron: false
+    enable_heartbeat_cron: true
     silent_background_jobs: false
 
   # ─── 结构化对标账号画像 ─────────────────────────────────────────────────
@@ -693,17 +690,20 @@ sub_skills:
   - ops-desk
   - generate-image
   - xhs-bridge
+  - content-browse
 
 features:
-  # 运营助手模式 — 关闭所有"活着"引擎，只保留 ops 功能
+  # 最小活体模式 — 只开 intent + content_browse
+  # 夜间反思由 heartbeat cron (night) 自动触发，不需要额外 feature flag
   emotion: false
-  intent: false
+  intent: true
   vitality: false
   confidence: false
+  work_impulse: false
+  content_browse: true
   flow_states: false
   random_events: false
   social_graph: false
   procrastination: false
   personality_drift: false
   skill_discovery: false
-  content_browse: false

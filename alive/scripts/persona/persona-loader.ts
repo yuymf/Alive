@@ -367,14 +367,28 @@ export function getScheduleConfig(persona?: PersonaConfig): Required<NonNullable
 
 /**
  * Get content sources config with defaults.
+ * Handles backward compatibility: if content_sources is an array (legacy format),
+ * normalizes it to the object format { platforms, dailyhot_platforms }.
  */
 export function getContentSourcesConfig(persona?: PersonaConfig): Required<ContentSourcesConfig> {
   const p = persona ?? loadPersona();
+  const raw = p.content_sources;
+
+  // Legacy compat: old personas may have content_sources as a string array
+  if (Array.isArray(raw)) {
+    return {
+      platforms: raw as string[],
+      keywords: [],
+      dailyhot_platforms: raw as string[],
+      reddit_subreddits: [],
+    };
+  }
+
   return {
-    platforms: p.content_sources?.platforms ?? [],
-    keywords: p.content_sources?.keywords ?? [],
-    dailyhot_platforms: p.content_sources?.dailyhot_platforms ?? [],
-    reddit_subreddits: p.content_sources?.reddit_subreddits ?? [],
+    platforms: raw?.platforms ?? [],
+    keywords: raw?.keywords ?? [],
+    dailyhot_platforms: raw?.dailyhot_platforms ?? [],
+    reddit_subreddits: raw?.reddit_subreddits ?? [],
   };
 }
 

@@ -93,6 +93,12 @@ export const PATHS = {
   get positioningReport() { return path.join(getMemoryBase(), 'positioning-report.json'); },
   get positioningReportPrev() { return path.join(getMemoryBase(), 'positioning-report.prev.json'); },
 
+  // === Content browsing state (written by content-browse sub-skill) ===
+  get inspirationState() { return path.join(getMemoryBase(), 'inspiration-state.json'); },
+  get contentTaste() { return path.join(getMemoryBase(), 'content-taste.json'); },
+  get discoveryPool() { return path.join(getMemoryBase(), 'discovery-pool.json'); },
+  get candidateAccounts() { return path.join(getMemoryBase(), 'candidate-accounts.json'); },
+
   // === Persona-specific infra (per-persona in memory dir) ===
   get cronSchedule() { return path.join(getMemoryBase(), 'cron-schedule.json'); },
   get personaConfig() { return path.join(getMemoryBase(), 'persona.yaml'); },

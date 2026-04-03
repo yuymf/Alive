@@ -21,6 +21,9 @@ import { buildCompetitorContext } from './competitor-tracker';
 import { buildMemoryContext } from './competitor-memory';
 import { loadCompetitorAnalysis } from './competitor-analyzer';
 import { parseAccountKey } from './competitor-fetcher';
+import { incrementPatternUsage } from './content-analyzer';
+import { buildTasteContext } from './taste-engine';
+import { buildDiscoveryContext } from './discovery-engine';
 import { PATHS, readJSON } from '../utils/file-utils';
 import { CompetitorLog, CompetitorUpdate, ContentStrategy, ContentPatterns } from '../utils/types';
 import { now } from '../utils/time-utils';
@@ -397,8 +400,26 @@ export async function generateTopics(
 
   const strategy = loadConfirmedStrategy();
   const patterns = readJSON<ContentPatterns | null>(PATHS.contentPatterns, null);
-  const patternsContext = patterns && patterns.patterns.length > 0
-    ? `【参考爆款模式】\n${patterns.patterns.slice(0, 5).map(
+
+  // Select patterns for injection: prioritize strategy-recommended patterns, then by success rate
+  let candidatePatterns = patterns?.patterns ?? [];
+  if (strategy?.next_week_recommendations.recommended_patterns?.length) {
+    const recommended = new Set(strategy.next_week_recommendations.recommended_patterns);
+    const declining = new Set(strategy.next_week_recommendations.declining_patterns ?? []);
+    // Sort: recommended first, then non-declining sorted by success_rate desc
+    candidatePatterns = [...candidatePatterns]
+      .filter(p => !declining.has(p.type))
+      .sort((a, b) => {
+        const aRec = recommended.has(a.type) ? 1 : 0;
+        const bRec = recommended.has(b.type) ? 1 : 0;
+        if (aRec !== bRec) return bRec - aRec;
+        return (b.success_rate ?? 0) - (a.success_rate ?? 0);
+      });
+  }
+
+  const injectedPatterns = candidatePatterns.slice(0, 5);
+  const patternsContext = injectedPatterns.length > 0
+    ? `【参考爆款模式】\n${injectedPatterns.map(
         p => `- ${p.type}：${p.formula}（来源：${p.source}）`
       ).join('\n')}`
     : '';
@@ -432,16 +453,20 @@ export async function generateTopics(
         return b;
       })();
 
-    // Compose extra context: template + competitor memory + hooks
+    // Compose extra context: template + competitor memory + hooks + taste
     const competitorCtx = buildMemoryContext(identityMode, {
       maxProfiles: 5,
       maxBreakdowns: 3,
     });
+    const tasteContext = buildTasteContext();
+    const discoveryContext = buildDiscoveryContext();
     const contextParts: string[] = [];
     if (templateConstraint) contextParts.push(templateConstraint);
     if (competitorCtx) contextParts.push(`【对标竞品参考】\n${competitorCtx}`);
     if (patternsContext) contextParts.push(patternsContext);
     if (strategyContext) contextParts.push(strategyContext);
+    if (tasteContext) contextParts.push(tasteContext);
+    if (discoveryContext) contextParts.push(discoveryContext);
 
     // Generate XHS content via LLM
     let xhsDraft: XhsDraft = { title: '', body: '', tags: [], cover_description: '' };
@@ -505,5 +530,10 @@ export async function generateTopics(
       template_spec: templateSpec,
       competitor_benchmarks: benchmarks.length > 0 ? benchmarks : undefined,
     });
+
+    // Track which patterns were injected into the prompt for this generation
+    for (const p of injectedPatterns) {
+      incrementPatternUsage(p.type, p.source);
+    }
   }
 }

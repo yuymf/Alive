@@ -35,6 +35,7 @@ import { generatePersonaReport, formatAlignmentCard } from './persona-advisor';
 import { analyzePost, formatAnalysisCard } from './viral-analyzer';
 import { handleReviewMessage } from './ops-review-handler';
 import { setActiveReviewItem } from './review-session';
+import { runHealthCheck, formatHealthReport } from './health-check';
 import { now } from '../utils/time-utils';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -308,6 +309,11 @@ async function main(): Promise<void> {
       case 'status':
         result = await cmdStatus();
         break;
+      case 'health': {
+        const report = await runHealthCheck();
+        result = formatHealthReport(report);
+        break;
+      }
       case 'message': {
         // Free-text review message handler
         const messageText = args.join(' ');
