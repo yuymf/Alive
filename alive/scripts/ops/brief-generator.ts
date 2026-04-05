@@ -11,6 +11,7 @@ import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy, PersonaAlign
 import { FilteredTrend } from './trend-analyzer';
 import { formatAlignmentBriefSection } from './persona-advisor';
 import { buildCandidateContext } from './discovery-engine';
+import type { HealthReport } from './health-check';
 
 // ─── Brief Enrichment (optional, backward-compatible) ────────────────────────
 
@@ -21,6 +22,8 @@ export interface BriefEnrichment {
   fullQueueItems?: readonly QueueItem[];
   /** Competitor analysis store for enriched competitor insights */
   competitorAnalysis?: CompetitorAnalysisStore | null;
+  /** Health check report for 🏥链路健康 section (only shown when warnings/missing exist) */
+  healthReport?: HealthReport | null;
 }
 
 // ─── Pure formatting (exported for testing) ──────────────────────────────────
@@ -157,6 +160,30 @@ export function formatBriefCard(
   if (candidateCtx) {
     lines.push(candidateCtx);
     lines.push('');
+  }
+
+  // 🏥 链路健康（only shown when warnings or missing items exist）
+  try {
+    let healthReport = enrichment?.healthReport ?? null;
+    if (!healthReport) {
+      // Try loading from persisted report file
+      const savedReport = readJSON<HealthReport | null>(PATHS.healthReport, null);
+      // Only use if generated today
+      if (savedReport?.timestamp?.slice(0, 10) === date) {
+        healthReport = savedReport;
+      }
+    }
+    if (healthReport && (healthReport.summary.warn > 0 || healthReport.summary.missing > 0)) {
+      const statusIcon: Record<string, string> = { ok: '✅', warn: '⚠️', missing: '❌' };
+      const alertItems = healthReport.items.filter(i => i.status !== 'ok');
+      lines.push('━━ 🏥 链路健康 ━━');
+      for (const item of alertItems) {
+        lines.push(`${statusIcon[item.status]} ${item.name}：${item.detail}`);
+      }
+      lines.push('');
+    }
+  } catch {
+    // health report not available, skip
   }
 
   // ─── Actions ────────────────────────────────────────────────────────────────

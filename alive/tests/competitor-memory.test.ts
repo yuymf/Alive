@@ -333,9 +333,9 @@ describe('appendObservation', () => {
 describe('shouldAutoAnalyze', () => {
   it('returns true when engagement > 2x avg, false otherwise', () => {
     const history: CompetitorUpdate[] = [
-      { account: 'test', platform: 'xhs', latest_post: { time: '', content_type: '图文', topic: 'a', engagement: 100, summary: '' }, days_since_last_post: 0, fetched_at: '' },
-      { account: 'test', platform: 'xhs', latest_post: { time: '', content_type: '图文', topic: 'b', engagement: 200, summary: '' }, days_since_last_post: 0, fetched_at: '' },
-      { account: 'test', platform: 'xhs', latest_post: { time: '', content_type: '图文', topic: 'c', engagement: 100, summary: '' }, days_since_last_post: 0, fetched_at: '' },
+      { account: 'test', platform: 'xhs', latest_post: { time: '', content_type: '图文', topic: 'a', engagement: 100, summary: '' }, days_since_last_post: 0, fetched_at: '2026-04-01T01:00:00Z' },
+      { account: 'test', platform: 'xhs', latest_post: { time: '', content_type: '图文', topic: 'b', engagement: 200, summary: '' }, days_since_last_post: 0, fetched_at: '2026-04-01T02:00:00Z' },
+      { account: 'test', platform: 'xhs', latest_post: { time: '', content_type: '图文', topic: 'c', engagement: 100, summary: '' }, days_since_last_post: 0, fetched_at: '2026-04-01T03:00:00Z' },
     ];
     // Average is ~133, so 2x = ~267
 
@@ -343,7 +343,7 @@ describe('shouldAutoAnalyze', () => {
     const highUpdate: CompetitorUpdate = {
       account: 'test', platform: 'xhs',
       latest_post: { time: '', content_type: '图文', topic: 'viral', engagement: 300, summary: '' },
-      days_since_last_post: 0, fetched_at: '',
+      days_since_last_post: 0, fetched_at: '2026-04-02T10:00:00Z',
     };
     expect(shouldAutoAnalyze(highUpdate, history)).toBe(true);
 
@@ -351,13 +351,13 @@ describe('shouldAutoAnalyze', () => {
     const normalUpdate: CompetitorUpdate = {
       account: 'test', platform: 'xhs',
       latest_post: { time: '', content_type: '图文', topic: 'normal', engagement: 200, summary: '' },
-      days_since_last_post: 0, fetched_at: '',
+      days_since_last_post: 0, fetched_at: '2026-04-02T11:00:00Z',
     };
     expect(shouldAutoAnalyze(normalUpdate, history)).toBe(false);
 
     // No latest post → false
     const noPost: CompetitorUpdate = {
-      account: 'test', platform: 'xhs', latest_post: null, days_since_last_post: 5, fetched_at: '',
+      account: 'test', platform: 'xhs', latest_post: null, days_since_last_post: 5, fetched_at: '2026-04-02T12:00:00Z',
     };
     expect(shouldAutoAnalyze(noPost, history)).toBe(false);
   });

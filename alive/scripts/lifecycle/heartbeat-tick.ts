@@ -934,6 +934,21 @@ export async function main(
     case 'night':
       console.log('Night heartbeat — running night reflection');
       await runNightReflect(llm);
+      // Post-hook: run health check and persist report
+      try {
+        const { runHealthCheck } = await import('../ops/health-check');
+        const { writeJSON: writeJ } = await import('../utils/file-utils');
+        const report = await runHealthCheck();
+        writeJ(PATHS.healthReport, report);
+        const { warn, missing } = report.summary;
+        if (warn > 0 || missing > 0) {
+          console.log(`[health-check] ⚠️ ${warn} warnings, ${missing} missing — report saved`);
+        } else {
+          console.log(`[health-check] ✅ All links healthy`);
+        }
+      } catch (hcErr) {
+        console.warn(`[health-check] Failed: ${(hcErr as Error).message}`);
+      }
       break;
     case 'regular':
       await regularTick(llm);

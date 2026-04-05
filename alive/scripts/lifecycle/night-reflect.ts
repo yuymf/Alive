@@ -16,6 +16,7 @@ import {
   isFeatureEnabled,
   ContentStrategy,
   CompetitorLog,
+  ContentTaste, DEFAULT_CONTENT_TASTE,
 } from '../utils/types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from '../utils/file-utils';
 import { now, getLocalDate, formatLocalTime, setTimezone } from '../utils/time-utils';
@@ -121,6 +122,44 @@ export async function runNightReflect(
     // inspiration-state not available, skip
   }
 
+  // Build content taste summary (accumulated aesthetic preferences from taste-engine)
+  let tasteSummary = '';
+  try {
+    const taste = readJSON<ContentTaste>(PATHS.contentTaste, DEFAULT_CONTENT_TASTE);
+    if (taste.last_updated) {
+      const parts: string[] = [];
+      const strongHooks = taste.hook_formulas
+        .filter(h => h.affinity >= 0.3 && h.sample_count >= 2)
+        .sort((a, b) => b.affinity - a.affinity)
+        .slice(0, 3);
+      if (strongHooks.length > 0) {
+        parts.push(`效果好的标题公式：${strongHooks.map(h => `${h.label}(${(h.affinity * 100).toFixed(0)}%)`).join('、')}`);
+      }
+      const strongVisuals = taste.visual_styles
+        .filter(v => v.affinity >= 0.3 && v.sample_count >= 2)
+        .sort((a, b) => b.affinity - a.affinity)
+        .slice(0, 3);
+      if (strongVisuals.length > 0) {
+        parts.push(`偏好的视觉风格：${strongVisuals.map(v => v.label).join('、')}`);
+      }
+      const strongTones = taste.tone_preferences
+        .filter(t => t.affinity >= 0.3 && t.sample_count >= 2)
+        .sort((a, b) => b.affinity - a.affinity)
+        .slice(0, 3);
+      if (strongTones.length > 0) {
+        parts.push(`擅长的内容调性：${strongTones.map(t => t.label).join('、')}`);
+      }
+      if (taste.anti_patterns.length > 0) {
+        parts.push(`要避免的风格：${taste.anti_patterns.slice(0, 3).join('、')}`);
+      }
+      if (parts.length > 0) {
+        tasteSummary = '网感记忆（从数据中学到的审美偏好）：\n' + parts.map(p => `- ${p}`).join('\n');
+      }
+    }
+  } catch {
+    // content-taste not available, skip
+  }
+
   // Build prompt (inject persona placeholders)
   let template = readTemplate('night-reflect-prompt.md');
   template = injectPersona(template, persona);
@@ -128,7 +167,7 @@ export async function runNightReflect(
   const prompt = template
     .replace('{current_time}', formatLocalTime(currentTime))
     .replace('{today_diary}', todayDiary || '今天似乎没写什么日记。')
-    .replace('{today_heartbeat_summary}', [logSummary, flowSummary, procrastinationSummary, browsingInsights].filter(Boolean).join('\n') || '没有心跳记录。')
+    .replace('{today_heartbeat_summary}', [logSummary, flowSummary, procrastinationSummary, browsingInsights, tasteSummary].filter(Boolean).join('\n') || '没有心跳记录。')
     .replace('{core_wisdom}', wisdom.wisdom.length > 0
       ? wisdom.wisdom.map(w => `- ${w.lesson} (重要性: ${w.importance})`).join('\n')
       : '还没有积累人生教训。')

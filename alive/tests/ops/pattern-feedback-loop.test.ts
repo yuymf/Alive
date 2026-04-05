@@ -119,6 +119,7 @@ describe('updatePatternSuccessRate integration', () => {
     setTimeOverride(new Date('2026-04-01T10:00:00Z'));
 
     // Mock LLM for analysis
+    // key_success_factors must include the pattern type '悬念标题' so the EMA batch update matches it
     const mockLLM = {
       call: async () => '',
       callJSON: async () => ({
@@ -127,7 +128,7 @@ describe('updatePatternSuccessRate integration', () => {
         pattern_analysis: {
           hook_effectiveness: 9, emotional_resonance: 8, trending_alignment: 7,
           visual_impact: 8, call_to_action: 6,
-          key_success_factors: ['好标题'], improvement_areas: [],
+          key_success_factors: ['悬念标题', '好标题'], improvement_areas: [],
         },
         persona_alignment: { score: 9, identity_mode_match: true, tone_consistency: 'on_brand', specific_notes: '' },
       }),
@@ -137,12 +138,12 @@ describe('updatePatternSuccessRate integration', () => {
     const count = await analyzePublishedPosts(mockLLM as any, 'V姐测试', 24, 7);
     expect(count).toBe(1);
 
-    // Check pattern success rate was updated
+    // Check pattern success rate was updated via EMA batch feedback
+    // '悬念标题' is in key_success_factors, so relevantPatternTypes includes it
+    // EMA: oldRate = null → fallback to rate (1.0), newRate = round(1.0 * 0.7 + 1.0 * 0.3) = 1.0
     const after = loadContentPatterns();
     const pattern = after.patterns.find(p => p.type === '悬念标题');
     expect(pattern).toBeDefined();
-    // EMA: null * 0.7 + 1.0 * 0.3 → post-analyzer treats null as observed rate (1.0)
-    // new_rate = 1.0 * 0.7 + 1.0 * 0.3 = 1.0
     expect(pattern!.success_rate).toBeDefined();
     expect(pattern!.success_rate).toBeGreaterThan(0);
   });

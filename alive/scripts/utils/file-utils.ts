@@ -92,6 +92,7 @@ export const PATHS = {
   get hitBreakdownsDir() { return path.join(getMemoryBase(), 'hit-breakdowns'); },
   get positioningReport() { return path.join(getMemoryBase(), 'positioning-report.json'); },
   get positioningReportPrev() { return path.join(getMemoryBase(), 'positioning-report.prev.json'); },
+  get healthReport() { return path.join(getMemoryBase(), 'health-report.json'); },
 
   // === Content browsing state (written by content-browse sub-skill) ===
   get inspirationState() { return path.join(getMemoryBase(), 'inspiration-state.json'); },
