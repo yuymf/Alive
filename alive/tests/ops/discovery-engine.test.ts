@@ -18,9 +18,13 @@ import {
   buildCandidateContext,
   approveCandidate,
   dismissCandidate,
+  addCompetitorToPersona,
   DEFAULT_DISCOVERY_POOL,
 } from '../../scripts/ops/discovery-engine';
 import { writeJSON } from '../../scripts/utils/file-utils';
+import { clearPersonaCache } from '../../scripts/persona/persona-loader';
+import YAML from 'yaml';
+import type { PersonaConfig, CompetitorProfile } from '../../scripts/utils/types';
 
 const TEST_DIR = path.join(__dirname, '__discovery_test_sandbox__');
 
@@ -38,6 +42,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetBasePaths();
+  clearPersonaCache();
   fs.rmSync(TEST_DIR, { recursive: true, force: true });
 });
 
@@ -196,5 +201,174 @@ describe('candidate management', () => {
     const store = loadCandidateAccounts();
     expect(store.candidates.find(c => c.name === 'a')!.status).toBe('approved');
     expect(store.candidates.find(c => c.name === 'b')!.status).toBe('dismissed');
+  });
+});
+
+// ─── P3-B: Auto-write to persona.yaml ──────────────────────────────────────
+
+const MINIMAL_PERSONA: PersonaConfig = {
+  meta: { name: 'Test', tagline: 'test persona' },
+  personality: { mbti: 'ENTJ', core_traits: ['test'] },
+  voice: { language: 'zh-CN', style: 'test', sample_lines: ['test'] },
+  ops: {
+    enabled: true,
+    brief_time: '08:30',
+    competitor_accounts: { xhs: [], douyin: [] },
+    trend_score_threshold: 1.0,
+    topic_count: 3,
+    topic_filter_prompt: '',
+    platforms: {},
+  },
+};
+
+function writePersonaYaml(persona: PersonaConfig = MINIMAL_PERSONA) {
+  fs.writeFileSync(PATHS.personaConfig, YAML.stringify(persona, { indent: 2 }));
+  clearPersonaCache();
+}
+
+describe('addCompetitorToPersona', () => {
+  it('adds a competitor to persona.yaml', () => {
+    writePersonaYaml();
+
+    const profile: CompetitorProfile = {
+      name: 'test_creator',
+      platform: 'xhs',
+      tag: 'discovered',
+      tag_desc: 'auto-discovered',
+      reference_type: 'secondary',
+    };
+
+    expect(addCompetitorToPersona(profile)).toBe(true);
+
+    // Verify persona.yaml was updated
+    const raw = fs.readFileSync(PATHS.personaConfig, 'utf8');
+    const persona = YAML.parse(raw) as PersonaConfig;
+    expect(persona.ops?.competitors).toHaveLength(1);
+    expect(persona.ops!.competitors![0].name).toBe('test_creator');
+    expect(persona.ops!.competitors![0].reference_type).toBe('secondary');
+  });
+
+  it('prevents duplicate competitors (same name + platform)', () => {
+    writePersonaYaml({
+      ...MINIMAL_PERSONA,
+      ops: {
+        ...MINIMAL_PERSONA.ops!,
+        competitors: [
+          { name: 'existing', platform: 'douyin', tag: 'test', tag_desc: 'test', reference_type: 'primary' },
+        ],
+      },
+    });
+
+    const duplicate: CompetitorProfile = {
+      name: 'existing',
+      platform: 'douyin',
+      tag: 'discovered',
+      tag_desc: 'auto-discovered',
+      reference_type: 'secondary',
+    };
+
+    expect(addCompetitorToPersona(duplicate)).toBe(false);
+
+    // Verify no duplicate was added
+    const raw = fs.readFileSync(PATHS.personaConfig, 'utf8');
+    const persona = YAML.parse(raw) as PersonaConfig;
+    expect(persona.ops?.competitors).toHaveLength(1);
+  });
+
+  it('returns false when persona.yaml does not exist', () => {
+    // Don't create persona.yaml
+    const profile: CompetitorProfile = {
+      name: 'ghost',
+      platform: 'xhs',
+      tag: 'test',
+      tag_desc: 'test',
+      reference_type: 'secondary',
+    };
+    expect(addCompetitorToPersona(profile)).toBe(false);
+  });
+
+  it('creates .bak backup before writing', () => {
+    writePersonaYaml();
+
+    const profile: CompetitorProfile = {
+      name: 'backup_test',
+      platform: 'bilibili',
+      tag: 'discovered',
+      tag_desc: 'auto',
+      reference_type: 'secondary',
+    };
+
+    addCompetitorToPersona(profile);
+    expect(fs.existsSync(PATHS.personaConfig + '.bak')).toBe(true);
+  });
+
+  it('initializes ops.competitors when ops has no competitors array', () => {
+    // Write persona with ops but no competitors key
+    const personaNoCompetitors = { ...MINIMAL_PERSONA };
+    const opsWithoutCompetitors = { ...personaNoCompetitors.ops! };
+    delete (opsWithoutCompetitors as Record<string, unknown>).competitors;
+    personaNoCompetitors.ops = opsWithoutCompetitors;
+    writePersonaYaml(personaNoCompetitors);
+
+    const profile: CompetitorProfile = {
+      name: 'new_creator',
+      platform: 'douyin',
+      tag: 'discovered',
+      tag_desc: 'auto',
+      reference_type: 'secondary',
+    };
+
+    expect(addCompetitorToPersona(profile)).toBe(true);
+
+    const raw = fs.readFileSync(PATHS.personaConfig, 'utf8');
+    const persona = YAML.parse(raw) as PersonaConfig;
+    expect(persona.ops?.competitors).toHaveLength(1);
+    expect(persona.ops!.competitors![0].name).toBe('new_creator');
+  });
+});
+
+describe('approveCandidate auto-writes to persona.yaml', () => {
+  it('auto-adds approved candidate to persona.yaml competitors', () => {
+    writePersonaYaml();
+    writeJSON(PATHS.candidateAccounts, {
+      candidates: [
+        { name: 'hot_creator', platform: 'xhs', appearance_count: 5, avg_engagement: 8000, topics: ['电竞', '日常'], first_seen: '2026-04-01', last_seen: '2026-04-03', status: 'pending' },
+      ],
+      last_updated: '',
+    });
+
+    expect(approveCandidate('hot_creator', 'xhs')).toBe(true);
+
+    // Verify candidate status
+    const store = loadCandidateAccounts();
+    expect(store.candidates[0].status).toBe('approved');
+
+    // Verify persona.yaml was updated
+    const raw = fs.readFileSync(PATHS.personaConfig, 'utf8');
+    const persona = YAML.parse(raw) as PersonaConfig;
+    expect(persona.ops?.competitors).toHaveLength(1);
+    const comp = persona.ops!.competitors![0];
+    expect(comp.name).toBe('hot_creator');
+    expect(comp.platform).toBe('xhs');
+    expect(comp.reference_type).toBe('secondary');
+    expect(comp.group).toBe('auto-discovered');
+    expect(comp.tag_desc).toContain('出现5次');
+  });
+
+  it('approve still succeeds even if persona.yaml is missing', () => {
+    // No persona.yaml — approve should still work (candidate status changes)
+    writeJSON(PATHS.candidateAccounts, {
+      candidates: [
+        { name: 'solo', platform: 'douyin', appearance_count: 2, avg_engagement: 3000, topics: [], first_seen: '', last_seen: '', status: 'pending' },
+      ],
+      last_updated: '',
+    });
+
+    expect(approveCandidate('solo', 'douyin')).toBe(true);
+
+    const store = loadCandidateAccounts();
+    expect(store.candidates[0].status).toBe('approved');
+    // persona.yaml doesn't exist, that's fine
+    expect(fs.existsSync(PATHS.personaConfig)).toBe(false);
   });
 });

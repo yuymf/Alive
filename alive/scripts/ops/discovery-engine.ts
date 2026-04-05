@@ -12,8 +12,12 @@
  *    Consumed by: brief-generator (new account suggestions), human approval → persona.yaml
  */
 
+import * as fs from 'fs';
+import YAML from 'yaml';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
+import { clearPersonaCache } from '../persona/persona-loader';
+import type { CompetitorProfile, PersonaConfig } from '../utils/types';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -340,9 +344,72 @@ export function buildCandidateContext(): string {
 
 // ─── Candidate Management ───────────────────────────────────────────────────
 
+const VALID_PLATFORMS = new Set(['xhs', 'douyin', 'bilibili', 'weibo', 'instagram', 'youtube']);
+
+/**
+ * Convert a CandidateAccount to a CompetitorProfile for persona.yaml.
+ * Uses 'secondary' reference_type and auto-generated tag/tag_desc from discovery data.
+ */
+function candidateToCompetitor(candidate: CandidateAccount): CompetitorProfile {
+  const platform = VALID_PLATFORMS.has(candidate.platform)
+    ? candidate.platform as CompetitorProfile['platform']
+    : 'xhs'; // fallback for unknown platforms
+  return {
+    name: candidate.name,
+    platform,
+    tag: 'discovered',
+    tag_desc: `通过内容发现自动追踪 — 出现${candidate.appearance_count}次，均互动${candidate.avg_engagement}`,
+    reference_type: 'secondary',
+    group: 'auto-discovered',
+    takeaways: candidate.topics.length > 0
+      ? [`关联话题：${candidate.topics.slice(0, 5).join('、')}`]
+      : [],
+  };
+}
+
+/**
+ * Add a competitor profile to persona.yaml.
+ * Follows the same write pattern as command-handler.ts modifySchedule():
+ * 1. Read YAML → parse → modify → backup .bak → write → clearPersonaCache
+ * Returns true if successfully written, false if persona.yaml not found or duplicate.
+ */
+export function addCompetitorToPersona(profile: CompetitorProfile): boolean {
+  const yamlPath = PATHS.personaConfig;
+  if (!fs.existsSync(yamlPath)) return false;
+
+  const raw = fs.readFileSync(yamlPath, 'utf8');
+  const persona = YAML.parse(raw) as PersonaConfig;
+
+  // Ensure ops and competitors exist
+  if (!persona.ops) {
+    (persona as unknown as Record<string, unknown>).ops = { enabled: false, competitors: [] };
+  }
+  const ops = persona.ops!;
+  const competitors: CompetitorProfile[] = [...(ops.competitors ?? [])];
+
+  // Check for duplicate (name + platform)
+  const isDuplicate = competitors.some(
+    c => c.name === profile.name && c.platform === profile.platform,
+  );
+  if (isDuplicate) return false;
+
+  // Append new competitor
+  competitors.push(profile);
+  (ops as unknown as Record<string, unknown>).competitors = competitors;
+
+  // Write back with backup
+  fs.copyFileSync(yamlPath, yamlPath + '.bak');
+  fs.writeFileSync(yamlPath, YAML.stringify(persona, { indent: 2 }));
+
+  // Clear persona cache so next load picks up changes
+  clearPersonaCache();
+  return true;
+}
+
 /**
  * Approve a candidate account (mark as approved).
- * The human should then add it to persona.yaml competitors.
+ * Automatically adds the candidate to persona.yaml competitors as a secondary reference.
+ * Returns true if candidate was found and approved, false otherwise.
  */
 export function approveCandidate(name: string, platform: string): boolean {
   const store = loadCandidateAccounts();
@@ -352,6 +419,20 @@ export function approveCandidate(name: string, platform: string): boolean {
   if (!candidate) return false;
   candidate.status = 'approved';
   saveCandidateAccounts(store);
+
+  // Auto-write to persona.yaml (best-effort, don't fail the approve if yaml write fails)
+  try {
+    const profile = candidateToCompetitor(candidate);
+    const written = addCompetitorToPersona(profile);
+    if (written) {
+      console.log(`[discovery-engine] ✅ Auto-added @${name}（${platform}）to persona.yaml competitors`);
+    } else {
+      console.log(`[discovery-engine] ⚠️ Skipped @${name}（${platform}）— already in persona.yaml or config not found`);
+    }
+  } catch (err) {
+    console.warn(`[discovery-engine] Failed to auto-write to persona.yaml: ${(err as Error).message}`);
+  }
+
   return true;
 }
 
