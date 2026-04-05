@@ -1380,6 +1380,47 @@ export interface PerformanceLog {
   last_updated: string;
 }
 
+// ─── Comment Insights (aggregated from PerformanceEntry.comment_analysis) ────
+
+export interface CommentInsights {
+  topKeywords: string[];
+  constructiveFeedback: string[];
+  avgPositiveRatio: number;
+}
+
+/**
+ * Aggregate comment_analysis from performance entries into a unified insights object.
+ * Deduplicates keywords by frequency, caps feedback, returns null if no data.
+ */
+export function aggregateCommentInsights(entries: PerformanceEntry[], maxKeywords = 15, maxFeedback = 8): CommentInsights | null {
+  const withComments = entries.filter(e => e.comment_analysis);
+  if (withComments.length === 0) return null;
+
+  const kwCount = new Map<string, number>();
+  const feedbackSet = new Set<string>();
+  let totalPositive = 0;
+
+  for (const e of withComments) {
+    const ca = e.comment_analysis!;
+    for (const kw of ca.top_keywords) {
+      kwCount.set(kw, (kwCount.get(kw) ?? 0) + 1);
+    }
+    for (const fb of ca.constructive_feedback) {
+      feedbackSet.add(fb);
+    }
+    totalPositive += ca.positive_ratio;
+  }
+
+  return {
+    topKeywords: [...kwCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([kw]) => kw)
+      .slice(0, maxKeywords),
+    constructiveFeedback: [...feedbackSet].slice(0, maxFeedback),
+    avgPositiveRatio: totalPositive / withComments.length,
+  };
+}
+
 // ─── Content Strategy Types ─────────────────────────────────────────────────
 
 export interface ContentStrategy {

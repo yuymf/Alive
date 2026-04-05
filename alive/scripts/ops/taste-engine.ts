@@ -140,7 +140,7 @@ export function buildTasteContext(): string {
     .sort((a, b) => b.affinity - a.affinity)
     .slice(0, 3);
 
-  if (strongHooks.length === 0 && strongStyles.length === 0 && taste.anti_patterns.length === 0) {
+  if (strongHooks.length === 0 && strongStyles.length === 0 && strongDrivers.length === 0 && taste.anti_patterns.length === 0) {
     return '';
   }
 

@@ -7,7 +7,7 @@
 import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
-import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy, PersonaAlignmentReport, CompetitorAnalysisStore, PerformanceLog } from '../utils/types';
+import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy, PersonaAlignmentReport, CompetitorAnalysisStore, PerformanceLog, aggregateCommentInsights } from '../utils/types';
 import { FilteredTrend } from './trend-analyzer';
 import { formatAlignmentBriefSection } from './persona-advisor';
 import { buildCandidateContext } from './discovery-engine';
@@ -138,27 +138,15 @@ export function formatBriefCard(
   // 📝 用户反馈（aggregated from recent performance entries）
   try {
     const perfLog = readJSON<PerformanceLog>(PATHS.performanceLog, { entries: [], last_updated: '' });
-    const recentWithComments = (perfLog.entries ?? [])
-      .filter(e => e.comment_analysis)
-      .slice(-5);
-    if (recentWithComments.length > 0) {
-      const allKeywords: string[] = [];
-      const allFeedback: string[] = [];
-      for (const e of recentWithComments) {
-        const ca = e.comment_analysis!;
-        allKeywords.push(...ca.top_keywords);
-        allFeedback.push(...ca.constructive_feedback);
+    const recentEntries = (perfLog.entries ?? []).slice(-5);
+    const insights = aggregateCommentInsights(recentEntries, 8, 3);
+    if (insights && insights.topKeywords.length > 0) {
+      lines.push('━━ 📝 用户反馈 ━━');
+      lines.push(`  热词: ${insights.topKeywords.join('、')}`);
+      if (insights.constructiveFeedback.length > 0) {
+        lines.push(`  建议: ${insights.constructiveFeedback.join('；')}`);
       }
-      const uniqueKeywords = [...new Set(allKeywords)].slice(0, 8);
-      const uniqueFeedback = [...new Set(allFeedback)].slice(0, 3);
-      if (uniqueKeywords.length > 0) {
-        lines.push('━━ 📝 用户反馈 ━━');
-        lines.push(`  热词: ${uniqueKeywords.join('、')}`);
-        if (uniqueFeedback.length > 0) {
-          lines.push(`  建议: ${uniqueFeedback.join('；')}`);
-        }
-        lines.push('');
-      }
+      lines.push('');
     }
   } catch {
     // performance-log not available, skip

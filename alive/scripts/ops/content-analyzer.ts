@@ -102,10 +102,24 @@ export function addPattern(input: AddPatternInput): void {
     }
   }
 
-  saveContentPatterns({ ...current, patterns });
+  // Inline eviction on the already-computed patterns array (avoid double load+save)
+  const limit = MAX_PATTERNS;
+  let finalPatterns = patterns.filter(p => {
+    if (p.times_used >= MIN_EVICT_USES && p.success_rate !== null && p.success_rate < EVICT_SUCCESS_THRESHOLD) {
+      return false;
+    }
+    return true;
+  });
+  if (finalPatterns.length > limit) {
+    finalPatterns.sort((a, b) => {
+      const scoreA = (a.success_rate ?? 0.5) * Math.log2(a.times_used + 1);
+      const scoreB = (b.success_rate ?? 0.5) * Math.log2(b.times_used + 1);
+      return scoreB - scoreA;
+    });
+    finalPatterns = finalPatterns.slice(0, limit);
+  }
 
-  // Trigger eviction check after adding
-  evictStalePatterns();
+  saveContentPatterns({ ...current, patterns: finalPatterns });
 }
 
 export function incrementPatternUsage(type: string, source: string): void {

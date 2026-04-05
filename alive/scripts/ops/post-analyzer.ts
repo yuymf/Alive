@@ -13,7 +13,7 @@ import {
   AnalysisLog, PerformanceTier, ContentAnalysis,
 } from '../utils/types';
 import { loadQueue } from './review-queue';
-import { addPattern, loadContentPatterns, updatePatternSuccessRate } from './content-analyzer';
+import { addPattern, loadContentPatterns, saveContentPatterns } from './content-analyzer';
 import { updateTasteFromAnalysis } from './taste-engine';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -334,7 +334,8 @@ export async function analyzePublishedPosts(
     // Update content taste memory from this analysis
     updateTasteFromAnalysis(analysis);
 
-    // Update success rates for existing patterns based on performance tier
+    // Update success rates for patterns actually used by this post
+    // Only update patterns that match the template_type or extracted_patterns of the analyzed post
     const tierToRate: Record<PerformanceTier, number> = {
       viral: 1.0,
       above_avg: 0.7,
@@ -343,14 +344,35 @@ export async function analyzePublishedPosts(
     };
     const rate = tierToRate[analysis.performance_tier];
     const existingPatterns = loadContentPatterns();
-    for (const ep of existingPatterns.patterns) {
-      if (ep.times_used > 0) {
-        // Update patterns that have been used (i.e. injected into generation prompts)
-        // Use exponential moving average: new_rate = old_rate * 0.7 + observed_rate * 0.3
+
+    // Build a set of pattern types that are relevant to this specific post
+    const relevantPatternTypes = new Set<string>();
+    // 1. Patterns whose type matches the template type used
+    relevantPatternTypes.add(analysis.template_type);
+    // 2. Extracted patterns from this analysis (if any)
+    if (analysis.extracted_patterns) {
+      for (const ep of analysis.extracted_patterns) {
+        relevantPatternTypes.add(ep.pattern_type);
+      }
+    }
+    // 3. Key success factors identified for this post
+    for (const factor of analysis.pattern_analysis.key_success_factors) {
+      relevantPatternTypes.add(factor);
+    }
+
+    // Batch update: collect all changes, save once
+    let patternsModified = false;
+    const updatedPatterns = existingPatterns.patterns.map(ep => {
+      if (ep.times_used > 0 && relevantPatternTypes.has(ep.type)) {
         const oldRate = ep.success_rate ?? rate;
         const newRate = Math.round((oldRate * 0.7 + rate * 0.3) * 100) / 100;
-        updatePatternSuccessRate(ep.type, ep.source, newRate);
+        patternsModified = true;
+        return { ...ep, success_rate: newRate };
       }
+      return ep;
+    });
+    if (patternsModified) {
+      saveContentPatterns({ ...existingPatterns, patterns: updatedPatterns });
     }
 
     if (analysis.extracted_patterns && analysis.extracted_patterns.length > 0) {

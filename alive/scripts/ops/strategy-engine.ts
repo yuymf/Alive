@@ -9,8 +9,8 @@ import { now } from '../utils/time-utils';
 import { LLMClient } from '../utils/llm-client';
 import {
   ContentAnalysis, AnalysisLog, ContentStrategy, PerformanceTier,
-  PerformanceLog, PerformanceEntry, ContentPatterns, CompetitorLog,
-  PersonaConfig, OpsConfig,
+  PerformanceLog, ContentPatterns, CompetitorLog,
+  aggregateCommentInsights,
 } from '../utils/types';
 import { buildCompetitorSummary } from './competitor-tracker';
 
@@ -337,7 +337,9 @@ function buildStrategyInput(
   const weekOverWeek = computeWeekOverWeek(allAnalysis);
 
   const alignmentScores = recentAnalysis.map(e => e.persona_alignment.score);
-  const alignmentAvg = alignmentScores.reduce((a, b) => a + b, 0) / alignmentScores.length;
+  const alignmentAvg = alignmentScores.length > 0
+    ? alignmentScores.reduce((a, b) => a + b, 0) / alignmentScores.length
+    : 5;
   const driftAreas = recentAnalysis
     .filter(e => e.persona_alignment.tone_consistency !== 'on_brand')
     .map(e => e.persona_alignment.specific_notes)
@@ -407,30 +409,9 @@ export async function computeStrategy(
   // Aggregate comment insights from performance entries
   const recentItemIds = new Set(recentAnalysis.map(a => a.item_id));
   const recentPerfEntries = (perfLog.entries ?? []).filter(e => recentItemIds.has(e.item_id));
-  const entriesWithComments = recentPerfEntries.filter(e => e.comment_analysis);
-  if (entriesWithComments.length > 0) {
-    const allKeywords: string[] = [];
-    const allFeedback: string[] = [];
-    let totalPositive = 0;
-    for (const e of entriesWithComments) {
-      const ca = e.comment_analysis!;
-      allKeywords.push(...ca.top_keywords);
-      allFeedback.push(...ca.constructive_feedback);
-      totalPositive += ca.positive_ratio;
-    }
-    // Deduplicate keywords, count frequency
-    const kwCount = new Map<string, number>();
-    for (const kw of allKeywords) {
-      kwCount.set(kw, (kwCount.get(kw) ?? 0) + 1);
-    }
-    input.commentInsights = {
-      topKeywords: [...kwCount.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([kw]) => kw)
-        .slice(0, 15),
-      constructiveFeedback: [...new Set(allFeedback)].slice(0, 8),
-      avgPositiveRatio: totalPositive / entriesWithComments.length,
-    };
+  const insights = aggregateCommentInsights(recentPerfEntries, 15, 8);
+  if (insights) {
+    input.commentInsights = insights;
   }
 
   const prompt = buildStrategyPrompt(input);

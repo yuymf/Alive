@@ -107,6 +107,8 @@ interface InspirationHighlight {
   likes: number;
   topic: string;
   takeaway?: string;
+  /** Author/creator name (may be absent in older data) */
+  author?: string;
 }
 
 interface InspirationSaved {
@@ -167,7 +169,7 @@ export function processInspirationForDiscovery(): number {
 
     pool.items.push({
       title: highlight.title,
-      author: '', // feed_highlights don't have author; filled by saved_inspirations
+      author: highlight.author ?? '',
       source: 'content-browse',
       engagement: highlight.likes,
       topic: highlight.topic,
