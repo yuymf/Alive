@@ -18,3 +18,4 @@ docs/
 e2e/harness/.env
 e2e/harness/reports/*.md
 e2e/harness/.env
+.playwright-mcp
