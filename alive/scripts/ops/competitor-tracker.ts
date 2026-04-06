@@ -364,11 +364,13 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
 
   const all = [...xhsUpdates, ...douyinUpdates, ...bilibiliUpdates];
 
-  // Persist
-  const existing = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
+  // Persist (handle legacy format: { competitors, lastUpdate })
+  const rawExisting = readJSON<Record<string, unknown>>(PATHS.competitorLog, {});
+  const existingEntries: CompetitorUpdate[] =
+    (rawExisting as any).entries ?? (rawExisting as any).competitors ?? [];
   const today = getLocalDate(now());
   // Use getLocalDate on fetched_at to ensure consistent timezone comparison
-  const withoutToday = existing.entries.filter(e => {
+  const withoutToday = existingEntries.filter(e => {
     const entryDate = getLocalDate(new Date(e.fetched_at));
     return entryDate !== today;
   });

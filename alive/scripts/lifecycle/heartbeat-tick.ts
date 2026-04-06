@@ -46,7 +46,11 @@ import { isActiveHeartbeatHour } from '../world/heartbeat-gate';
 import { loadPersona, injectPersona, buildVoiceSignature, getEmotionCouplingConfigs, getContentSourcesConfig } from '../persona/persona-loader';
 import { resolveRoute, resolveRouteBySkillName, fuzzyResolveSkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
 import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
+import { ContentProviderRegistry } from '../adapters/content-provider';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
+import { processInspirationForDiscovery, processInspirationForAccountDiscovery } from '../ops/discovery-engine';
+import { runKeywordSearch } from '../ops/keyword-tracker';
+import { buildDriftContext } from '../engines/personality-drift';
 import { HEARTBEAT_CONFIG } from '../config';
 import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
@@ -226,7 +230,6 @@ function resolveSkillConfig(skillName: string, actionContext?: string, persona?:
 
   if (skillName === 'content-browse') {
     const contentSources = persona ? getContentSourcesConfig(persona) : undefined;
-    const { ContentProviderRegistry } = require('../adapters/content-provider');
     const registry = new ContentProviderRegistry();
     config = createContentBrowseConfig({
       contentSources,
@@ -265,13 +268,22 @@ export async function regularTick(
   // 1. Read state (+ hydration for backward compat)
   let emotion = hydrateEmotionState(readJSON(PATHS.emotionState, DEFAULT_EMOTION) as unknown as Record<string, unknown>);
   let intentPool: IntentPool = readJSON<IntentPool>(PATHS.intentPool, DEFAULT_INTENT_POOL);
+  // Handle legacy format: { pool, lastUpdate } → { intents, last_updated }
+  if (!intentPool.intents && (intentPool as any).pool) {
+    intentPool = { intents: (intentPool as any).pool, last_updated: (intentPool as any).lastUpdate ?? null };
+  }
   intentPool = {
     ...intentPool,
-    intents: intentPool.intents.map(i => hydrateIntent(i as unknown as Record<string, unknown>)),
+    intents: (intentPool.intents ?? []).map(i => hydrateIntent(i as unknown as Record<string, unknown>)),
   };
   const schedule = readJSON<ScheduleToday>(PATHS.scheduleToday, DEFAULT_SCHEDULE);
   const events = readJSON<EventQueue>(PATHS.eventQueue, DEFAULT_EVENT_QUEUE);
-  const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, DEFAULT_HEARTBEAT_LOG);
+  let heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, DEFAULT_HEARTBEAT_LOG);
+  // Handle legacy format: { entries, lastUpdate } → { logs, retention_days }
+  if (!heartbeatLog.logs && (heartbeatLog as any).entries) {
+    heartbeatLog = { logs: (heartbeatLog as any).entries, retention_days: HEARTBEAT_CONFIG.LOG_RETENTION_DAYS };
+  }
+  heartbeatLog = { ...heartbeatLog, logs: heartbeatLog.logs ?? [] };
   const diary = readText(PATHS.diary);
   const recentDiary = diary.split('\n').slice(-20).join('\n');
   const worldContext = readText(PATHS.world).split('\n').slice(-10).join('\n');
@@ -558,7 +570,14 @@ export async function regularTick(
     : '（intent 引擎已关闭）';
 
   const personalityDrift = readJSON(PATHS.personalityDrift, { base: persona.personality.mbti, modifiers: [] });
-  const personalityContext = `${persona.personality.mbti}基底。${personalityDrift.modifiers.map((m: { effect: string }) => m.effect).join('；')}`;
+  // P4-2: Use enhanced drift context if drift engine is available
+  let personalityContext: string;
+  try {
+    personalityContext = buildDriftContext(persona);
+  } catch {
+    // Fallback to original simple context
+    personalityContext = `${persona.personality.mbti}基底。${personalityDrift.modifiers.map((m: { effect: string }) => m.effect).join('；')}`;
+  }
 
   // Build registered skills summary for LLM (filtered by persona.sub_skills)
   const routeTable = getRouteTable(persona);
@@ -709,10 +728,9 @@ export async function regularTick(
           totalImportance += 5;
           actionResults.push(`[${route.skillName}] ${action.action}`);
 
-          // Post-hook: content-browse → trigger discovery pipeline
+          // Post-hook: content-browse → trigger discovery pipeline + keyword search
           if (route.skillName === 'content-browse') {
             try {
-              const { processInspirationForDiscovery, processInspirationForAccountDiscovery } = require('../ops/discovery-engine');
               const discovered = processInspirationForDiscovery();
               const newCandidates = processInspirationForAccountDiscovery();
               if (discovered > 0 || newCandidates > 0) {
@@ -720,6 +738,19 @@ export async function regularTick(
               }
             } catch (discErr) {
               console.warn(`[discovery] Post-browse discovery failed: ${(discErr as Error).message}`);
+            }
+
+            // P4-1: Active keyword search (reuses registry from the content-browse config above)
+            try {
+              const kRegistry = skillConfig.registry as ContentProviderRegistry | undefined;
+              if (kRegistry) {
+                const kResult = await runKeywordSearch(kRegistry);
+                if (kResult.searched > 0) {
+                  console.log(`[keyword-tracker] Searched ${kResult.searched} keywords (${kResult.keywords.join(', ')}), +${kResult.totalDiscovered} discoveries`);
+                }
+              }
+            } catch (kwErr) {
+              console.warn(`[keyword-tracker] Post-browse keyword search failed: ${(kwErr as Error).message}`);
             }
           }
         } catch (err) {

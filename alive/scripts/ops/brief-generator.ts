@@ -162,6 +162,30 @@ export function formatBriefCard(
     lines.push('');
   }
 
+  // ⚠️ 人设漂移预警（from personality-drift engine, P4-2）
+  try {
+    const { buildDriftBriefSection } = require('../engines/personality-drift');
+    const driftSection = buildDriftBriefSection();
+    if (driftSection) {
+      lines.push(driftSection);
+      lines.push('');
+    }
+  } catch {
+    // personality-drift engine not available, skip
+  }
+
+  // 🔍 关键词追踪（from keyword-tracker, P4-1）
+  try {
+    const { buildKeywordContext } = require('../ops/keyword-tracker');
+    const keywordSection = buildKeywordContext();
+    if (keywordSection) {
+      lines.push(keywordSection);
+      lines.push('');
+    }
+  } catch {
+    // keyword-tracker not available, skip
+  }
+
   // 🏥 链路健康（only shown when warnings or missing items exist）
   try {
     let healthReport = enrichment?.healthReport ?? null;

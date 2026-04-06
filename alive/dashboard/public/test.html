@@ -1,0 +1,2405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alive — E2E Test Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=DotGothic16&family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-page: #F3EDE3;
+  --bg-panel: #FDFBF6;
+  --bg-inset: #EBE5D8;
+  --bg-deep: #E0D9CA;
+  --brown-dark: #4A3828;
+  --brown-mid: #7A6248;
+  --brown-light: #A89878;
+  --green-leaf: #5A8249;
+  --green-soft: #7CA06A;
+  --green-pale: #C0D6AA;
+  --terra: #C06840;
+  --terra-soft: #D89468;
+  --blue-sky: #6890B0;
+  --blue-soft: #9ABCD6;
+  --gold-warm: #C89830;
+  --gold-pale: #E0C870;
+  --pink-blossom: #C87888;
+  --pink-soft: #E0A8B8;
+  --purple-berry: #8868A0;
+  --text-primary: #2A2018;
+  --text-secondary: #685848;
+  --text-dim: #9A8E7E;
+  --border-main: #C8B898;
+  --border-dark: #8A7A60;
+  --font-pixel: 'Press Start 2P', 'DotGothic16', monospace;
+  --font-pixel-jp: 'DotGothic16', 'Press Start 2P', monospace;
+  --font-body: 'Zen Maru Gothic', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Fira Code', 'Menlo', monospace;
+  --px: 3px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(74,56,40,0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74,56,40,0.012) 1px, transparent 1px);
+  background-size: 16px 16px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* === LAYOUT === */
+.app {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--bg-panel);
+  border-bottom: var(--px) solid var(--border-dark);
+  box-shadow: 0 var(--px) 0 0 var(--brown-dark);
+  flex-shrink: 0;
+}
+.header-left { display: flex; align-items: center; gap: 12px; }
+.header-title {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  color: var(--brown-dark);
+  letter-spacing: 1px;
+}
+.header-title .leaf {
+  display: inline-block;
+  width: 12px; height: 12px;
+  background: var(--terra);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  margin-right: 6px;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.header-right { display: flex; align-items: center; gap: 10px; }
+.nav-link {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  color: var(--brown-mid);
+  text-decoration: none;
+  border: 2px solid var(--border-main);
+  padding: 4px 10px;
+  background: var(--bg-panel);
+  box-shadow: 2px 2px 0 0 var(--border-dark);
+  transition: background 0.15s;
+}
+.nav-link:hover { background: var(--bg-inset); }
+.nav-link.active { background: var(--bg-inset); border-color: var(--terra); color: var(--terra); }
+
+/* === MAIN === */
+.main {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  overflow: hidden;
+}
+
+/* === LEFT: Control Panel === */
+.control-panel {
+  background: var(--bg-panel);
+  border-right: var(--px) solid var(--border-main);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.section {
+  border-bottom: 2px dashed var(--bg-deep);
+}
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.section-header:hover { background: rgba(0,0,0,0.02); }
+.section-icon {
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+.section-title {
+  font-family: var(--font-pixel-jp);
+  font-size: 12px;
+  color: var(--brown-dark);
+  flex: 1;
+}
+.section-chevron {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  color: var(--text-dim);
+  transition: transform 0.2s;
+}
+.section.collapsed .section-chevron { transform: rotate(-90deg); }
+.section-body {
+  padding: 4px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.section.collapsed .section-body { display: none; }
+
+/* === ACTION BUTTONS === */
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-main);
+  box-shadow: 2px 2px 0 0 var(--border-dark);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+  transition: all 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+.action-btn:hover {
+  background: var(--bg-inset);
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 0 var(--border-dark);
+}
+.action-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: 2px 2px 0 0 var(--border-dark) !important;
+}
+.action-btn .btn-icon {
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.action-btn .btn-text { flex: 1; }
+.action-btn .btn-label { font-weight: 500; display: block; }
+.action-btn .btn-desc { font-size: 11px; color: var(--text-dim); display: block; }
+.action-btn.running {
+  border-color: var(--gold-warm);
+  background: linear-gradient(90deg, var(--gold-pale) 0%, var(--bg-panel) 50%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.action-btn.success { border-color: var(--green-leaf); }
+.action-btn.error { border-color: var(--terra); }
+
+/* Lifecycle buttons — color coded */
+.action-btn.lifecycle-morning { border-left: 4px solid var(--gold-warm); }
+.action-btn.lifecycle-heartbeat { border-left: 4px solid var(--terra); }
+.action-btn.lifecycle-night { border-left: 4px solid var(--blue-sky); }
+.action-btn.lifecycle-fullday { border-left: 4px solid var(--purple-berry); }
+
+/* Skill buttons */
+.action-btn.skill-btn { border-left: 4px solid var(--green-leaf); }
+.action-btn.skill-btn.platform { border-left-color: var(--purple-berry); }
+
+/* Tool buttons */
+.action-btn.tool-btn { border-left: 4px solid var(--pink-blossom); }
+
+/* === FULL-DAY CONFIG === */
+.fullday-config {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.config-label {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+.config-input {
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 2px solid var(--border-main);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+}
+.config-input:focus { border-color: var(--blue-sky); }
+
+/* === PROGRESS BAR === */
+.progress-container {
+  display: none;
+  margin-top: 8px;
+}
+.progress-container.visible { display: block; }
+.progress-bar-outer {
+  width: 100%;
+  height: 16px;
+  background: var(--bg-inset);
+  border: 2px solid var(--border-main);
+  overflow: hidden;
+  position: relative;
+}
+.progress-bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green-leaf), var(--green-soft));
+  transition: width 0.5s ease;
+  width: 0%;
+}
+.progress-text {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  text-align: center;
+}
+
+/* === STATE EDITOR === */
+.state-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.state-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.state-label {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+.state-input {
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 2px solid var(--border-main);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+}
+.state-input:focus { border-color: var(--blue-sky); }
+.state-input.wide { grid-column: 1 / -1; }
+
+.apply-btn {
+  font-family: var(--font-pixel-jp);
+  font-size: 11px;
+  padding: 6px 16px;
+  background: var(--blue-sky);
+  color: white;
+  border: 2px solid var(--border-dark);
+  box-shadow: 2px 2px 0 0 var(--border-dark);
+  cursor: pointer;
+  margin-top: 4px;
+}
+.apply-btn:hover { background: var(--blue-soft); }
+.apply-btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 0 var(--border-dark); }
+
+/* === RIGHT: Log Panel === */
+.log-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-page);
+}
+.log-tabs {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 2px dashed var(--bg-deep);
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  gap: 0;
+}
+.log-tab {
+  font-family: var(--font-pixel-jp);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.15s;
+}
+.log-tab:hover { color: var(--text-secondary); }
+.log-tab.active {
+  color: var(--brown-dark);
+  border-bottom-color: var(--terra);
+}
+.log-tab-spacer { flex: 1; }
+.log-clear-btn {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--border-main);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.log-clear-btn:hover { color: var(--terra); border-color: var(--terra); }
+
+.tab-content { display: none; flex: 1; overflow: hidden; }
+.tab-content.active { display: flex; flex-direction: column; }
+
+.log-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.log-entry {
+  background: var(--bg-panel);
+  border: var(--px) solid var(--border-main);
+  box-shadow: var(--px) var(--px) 0 0 var(--border-dark);
+  padding: 10px 14px;
+  font-size: 12px;
+}
+.log-entry.error { border-color: var(--terra); }
+.log-entry.success { border-color: var(--green-leaf); }
+.log-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.log-entry-cmd {
+  font-family: var(--font-pixel-jp);
+  font-size: 11px;
+  font-weight: 700;
+}
+.log-entry-time {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+}
+.log-entry-status {
+  display: inline-block;
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  padding: 2px 6px;
+  margin-left: 6px;
+}
+.log-entry-status.ok { background: var(--green-pale); color: var(--green-leaf); }
+.log-entry-status.err { background: #f0d0d0; color: var(--terra); }
+.log-entry-status.running { background: var(--gold-pale); color: var(--gold-warm); }
+
+.log-entry-body {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--bg-deep);
+  margin-top: 6px;
+}
+.log-entry-body:empty { display: none; }
+
+.log-entry-message {
+  color: var(--text-primary);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+/* === TIMELINE === */
+.timeline-container {
+  padding: 10px 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+.timeline-empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-dim);
+  font-family: var(--font-pixel-jp);
+  font-size: 13px;
+}
+.timeline-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--bg-deep);
+}
+.timeline-dot {
+  flex-shrink: 0;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  border: 2px solid var(--border-main);
+  background: var(--bg-panel);
+}
+.timeline-dot.morning { border-color: var(--gold-warm); background: #FFF8E0; }
+.timeline-dot.heartbeat { border-color: var(--terra); background: #FFF0E8; }
+.timeline-dot.night { border-color: var(--blue-sky); background: #E8F0FF; }
+.timeline-dot.error { border-color: var(--terra); background: #FFE0E0; }
+.timeline-body { flex: 1; min-width: 0; }
+.timeline-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.timeline-phase {
+  font-family: var(--font-pixel-jp);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--brown-dark);
+}
+.timeline-time {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+}
+.timeline-duration {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+.timeline-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.timeline-error {
+  font-size: 11px;
+  color: var(--terra);
+  font-family: var(--font-mono);
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: #FFF0E8;
+  border: 1px solid var(--terra-soft);
+}
+.timeline-stats {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-panel);
+  border-bottom: 2px solid var(--bg-deep);
+  flex-shrink: 0;
+}
+.timeline-stat {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+}
+.timeline-stat .stat-val {
+  font-size: 12px;
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* === DIARY VIEWER === */
+.diary-content {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+.diary-empty {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-dim);
+  font-family: var(--font-pixel-jp);
+  font-size: 13px;
+}
+
+/* === STATE SUMMARY BAR === */
+.state-bar {
+  padding: 10px 16px;
+  background: var(--bg-inset);
+  border-top: 2px solid var(--bg-deep);
+  flex-shrink: 0;
+}
+.state-bar-title {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.state-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.state-chip {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+}
+.state-chip .chip-val {
+  color: var(--text-primary);
+  font-weight: bold;
+}
+
+/* Duration display */
+.log-entry-duration {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+  margin-left: 8px;
+}
+
+/* === SCROLLBAR === */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-inset); }
+::-webkit-scrollbar-thumb { background: var(--border-main); border: 1px solid var(--border-dark); }
+::-webkit-scrollbar-thumb:hover { background: var(--brown-mid); }
+
+/* === OPS CONSOLE === */
+.action-btn.ops-btn { border-left: 4px solid var(--blue-sky); }
+.action-btn.ops-btn.ops-critical { border-left-color: var(--terra); }
+.action-btn.ops-btn.ops-data { border-left-color: var(--purple-berry); }
+.action-btn.ops-btn.ops-action { border-left-color: var(--green-leaf); }
+
+.ops-queue-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-top: 6px;
+}
+.ops-queue-table th {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 2px solid var(--bg-deep);
+  letter-spacing: 0.5px;
+}
+.ops-queue-table td {
+  padding: 6px;
+  border-bottom: 1px dashed var(--bg-deep);
+  vertical-align: top;
+}
+.ops-queue-table tr:hover td { background: rgba(0,0,0,0.015); }
+
+.ops-badge {
+  display: inline-block;
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-main);
+}
+.ops-badge.pending { background: var(--gold-pale); color: var(--gold-warm); border-color: var(--gold-warm); }
+.ops-badge.approved { background: var(--green-pale); color: var(--green-leaf); border-color: var(--green-leaf); }
+.ops-badge.published { background: var(--blue-soft); color: var(--blue-sky); border-color: var(--blue-sky); }
+.ops-badge.discarded { background: #e0d0d0; color: var(--terra); border-color: var(--terra); }
+
+.ops-mini-btn {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-panel);
+  cursor: pointer;
+  margin: 1px;
+}
+.ops-mini-btn:hover { background: var(--bg-inset); }
+.ops-mini-btn.approve { border-color: var(--green-leaf); color: var(--green-leaf); }
+.ops-mini-btn.discard { border-color: var(--terra); color: var(--terra); }
+.ops-mini-btn.publish { border-color: var(--blue-sky); color: var(--blue-sky); }
+
+.ops-url-input {
+  font-family: var(--font-body);
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 2px solid var(--border-main);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+  margin-bottom: 6px;
+}
+.ops-url-input:focus { border-color: var(--blue-sky); }
+.ops-url-input::placeholder { color: var(--text-dim); }
+
+/* Health status dots */
+.health-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+.health-dot.ok { background: var(--green-leaf); }
+.health-dot.warn { background: var(--gold-warm); }
+.health-dot.missing { background: var(--terra); }
+
+/* Ops data cards in right panel */
+.ops-data-card {
+  background: var(--bg-panel);
+  border: var(--px) solid var(--border-main);
+  box-shadow: var(--px) var(--px) 0 0 var(--border-dark);
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.ops-data-card-title {
+  font-family: var(--font-pixel-jp);
+  font-size: 11px;
+  color: var(--brown-dark);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ops-data-card-body {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ops-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ops-stat-item {
+  text-align: center;
+  padding: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--bg-deep);
+}
+.ops-stat-item .ops-stat-val {
+  font-family: var(--font-body);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: block;
+}
+.ops-stat-item .ops-stat-label {
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <div class="header-left">
+      <span class="header-title"><span class="leaf"></span>ALIVE E2E TEST</span>
+    </div>
+    <div class="header-right">
+      <a href="/" class="nav-link">主面板</a>
+      <a href="/debug" class="nav-link">LLM 日志</a>
+      <a href="/photos" class="nav-link">相册</a>
+      <a href="/test" class="nav-link active">测试</a>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- Left: Control Panel -->
+    <div class="control-panel">
+
+      <!-- Full Day Simulation Section -->
+      <div class="section" id="sectionFullDay">
+        <div class="section-header" onclick="toggleSection('sectionFullDay')">
+          <div class="section-icon">🎬</div>
+          <div class="section-title">全天 E2E 模拟</div>
+          <div class="section-chevron">▼</div>
+        </div>
+        <div class="section-body">
+          <div class="fullday-config">
+            <div class="config-field">
+              <label class="config-label">起床时间</label>
+              <input class="config-input" type="number" id="cfgStartHour" value="8" min="5" max="12">
+            </div>
+            <div class="config-field">
+              <label class="config-label">心跳次数</label>
+              <input class="config-input" type="number" id="cfgHeartbeats" value="3" min="1" max="12">
+            </div>
+            <div class="config-field">
+              <label class="config-label">入睡时间</label>
+              <input class="config-input" type="number" id="cfgEndHour" value="23" min="18" max="24">
+            </div>
+          </div>
+          <button class="action-btn lifecycle-fullday" onclick="runFullDay()" id="btn-fullday">
+            <div class="btn-icon">🎬</div>
+            <div class="btn-text">
+              <span class="btn-label">开始全天模拟</span>
+              <span class="btn-desc">晨间规划 → 心跳循环 → 睡前反思</span>
+            </div>
+          </button>
+          <div class="progress-container" id="fulldayProgress">
+            <div class="progress-bar-outer">
+              <div class="progress-bar-inner" id="progressBar"></div>
+            </div>
+            <div class="progress-text" id="progressText">准备中...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lifecycle Section -->
+      <div class="section" id="sectionLifecycle">
+        <div class="section-header" onclick="toggleSection('sectionLifecycle')">
+          <div class="section-icon">⏰</div>
+          <div class="section-title">单步生命周期</div>
+          <div class="section-chevron">▼</div>
+        </div>
+        <div class="section-body">
+          <button class="action-btn lifecycle-morning" onclick="runAction('morning')" id="btn-morning">
+            <div class="btn-icon">🌅</div>
+            <div class="btn-text">
+              <span class="btn-label">晨间规划</span>
+              <span class="btn-desc">runMorningPlan — 生成日程、意图种子</span>
+            </div>
+          </button>
+          <button class="action-btn lifecycle-heartbeat" onclick="runAction('heartbeat')" id="btn-heartbeat">
+            <div class="btn-icon">💓</div>
+            <div class="btn-text">
+              <span class="btn-label">心跳一次</span>
+              <span class="btn-desc">regularTick — 感知→决策→行动</span>
+            </div>
+          </button>
+          <button class="action-btn lifecycle-night" onclick="runAction('night')" id="btn-night">
+            <div class="btn-icon">🌙</div>
+            <div class="btn-text">
+              <span class="btn-label">睡前反思</span>
+              <span class="btn-desc">runNightReflect — 总结/成长/人格漂移</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tools Section -->
+      <div class="section" id="sectionTools">
+        <div class="section-header" onclick="toggleSection('sectionTools')">
+          <div class="section-icon">🔧</div>
+          <div class="section-title">工具</div>
+          <div class="section-chevron">▼</div>
+        </div>
+        <div class="section-body">
+          <button class="action-btn tool-btn" onclick="resetState()" id="btn-reset">
+            <div class="btn-icon">🔄</div>
+            <div class="btn-text">
+              <span class="btn-label">重置所有状态</span>
+              <span class="btn-desc">将所有状态文件恢复为干净的默认值</span>
+            </div>
+          </button>
+          <button class="action-btn tool-btn" onclick="loadDiary()" id="btn-diary">
+            <div class="btn-icon">📖</div>
+            <div class="btn-text">
+              <span class="btn-label">查看日记</span>
+              <span class="btn-desc">读取 diary.md 内容</span>
+            </div>
+          </button>
+          <button class="action-btn tool-btn" onclick="loadHeartbeatLog()" id="btn-hblog">
+            <div class="btn-icon">📋</div>
+            <div class="btn-text">
+              <span class="btn-label">查看心跳日志</span>
+              <span class="btn-desc">读取完整心跳记录</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Sub-Skills Section -->
+      <div class="section collapsed" id="sectionSkills">
+        <div class="section-header" onclick="toggleSection('sectionSkills')">
+          <div class="section-icon">🧩</div>
+          <div class="section-title">子技能</div>
+          <div class="section-chevron">▼</div>
+        </div>
+        <div class="section-body" id="skillButtons">
+          <div style="font-family:var(--font-pixel);font-size:8px;color:var(--text-dim);padding:10px 0;text-align:center;">
+            加载中...
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ OPS CONSOLE ═══ -->
+
+      <!-- Ops: Pipeline Commands -->
+      <div class="section" id="sectionOpsPipeline">
+        <div class="section-header" onclick="toggleSection('sectionOpsPipeline')">
+          <div class="section-icon">📊</div>
+          <div class="section-title">Ops 命令中心</div>
+          <div class="section-chevron">▼</div>
+        </div>
+        <div class="section-body">
+          <button class="action-btn ops-btn ops-critical" onclick="runOps('ops-brief', this)" id="btn-ops-brief">
+            <div class="btn-icon">📋</div>
+            <div class="btn-text">
+              <span class="btn-label">生成今日简报</span>
+              <span class="btn-desc">趋势 → 竞品 → 审核队列 → 健康检查 → 格式化</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn" onclick="runOps('ops-trends', this)" id="btn-ops-trends">
+            <div class="btn-icon">📈</div>
+            <div class="btn-text">
+              <span class="btn-label">趋势分析</span>
+              <span class="btn-desc">DailyHot API + LLM 相关性过滤</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn" onclick="runOps('ops-competitors', this)" id="btn-ops-competitors">
+            <div class="btn-icon">🎯</div>
+            <div class="btn-text">
+              <span class="btn-label">竞品追踪</span>
+              <span class="btn-desc">抓取对标账号最新动态</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-action" onclick="runOps('ops-idea', this)" id="btn-ops-idea">
+            <div class="btn-icon">💡</div>
+            <div class="btn-text">
+              <span class="btn-label">选题生成</span>
+              <span class="btn-desc">趋势 + 模板 → 内容草稿入审核队列</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn" onclick="runOps('ops-health', this)" id="btn-ops-health">
+            <div class="btn-icon">🏥</div>
+            <div class="btn-text">
+              <span class="btn-label">健康检查</span>
+              <span class="btn-desc">检查 ops 管线 7 个环节状态</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn" onclick="runOps('ops-advice', this)" id="btn-ops-advice">
+            <div class="btn-icon">🧭</div>
+            <div class="btn-text">
+              <span class="btn-label">人设建议</span>
+              <span class="btn-desc">人设 × 热点契合度报告 + 选题推荐</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-status', this)" id="btn-ops-status">
+            <div class="btn-icon">📊</div>
+            <div class="btn-text">
+              <span class="btn-label">全局状态</span>
+              <span class="btn-desc">队列 / 健康 / 策略 / 发现池 综合视图</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Ops: Review Queue -->
+      <div class="section collapsed" id="sectionOpsQueue">
+        <div class="section-header" onclick="toggleSection('sectionOpsQueue')">
+          <div class="section-icon">📝</div>
+          <div class="section-title">审核队列</div>
+          <div class="section-chevron">▼</div>
+        </div>
+        <div class="section-body">
+          <button class="action-btn ops-btn ops-data" onclick="loadOpsQueue()" id="btn-ops-queue">
+            <div class="btn-icon">🔄</div>
+            <div class="btn-text">
+              <span class="btn-label">加载审核队列</span>
+              <span class="btn-desc">查看待审核 / 已通过 / 已发布内容</span>
+            </div>
+          </button>
+          <div id="opsQueueSummary" style="display:none;">
+            <div class="ops-stat-grid" id="opsQueueStats"></div>
+          </div>
+          <div id="opsQueueContainer" style="max-height:300px;overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <!-- Ops: Viral Analysis -->
+      <div class="section collapsed" id="sectionOpsAnalyze">
+        <div class="section-header" onclick="toggleSection('sectionOpsAnalyze')">
+          <div class="section-icon">🔬</div>
+          <div class="section-title">爆款分析</div>
+          <div class="section-chevron">▼</div>
+        </div>
+        <div class="section-body">
+          <input class="ops-url-input" type="text" id="analyzeUrl" placeholder="输入帖子 URL (小红书/抖音/Instagram)">
+          <button class="action-btn ops-btn ops-action" onclick="runViralAnalysis()" id="btn-ops-analyze">
+            <div class="btn-icon">🔍</div>
+            <div class="btn-text">
+              <span class="btn-label">分析爆款帖子</span>
+              <span class="btn-desc">Hook 模式 / 评论情绪 / 结构拆解</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Ops: Strategy & Data -->
+      <div class="section collapsed" id="sectionOpsData">
+        <div class="section-header" onclick="toggleSection('sectionOpsData')">
+          <div class="section-icon">🗄️</div>
+          <div class="section-title">策略 & 数据</div>
+          <div class="section-chevron">▼</div>
+        </div>
+        <div class="section-body">
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-strategy', this)" id="btn-ops-strategy">
+            <div class="btn-icon">🎲</div>
+            <div class="btn-text">
+              <span class="btn-label">查看当前策略</span>
+              <span class="btn-desc">内容比例 / 模式排名 / 行动建议</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-action" onclick="runOps('ops-strategy-compute', this)" id="btn-ops-strategy-compute">
+            <div class="btn-icon">⚙️</div>
+            <div class="btn-text">
+              <span class="btn-label">重新计算策略</span>
+              <span class="btn-desc">基于分析数据 LLM 生成新策略</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn" onclick="runOps('ops-strategy-confirm', this)" id="btn-ops-strategy-confirm">
+            <div class="btn-icon">✅</div>
+            <div class="btn-text">
+              <span class="btn-label">确认策略</span>
+              <span class="btn-desc">将最新策略标记为已确认</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-discovery', this)" id="btn-ops-discovery">
+            <div class="btn-icon">🌐</div>
+            <div class="btn-text">
+              <span class="btn-label">发现池 & 候选账号</span>
+              <span class="btn-desc">高互动内容发现 + 对标账号自动推荐</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-keywords', this)" id="btn-ops-keywords">
+            <div class="btn-icon">🔑</div>
+            <div class="btn-text">
+              <span class="btn-label">关键词追踪</span>
+              <span class="btn-desc">主动搜索关键词状态 / 速度追踪</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-patterns', this)" id="btn-ops-patterns">
+            <div class="btn-icon">🧬</div>
+            <div class="btn-text">
+              <span class="btn-label">内容模式</span>
+              <span class="btn-desc">爆款规律 / 竞品洞察 / 封面趋势</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- State Editor Section -->
+      <div class="section collapsed" id="sectionState">
+        <div class="section-header" onclick="toggleSection('sectionState')">
+          <div class="section-icon">🎛️</div>
+          <div class="section-title">状态修改</div>
+          <div class="section-chevron">▼</div>
+        </div>
+        <div class="section-body">
+          <div class="state-grid">
+            <div class="state-field">
+              <label class="state-label">VALENCE (-1~1)</label>
+              <input class="state-input" type="number" step="0.1" min="-1" max="1" id="stValence" placeholder="0.3">
+            </div>
+            <div class="state-field">
+              <label class="state-label">AROUSAL (0~1)</label>
+              <input class="state-input" type="number" step="0.1" min="0" max="1" id="stArousal" placeholder="0.5">
+            </div>
+            <div class="state-field">
+              <label class="state-label">ENERGY (0~1)</label>
+              <input class="state-input" type="number" step="0.1" min="0" max="1" id="stEnergy" placeholder="0.6">
+            </div>
+            <div class="state-field">
+              <label class="state-label">STRESS (0~1)</label>
+              <input class="state-input" type="number" step="0.1" min="0" max="1" id="stStress" placeholder="0.2">
+            </div>
+            <div class="state-field">
+              <label class="state-label">CREATIVITY (0~1)</label>
+              <input class="state-input" type="number" step="0.1" min="0" max="1" id="stCreativity" placeholder="0.4">
+            </div>
+            <div class="state-field">
+              <label class="state-label">SOCIABILITY (0~1)</label>
+              <input class="state-input" type="number" step="0.1" min="0" max="1" id="stSociability" placeholder="0.5">
+            </div>
+          </div>
+          <button class="apply-btn" onclick="applyEmotionState()">💾 应用情绪状态</button>
+
+          <div style="height:8px"></div>
+
+          <div class="state-grid">
+            <div class="state-field">
+              <label class="state-label">VITALITY (0~100)</label>
+              <input class="state-input" type="number" step="5" min="0" max="100" id="stVitality" placeholder="80">
+            </div>
+            <div class="state-field">
+              <label class="state-label">CONFIDENCE (0.5~1.5)</label>
+              <input class="state-input" type="number" step="0.05" min="0.5" max="1.5" id="stConfidence" placeholder="1.0">
+            </div>
+          </div>
+          <button class="apply-btn" onclick="applyVitalityConfidence()">💾 应用活力/信心</button>
+
+          <div style="height:8px"></div>
+          <div class="state-field">
+            <label class="state-label">MOOD DESCRIPTION</label>
+            <input class="state-input wide" type="text" id="stMoodDesc" placeholder="平静">
+          </div>
+          <button class="apply-btn" onclick="applyMoodDesc()">💾 应用情绪描述</button>
+        </div>
+      </div>
+
+      <!-- State Summary Bar -->
+      <div class="state-bar" id="stateBar">
+        <div class="state-bar-title">CURRENT STATE</div>
+        <div class="state-chips" id="stateChips">
+          <div class="state-chip">加载中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Log/Timeline Panel -->
+    <div class="log-panel">
+      <div class="log-tabs">
+        <button class="log-tab active" onclick="switchTab('logs')">执行日志</button>
+        <button class="log-tab" onclick="switchTab('timeline')">时间线</button>
+        <button class="log-tab" onclick="switchTab('diary')">日记</button>
+        <button class="log-tab" onclick="switchTab('ops')">Ops 数据</button>
+        <span class="log-tab-spacer"></span>
+        <button class="log-clear-btn" onclick="clearLog()">清空日志</button>
+      </div>
+
+      <!-- Tab: Logs -->
+      <div class="tab-content active" id="tab-logs">
+        <div class="log-scroll" id="logScroll">
+          <div style="text-align:center;padding:40px;color:var(--text-dim);font-family:var(--font-pixel-jp);font-size:13px;">
+            点击左侧按钮开始 E2E 测试 🎮
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Timeline -->
+      <div class="tab-content" id="tab-timeline">
+        <div class="timeline-stats" id="timelineStats" style="display:none;">
+          <div class="timeline-stat">阶段 <span class="stat-val" id="statPhases">0</span></div>
+          <div class="timeline-stat">总耗时 <span class="stat-val" id="statDuration">-</span></div>
+          <div class="timeline-stat">错误 <span class="stat-val" id="statErrors">0</span></div>
+          <div class="timeline-stat">心跳数 <span class="stat-val" id="statHeartbeats">0</span></div>
+        </div>
+        <div class="timeline-container" id="timelineContainer">
+          <div class="timeline-empty">运行全天模拟后，时间线将在此显示 📅</div>
+        </div>
+      </div>
+
+      <!-- Tab: Diary -->
+      <div class="tab-content" id="tab-diary">
+        <div class="diary-content" id="diaryContent">
+          <div class="diary-empty">点击「查看日记」加载 diary.md 📖</div>
+        </div>
+      </div>
+
+      <!-- Tab: Ops Data -->
+      <div class="tab-content" id="tab-ops">
+        <div class="log-scroll" id="opsDataScroll">
+          <div style="text-align:center;padding:40px;color:var(--text-dim);font-family:var(--font-pixel-jp);font-size:13px;">
+            运行 Ops 命令后，结构化数据将在此显示 📊
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// === Globals ===
+var currentPersona = '';
+var logEntries = [];
+var runningActions = new Set();
+var currentTimeline = null;
+var activeTab = 'logs';
+
+// === Persona init ===
+async function initPersona() {
+  try {
+    var res = await fetch('/api/personas');
+    if (!res.ok) return;
+    var data = await res.json();
+    currentPersona = data.active || (data.personas && data.personas[0]) || '';
+  } catch (e) { /* silent */ }
+}
+
+// === Section toggle ===
+function toggleSection(id) {
+  document.getElementById(id).classList.toggle('collapsed');
+}
+
+// === Tab switching ===
+function switchTab(tabName) {
+  activeTab = tabName;
+  document.querySelectorAll('.log-tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+  // Find the tab button by text
+  document.querySelectorAll('.log-tab').forEach(function(t) {
+    if ((tabName === 'logs' && t.textContent === '执行日志') ||
+        (tabName === 'timeline' && t.textContent === '时间线') ||
+        (tabName === 'diary' && t.textContent === '日记') ||
+        (tabName === 'ops' && t.textContent === 'Ops 数据')) {
+      t.classList.add('active');
+    }
+  });
+  document.getElementById('tab-' + tabName).classList.add('active');
+}
+
+// === API helper ===
+function apiUrl(path) {
+  var url = '/api/test/' + path;
+  if (currentPersona) url += '?persona=' + encodeURIComponent(currentPersona);
+  return url;
+}
+
+function apiUrlWithStream(path) {
+  var url = '/api/test/' + path;
+  var sep = '?';
+  if (currentPersona) { url += sep + 'persona=' + encodeURIComponent(currentPersona); sep = '&'; }
+  url += sep + 'stream=1';
+  return url;
+}
+
+// === Run Action ===
+async function runAction(command, btnId) {
+  btnId = btnId || ('btn-' + command);
+  var btn = document.getElementById(btnId);
+
+  if (runningActions.has(command)) return;
+  runningActions.add(command);
+
+  var allBtns = document.querySelectorAll('.action-btn');
+  allBtns.forEach(function(b) { b.disabled = true; });
+  if (btn) { btn.classList.add('running'); btn.classList.remove('success', 'error'); }
+
+  var logId = addLogEntry(command, 'running');
+  var startTime = Date.now();
+
+  try {
+    var res = await fetch(apiUrl(command), { method: 'POST' });
+    var data = await res.json();
+    var elapsed = Date.now() - startTime;
+
+    if (data.ok || res.ok) {
+      updateLogEntry(logId, 'success', data, elapsed);
+      if (btn) { btn.classList.remove('running'); btn.classList.add('success'); }
+    } else {
+      updateLogEntry(logId, 'error', data, elapsed);
+      if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
+    }
+  } catch (err) {
+    var elapsed = Date.now() - startTime;
+    updateLogEntry(logId, 'error', { error: err.message }, elapsed);
+    if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
+  }
+
+  runningActions.delete(command);
+  allBtns.forEach(function(b) { b.disabled = false; });
+
+  setTimeout(function() {
+    if (btn) btn.classList.remove('success', 'error');
+  }, 3000);
+
+  refreshState();
+}
+
+// === Run Full Day (with SSE streaming) ===
+async function runFullDay() {
+  if (runningActions.has('full-day')) return;
+  runningActions.add('full-day');
+
+  var btn = document.getElementById('btn-fullday');
+  var allBtns = document.querySelectorAll('.action-btn');
+  allBtns.forEach(function(b) { b.disabled = true; });
+  if (btn) { btn.classList.add('running'); btn.classList.remove('success', 'error'); }
+
+  // Show progress bar
+  var progressContainer = document.getElementById('fulldayProgress');
+  progressContainer.classList.add('visible');
+  updateProgress(0, '正在启动全天模拟...');
+
+  var startHour = parseInt(document.getElementById('cfgStartHour').value) || 8;
+  var heartbeats = parseInt(document.getElementById('cfgHeartbeats').value) || 3;
+  var endHour = parseInt(document.getElementById('cfgEndHour').value) || 23;
+
+  var logId = addLogEntry('full-day (morning→' + heartbeats + ' heartbeats→night)', 'running');
+  var startTime = Date.now();
+
+  try {
+    // Use SSE for streaming progress
+    var url = apiUrlWithStream('full-day');
+    var response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        startHour: startHour,
+        heartbeats: heartbeats,
+        endHour: endHour,
+      }),
+    });
+
+    // Parse SSE response
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var finalResult = null;
+
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+
+      // Process complete SSE events
+      var parts = buffer.split('\n\n');
+      buffer = parts.pop() || '';
+
+      for (var i = 0; i < parts.length; i++) {
+        var eventText = parts[i].trim();
+        if (!eventText) continue;
+
+        var eventType = 'message';
+        var eventData = '';
+        var lines = eventText.split('\n');
+        for (var j = 0; j < lines.length; j++) {
+          if (lines[j].startsWith('event: ')) eventType = lines[j].slice(7);
+          else if (lines[j].startsWith('data: ')) eventData = lines[j].slice(6);
+        }
+
+        if (eventType === 'progress') {
+          try {
+            var progress = JSON.parse(eventData);
+            updateProgress(progress.progress || 0, progress.detail || progress.step);
+          } catch (e) { /* skip */ }
+        } else if (eventType === 'done') {
+          try {
+            finalResult = JSON.parse(eventData);
+          } catch (e) {
+            finalResult = { ok: false, error: 'Failed to parse result' };
+          }
+        } else if (eventType === 'error') {
+          try {
+            finalResult = JSON.parse(eventData);
+            finalResult.ok = false;
+          } catch (e) {
+            finalResult = { ok: false, error: 'Stream error' };
+          }
+        }
+      }
+    }
+
+    var elapsed = Date.now() - startTime;
+
+    if (!finalResult) {
+      finalResult = { ok: false, error: 'No result received from server' };
+    }
+
+    if (finalResult.ok !== false && !finalResult.error) {
+      updateLogEntry(logId, 'success', finalResult, elapsed);
+      if (btn) { btn.classList.remove('running'); btn.classList.add('success'); }
+      updateProgress(100, '✓ 全天模拟完成！');
+
+      // Update timeline
+      if (finalResult.timeline) {
+        currentTimeline = finalResult;
+        renderTimeline(finalResult);
+        // Auto switch to timeline tab
+        switchTab('timeline');
+      }
+    } else {
+      updateLogEntry(logId, 'error', finalResult, elapsed);
+      if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
+      updateProgress(0, '✗ 模拟失败：' + (finalResult.error || 'unknown'));
+    }
+
+  } catch (err) {
+    var elapsed = Date.now() - startTime;
+    updateLogEntry(logId, 'error', { error: err.message }, elapsed);
+    if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
+    updateProgress(0, '✗ 连接失败：' + err.message);
+  }
+
+  runningActions.delete('full-day');
+  allBtns.forEach(function(b) { b.disabled = false; });
+
+  setTimeout(function() {
+    if (btn) btn.classList.remove('success', 'error');
+  }, 5000);
+
+  // Hide progress after a delay
+  setTimeout(function() {
+    progressContainer.classList.remove('visible');
+  }, 8000);
+
+  refreshState();
+}
+
+function updateProgress(pct, text) {
+  document.getElementById('progressBar').style.width = pct + '%';
+  document.getElementById('progressText').textContent = text;
+}
+
+// === Reset State ===
+async function resetState() {
+  if (!confirm('确定要重置所有状态文件吗？这会清除当前所有情绪、活力、心跳日志等数据。')) return;
+  await runAction('reset-state', 'btn-reset');
+}
+
+// === Load Diary ===
+async function loadDiary() {
+  try {
+    var res = await fetch(apiUrl('get-diary'), { method: 'POST' });
+    var data = await res.json();
+    var content = data.diary || '';
+    if (content) {
+      document.getElementById('diaryContent').innerHTML = '';
+      document.getElementById('diaryContent').textContent = content;
+    } else {
+      document.getElementById('diaryContent').innerHTML = '<div class="diary-empty">日记为空 📝</div>';
+    }
+    switchTab('diary');
+  } catch (err) {
+    document.getElementById('diaryContent').innerHTML = '<div class="diary-empty">加载失败: ' + escHtml(err.message) + '</div>';
+  }
+}
+
+// === Load Heartbeat Log ===
+async function loadHeartbeatLog() {
+  var logId = addLogEntry('get-heartbeat-log', 'running');
+  try {
+    var res = await fetch(apiUrl('get-heartbeat-log'), { method: 'POST' });
+    var data = await res.json();
+    var entries = data.entries || [];
+    var bodyText = entries.length + ' 条心跳记录\n\n';
+    entries.forEach(function(entry, i) {
+      bodyText += '── ' + (entry.timestamp || 'N/A') + ' ──\n';
+      if (entry.tick_summary) bodyText += '  摘要: ' + entry.tick_summary + '\n';
+      if (entry.inner_monologue) bodyText += '  内心: ' + entry.inner_monologue + '\n';
+      if (entry.chosen_actions && entry.chosen_actions.length) {
+        bodyText += '  行动: ' + entry.chosen_actions.join(', ') + '\n';
+      }
+      if (entry.emotion_snapshot) {
+        var e = entry.emotion_snapshot;
+        bodyText += '  情绪: V=' + (e.valence || '?') + ' A=' + (e.arousal || '?') + ' E=' + (e.energy || '?') + '\n';
+      }
+      bodyText += '\n';
+    });
+    updateLogEntry(logId, 'success', { message: entries.length + ' 条心跳记录', log: bodyText }, 0);
+  } catch (err) {
+    updateLogEntry(logId, 'error', { error: err.message }, 0);
+  }
+}
+
+// === Run Skill ===
+async function runSkill(skillName, actionName) {
+  var command = 'skill/' + skillName + (actionName ? '/' + actionName : '');
+  var btnId = 'btn-skill-' + skillName + '-' + (actionName || 'default');
+  await runAction(command, btnId);
+}
+
+// === Log Management ===
+var logCounter = 0;
+
+function addLogEntry(command, status) {
+  var id = 'log-' + (++logCounter);
+  var entry = {
+    id: id,
+    command: command,
+    status: status,
+    time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    data: null,
+    elapsed: null,
+  };
+  logEntries.unshift(entry);
+  renderLog();
+  return id;
+}
+
+function updateLogEntry(id, status, data, elapsed) {
+  for (var i = 0; i < logEntries.length; i++) {
+    if (logEntries[i].id === id) {
+      logEntries[i].status = status;
+      logEntries[i].data = data;
+      logEntries[i].elapsed = elapsed;
+      break;
+    }
+  }
+  renderLog();
+}
+
+function clearLog() {
+  logEntries = [];
+  document.getElementById('logScroll').innerHTML =
+    '<div style="text-align:center;padding:40px;color:var(--text-dim);font-family:var(--font-pixel-jp);font-size:13px;">' +
+    '日志已清空 🗑️</div>';
+}
+
+function renderLog() {
+  var el = document.getElementById('logScroll');
+  if (logEntries.length === 0) return;
+
+  el.innerHTML = logEntries.map(function(entry) {
+    var statusClass = entry.status === 'success' ? 'ok' : entry.status === 'error' ? 'err' : 'running';
+    var statusLabel = entry.status === 'success' ? '✓ OK' : entry.status === 'error' ? '✗ ERR' : '⟳ RUN';
+    var entryClass = entry.status === 'error' ? 'error' : entry.status === 'success' ? 'success' : '';
+
+    var bodyHtml = '';
+    if (entry.data) {
+      if (entry.data.message) {
+        bodyHtml += '<div class="log-entry-message">' + escHtml(entry.data.message) + '</div>';
+      }
+      if (entry.data.error) {
+        bodyHtml += '<div class="log-entry-message" style="color:var(--terra);">⚠ ' + escHtml(entry.data.error) + '</div>';
+      }
+      // Show timeline summary for full-day
+      if (entry.data.timeline && Array.isArray(entry.data.timeline)) {
+        var tlSummary = entry.data.timeline.map(function(t) {
+          var icon = t.phase === 'morning' ? '🌅' : t.phase === 'night' ? '🌙' : '💓';
+          var status = t.error ? '✗' : '✓';
+          return icon + ' ' + t.hour + ':00 ' + status + ' ' + t.summary.slice(0, 80);
+        }).join('\n');
+        bodyHtml += '<div class="log-entry-body">' + escHtml(tlSummary) + '</div>';
+      }
+      // Show log output
+      if (entry.data.log) {
+        bodyHtml += '<div class="log-entry-body">' + escHtml(entry.data.log) + '</div>';
+      }
+      if (entry.data.stderr && entry.data.stderr !== entry.data.error) {
+        bodyHtml += '<div class="log-entry-body" style="border-color:var(--terra-soft);">' + escHtml(entry.data.stderr) + '</div>';
+      }
+    }
+
+    var durationHtml = entry.elapsed != null
+      ? '<span class="log-entry-duration">' + formatDuration(entry.elapsed) + '</span>'
+      : '';
+
+    return '<div class="log-entry ' + entryClass + '">'
+      + '<div class="log-entry-header">'
+      + '<span class="log-entry-cmd">' + escHtml(entry.command) + '</span>'
+      + '<span>'
+      + '<span class="log-entry-time">' + escHtml(entry.time) + '</span>'
+      + durationHtml
+      + '<span class="log-entry-status ' + statusClass + '">' + statusLabel + '</span>'
+      + '</span>'
+      + '</div>'
+      + bodyHtml
+      + '</div>';
+  }).join('');
+}
+
+function formatDuration(ms) {
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+  return Math.floor(ms / 60000) + 'm' + Math.round((ms % 60000) / 1000) + 's';
+}
+
+// === Timeline Rendering ===
+function renderTimeline(result) {
+  var timeline = result.timeline || [];
+  var container = document.getElementById('timelineContainer');
+  var stats = document.getElementById('timelineStats');
+
+  if (timeline.length === 0) {
+    container.innerHTML = '<div class="timeline-empty">暂无时间线数据 📅</div>';
+    stats.style.display = 'none';
+    return;
+  }
+
+  // Stats
+  stats.style.display = 'flex';
+  document.getElementById('statPhases').textContent = timeline.length;
+  document.getElementById('statDuration').textContent = formatDuration(result.totalDuration || 0);
+  document.getElementById('statErrors').textContent = timeline.filter(function(t) { return t.error; }).length;
+  document.getElementById('statHeartbeats').textContent = timeline.filter(function(t) { return t.phase === 'heartbeat'; }).length;
+
+  // Timeline items
+  container.innerHTML = timeline.map(function(item) {
+    var icon = item.phase === 'morning' ? '🌅' : item.phase === 'night' ? '🌙' : '💓';
+    var phaseLabel = item.phase === 'morning' ? '晨间规划' : item.phase === 'night' ? '睡前反思' : '心跳';
+    var dotClass = item.error ? 'error' : item.phase;
+
+    var html = '<div class="timeline-item">'
+      + '<div class="timeline-dot ' + dotClass + '">' + icon + '</div>'
+      + '<div class="timeline-body">'
+      + '<div class="timeline-header">'
+      + '<span class="timeline-phase">' + escHtml(phaseLabel) + '</span>'
+      + '<span class="timeline-time">' + item.hour + ':00</span>'
+      + '<span class="timeline-duration">' + formatDuration(item.duration) + '</span>'
+      + '</div>'
+      + '<div class="timeline-summary">' + escHtml(item.summary) + '</div>';
+
+    if (item.error) {
+      html += '<div class="timeline-error">' + escHtml(item.error) + '</div>';
+    }
+
+    html += '</div></div>';
+    return html;
+  }).join('');
+
+  // Add final state summary if available
+  if (result.finalState) {
+    var fs = result.finalState;
+    var stateHtml = '<div class="timeline-item" style="border-bottom:none;">'
+      + '<div class="timeline-dot" style="border-color:var(--green-leaf);background:#E8FFE8;">📊</div>'
+      + '<div class="timeline-body">'
+      + '<div class="timeline-header"><span class="timeline-phase">最终状态</span></div>'
+      + '<div class="timeline-summary">';
+    if (fs.emotion) {
+      var mood = fs.emotion.mood || {};
+      stateHtml += '情绪: ' + (mood.description || '--') + ' (V=' + (mood.valence || 0).toFixed(1) + ' A=' + (mood.arousal || 0).toFixed(1) + ') ';
+      stateHtml += '能量=' + (fs.emotion.energy || 0).toFixed(1) + ' 压力=' + (fs.emotion.stress || 0).toFixed(1) + '<br>';
+    }
+    if (fs.vitality) stateHtml += '活力: ' + (fs.vitality.vitality || 0) + '/100 ';
+    if (fs.confidence) stateHtml += '信心: ' + (fs.confidence.confidence || 0).toFixed(2);
+    stateHtml += '</div></div></div>';
+    container.innerHTML += stateHtml;
+  }
+
+  // Show diary snippet if available
+  if (result.diary && result.diary.trim()) {
+    document.getElementById('diaryContent').textContent = result.diary;
+  }
+}
+
+// === State Management ===
+async function refreshState() {
+  try {
+    var res = await fetch(apiUrl('get-state'), { method: 'POST' });
+    var data = await res.json();
+    if (data.state) renderStateBar(data.state);
+    if (data.heartbeatCount != null) {
+      // Update display if needed
+    }
+  } catch (e) { /* silent */ }
+}
+
+function renderStateBar(state) {
+  var chips = [];
+  if (state.emotion) {
+    var e = state.emotion;
+    var mood = e.mood || {};
+    chips.push(chip('情绪', mood.description || '--'));
+    chips.push(chip('V', (mood.valence != null ? mood.valence.toFixed(1) : '--')));
+    chips.push(chip('A', (mood.arousal != null ? mood.arousal.toFixed(1) : '--')));
+    chips.push(chip('能量', (e.energy != null ? e.energy.toFixed(1) : '--')));
+    chips.push(chip('压力', (e.stress != null ? e.stress.toFixed(1) : '--')));
+    chips.push(chip('创造', (e.creativity != null ? e.creativity.toFixed(1) : '--')));
+    chips.push(chip('社交', (e.sociability != null ? e.sociability.toFixed(1) : '--')));
+
+    document.getElementById('stValence').placeholder = mood.valence != null ? mood.valence.toFixed(2) : '';
+    document.getElementById('stArousal').placeholder = mood.arousal != null ? mood.arousal.toFixed(2) : '';
+    document.getElementById('stEnergy').placeholder = e.energy != null ? e.energy.toFixed(2) : '';
+    document.getElementById('stStress').placeholder = e.stress != null ? e.stress.toFixed(2) : '';
+    document.getElementById('stCreativity').placeholder = e.creativity != null ? e.creativity.toFixed(2) : '';
+    document.getElementById('stSociability').placeholder = e.sociability != null ? e.sociability.toFixed(2) : '';
+    document.getElementById('stMoodDesc').placeholder = mood.description || '';
+  }
+  if (state.vitality) {
+    var v = state.vitality.vitality != null ? state.vitality.vitality : (state.vitality.health != null ? state.vitality.health : '--');
+    chips.push(chip('活力', typeof v === 'number' ? Math.round(v) : v));
+    document.getElementById('stVitality').placeholder = typeof v === 'number' ? Math.round(v) : '';
+  }
+  if (state.confidence) {
+    var c = state.confidence.confidence != null ? state.confidence.confidence : '--';
+    chips.push(chip('信心', typeof c === 'number' ? c.toFixed(2) : c));
+    document.getElementById('stConfidence').placeholder = typeof c === 'number' ? c.toFixed(2) : '';
+  }
+  if (state.flow) {
+    chips.push(chip('Flow', state.flow.status || 'none'));
+  }
+  if (state.schedule) {
+    var flexCount = (state.schedule.flexible || []).length;
+    var rigidCount = (state.schedule.rigid || []).length;
+    chips.push(chip('日程', rigidCount + '固/' + flexCount + '弹'));
+  }
+  document.getElementById('stateChips').innerHTML = chips.join('');
+}
+
+function chip(label, value) {
+  return '<div class="state-chip"><span>' + escHtml(label) + '</span> <span class="chip-val">' + escHtml(String(value)) + '</span></div>';
+}
+
+// === Apply State ===
+async function applyEmotionState() {
+  var updates = {};
+  var mood = {};
+  var val;
+
+  val = parseFloat(document.getElementById('stValence').value);
+  if (!isNaN(val)) mood.valence = val;
+  val = parseFloat(document.getElementById('stArousal').value);
+  if (!isNaN(val)) mood.arousal = val;
+
+  if (Object.keys(mood).length > 0) updates.mood = mood;
+
+  val = parseFloat(document.getElementById('stEnergy').value);
+  if (!isNaN(val)) updates.energy = val;
+  val = parseFloat(document.getElementById('stStress').value);
+  if (!isNaN(val)) updates.stress = val;
+  val = parseFloat(document.getElementById('stCreativity').value);
+  if (!isNaN(val)) updates.creativity = val;
+  val = parseFloat(document.getElementById('stSociability').value);
+  if (!isNaN(val)) updates.sociability = val;
+
+  if (Object.keys(updates).length === 0) { alert('请至少填一个值'); return; }
+  updates.last_updated = new Date().toISOString();
+  updates.recent_cause = 'test panel override';
+
+  await postSetState('emotion', updates);
+}
+
+async function applyVitalityConfidence() {
+  var vVal = parseFloat(document.getElementById('stVitality').value);
+  var cVal = parseFloat(document.getElementById('stConfidence').value);
+
+  if (!isNaN(vVal)) {
+    await postSetState('vitality', { vitality: vVal, last_updated: new Date().toISOString() });
+  }
+  if (!isNaN(cVal)) {
+    await postSetState('confidence', { confidence: cVal, last_updated: new Date().toISOString() });
+  }
+  if (isNaN(vVal) && isNaN(cVal)) { alert('请至少填一个值'); }
+}
+
+async function applyMoodDesc() {
+  var desc = document.getElementById('stMoodDesc').value.trim();
+  if (!desc) { alert('请填写情绪描述'); return; }
+  await postSetState('emotion', {
+    mood: { description: desc },
+    last_updated: new Date().toISOString(),
+    recent_cause: 'test panel: mood override',
+  });
+}
+
+async function postSetState(field, value) {
+  var logId = addLogEntry('set-state:' + field, 'running');
+  try {
+    var res = await fetch(apiUrl('set-state'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ field: field, value: value }),
+    });
+    var data = await res.json();
+    updateLogEntry(logId, res.ok ? 'success' : 'error', data, 0);
+    refreshState();
+  } catch (err) {
+    updateLogEntry(logId, 'error', { error: err.message }, 0);
+  }
+}
+
+// === Load Skills ===
+async function loadSkills() {
+  try {
+    var res = await fetch(apiUrl('list-skills'), { method: 'POST' });
+    var data = await res.json();
+    var skills = (data.skills || []);
+    renderSkillButtons(skills);
+  } catch (e) {
+    document.getElementById('skillButtons').innerHTML =
+      '<div style="font-family:var(--font-pixel);font-size:8px;color:var(--terra);padding:10px 0;text-align:center;">' +
+      '加载失败: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+var SKILL_ICONS = {
+  'instagram': '📸',
+  'web-search': '🔍',
+  'content-browse': '📱',
+  'social-engagement': '💬',
+  'send-message': '✉️',
+  'voice-tts': '🎙️',
+  'ops-desk': '📊',
+  'content-planner': '📋',
+  'generate-image': '🎨',
+  'gallery': '🖼️',
+  'instagram-bridge': '🔗',
+  'xhs-bridge': '📕',
+};
+
+function renderSkillButtons(skills) {
+  var el = document.getElementById('skillButtons');
+  if (skills.length === 0) {
+    el.innerHTML =
+      '<div style="font-family:var(--font-pixel);font-size:8px;color:var(--text-dim);padding:10px 0;text-align:center;">' +
+      '没有已注册的子技能。检查 persona.yaml 的 sub_skills 配置。</div>';
+    return;
+  }
+
+  el.innerHTML = skills.map(function(skill) {
+    var icon = SKILL_ICONS[skill.name] || '🧩';
+    var isPlatform = ['content-planner', 'generate-image', 'gallery', 'instagram-bridge', 'xhs-bridge'].indexOf(skill.name) >= 0;
+    var actions = skill.actions || [];
+
+    if (actions.length > 1) {
+      return actions.map(function(action) {
+        var btnId = 'btn-skill-' + skill.name + '-' + action;
+        return '<button class="action-btn skill-btn' + (isPlatform ? ' platform' : '') + '" '
+          + 'id="' + escAttr(btnId) + '" '
+          + 'onclick="runSkill(\'' + escAttr(skill.name) + '\', \'' + escAttr(action) + '\')">'
+          + '<div class="btn-icon">' + icon + '</div>'
+          + '<div class="btn-text">'
+          + '<span class="btn-label">' + escHtml(skill.display_name) + ' → ' + escHtml(action) + '</span>'
+          + '<span class="btn-desc">' + escHtml(skill.description) + '</span>'
+          + '</div></button>';
+      }).join('');
+    } else {
+      var action = actions[0] || 'default';
+      var btnId = 'btn-skill-' + skill.name + '-' + action;
+      return '<button class="action-btn skill-btn' + (isPlatform ? ' platform' : '') + '" '
+        + 'id="' + escAttr(btnId) + '" '
+        + 'onclick="runSkill(\'' + escAttr(skill.name) + '\', \'' + escAttr(action) + '\')">'
+        + '<div class="btn-icon">' + icon + '</div>'
+        + '<div class="btn-text">'
+        + '<span class="btn-label">' + escHtml(skill.display_name) + '</span>'
+        + '<span class="btn-desc">' + escHtml(skill.description) + '</span>'
+        + '</div></button>';
+    }
+  }).join('');
+}
+
+// === Utilities ===
+function escHtml(s) { var d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+function escAttr(s) { return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;'); }
+
+// ═══════════════════════════════════════════════════════════════
+// ═══ OPS CONSOLE FUNCTIONS ═══════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+
+/** Generic Ops command runner — logs + auto renders structured data in Ops tab */
+async function runOps(command, btnEl) {
+  var btnId = btnEl ? btnEl.id : ('btn-' + command);
+  var btn = btnEl || document.getElementById(btnId);
+
+  if (runningActions.has(command)) return;
+  runningActions.add(command);
+
+  var allBtns = document.querySelectorAll('.action-btn');
+  allBtns.forEach(function(b) { b.disabled = true; });
+  if (btn) { btn.classList.add('running'); btn.classList.remove('success', 'error'); }
+
+  var logId = addLogEntry(command, 'running');
+  var startTime = Date.now();
+
+  // Use SSE for ops-brief
+  var useSSE = command === 'ops-brief';
+
+  try {
+    var data;
+    if (useSSE) {
+      data = await runOpsSSE(command);
+    } else {
+      var res = await fetch(apiUrl(command), { method: 'POST' });
+      data = await res.json();
+    }
+    var elapsed = Date.now() - startTime;
+
+    if (data.ok || !data.error) {
+      updateLogEntry(logId, 'success', data, elapsed);
+      if (btn) { btn.classList.remove('running'); btn.classList.add('success'); }
+      // Render structured data in Ops tab
+      renderOpsData(command, data);
+      switchTab('ops');
+    } else {
+      updateLogEntry(logId, 'error', data, elapsed);
+      if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
+    }
+  } catch (err) {
+    var elapsed = Date.now() - startTime;
+    updateLogEntry(logId, 'error', { error: err.message }, elapsed);
+    if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
+  }
+
+  runningActions.delete(command);
+  allBtns.forEach(function(b) { b.disabled = false; });
+
+  setTimeout(function() {
+    if (btn) btn.classList.remove('success', 'error');
+  }, 3000);
+}
+
+/** SSE streaming for heavy ops commands */
+async function runOpsSSE(command) {
+  var url = apiUrlWithStream(command);
+  var response = await fetch(url, { method: 'POST' });
+  var reader = response.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = '';
+  var finalResult = null;
+
+  while (true) {
+    var chunk = await reader.read();
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+    var parts = buffer.split('\n\n');
+    buffer = parts.pop() || '';
+
+    for (var i = 0; i < parts.length; i++) {
+      var eventText = parts[i].trim();
+      if (!eventText) continue;
+      var eventType = 'message';
+      var eventData = '';
+      var lines = eventText.split('\n');
+      for (var j = 0; j < lines.length; j++) {
+        if (lines[j].startsWith('event: ')) eventType = lines[j].slice(7);
+        else if (lines[j].startsWith('data: ')) eventData = lines[j].slice(6);
+      }
+      if (eventType === 'done') {
+        try { finalResult = JSON.parse(eventData); } catch (e) { finalResult = { ok: false, error: 'Parse error' }; }
+      } else if (eventType === 'error') {
+        try { finalResult = JSON.parse(eventData); finalResult.ok = false; } catch (e) { finalResult = { ok: false, error: 'Stream error' }; }
+      }
+    }
+  }
+  return finalResult || { ok: false, error: 'No result' };
+}
+
+/** Render structured ops data in the Ops tab */
+function renderOpsData(command, data) {
+  var el = document.getElementById('opsDataScroll');
+  var html = '';
+
+  if (command === 'ops-status') {
+    html = renderOpsStatus(data);
+  } else if (command === 'ops-health') {
+    html = renderOpsHealth(data);
+  } else if (command === 'ops-trends') {
+    html = renderOpsTrends(data);
+  } else if (command === 'ops-competitors') {
+    html = renderOpsCompetitors(data);
+  } else if (command === 'ops-brief') {
+    html = renderOpsBrief(data);
+  } else if (command === 'ops-queue') {
+    html = renderOpsQueueFull(data);
+  } else if (command === 'ops-strategy') {
+    html = renderOpsStrategy(data);
+  } else if (command === 'ops-discovery') {
+    html = renderOpsDiscovery(data);
+  } else if (command === 'ops-keywords') {
+    html = renderOpsKeywords(data);
+  } else if (command === 'ops-patterns') {
+    html = renderOpsPatterns(data);
+  } else if (command === 'ops-advice') {
+    html = renderOpsAdvice(data);
+  } else if (command === 'ops-analyze') {
+    html = renderOpsAnalysis(data);
+  } else {
+    // Generic fallback
+    html = '<div class="ops-data-card">'
+      + '<div class="ops-data-card-title">📊 ' + escHtml(command) + '</div>'
+      + '<div class="ops-data-card-body">' + escHtml(JSON.stringify(data, null, 2)) + '</div>'
+      + '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function renderOpsStatus(data) {
+  var c = data.counts || {};
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">📊 Ops 全局状态</div>';
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(c.queue_pending || 0, '待审核');
+  h += opsStatItem(c.queue_approved || 0, '已通过');
+  h += opsStatItem(c.queue_published || 0, '已发布');
+  h += opsStatItem(c.health_ok || 0, '健康 ✓');
+  h += opsStatItem(c.health_warn || 0, '警告 ⚠');
+  h += opsStatItem(c.health_missing || 0, '缺失 ✗');
+  h += opsStatItem(c.discovery_items || 0, '发现池');
+  h += opsStatItem(c.keywords || 0, '关键词');
+  h += opsStatItem(c.patterns || 0, '内容模式');
+  h += '</div>';
+  h += '<div style="font-size:11px;color:var(--text-secondary);margin-top:6px;">'
+    + '策略: ' + (c.has_strategy ? '✅ 生成于 ' + escHtml(c.strategy_age || '?') : '❌ 未设置')
+    + '</div>';
+  h += '</div>';
+
+  // Health report
+  if (data.healthReport) {
+    h += renderOpsHealth({ report: data.healthReport });
+  }
+  return h;
+}
+
+function renderOpsHealth(data) {
+  var report = data.report;
+  if (!report || !report.items) return '<div class="ops-data-card"><div class="ops-data-card-title">🏥 健康检查</div><div class="ops-data-card-body">无数据</div></div>';
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🏥 链路健康</div>';
+  h += '<div style="display:flex;gap:12px;margin-bottom:8px;">';
+  h += '<span class="ops-badge approved">' + report.summary.ok + ' OK</span>';
+  h += '<span class="ops-badge pending">' + report.summary.warn + ' WARN</span>';
+  h += '<span class="ops-badge discarded">' + report.summary.missing + ' MISSING</span>';
+  h += '</div>';
+  report.items.forEach(function(item) {
+    var dot = item.status === 'ok' ? 'ok' : item.status === 'warn' ? 'warn' : 'missing';
+    h += '<div style="padding:4px 0;font-size:12px;">'
+      + '<span class="health-dot ' + dot + '"></span>'
+      + '<strong>' + escHtml(item.name) + '</strong> — '
+      + '<span style="color:var(--text-secondary);">' + escHtml(item.detail) + '</span>'
+      + '</div>';
+  });
+  h += '</div>';
+  if (data.formatted) {
+    h += '<div class="ops-data-card"><div class="ops-data-card-title">📄 格式化报告</div>'
+      + '<div class="ops-data-card-body">' + escHtml(data.formatted) + '</div></div>';
+  }
+  return h;
+}
+
+function renderOpsTrends(data) {
+  var trends = data.trends || [];
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">📈 趋势分析 (' + trends.length + ' 个)</div>';
+  if (trends.length === 0) {
+    h += '<div class="ops-data-card-body">暂无相关趋势</div>';
+  } else {
+    h += '<table class="ops-queue-table"><thead><tr><th>关键词</th><th>平台</th><th>速度</th><th>模式</th></tr></thead><tbody>';
+    trends.forEach(function(t) {
+      var icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
+      h += '<tr><td>' + icon + ' ' + escHtml(t.keyword) + '</td>'
+        + '<td>' + escHtml(t.platform || '') + '</td>'
+        + '<td>' + (t.velocity_score ? t.velocity_score.toFixed(1) + 'x' : '-') + '</td>'
+        + '<td><span class="ops-badge">' + escHtml(t.identity_mode || '') + '</span></td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsCompetitors(data) {
+  var updates = data.updates || [];
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🎯 竞品追踪 (' + updates.length + ')</div>';
+  if (updates.length === 0) {
+    h += '<div class="ops-data-card-body">暂无竞品数据</div>';
+  } else {
+    h += '<table class="ops-queue-table"><thead><tr><th>账号</th><th>平台</th><th>更新</th><th>最新内容</th></tr></thead><tbody>';
+    updates.forEach(function(u) {
+      var latest = u.latest_post ? escHtml((u.latest_post.topic || '').slice(0, 40)) : '—';
+      var days = u.days_since_last_post != null ? u.days_since_last_post + '天前' : '?';
+      h += '<tr><td>@' + escHtml(u.account) + '</td>'
+        + '<td>' + escHtml(u.platform || '') + '</td>'
+        + '<td>' + escHtml(days) + '</td>'
+        + '<td>' + latest + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+  if (data.summary) {
+    h += '<div style="margin-top:8px;padding:8px;background:var(--bg-inset);font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;">' + escHtml(data.summary) + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsBrief(data) {
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">📋 今日简报</div>';
+  if (data.data) {
+    h += '<div class="ops-stat-grid">';
+    h += opsStatItem(data.data.trends_count || 0, '趋势');
+    h += opsStatItem(data.data.competitors_count || 0, '竞品');
+    h += opsStatItem(data.data.queue_count || 0, '队列项');
+    h += '</div>';
+  }
+  if (data.brief) {
+    h += '<div class="ops-data-card-body">' + escHtml(data.brief) + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsQueueFull(data) {
+  var items = data.queue || [];
+  var counts = data.counts || {};
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">📝 审核队列</div>';
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(counts.pending || 0, '待审核');
+  h += opsStatItem(counts.approved || 0, '已通过');
+  h += opsStatItem(counts.published || 0, '已发布');
+  h += '</div>';
+
+  if (items.length === 0) {
+    h += '<div class="ops-data-card-body">队列为空</div>';
+  } else {
+    items.forEach(function(item) {
+      var statusClass = item.status || 'pending';
+      h += '<div style="padding:8px;margin-bottom:6px;border:1px solid var(--bg-deep);background:var(--bg-inset);">';
+      h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">';
+      h += '<span class="ops-badge ' + escAttr(statusClass) + '">' + escHtml(item.status) + '</span>';
+      h += '<strong style="font-size:12px;">' + escHtml(item.topic || 'untitled') + '</strong>';
+      if (item.identity_mode) h += ' <span class="ops-badge">' + escHtml(item.identity_mode) + '</span>';
+      h += '</div>';
+      if (item.content) {
+        var c = item.content;
+        if (c.title) h += '<div style="font-size:11px;color:var(--text-secondary);">标题: ' + escHtml(c.title) + '</div>';
+        if (c.body) h += '<div style="font-size:11px;color:var(--text-dim);max-height:60px;overflow:hidden;">' + escHtml((c.body || '').slice(0, 200)) + '</div>';
+      }
+      // Action buttons for pending items
+      if (item.status === 'pending') {
+        h += '<div style="margin-top:6px;">';
+        h += '<button class="ops-mini-btn approve" onclick="opsQueueAction(\'approve\', \'' + escAttr(item.id) + '\')">✓ 通过</button>';
+        h += '<button class="ops-mini-btn discard" onclick="opsQueueAction(\'discard\', \'' + escAttr(item.id) + '\')">✗ 废弃</button>';
+        h += '</div>';
+      }
+      if (item.status === 'approved') {
+        h += '<div style="margin-top:6px;">';
+        h += '<button class="ops-mini-btn publish" onclick="opsQueueAction(\'publish\', \'' + escAttr(item.id) + '\')">📤 标记发布</button>';
+        h += '</div>';
+      }
+      h += '</div>';
+    });
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsStrategy(data) {
+  var s = data.strategy;
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🎲 内容策略</div>';
+  if (!s) {
+    h += '<div class="ops-data-card-body">暂无策略 — 运行「重新计算策略」生成</div>';
+  } else {
+    h += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">生成于: ' + escHtml(s.generated_at || '?') + ' | 状态: ' + (s.confirmed ? '✅ 已确认' : '⏳ 待确认') + '</div>';
+    if (data.formatted) {
+      h += '<div class="ops-data-card-body">' + escHtml(data.formatted) + '</div>';
+    } else {
+      h += '<div class="ops-data-card-body">' + escHtml(JSON.stringify(s, null, 2)) + '</div>';
+    }
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsDiscovery(data) {
+  var pool = data.pool || { items: [] };
+  var candidates = data.candidates || { candidates: [] };
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🌐 发现池 (' + pool.items.length + ' 内容)</div>';
+  if (pool.items.length > 0) {
+    h += '<table class="ops-queue-table"><thead><tr><th>标题</th><th>作者</th><th>来源</th><th>分数</th></tr></thead><tbody>';
+    pool.items.slice(0, 20).forEach(function(item) {
+      h += '<tr><td>' + escHtml((item.title || '').slice(0, 40)) + '</td>'
+        + '<td>' + escHtml(item.author || '') + '</td>'
+        + '<td>' + escHtml(item.source || '') + '</td>'
+        + '<td>' + (item.score || 0).toFixed(1) + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  } else {
+    h += '<div class="ops-data-card-body">发现池为空</div>';
+  }
+  h += '</div>';
+
+  h += '<div class="ops-data-card"><div class="ops-data-card-title">👤 候选账号 (' + candidates.candidates.length + ')</div>';
+  if (candidates.candidates.length > 0) {
+    candidates.candidates.forEach(function(c) {
+      h += '<div style="padding:6px;margin-bottom:4px;border:1px solid var(--bg-deep);background:var(--bg-inset);display:flex;align-items:center;gap:8px;">';
+      h += '<strong style="font-size:12px;">@' + escHtml(c.name || c.account || '') + '</strong>';
+      h += '<span class="ops-badge">' + escHtml(c.platform || '') + '</span>';
+      if (c.score) h += '<span style="font-size:11px;color:var(--text-dim);">评分: ' + c.score.toFixed(1) + '</span>';
+      h += '<span style="flex:1"></span>';
+      h += '<button class="ops-mini-btn approve" onclick="opsCandidateAction(\'approve\', \'' + escAttr(c.name || c.account || '') + '\', \'' + escAttr(c.platform || '') + '\')">✓ 批准</button>';
+      h += '<button class="ops-mini-btn discard" onclick="opsCandidateAction(\'dismiss\', \'' + escAttr(c.name || c.account || '') + '\', \'' + escAttr(c.platform || '') + '\')">✗ 忽略</button>';
+      h += '</div>';
+    });
+  } else {
+    h += '<div class="ops-data-card-body">暂无候选账号</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsKeywords(data) {
+  var state = data.state || { keywords: [] };
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🔑 关键词追踪 (' + state.keywords.length + ')</div>';
+  if (state.keywords.length > 0) {
+    h += '<table class="ops-queue-table"><thead><tr><th>关键词</th><th>来源</th><th>搜索次数</th><th>总发现</th><th>速度</th></tr></thead><tbody>';
+    state.keywords.forEach(function(kw) {
+      h += '<tr><td>' + escHtml(kw.keyword) + '</td>'
+        + '<td><span class="ops-badge">' + escHtml(kw.source) + '</span></td>'
+        + '<td>' + (kw.search_count || 0) + '</td>'
+        + '<td>' + (kw.total_found || 0) + '</td>'
+        + '<td>' + (kw.velocity ? kw.velocity.toFixed(1) : '0') + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  } else {
+    h += '<div class="ops-data-card-body">暂无关键词</div>';
+  }
+  if (data.context) {
+    h += '<div style="margin-top:8px;padding:8px;background:var(--bg-inset);font-family:var(--font-mono);font-size:10px;white-space:pre-wrap;max-height:200px;overflow-y:auto;">' + escHtml(data.context) + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsPatterns(data) {
+  var patterns = data.patterns || { patterns: [], competitor_insights: [], cover_trends: [] };
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🧬 内容模式 (' + patterns.patterns.length + ')</div>';
+  if (patterns.patterns.length > 0) {
+    h += '<table class="ops-queue-table"><thead><tr><th>模式</th><th>使用次数</th><th>成功率</th><th>平台</th></tr></thead><tbody>';
+    patterns.patterns.slice(0, 15).forEach(function(p) {
+      h += '<tr><td>' + escHtml((p.description || p.pattern || '').slice(0, 50)) + '</td>'
+        + '<td>' + (p.times_used || 0) + '</td>'
+        + '<td>' + ((p.success_rate || 0) * 100).toFixed(0) + '%</td>'
+        + '<td>' + escHtml(p.platform || '') + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  } else {
+    h += '<div class="ops-data-card-body">暂无内容模式</div>';
+  }
+  if (patterns.competitor_insights && patterns.competitor_insights.length > 0) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">竞品洞察 (' + patterns.competitor_insights.length + ')</strong></div>';
+    patterns.competitor_insights.slice(0, 5).forEach(function(ci) {
+      h += '<div style="padding:4px 0;font-size:11px;color:var(--text-secondary);">• ' + escHtml(ci.insight || ci.description || JSON.stringify(ci).slice(0, 80)) + '</div>';
+    });
+  }
+  if (data.relevant_summary) {
+    h += '<div style="margin-top:8px;padding:8px;background:var(--bg-inset);font-family:var(--font-mono);font-size:10px;white-space:pre-wrap;max-height:200px;overflow-y:auto;">' + escHtml(data.relevant_summary) + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsAdvice(data) {
+  var report = data.report;
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🧭 人设建议</div>';
+  if (!report) {
+    h += '<div class="ops-data-card-body">未能生成人设报告</div>';
+  } else {
+    if (report.identity_analysis && report.identity_analysis.length > 0) {
+      h += '<table class="ops-queue-table"><thead><tr><th>身份</th><th>契合度</th><th>建议</th></tr></thead><tbody>';
+      report.identity_analysis.forEach(function(is) {
+        h += '<tr><td><strong>' + escHtml(is.identity || '') + '</strong></td>'
+          + '<td>' + ((is.fit_score || 0) * 10).toFixed(0) + '%</td>'
+          + '<td style="font-size:10px;">' + escHtml((is.reasoning || '').slice(0, 100)) + '</td></tr>';
+      });
+      h += '</tbody></table>';
+    }
+    if (report.topic_suggestions && report.topic_suggestions.length > 0) {
+      h += '<div style="margin-top:8px;"><strong style="font-size:11px;">推荐选题</strong></div>';
+      report.topic_suggestions.forEach(function(ts) {
+        h += '<div style="padding:4px 0;font-size:11px;">💡 ' + escHtml(typeof ts === 'string' ? ts : (ts.topic || ts.title || JSON.stringify(ts)).slice(0, 80)) + '</div>';
+      });
+    }
+  }
+  if (data.formatted) {
+    h += '<div style="margin-top:8px;padding:8px;background:var(--bg-inset);font-family:var(--font-mono);font-size:10px;white-space:pre-wrap;max-height:300px;overflow-y:auto;">' + escHtml(data.formatted) + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsAnalysis(data) {
+  var a = data.analysis;
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🔬 爆款分析</div>';
+  if (!a) {
+    h += '<div class="ops-data-card-body">分析失败</div>';
+  } else {
+    h += '<div style="margin-bottom:8px;">';
+    h += '<span class="ops-badge">' + escHtml(a.platform || '') + '</span> ';
+    if (a.hook_patterns && a.hook_patterns.length > 0) h += '<span class="ops-badge approved">' + escHtml(a.hook_patterns[0].formula || '') + '</span>';
+    h += '</div>';
+    if (data.formatted) {
+      h += '<div class="ops-data-card-body">' + escHtml(data.formatted) + '</div>';
+    } else {
+      h += '<div class="ops-data-card-body">' + escHtml(JSON.stringify(a, null, 2)) + '</div>';
+    }
+  }
+  h += '</div>';
+  return h;
+}
+
+function opsStatItem(val, label) {
+  return '<div class="ops-stat-item"><span class="ops-stat-val">' + escHtml(String(val)) + '</span><span class="ops-stat-label">' + escHtml(label) + '</span></div>';
+}
+
+/** Load and render ops queue in left panel + ops tab */
+async function loadOpsQueue() {
+  var btn = document.getElementById('btn-ops-queue');
+  if (runningActions.has('ops-queue-load')) return;
+  runningActions.add('ops-queue-load');
+  if (btn) { btn.classList.add('running'); }
+
+  try {
+    var res = await fetch(apiUrl('ops-queue'), { method: 'POST' });
+    var data = await res.json();
+
+    // Update left panel summary
+    var stats = data.counts || {};
+    var statsEl = document.getElementById('opsQueueStats');
+    var summaryEl = document.getElementById('opsQueueSummary');
+    if (statsEl) {
+      statsEl.innerHTML = opsStatItem(stats.pending || 0, '待审核')
+        + opsStatItem(stats.approved || 0, '已通过')
+        + opsStatItem(stats.published || 0, '已发布');
+      summaryEl.style.display = 'block';
+    }
+
+    // Render compact queue in left panel
+    var container = document.getElementById('opsQueueContainer');
+    var items = data.queue || [];
+    var pendingItems = items.filter(function(i) { return i.status === 'pending'; });
+    if (pendingItems.length > 0) {
+      var qh = '';
+      pendingItems.slice(0, 5).forEach(function(item) {
+        qh += '<div style="padding:6px;margin-bottom:4px;border:1px solid var(--bg-deep);background:var(--bg-inset);font-size:11px;">';
+        qh += '<div style="display:flex;align-items:center;gap:4px;">';
+        qh += '<span class="ops-badge pending">待审</span>';
+        qh += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(item.topic || 'untitled') + '</span>';
+        qh += '</div>';
+        qh += '<div style="margin-top:4px;">';
+        qh += '<button class="ops-mini-btn approve" onclick="opsQueueAction(\'approve\',\'' + escAttr(item.id) + '\')">✓</button>';
+        qh += '<button class="ops-mini-btn discard" onclick="opsQueueAction(\'discard\',\'' + escAttr(item.id) + '\')">✗</button>';
+        qh += '</div>';
+        qh += '</div>';
+      });
+      if (pendingItems.length > 5) {
+        qh += '<div style="font-size:10px;color:var(--text-dim);text-align:center;">还有 ' + (pendingItems.length - 5) + ' 条...</div>';
+      }
+      container.innerHTML = qh;
+    } else {
+      container.innerHTML = '<div style="font-size:10px;color:var(--text-dim);text-align:center;padding:8px;">无待审核项</div>';
+    }
+
+    // Also render full view in Ops tab
+    renderOpsData('ops-queue', data);
+    switchTab('ops');
+
+    if (btn) { btn.classList.remove('running'); btn.classList.add('success'); }
+  } catch (err) {
+    if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
+    addLogEntry('ops-queue', 'error');
+  }
+
+  runningActions.delete('ops-queue-load');
+  setTimeout(function() { if (btn) btn.classList.remove('success', 'error'); }, 3000);
+}
+
+/** Queue action: approve / discard / publish */
+async function opsQueueAction(action, itemId) {
+  var command = 'ops-queue-' + action;
+  var logId = addLogEntry(command + ':' + itemId, 'running');
+  try {
+    var res = await fetch(apiUrl(command), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: itemId }),
+    });
+    var data = await res.json();
+    updateLogEntry(logId, data.success ? 'success' : 'error', data, 0);
+    // Refresh queue
+    loadOpsQueue();
+  } catch (err) {
+    updateLogEntry(logId, 'error', { error: err.message }, 0);
+  }
+}
+
+/** Candidate approve/dismiss */
+async function opsCandidateAction(action, name, platform) {
+  var command = 'ops-candidate-' + action;
+  var logId = addLogEntry(command + ':' + name, 'running');
+  try {
+    var res = await fetch(apiUrl(command), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, platform: platform }),
+    });
+    var data = await res.json();
+    updateLogEntry(logId, data.success ? 'success' : 'error', data, 0);
+    // Refresh discovery
+    runOps('ops-discovery', document.getElementById('btn-ops-discovery'));
+  } catch (err) {
+    updateLogEntry(logId, 'error', { error: err.message }, 0);
+  }
+}
+
+/** Viral post analysis */
+async function runViralAnalysis() {
+  var url = document.getElementById('analyzeUrl').value.trim();
+  if (!url) { alert('请输入帖子 URL'); return; }
+
+  var btn = document.getElementById('btn-ops-analyze');
+  if (runningActions.has('ops-analyze')) return;
+  runningActions.add('ops-analyze');
+
+  var allBtns = document.querySelectorAll('.action-btn');
+  allBtns.forEach(function(b) { b.disabled = true; });
+  if (btn) { btn.classList.add('running'); }
+
+  var logId = addLogEntry('ops-analyze: ' + url, 'running');
+  var startTime = Date.now();
+
+  try {
+    var res = await fetch(apiUrl('ops-analyze'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url }),
+    });
+    var data = await res.json();
+    var elapsed = Date.now() - startTime;
+
+    if (!data.error) {
+      updateLogEntry(logId, 'success', data, elapsed);
+      if (btn) { btn.classList.remove('running'); btn.classList.add('success'); }
+      renderOpsData('ops-analyze', data);
+      switchTab('ops');
+    } else {
+      updateLogEntry(logId, 'error', data, elapsed);
+      if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
+    }
+  } catch (err) {
+    updateLogEntry(logId, 'error', { error: err.message }, Date.now() - startTime);
+    if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
+  }
+
+  runningActions.delete('ops-analyze');
+  allBtns.forEach(function(b) { b.disabled = false; });
+  setTimeout(function() { if (btn) btn.classList.remove('success', 'error'); }, 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ═══ END OPS CONSOLE ═════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+
+// === Boot ===
+initPersona().then(function() {
+  refreshState();
+  loadSkills();
+});
+</script>
+</body>
+</html>

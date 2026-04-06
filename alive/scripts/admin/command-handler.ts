@@ -469,11 +469,19 @@ function cmdMemory(): CommandResult {
   // Wisdom stats
   const wisdom = readJSON<WisdomStore>(PATHS.coreWisdom, { version: 1, wisdom: [], total_importance_since_reflection: 0 });
 
-  // Heartbeat log
-  const hbLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 30 });
+  // Heartbeat log (handle legacy format: { entries, lastUpdate })
+  let hbLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 30 });
+  if (!hbLog.logs && (hbLog as any).entries) {
+    hbLog = { logs: (hbLog as any).entries, retention_days: 30 };
+  }
+  hbLog = { ...hbLog, logs: hbLog.logs ?? [] };
 
-  // Intent pool
-  const intentPool = readJSON<IntentPool>(PATHS.intentPool, { intents: [], last_updated: null });
+  // Intent pool (handle legacy format: { pool, lastUpdate })
+  let intentPool = readJSON<IntentPool>(PATHS.intentPool, { intents: [], last_updated: null });
+  if (!intentPool.intents && (intentPool as any).pool) {
+    intentPool = { intents: (intentPool as any).pool, last_updated: (intentPool as any).lastUpdate ?? null };
+  }
+  intentPool = { ...intentPool, intents: intentPool.intents ?? [] };
   const activeIntents = intentPool.intents.filter(i => !i.satisfied_at);
 
   // Relations

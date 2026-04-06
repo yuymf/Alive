@@ -49,8 +49,12 @@ export async function runMorningPlan(
   const baseline = getEmotionBaseline(persona);
   const defaultUndertone = getDefaultUndertone(persona);
 
-  // Read yesterday's log
-  const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
+  // Read yesterday's log (handle legacy format: { entries, lastUpdate } → { logs, retention_days })
+  let heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
+  if (!heartbeatLog.logs && (heartbeatLog as any).entries) {
+    heartbeatLog = { logs: (heartbeatLog as any).entries, retention_days: 7 };
+  }
+  heartbeatLog = { ...heartbeatLog, logs: heartbeatLog.logs ?? [] };
   const yesterday = getLocalDate(new Date(currentTime.getTime() - 86400000));
   const yesterdayLogs = heartbeatLog.logs.filter(l => l.timestamp.startsWith(yesterday));
   const yesterdaySummary = yesterdayLogs.length > 0

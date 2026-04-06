@@ -99,6 +99,7 @@ export const PATHS = {
   get contentTaste() { return path.join(getMemoryBase(), 'content-taste.json'); },
   get discoveryPool() { return path.join(getMemoryBase(), 'discovery-pool.json'); },
   get candidateAccounts() { return path.join(getMemoryBase(), 'candidate-accounts.json'); },
+  get keywordState() { return path.join(getMemoryBase(), 'keyword-state.json'); },
 
   // === Persona-specific infra (per-persona in memory dir) ===
   get cronSchedule() { return path.join(getMemoryBase(), 'cron-schedule.json'); },

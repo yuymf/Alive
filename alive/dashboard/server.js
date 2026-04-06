@@ -140,6 +140,27 @@ function parseLlmLog(filePath, limit, offset) {
   }
 }
 
+function safeKillChildProcess(child) {
+  if (!child || typeof child.kill !== 'function') return false;
+  if (child.exitCode !== null || child.killed) return false;
+  try {
+    child.kill();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function attachSseChildCleanup(req, res, child) {
+  const killIfRunning = () => {
+    safeKillChildProcess(child);
+  };
+
+  // SSE 连接是否断开以 response 的 close 事件为准，避免 request close 误触发。
+  res.on('close', killIfRunning);
+  req.on('aborted', killIfRunning);
+}
+
 /**
  * Extract meaningful content from a raw LLM prompt, stripping system
  * instructions / role-play preambles so the dashboard only shows
@@ -651,6 +672,19 @@ function createServer(options = {}) {
       return;
     }
 
+    if (req.method === 'GET' && (req.url === '/test' || req.url.startsWith('/test?'))) {
+      const testPath = path.join(publicPath, 'test.html');
+      try {
+        const html = fs.readFileSync(testPath, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(html);
+      } catch {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Test page not found' }));
+      }
+      return;
+    }
+
     // --- API routes ---
     const urlObj = new URL(req.url, 'http://0.0.0.0');
 
@@ -822,6 +856,287 @@ function createServer(options = {}) {
       return;
     }
 
+    // --- Test Runner API routes ---
+
+    if (req.method === 'POST' && urlObj.pathname.startsWith('/api/test/')) {
+      const subPath = urlObj.pathname.slice('/api/test/'.length);
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        const personaSlug = urlObj.searchParams.get('persona') || readActivePersona() || '';
+        let command = '';
+        let extraArgs = [];
+
+        if (subPath === 'heartbeat') {
+          command = 'heartbeat';
+        } else if (subPath === 'morning') {
+          command = 'morning';
+        } else if (subPath === 'night') {
+          command = 'night';
+        } else if (subPath === 'list-skills') {
+          command = 'list-skills';
+        } else if (subPath === 'get-state') {
+          command = 'get-state';
+        } else if (subPath === 'get-diary') {
+          command = 'get-diary';
+        } else if (subPath === 'get-heartbeat-log') {
+          command = 'get-heartbeat-log';
+        } else if (subPath === 'reset-state') {
+          command = 'reset-state';
+        } else if (subPath === 'set-state') {
+          command = 'set-state';
+          try {
+            const parsed = JSON.parse(body || '{}');
+            extraArgs = ['--param', JSON.stringify(parsed)];
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+        } else if (subPath === 'full-day') {
+          command = 'full-day';
+          try {
+            const parsed = JSON.parse(body || '{}');
+            extraArgs = ['--param', JSON.stringify(parsed)];
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+        } else if (subPath.startsWith('skill/')) {
+          const skillParts = subPath.slice('skill/'.length);
+          command = 'skill:' + skillParts.replace(/\//g, ':');
+        }
+        // ── Ops commands ──────────────────────────────────────────
+        else if (subPath === 'ops-health') {
+          command = 'ops-health';
+        } else if (subPath === 'ops-trends') {
+          command = 'ops-trends';
+        } else if (subPath === 'ops-competitors') {
+          command = 'ops-competitors';
+        } else if (subPath === 'ops-idea') {
+          command = 'ops-idea';
+        } else if (subPath === 'ops-queue') {
+          command = 'ops-queue';
+        } else if (subPath === 'ops-queue-approve') {
+          command = 'ops-queue-approve';
+          try {
+            const parsed = JSON.parse(body || '{}');
+            extraArgs = ['--param', JSON.stringify(parsed)];
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+        } else if (subPath === 'ops-queue-discard') {
+          command = 'ops-queue-discard';
+          try {
+            const parsed = JSON.parse(body || '{}');
+            extraArgs = ['--param', JSON.stringify(parsed)];
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+        } else if (subPath === 'ops-queue-publish') {
+          command = 'ops-queue-publish';
+          try {
+            const parsed = JSON.parse(body || '{}');
+            extraArgs = ['--param', JSON.stringify(parsed)];
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+        } else if (subPath === 'ops-brief') {
+          command = 'ops-brief';
+        } else if (subPath === 'ops-analyze') {
+          command = 'ops-analyze';
+          try {
+            const parsed = JSON.parse(body || '{}');
+            extraArgs = ['--param', JSON.stringify(parsed)];
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+        } else if (subPath === 'ops-advice') {
+          command = 'ops-advice';
+        } else if (subPath === 'ops-strategy') {
+          command = 'ops-strategy';
+        } else if (subPath === 'ops-strategy-compute') {
+          command = 'ops-strategy-compute';
+        } else if (subPath === 'ops-strategy-confirm') {
+          command = 'ops-strategy-confirm';
+        } else if (subPath === 'ops-discovery') {
+          command = 'ops-discovery';
+        } else if (subPath === 'ops-candidate-approve') {
+          command = 'ops-candidate-approve';
+          try {
+            const parsed = JSON.parse(body || '{}');
+            extraArgs = ['--param', JSON.stringify(parsed)];
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+        } else if (subPath === 'ops-candidate-dismiss') {
+          command = 'ops-candidate-dismiss';
+          try {
+            const parsed = JSON.parse(body || '{}');
+            extraArgs = ['--param', JSON.stringify(parsed)];
+          } catch {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            return;
+          }
+        } else if (subPath === 'ops-keywords') {
+          command = 'ops-keywords';
+        } else if (subPath === 'ops-patterns') {
+          command = 'ops-patterns';
+        } else if (subPath === 'ops-status') {
+          command = 'ops-status';
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Unknown test command: ' + subPath }));
+          return;
+        }
+
+        // Check if client wants SSE streaming (for full-day)
+        const wantSSE = urlObj.searchParams.get('stream') === '1';
+
+        const runnerScript = path.join(__dirname, 'test-runner.ts');
+        const tsxArgs = [runnerScript, command];
+        if (personaSlug) {
+          tsxArgs.push('--persona', personaSlug);
+        }
+        tsxArgs.push(...extraArgs);
+
+        // Longer timeout for heavy ops commands (10 min) vs standard (2 min)
+        const heavyCommands = new Set(['full-day', 'ops-brief', 'ops-idea', 'ops-advice', 'ops-strategy-compute', 'ops-analyze']);
+        const timeoutMs = heavyCommands.has(command) ? 600000 : 120000;
+
+        // Find tsx binary: try npx tsx, then global tsx
+        const { spawn } = require('child_process');
+        const npxPath = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
+        // For SSE streaming mode (full-day / ops-brief)
+        const sseCommands = new Set(['full-day', 'ops-brief']);
+        if (wantSSE && sseCommands.has(command)) {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no',
+          });
+
+          const child = spawn(npxPath, ['tsx', ...tsxArgs], {
+            cwd: path.join(__dirname, '..'),
+            env: { ...process.env },
+            timeout: timeoutMs,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+
+          let stdout = '';
+          let stderr = '';
+
+          child.stderr.on('data', (data) => {
+            const text = data.toString();
+            stderr += text;
+            // Parse progress events from stderr
+            const lines = text.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('__PROGRESS__')) {
+                try {
+                  const event = JSON.parse(line.slice('__PROGRESS__'.length));
+                  res.write('event: progress\ndata: ' + JSON.stringify(event) + '\n\n');
+                } catch { /* skip */ }
+              }
+            }
+          });
+
+          child.stdout.on('data', (data) => { stdout += data.toString(); });
+
+          child.on('close', (code) => {
+            const lines = stdout.trim().split('\n');
+            const lastLine = lines[lines.length - 1] || '';
+            let result;
+            try {
+              result = JSON.parse(lastLine);
+            } catch {
+              result = {
+                ok: code === 0,
+                output: stdout.trim(),
+                error: code !== 0 ? (stderr.replace(/__PROGRESS__[^\n]*/g, '').trim() || `Process exited with code ${code}`) : undefined,
+              };
+            }
+            const logLines = lines.slice(0, -1).join('\n');
+            if (logLines) result.log = logLines;
+
+            res.write('event: done\ndata: ' + JSON.stringify(result) + '\n\n');
+            res.end();
+          });
+
+          child.on('error', (err) => {
+            res.write('event: error\ndata: ' + JSON.stringify({ error: err.message }) + '\n\n');
+            res.end();
+          });
+
+          // Handle client disconnect (SSE)
+          attachSseChildCleanup(req, res, child);
+
+          return;
+        }
+
+        // Use spawn for standard (non-SSE) output
+        const child = spawn(npxPath, ['tsx', ...tsxArgs], {
+          cwd: path.join(__dirname, '..'),
+          env: { ...process.env },
+          timeout: timeoutMs,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (data) => { stdout += data.toString(); });
+        child.stderr.on('data', (data) => { stderr += data.toString(); });
+
+        child.on('close', (code) => {
+          // Try to parse the last line of stdout as JSON result
+          const lines = stdout.trim().split('\n');
+          const lastLine = lines[lines.length - 1] || '';
+          let result;
+          try {
+            result = JSON.parse(lastLine);
+          } catch {
+            result = {
+              ok: code === 0,
+              output: stdout.trim(),
+              error: code !== 0 ? (stderr.trim() || `Process exited with code ${code}`) : undefined,
+            };
+          }
+
+          // Include console output (non-JSON lines) as log
+          const logLines = lines.slice(0, -1).join('\n');
+          if (logLines) {
+            result.log = logLines;
+          }
+          if (stderr.trim() && !result.error) {
+            result.stderr = stderr.trim();
+          }
+
+          res.writeHead(code === 0 ? 200 : 500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        });
+
+        child.on('error', (err) => {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Failed to start test runner: ' + err.message }));
+        });
+      });
+      return;
+    }
+
     // 404 for everything else
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));
@@ -864,4 +1179,6 @@ module.exports = {
   listPersonas,
   readActivePersona,
   findPersonaAvatar,
+  safeKillChildProcess,
+  attachSseChildCleanup,
 };

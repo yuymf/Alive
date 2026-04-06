@@ -24,6 +24,7 @@ import { rebalanceTiers, updateMetaStats } from '../world/social-graph-engine';
 import { processChainEvents } from '../world/random-events';
 import { getDefaultUndertone, loadPersona, injectPersona } from '../persona/persona-loader';
 import { evaluateSkillNeeds, discoverAndInstall, buildSkillNeedsForPrompt } from '../hub/skill-discovery';
+import { runDriftAnalysis } from '../engines/personality-drift';
 
 interface NightReflectDecision {
   new_wisdom: Array<{ lesson: string; importance: number; tags: string[] }>;
@@ -52,7 +53,12 @@ export async function runNightReflect(
     .map(b => `## ${b}`)
     .join('\n');
 
-  const heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
+  let heartbeatLog = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
+  // Handle legacy format: { entries, lastUpdate } → { logs, retention_days }
+  if (!heartbeatLog.logs && (heartbeatLog as any).entries) {
+    heartbeatLog = { logs: (heartbeatLog as any).entries, retention_days: 7 };
+  }
+  heartbeatLog = { ...heartbeatLog, logs: heartbeatLog.logs ?? [] };
   const todayLogs = heartbeatLog.logs.filter(l => l.timestamp.startsWith(today));
   const logSummary = todayLogs
     .map(l => `${l.timestamp.split('T')[1].slice(0, 5)} [${l.status}] ${l.chosen_actions?.join(', ') || '—'}`)
@@ -319,15 +325,38 @@ export async function runNightReflect(
   // Apply personality drift (rare, gated by features.personality_drift)
   if (isFeatureEnabled(persona, 'personality_drift')) {
     const personalityDrift = readJSON<PersonalityDrift>(PATHS.personalityDrift, { base: persona.personality.mbti, modifiers: [] });
+    // Append new modifier (if any) to the in-memory drift object
+    let currentDrift = personalityDrift;
     if (decision.personality_drift) {
-      const updatedDrift: PersonalityDrift = {
+      currentDrift = {
         ...personalityDrift,
         modifiers: [
           ...personalityDrift.modifiers,
           decision.personality_drift as PersonalityModifier,
         ],
       };
-      writeJSON(PATHS.personalityDrift, updatedDrift);
+    }
+
+    // P4-2: Run drift analysis (decay + cap + score + warning + save)
+    // runDriftAnalysis handles the single write to disk after processing
+    try {
+      const driftReport = runDriftAnalysis(persona, currentDrift);
+      const { analysis, decayed_count, capped_count } = driftReport;
+      if (decayed_count > 0 || capped_count > 0) {
+        console.log(`[personality-drift] Decay: -${decayed_count}, Cap: -${capped_count}, Remaining: ${driftReport.modifiers_after.length}`);
+      }
+      if (analysis.warning) {
+        console.log(`[personality-drift] ⚠️ Drift warning (score: ${analysis.score.toFixed(1)}): ${analysis.direction}`);
+        appendText(PATHS.diary, `\n> ⚠️ 人设偏移检测: 偏离度 ${analysis.score.toFixed(1)}/10, 方向: ${analysis.direction}\n`);
+      } else {
+        console.log(`[personality-drift] Score: ${analysis.score.toFixed(1)}/10 — stable`);
+      }
+    } catch (driftErr) {
+      console.warn(`[personality-drift] Analysis failed: ${(driftErr as Error).message}`);
+      // Fallback: save the current drift with new modifier if analysis failed
+      if (decision.personality_drift) {
+        writeJSON(PATHS.personalityDrift, currentDrift);
+      }
     }
   }
 

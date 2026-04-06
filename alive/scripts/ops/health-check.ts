@@ -7,7 +7,7 @@
 import { PATHS, readJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import type {
-  PerformanceLog, AnalysisLog, ContentPatterns, CompetitorLog,
+  PerformanceLog, AnalysisLog, ContentPatterns,
 } from '../utils/types';
 import { loadQueue } from './review-queue';
 
@@ -87,14 +87,18 @@ export async function runHealthCheck(): Promise<HealthReport> {
     items.push({ name: '内容模式库', status: 'missing', detail: '无模式数据' });
   }
 
-  // 5. Competitor log
-  const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
-  if (competitorLog.entries.length > 0) {
-    const age = competitorLog.last_updated ? daysSince(competitorLog.last_updated) : 999;
+  // 5. Competitor log (handle legacy format: { competitors, lastUpdate })
+  const rawCompetitorLog = readJSON<Record<string, unknown>>(PATHS.competitorLog, {});
+  const competitorEntries: unknown[] =
+    (rawCompetitorLog as any).entries ?? (rawCompetitorLog as any).competitors ?? [];
+  const competitorLastUpdated: string =
+    (rawCompetitorLog as any).last_updated ?? (rawCompetitorLog as any).lastUpdate ?? '';
+  if (competitorEntries.length > 0) {
+    const age = competitorLastUpdated ? daysSince(competitorLastUpdated) : 999;
     items.push({
       name: '竞品追踪',
       status: age <= STALE_DAYS ? 'ok' : 'warn',
-      detail: `${competitorLog.entries.length} 条记录，最近更新 ${age} 天前`,
+      detail: `${competitorEntries.length} 条记录，最近更新 ${age} 天前`,
     });
   } else {
     items.push({ name: '竞品追踪', status: 'missing', detail: '无竞品数据' });
