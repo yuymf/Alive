@@ -177,16 +177,38 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
       { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180, noDeliver: briefNoDeliver, session: briefSession },
     );
 
-    // Background ops jobs
+    // Background ops jobs (always-on)
     const bgJobs = [
       { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
-      { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-      { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
-      { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
       { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
     ];
     for (const job of bgJobs) {
       specs.push({ ...job, noDeliver: silentBg });
+    }
+
+    // Strategy-dependent ops jobs (only when strategy_enabled)
+    const strategyEnabled = persona.ops?.strategy_enabled === true;
+    if (strategyEnabled) {
+      const strategyJobs = [
+        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
+      ];
+      for (const job of strategyJobs) {
+        specs.push({ ...job, noDeliver: silentBg });
+      }
+    }
+
+    // Ops-browse: register when heartbeat is disabled (cron-only mode)
+    if (!enableHeartbeat) {
+      const browseInterval = persona.ops?.browse_interval || '0 */3 * * *';
+      specs.push({
+        name: `${skillSlug}:${personaSlug}:ops-browse`,
+        cron: browseInterval,
+        message: `[cron:ops-browse] 执行${personaName}内容浏览。`,
+        timeout: 120,
+        noDeliver: silentBg,
+      });
     }
   }
 
