@@ -21,6 +21,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (!ops.strategy_enabled) {
+    console.log(`[${wallNow().toISOString()}] ops-strategy: strategy_enabled is false for ${persona.meta.id}, skipping`);
+    return;
+  }
+
   const llm = createRealLLMClient('ops-strategy');
   const personaSummary = `${persona.meta.name}：${persona.personality.mbti}，${persona.meta.tagline}`;
 
