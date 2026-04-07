@@ -151,7 +151,10 @@ async function main(): Promise<void> {
   console.log(`[${wallNow().toISOString()}] ops-browse: completed`);
 }
 
-main().catch(err => {
-  console.error(`[${wallNow().toISOString()}] ops-browse ERROR:`, err);
-  process.exit(1);
-});
+// Guard: only run when executed directly (not when imported for testing)
+if (require.main === module) {
+  main().catch(err => {
+    console.error(`[${wallNow().toISOString()}] ops-browse ERROR:`, err);
+    process.exit(1);
+  });
+}
