@@ -1318,6 +1318,12 @@ export interface OpsConfig {
   max_patterns?: number;
   /** Rolling baseline window in days (default: 7) */
   baseline_window_days?: number;
+  /** Whether to register strategy/performance/analyze cron jobs. Default: false */
+  strategy_enabled?: boolean;
+  /** Cron expression for ops-browse (content browsing). Only used when heartbeat is disabled. */
+  browse_interval?: string;
+  /** Content sources to browse in ops-browse mode */
+  browse_sources?: ReadonlyArray<{ platform: string; count: number }>;
   /** Automation delivery config — controls which cron jobs exist and how they deliver */
   automation?: {
     /** How daily brief is delivered: 'session' = send to current session, 'wecom-target' = use WECOM_TARGET_ID direct send */
