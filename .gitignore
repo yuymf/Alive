@@ -24,6 +24,6 @@ e2e/harness/reports/*.md
 e2e/harness/.env
 .playwright-mcp
 
-# Dev/test directories not needed by skill users
-e2e/
-scripts/
+# Dev/test directories not needed by skill users (root-level only)
+/e2e/
+/scripts/
