@@ -24,6 +24,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (!ops.strategy_enabled) {
+    console.log(`[${wallNow().toISOString()}] ops-analyze: strategy_enabled is false for ${persona.meta.id}, skipping`);
+    return;
+  }
+
   const llm = createRealLLMClient('ops-analyze');
   const personaSummary = `${persona.meta.name}：${persona.personality.mbti}，${persona.meta.tagline}`;
   const delayHours = ops.analysis_delay_hours ?? DEFAULT_DELAY_HOURS;

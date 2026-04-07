@@ -21,6 +21,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (!ops.strategy_enabled) {
+    console.log(`[${wallNow().toISOString()}] ops-performance: strategy_enabled is false for ${persona.meta.id}, skipping`);
+    return;
+  }
+
+  if (!ops.strategy_enabled) {
+    console.log(`[${wallNow().toISOString()}] ops-performance: strategy_enabled is false for ${persona.meta.id}, skipping`);
+    return;
+  }
+
   setTimezone(persona.schedule?.timezone ?? null);
 
   console.log(`[${wallNow().toISOString()}] ops-performance: starting for ${persona.meta.id}`);
