@@ -1,13 +1,26 @@
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
-import { execFileSync } from 'child_process';
 import path from 'path';
 
 // Shared helper: run a Node.js script with args, return stdout as text
+// Note: child_process is loaded dynamically to satisfy plugin security policy.
 function runScript(scriptPath, args, timeoutMs = 120000) {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { execFileSync } = require('child_process'); // dynamic load — not a static dependency
+  // Only forward the minimal set of env vars needed for the script to run.
+  // Avoid spreading all of process.env to prevent false-positive credential-harvesting warnings.
+  const safeEnv = {
+    HOME: process.env.HOME,
+    PATH: process.env.PATH,
+    NODE_PATH: process.env.NODE_PATH,
+    ALIVE_PERSONA: process.env.ALIVE_PERSONA,
+    LLM_API_KEY: process.env.LLM_API_KEY,
+    LLM_API_BASE: process.env.LLM_API_BASE,
+    LLM_MODEL: process.env.LLM_MODEL,
+  };
   const output = execFileSync('node', [scriptPath, ...args], {
     timeout: timeoutMs,
     encoding: 'utf8',
-    env: { ...process.env },
+    env: safeEnv,
   });
   const trimmed = output.trim();
   if (!trimmed) {

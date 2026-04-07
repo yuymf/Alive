@@ -26,7 +26,7 @@ afterEach(() => {
 describe('llm-client openclaw fallback', () => {
   it('calls openclaw run when LLM_API_KEY is absent', async () => {
     delete process.env.LLM_API_KEY;
-    mockExecSync.mockReturnValue(Buffer.from('hello from openclaw'));
+    mockExecSync.mockReturnValue('hello from openclaw');
 
     const result = await callLLM('say hello', 1000, 'test');
 
@@ -39,7 +39,7 @@ describe('llm-client openclaw fallback', () => {
 
   it('callLLMJSON fallback parses JSON from openclaw output', async () => {
     delete process.env.LLM_API_KEY;
-    mockExecSync.mockReturnValue(Buffer.from('```json\n{"action":"rest"}\n```'));
+    mockExecSync.mockReturnValue('```json\n{"action":"rest"}\n```');
 
     const result = await callLLMJSON<{ action: string }>('decide', 1000, 'test');
 

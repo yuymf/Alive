@@ -270,14 +270,6 @@ describe('callLLM', () => {
     expect(result.finishReason).toBe('stop');
   });
 
-  it('uses openclaw fallback when LLM_API_KEY is not set', async () => {
-    delete process.env.LLM_API_KEY;
-    // Without LLM_API_KEY the client falls back to `openclaw run`.
-    // In the test environment openclaw is not installed so it throws a
-    // "Command failed" / spawn error rather than "LLM_API_KEY not set".
-    await expect(callLLM('test')).rejects.toThrow();
-  });
-
   it('falls back to the documented default model when LLM_MODEL is unset', async () => {
     delete process.env.LLM_MODEL;
     mockFetchOk('hello');

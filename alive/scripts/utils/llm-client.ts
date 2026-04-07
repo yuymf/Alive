@@ -91,7 +91,14 @@ function isAbortError(err: unknown): boolean {
  * Falls back for users who haven't configured a custom LLM key.
  */
 function callLLMViaOpenClaw(prompt: string): LLMResult {
-  const escaped = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  const escaped = prompt
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t')
+    .replace(/`/g, '\\`')
+    .replace(/\$/g, '\\$');
   const output = execSync(`openclaw run --json "${escaped}"`, {
     encoding: 'utf8',
     timeout: 120_000,
@@ -184,6 +191,7 @@ export async function callLLM(
 ): Promise<LLMResult> {
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) {
+    const startMs = wallNow().getTime();
     const result = callLLMViaOpenClaw(prompt);
     appendLlmLog({
       id: crypto.randomUUID(),
@@ -191,7 +199,7 @@ export async function callLLM(
       caller: caller ?? autoDetectCaller(),
       prompt,
       response: result.content,
-      elapsed_ms: 0,
+      elapsed_ms: wallNow().getTime() - startMs,
       input_tokens: null,
       output_tokens: null,
       finish_reason: 'stop',
