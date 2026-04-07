@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { PATHS } from './file-utils';
+import { execSync } from 'child_process';
 
 // === Core Interface ===
 
@@ -82,6 +83,20 @@ const isDebug = () => process.env.LLM_DEBUG === '1' || process.env.LLM_DEBUG ===
 
 function isAbortError(err: unknown): boolean {
   return Boolean(err) && typeof err === 'object' && (err as { name?: string }).name === 'AbortError';
+}
+
+/**
+ * Call LLM via OpenClaw's built-in Claude when no LLM_API_KEY is configured.
+ * Uses `openclaw run --json "<prompt>"` CLI and returns stdout as the response.
+ * Falls back for users who haven't configured a custom LLM key.
+ */
+function callLLMViaOpenClaw(prompt: string): LLMResult {
+  const escaped = prompt.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  const output = execSync(`openclaw run --json "${escaped}"`, {
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+  return { content: String(output).trim(), finishReason: 'stop' };
 }
 
 function debugLog(label: string, content: string): void {
@@ -168,7 +183,23 @@ export async function callLLM(
   options?: LLMCallOptions,
 ): Promise<LLMResult> {
   const apiKey = process.env.LLM_API_KEY;
-  if (!apiKey) throw new Error('LLM_API_KEY not set');
+  if (!apiKey) {
+    const result = callLLMViaOpenClaw(prompt);
+    appendLlmLog({
+      id: crypto.randomUUID(),
+      timestamp: wallNow().toISOString(),
+      caller: caller ?? autoDetectCaller(),
+      prompt,
+      response: result.content,
+      elapsed_ms: 0,
+      input_tokens: null,
+      output_tokens: null,
+      finish_reason: 'stop',
+      model: 'openclaw-native',
+      error_message: null,
+    });
+    return result;
+  }
 
   const apiBase = (process.env.LLM_API_BASE || DEFAULT_API_BASE).replace(/\/+$/, '');
   const model = options?.model || process.env.LLM_MODEL || DEFAULT_MODEL;
