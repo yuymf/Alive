@@ -467,6 +467,8 @@ export function createContentBrowseConfig(options?: {
   const registry = options?.registry;
   const contentSources = options?.contentSources;
   const platformFilter = contentSources?.platforms;
+  // Only call Instagram APIs if 'instagram' is explicitly in the platform filter, or no filter is set
+  const igEnabled = !platformFilter || platformFilter.includes('instagram');
 
   return {
     /**
@@ -501,19 +503,21 @@ export function createContentBrowseConfig(options?: {
         }
       } catch { /* non-critical */ }
 
-      // Instagram hashtag feed (built-in)
-      try {
-        const result = await hashtagTop('cosplay', 10);
-        for (const post of result.posts) {
-          items.push({
-            id: `ig_${post.pk}`,
-            title: post.caption_text.slice(0, 80),
-            likes: post.like_count,
-            user: post.username,
-            source: 'instagram',
-          });
-        }
-      } catch { /* non-critical */ }
+      // Instagram hashtag feed (built-in) — only if instagram is in the platform filter (or no filter set)
+      if (igEnabled) {
+        try {
+          const result = await hashtagTop('cosplay', 10);
+          for (const post of result.posts) {
+            items.push({
+              id: `ig_${post.pk}`,
+              title: post.caption_text.slice(0, 80),
+              likes: post.like_count,
+              user: post.username,
+              source: 'instagram',
+            });
+          }
+        } catch { /* non-critical */ }
+      }
 
       // Registry providers (multi-platform bridge)
       if (registry) {
@@ -576,19 +580,21 @@ export function createContentBrowseConfig(options?: {
         }
       } catch { /* non-critical */ }
 
-      // IG hashtag search
-      try {
-        const result = await hashtagTop(keyword, 10);
-        for (const post of result.posts) {
-          items.push({
-            id: `ig_${post.pk}`,
-            title: post.caption_text.slice(0, 80),
-            likes: post.like_count,
-            user: post.username,
-            source: 'instagram',
-          });
-        }
-      } catch { /* non-critical */ }
+      // IG hashtag search — only if instagram is in the platform filter (or no filter set)
+      if (igEnabled) {
+        try {
+          const result = await hashtagTop(keyword, 10);
+          for (const post of result.posts) {
+            items.push({
+              id: `ig_${post.pk}`,
+              title: post.caption_text.slice(0, 80),
+              likes: post.like_count,
+              user: post.username,
+              source: 'instagram',
+            });
+          }
+        } catch { /* non-critical */ }
+      }
 
       // Registry search (multi-platform bridge)
       if (registry) {

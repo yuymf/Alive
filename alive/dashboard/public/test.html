@@ -1773,13 +1773,19 @@ function renderSkillButtons(skills) {
     if (actions.length > 1) {
       return actions.map(function(action) {
         var btnId = 'btn-skill-' + skill.name + '-' + action;
+        // Per-action description overrides for clarity
+        var actionDesc = skill.description;
+        if (skill.name === 'content-browse') {
+          if (action === 'feed-browse') actionDesc = '刷平台推荐流，提取热点与灵感';
+          else if (action === 'inspiration-collect') actionDesc = '主动搜索趋势关键词，采集领域灵感';
+        }
         return '<button class="action-btn skill-btn' + (isPlatform ? ' platform' : '') + '" '
           + 'id="' + escAttr(btnId) + '" '
           + 'onclick="runSkill(\'' + escAttr(skill.name) + '\', \'' + escAttr(action) + '\')">'
           + '<div class="btn-icon">' + icon + '</div>'
           + '<div class="btn-text">'
           + '<span class="btn-label">' + escHtml(skill.display_name) + ' → ' + escHtml(action) + '</span>'
-          + '<span class="btn-desc">' + escHtml(skill.description) + '</span>'
+          + '<span class="btn-desc">' + escHtml(actionDesc) + '</span>'
           + '</div></button>';
       }).join('');
     } else {

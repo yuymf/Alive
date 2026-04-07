@@ -166,7 +166,7 @@ heartbeat-tick（心跳）
 |------|------|------|
 | `instagram` | produce, express | Instagram 内容发布管线 |
 | `web-search` | learn, consume | 网络搜索与知识摘要 |
-| `content-browse` | consume, learn | Feed 浏览与灵感采集 |
+| `content-browse` | consume, learn | 浏览 Feed 内容并提取灵感素材 |
 | `social-engagement` | connect | 评论回复与主动互动 |
 | `send-message` | connect, express | 主动发送消息 |
 | `voice-tts` | connect, express | 语音消息合成与发送 |

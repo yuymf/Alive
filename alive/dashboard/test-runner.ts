@@ -23,6 +23,9 @@
 import * as fs from 'fs';
 import { setPersonaName, PATHS, readJSON, writeJSON, loadSkillEnvVars } from '../scripts/utils/file-utils';
 import { createRealLLMClient } from '../scripts/utils/llm-client';
+import { createContentBrowseConfig, createInstagramConfig, createSocialEngagementConfig } from '../scripts/adapters/instagram-adapter';
+import { ContentProviderRegistry } from '../scripts/adapters/content-provider';
+import { getContentSourcesConfig } from '../scripts/persona/persona-loader';
 import { regularTick } from '../scripts/lifecycle/heartbeat-tick';
 import { runMorningPlan } from '../scripts/lifecycle/morning-plan';
 import { runNightReflect } from '../scripts/lifecycle/night-reflect';
@@ -439,7 +442,19 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
       action: targetRoute.action,
     };
 
-    const ctx = buildContext(personaConfig, emotion, vitality.vitality, confidence.confidence, resolvedIntent, llm, {});
+    // Build skill-specific config (same as heartbeat-tick does for real runs)
+    let skillConfig: Record<string, unknown> = {};
+    if (skillName === 'content-browse') {
+      const contentSources = getContentSourcesConfig(personaConfig);
+      const registry = new ContentProviderRegistry();
+      skillConfig = createContentBrowseConfig({ contentSources, registry }) as unknown as Record<string, unknown>;
+    } else if (skillName === 'instagram') {
+      skillConfig = createInstagramConfig() as unknown as Record<string, unknown>;
+    } else if (skillName === 'social-engagement') {
+      skillConfig = createSocialEngagementConfig() as unknown as Record<string, unknown>;
+    }
+
+    const ctx = buildContext(personaConfig, emotion, vitality.vitality, confidence.confidence, resolvedIntent, llm, skillConfig);
     const subResult = await executeSubSkill(targetRoute, ctx);
 
     return {

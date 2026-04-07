@@ -1,8 +1,8 @@
 {
   "name": "content-browse",
-  "display_name": "内容浏览与灵感采集",
+  "display_name": "内容浏览",
   "version": "0.1.0",
-  "description": "刷内容、采集灵感、趋势分析",
+  "description": "浏览 Feed 内容并提取灵感素材",
   "intent_bindings": [
     { "intent": "consume", "action": "feed-browse", "priority": 4 },
     { "intent": "learn", "action": "inspiration-collect", "priority": 2 },

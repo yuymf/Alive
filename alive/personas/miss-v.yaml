@@ -135,7 +135,7 @@ ops:
   # ─── 结构化对标账号画像 ─────────────────────────────────────────────────
   competitors:
     # === 硬核电竞解说 ===
-    - name: "天云"
+    - name: "天云分享一切美好"
       platform: "douyin"
       url: "https://www.douyin.com/user/MS4wLjABAAAA6xbgOAdpyQGXChSnmTZ-eErjUc7DI025bCu7CZ9A2r9nvOCgPoykWmjLQiCuUBNX"
       external_id: "MS4wLjABAAAA6xbgOAdpyQGXChSnmTZ-eErjUc7DI025bCu7CZ9A2r9nvOCgPoykWmjLQiCuUBNX"
@@ -155,7 +155,7 @@ ops:
         - "颜值＋实力反差感引发讨论，为女性电竞从业者树立正向标杆"
         - "专业解说降低观赛门槛，女性视角带来情感共鸣"
 
-    - name: "希然"
+    - name: "希然Iris"
       platform: "douyin"
       url: "https://www.douyin.com/user/MS4wLjABAAAAuiSKqwUylnhFYiFMQ4H5_Z5zRZ7dHuY4ghsHv9xXR1xjHJ8Sj0dBFLNbTryRP62j"
       external_id: "MS4wLjABAAAAuiSKqwUylnhFYiFMQ4H5_Z5zRZ7dHuY4ghsHv9xXR1xjHJ8Sj0dBFLNbTryRP62j"
