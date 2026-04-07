@@ -11,6 +11,7 @@ import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { wallNow } from '../utils/time-utils';
 import type { CompetitorPost, CompetitorPostsStore, CompetitorProfile, FetchResult } from '../utils/types';
+import { listDouyinUserPosts } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -108,7 +109,7 @@ interface YtDlpVideo {
 function fetchDouyinPosts(accountId: string): CompetitorPost[] {
   const fetchedAt = wallNow().toISOString();
 
-  // Strategy 1: try yt-dlp-downloader skill
+  // Strategy 1: try yt-dlp-downloader skill (works for public video URLs)
   try {
     const raw = execFileSync(
       'openclaw',
@@ -132,81 +133,28 @@ function fetchDouyinPosts(accountId: string): CompetitorPost[] {
         fetched_at: fetchedAt,
       }));
     }
-    console.warn(`[competitor-fetcher] yt-dlp-downloader returned 0 videos for ${accountId}, trying curl fallback`);
+    console.warn(`[competitor-fetcher] yt-dlp-downloader returned 0 videos for ${accountId}, trying CDP fallback`);
   } catch (err) {
     console.warn(
-      `[competitor-fetcher] yt-dlp-downloader failed for ${accountId}: ${err instanceof Error ? err.message : err} — trying curl fallback`,
+      `[competitor-fetcher] yt-dlp-downloader failed for ${accountId}: ${err instanceof Error ? err.message : err} — trying CDP fallback`,
     );
   }
 
-  // Strategy 2: fallback to curl + Douyin Web API (requires sec_user_id and cookies)
-  try {
-    return fetchDouyinPostsViaCurl(accountId, fetchedAt);
-  } catch (err) {
-    console.error(
-      `[competitor-fetcher] curl fallback also failed for ${accountId}: ${err instanceof Error ? err.message : err}`,
-    );
-    throw err; // propagate to let caller record as failed
+  // Strategy 2: fallback to douyin-bridge CDP (headless Chrome, no Cookie required)
+  const cdpResult = listDouyinUserPosts(accountId, MAX_POSTS_PER_ACCOUNT);
+  if (!cdpResult.success) {
+    throw new Error(`CDP fallback failed for ${accountId}: ${cdpResult.error ?? 'unknown'}`);
   }
-}
-
-/**
- * Fallback: Fetch Douyin posts via curl + Web API.
- * Uses DOUYIN_COOKIES_FILE for authentication.
- * The accountId should be a sec_user_id for this method to work.
- */
-function fetchDouyinPostsViaCurl(secUid: string, fetchedAt: string): CompetitorPost[] {
-  const cookiesFile = process.env.DOUYIN_COOKIES_FILE ?? '';
-  let cookieHeader = '';
-  if (cookiesFile) {
-    try {
-      const fs = require('fs') as typeof import('fs');
-      cookieHeader = fs.readFileSync(cookiesFile, 'utf8').trim();
-    } catch {
-      console.warn(`[competitor-fetcher] Cookie file not found: ${cookiesFile}`);
-    }
+  if (!cdpResult.videos?.length) {
+    throw new Error(`CDP fallback returned 0 videos for ${accountId}`);
   }
-
-  const url = `https://www.douyin.com/aweme/v1/web/aweme/post/?sec_user_id=${encodeURIComponent(secUid)}&count=${MAX_POSTS_PER_ACCOUNT}&max_cursor=0&aid=6383&device_platform=webapp&source=channel_pc_web`;
-  const curlArgs = [
-    '-s', '--max-time', '20',
-    url,
-    '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    '-H', 'Accept: application/json',
-    '-H', 'Referer: https://www.douyin.com/',
-  ];
-  if (cookieHeader) curlArgs.push('-H', `Cookie: ${cookieHeader}`);
-
-  const raw = execFileSync('curl', curlArgs, { timeout: 25_000, encoding: 'utf8' });
-  if (!raw.trim() || raw.trim().startsWith('<')) {
-    console.warn(`[competitor-fetcher] curl fallback: empty or HTML response for ${secUid}`);
-    return [];
-  }
-
-  const d = JSON.parse(raw.trim()) as {
-    status_code?: number;
-    aweme_list?: Array<{
-      aweme_id?: string;
-      desc?: string;
-      statistics?: { digg_count?: number; comment_count?: number };
-      create_time?: number;
-      video?: { cover?: { url_list?: string[] } };
-    }>;
-  };
-  const list = d.aweme_list ?? [];
-  if (list.length === 0) {
-    console.warn(`[competitor-fetcher] curl fallback: aweme_list empty for ${secUid} (status_code=${d.status_code ?? 'N/A'})`);
-  }
-
-  return list.map(v => ({
-    account_name: secUid,
+  return cdpResult.videos.map(v => ({
+    account_name: accountId,
     platform: 'douyin' as const,
-    post_id: v.aweme_id ?? `douyin_${secUid}_${Math.random().toString(36).slice(2)}`,
-    title: v.desc ?? '',
-    engagement: v.statistics?.digg_count ?? 0,
-    comment_count: v.statistics?.comment_count,
+    post_id: v.aweme_id || `douyin_${accountId}_${Math.random().toString(36).slice(2)}`,
+    title: v.desc || '',
+    engagement: v.digg_count,
     posted_at: v.create_time ? new Date(v.create_time * 1000).toISOString() : undefined,
-    cover_url: v.video?.cover?.url_list?.[0],
     fetched_at: fetchedAt,
   }));
 }

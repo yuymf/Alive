@@ -409,6 +409,139 @@ function installRequiredClawHubSkills() {
 }
 
 /**
+ * Check and setup Python platform bridge skills (xiaohongshu-skills, douyin-skills).
+ * These are local Python packages stored in ~/.openclaw/skills/, NOT ClawHub packages.
+ *
+ * In headless environments (no DISPLAY), runs a lightweight health check:
+ *   - check-login (verifies Chrome can start and reach the site)
+ *   - Non-interactive: skips login prompt, just verifies the CLI works
+ *
+ * @param {boolean} nonInteractive - Skip prompts (CI / headless install)
+ */
+function setupPlatformBridgeSkills(nonInteractive = false) {
+  const HOME = process.env.HOME;
+  const skillsBase = path.join(HOME, '.openclaw', 'skills');
+
+  // Verify uv is available (required to run Python skills)
+  let uvAvailable = false;
+  try {
+    execSync('uv --version', { stdio: 'ignore', timeout: 5000 });
+    uvAvailable = true;
+  } catch {
+    warn('uv not found — Python platform skills (XHS, Douyin) will not work.');
+    warn('Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh');
+    return;
+  }
+
+  // Verify Chrome is available (required for CDP)
+  let chromeAvailable = false;
+  try {
+    const chromeBin = process.env.CHROME_BIN ||
+      (() => {
+        for (const c of ['google-chrome', 'chromium', 'chromium-browser', 'chrome']) {
+          try { execSync(`which ${c}`, { stdio: 'ignore', timeout: 2000 }); return c; } catch { /* next */ }
+        }
+        return null;
+      })();
+    if (chromeBin) chromeAvailable = true;
+  } catch { /* ignore */ }
+
+  if (!chromeAvailable) {
+    warn('Chrome/Chromium not found — XHS and Douyin CDP features will not work.');
+    warn('Install: sudo apt install chromium-browser  OR  set CHROME_BIN env var');
+  }
+
+  const PLATFORM_SKILLS = [
+    {
+      name: 'xiaohongshu-skills',
+      dir: path.join(skillsBase, 'xiaohongshu-skills'),
+      cli: path.join(skillsBase, 'xiaohongshu-skills', 'scripts', 'cli.py'),
+      checkCmd: ['check-login'],
+      envNote: 'Login via: uv run --directory ~/.openclaw/skills/xiaohongshu-skills python scripts/cli.py check-login',
+    },
+    {
+      name: 'douyin-skills',
+      dir: path.join(skillsBase, 'douyin-skills'),
+      cli: path.join(skillsBase, 'douyin-skills', 'scripts', 'cli.py'),
+      checkCmd: ['check-login'],
+      envNote: 'Login via: uv run --directory ~/.openclaw/skills/douyin-skills python scripts/cli.py check-login',
+    },
+  ];
+
+  for (const skill of PLATFORM_SKILLS) {
+    if (!fs.existsSync(skill.dir)) {
+      warn(`${skill.name} not found at ${skill.dir} — skipping`);
+      warn(`Clone or copy the skill to ${skill.dir} to enable this platform`);
+      continue;
+    }
+    if (!fs.existsSync(skill.cli)) {
+      warn(`${skill.name} CLI not found at ${skill.cli}`);
+      continue;
+    }
+
+    ok(`${skill.name} directory found`);
+
+    // Install Python dependencies via uv
+    try {
+      execSync(`uv sync --directory ${skill.dir}`, {
+        stdio: 'pipe',
+        timeout: 60000,
+        env: { ...process.env },
+      });
+      ok(`${skill.name} Python dependencies installed`);
+    } catch (err) {
+      warn(`${skill.name} uv sync failed: ${err.message}`);
+    }
+
+    // Health check: verify CLI starts and Chrome is reachable (headless safe)
+    if (!chromeAvailable) {
+      warn(`${skill.name} health check skipped (Chrome not available)`);
+      continue;
+    }
+
+    try {
+      const result = require('child_process').spawnSync(
+        'uv',
+        ['run', '--directory', skill.dir, 'python', skill.cli, ...skill.checkCmd],
+        {
+          encoding: 'utf8',
+          timeout: 30000,
+          env: {
+            ...process.env,
+            CI: nonInteractive ? '1' : (process.env.CI || ''),
+          },
+        },
+      );
+      const output = (result.stdout || '') + (result.stderr || '');
+      if (result.status === 0) {
+        try {
+          const parsed = JSON.parse((result.stdout || '').trim());
+          if (parsed.logged_in) {
+            ok(`${skill.name} health check: logged in ✓`);
+          } else {
+            warn(`${skill.name} health check: Chrome started but not logged in`);
+            warn(skill.envNote);
+          }
+        } catch {
+          ok(`${skill.name} health check: CLI responded`);
+        }
+      } else {
+        warn(`${skill.name} health check failed (exit ${result.status})`);
+        if (output.includes('未找到 Chrome') || output.includes('Chrome not found')) {
+          warn('Chrome not found — set CHROME_BIN env var or install Chrome');
+        } else if (output.includes('ModuleNotFoundError') || output.includes('ImportError')) {
+          warn(`${skill.name} missing Python dependencies — re-run: uv sync --directory ${skill.dir}`);
+        } else {
+          warn(`Output: ${output.slice(0, 200)}`);
+        }
+      }
+    } catch (err) {
+      warn(`${skill.name} health check error: ${err.message}`);
+    }
+  }
+}
+
+/**
  * Migrate from legacy skill slug (e.g. "minase") to "alive".
  * Renames skill directory and moves config entry in openclaw.json.
  * Called once before any command runs.
@@ -1120,6 +1253,12 @@ async function install() {
   if (persona.ops && persona.ops.enabled) {
     log('Step 7/8: Installing ClawHub skill dependencies for ops...');
     installRequiredClawHubSkills();
+  }
+
+  // Step 7b: Setup Python platform bridge skills (XHS + Douyin CDP)
+  if (persona.ops && persona.ops.enabled) {
+    log('Step 7b: Checking Python platform bridge skills (XHS / Douyin)...');
+    setupPlatformBridgeSkills(/* nonInteractive= */ true);
   }
 
   // Step 8: Register cron (if OpenClaw CLI available)

@@ -173,15 +173,22 @@ export function resolveCompetitorAccounts(ops: OpsConfig): { xhs: string[]; douy
 import * as os from 'os';
 import * as path from 'path';
 
-const XHS_CLI = path.join(os.homedir(), '.openclaw', 'skills', 'xiaohongshu-skills', 'scripts', 'cli.py');
+function resolveXhsSkillsDir(): string {
+  return process.env.XHS_SKILLS_DIR
+    ?? path.join(os.homedir(), '.openclaw', 'skills', 'xiaohongshu-skills');
+}
+
+import { listDouyinUserPosts } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 
 // ─── ClawHub skill calls ──────────────────────────────────────────────────────
 
 function fetchXhsAccount(account: string): CompetitorUpdate {
   try {
-    const raw = execFileSync('python3', [
-      XHS_CLI, 'search-feeds',
-      '--keyword', account,
+    const xhsDir = resolveXhsSkillsDir();
+    const xhsCli = path.join(xhsDir, 'scripts', 'cli.py');
+    const raw = execFileSync('uv', [
+      'run', '--directory', xhsDir, 'python', xhsCli,
+      'search-feeds', '--keyword', account,
     ], { timeout: 30_000, encoding: 'utf8' });
     // Output is JSON with a "feeds" array
     const parsed = JSON.parse(raw.trim()) as {
@@ -219,54 +226,17 @@ function fetchXhsAccount(account: string): CompetitorUpdate {
 
 function fetchDouyinAccount(secUid: string): CompetitorUpdate {
   try {
-    // Read cookies from file (populated from browser session)
-    const cookiesFile = process.env.DOUYIN_COOKIES_FILE ?? '';
-    let cookieHeader = '';
-    if (cookiesFile) {
-      try {
-        const fs = require('fs') as typeof import('fs');
-        cookieHeader = fs.readFileSync(cookiesFile, 'utf8').trim();
-      } catch (e) {
-        console.warn(`[competitor-tracker] Cookie file not found or unreadable: ${cookiesFile}`, e);
-      }
-    } else {
-      console.warn('[competitor-tracker] DOUYIN_COOKIES_FILE not set — Douyin API requests will likely fail');
+    const result = listDouyinUserPosts(secUid, 1);
+    if (!result.success || !result.videos?.length) {
+      return {
+        account: secUid,
+        platform: 'douyin',
+        latest_post: null,
+        days_since_last_post: NO_POSTS_FOUND_DAYS,
+        fetched_at: wallNow().toISOString(),
+      };
     }
-
-    const url = `https://www.douyin.com/aweme/v1/web/aweme/post/?sec_user_id=${encodeURIComponent(secUid)}&count=1&max_cursor=0&aid=6383&device_platform=webapp&source=channel_pc_web`;
-    const curlArgs = [
-      '-s', '--max-time', '15',
-      url,
-      '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      '-H', 'Accept: application/json',
-      '-H', 'Referer: https://www.douyin.com/',
-    ];
-    if (cookieHeader) curlArgs.push('-H', `Cookie: ${cookieHeader}`);
-
-    const raw = execFileSync('curl', curlArgs, { timeout: 20_000, encoding: 'utf8' });
-    if (!raw.trim()) {
-      console.warn(`[competitor-tracker] Douyin API returned empty response for ${secUid} (cookie ${cookieHeader ? 'present' : 'absent'})`);
-      return { account: secUid, platform: 'douyin', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
-    }
-
-    // Check if response is HTML (captcha/redirect) instead of JSON
-    if (raw.trim().startsWith('<') || raw.trim().startsWith('<!')) {
-      console.warn(`[competitor-tracker] ⚠️ Douyin API returned HTML (captcha) for ${secUid} — Cookie is expired or invalid. Please update DOUYIN_COOKIES_FILE: ${cookiesFile || 'NOT SET'}`);
-      return { account: secUid, platform: 'douyin', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
-    }
-
-    const d = JSON.parse(raw.trim()) as { status_code?: number; aweme_list?: Array<{ desc?: string; statistics?: { digg_count?: number }; create_time?: number }> };
-
-    if (d.status_code && d.status_code !== 0) {
-      console.warn(`[competitor-tracker] Douyin API returned status_code=${d.status_code} for ${secUid}`);
-    }
-
-    const list = d.aweme_list ?? [];
-    if (!list.length) {
-      console.warn(`[competitor-tracker] Douyin API returned empty aweme_list for ${secUid} (status_code=${d.status_code ?? 'N/A'})`);
-      return { account: secUid, platform: 'douyin', latest_post: null, days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: wallNow().toISOString() };
-    }
-    const v = list[0];
+    const v = result.videos[0];
     const postedAt = v.create_time ? new Date(v.create_time * 1000) : now();
     const daysSince = Math.floor((now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24));
     return {
@@ -275,16 +245,22 @@ function fetchDouyinAccount(secUid: string): CompetitorUpdate {
       latest_post: {
         time: postedAt.toISOString(),
         content_type: '视频',
-        topic: v.desc ?? '未知',
-        engagement: v.statistics?.digg_count ?? 0,
-        summary: v.desc ?? '',
+        topic: v.desc || '未知',
+        engagement: v.digg_count,
+        summary: v.desc || '',
       },
       days_since_last_post: daysSince,
       fetched_at: wallNow().toISOString(),
     };
   } catch (err) {
     console.error(`[competitor-tracker] fetchDouyinAccount failed for ${secUid}:`, err instanceof Error ? err.message : err);
-    return { account: secUid, platform: 'douyin', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
+    return {
+      account: secUid,
+      platform: 'douyin',
+      latest_post: null,
+      days_since_last_post: FETCH_FAILED_DAYS,
+      fetched_at: wallNow().toISOString(),
+    };
   }
 }
 
