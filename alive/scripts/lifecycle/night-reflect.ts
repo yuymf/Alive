@@ -25,6 +25,7 @@ import { processChainEvents } from '../world/random-events';
 import { getDefaultUndertone, loadPersona, injectPersona } from '../persona/persona-loader';
 import { evaluateSkillNeeds, discoverAndInstall, buildSkillNeedsForPrompt } from '../hub/skill-discovery';
 import { runDriftAnalysis } from '../engines/personality-drift';
+import { extractKeywords, keywordsOverlap } from '../utils/text-utils';
 
 interface NightReflectDecision {
   new_wisdom: Array<{ lesson: string; importance: number; tags: string[] }>;
@@ -33,6 +34,61 @@ interface NightReflectDecision {
   personality_drift: { trait: string; strength: number; origin: string; effect: string } | null;
   skill_acquisition_plans?: Array<{ need_id: string; search_query: string; priority: number; rationale: string }>;
   diary_entry: string;
+}
+
+/**
+ * Deduplicate incoming wisdom against existing entries using keyword overlap.
+ * Exported for testability.
+ */
+export function deduplicateWisdom(
+  existing: WisdomEntry[],
+  incoming: Array<{ lesson: string; importance: number; tags: string[] }>,
+  today: string,
+): WisdomEntry[] {
+  let result = [...existing];
+
+  for (const w of incoming) {
+    const newKw = extractKeywords(w.lesson);
+    let merged = false;
+
+    for (let i = 0; i < result.length; i++) {
+      const existingKw = extractKeywords(result[i].lesson);
+      if (keywordsOverlap(newKw, existingKw)) {
+        const keepNew = w.importance > result[i].importance;
+        const mergedTags = [...new Set([...(result[i].tags ?? []), ...(w.tags ?? [])])];
+        result = result.map((entry, idx) =>
+          idx === i
+            ? {
+                ...entry,
+                lesson: keepNew ? w.lesson : entry.lesson,
+                importance: Math.max(entry.importance, w.importance),
+                date: today,
+                tags: mergedTags,
+              }
+            : entry,
+        );
+        merged = true;
+        break;
+      }
+    }
+
+    if (!merged) {
+      const id = `w${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      result = [
+        ...result,
+        {
+          id,
+          lesson: w.lesson,
+          source: 'night-reflect',
+          date: today,
+          importance: w.importance,
+          tags: w.tags ?? [],
+        },
+      ];
+    }
+  }
+
+  return result;
 }
 
 export async function runNightReflect(
@@ -218,22 +274,8 @@ export async function runNightReflect(
     }
   }
 
-  // Apply Core Wisdom updates (immutable)
-  let updatedWisdomList = [...wisdom.wisdom];
-  for (const w of decision.new_wisdom) {
-    const id = `w${currentTime.getTime()}_${Math.random().toString(36).slice(2, 6)}`;
-    updatedWisdomList = [
-      ...updatedWisdomList,
-      {
-        id,
-        lesson: w.lesson,
-        source: 'night-reflect',
-        date: today,
-        importance: w.importance,
-        tags: w.tags,
-      },
-    ];
-  }
+  // Apply Core Wisdom updates (immutable, with keyword dedup)
+  let updatedWisdomList = deduplicateWisdom(wisdom.wisdom, decision.new_wisdom, today);
   // Trim to max 20 (keep highest importance)
   if (updatedWisdomList.length > 20) {
     updatedWisdomList = [...updatedWisdomList].sort((a, b) => b.importance - a.importance).slice(0, 20);
