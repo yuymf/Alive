@@ -2,7 +2,8 @@
  * review-queue.ts
  * CRUD for the ops desk review queue.
  * Storage: {MEMORY_BASE}/review-queue.json
- * Cleanup: published/discarded items older than 7 days are removed.
+ * Cleanup: published/discarded/expired items older than 7 days are removed.
+ * Expiry: pending items older than PENDING_EXPIRE_HOURS are auto-expired.
  */
 
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
@@ -16,8 +17,15 @@ export { ReviewQueue };
 
 export const DEFAULT_REVIEW_QUEUE: ReviewQueue = { items: [], last_updated: '' };
 
-const CLEANUP_STATUSES: QueueItemStatus[] = ['published', 'discarded'];
+const CLEANUP_STATUSES: QueueItemStatus[] = ['published', 'discarded', 'expired'];
 const CLEANUP_AGE_DAYS = 7;
+
+/**
+ * How many hours a pending item stays "active" before being auto-expired.
+ * After this threshold, the item is marked 'expired' and no longer shown
+ * in daily briefs — the operator likely isn't interested.
+ */
+export const PENDING_EXPIRE_HOURS = 48;
 
 function generateId(): string {
   return `q_${now().getTime()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -135,25 +143,100 @@ export async function getPublishedItemsWithUrls(): Promise<QueueItem[]> {
   );
 }
 
+// ─── Pending expiry ──────────────────────────────────────────────────────────
+
+/**
+ * Calculate hours since an item was created.
+ */
+export function hoursSinceCreated(item: QueueItem): number {
+  return (now().getTime() - new Date(item.created_at).getTime()) / (1000 * 60 * 60);
+}
+
+/**
+ * Cleanup old items AND auto-expire stale pending items in a single pass.
+ *
+ * 1. Pending items older than PENDING_EXPIRE_HOURS → marked 'expired'
+ * 2. Published/discarded/expired items older than CLEANUP_AGE_DAYS → removed
+ *
+ * This is called at the start of every brief cycle, so all downstream
+ * consumers (brief, health-check) see an up-to-date queue.
+ */
 export async function cleanupOldItems(): Promise<void> {
   const queue = await loadQueue();
   const cutoff = new Date(now().getTime() - CLEANUP_AGE_DAYS * 24 * 60 * 60 * 1000);
-  const filtered = queue.items.filter(item => {
+  const ts = now().toISOString();
+  let expiredCount = 0;
+
+  // Step 1: auto-expire stale pending items
+  const withExpired = queue.items.map(item => {
+    if (item.status !== 'pending') return item;
+    if (hoursSinceCreated(item) >= PENDING_EXPIRE_HOURS) {
+      expiredCount++;
+      return { ...item, status: 'expired' as QueueItemStatus, updated_at: ts };
+    }
+    return item;
+  });
+
+  // Step 2: remove old published/discarded/expired items
+  const filtered = withExpired.filter(item => {
     if (!CLEANUP_STATUSES.includes(item.status)) return true;
     return new Date(item.updated_at) > cutoff;
   });
+
   await saveQueue({ ...queue, items: filtered });
+
+  if (expiredCount > 0) {
+    console.log(`[review-queue] Auto-expired ${expiredCount} stale pending item(s) (>${PENDING_EXPIRE_HOURS}h)`);
+  }
+}
+
+/**
+ * Auto-expire pending items that have been sitting for longer than
+ * PENDING_EXPIRE_HOURS. Returns the number of items expired.
+ *
+ * Standalone version — prefer cleanupOldItems() which does both
+ * expiry and cleanup in one pass.
+ */
+export async function expireStalePendingItems(): Promise<number> {
+  const queue = await loadQueue();
+  let expiredCount = 0;
+  const ts = now().toISOString();
+  const updatedItems = queue.items.map(item => {
+    if (item.status !== 'pending') return item;
+    if (hoursSinceCreated(item) >= PENDING_EXPIRE_HOURS) {
+      expiredCount++;
+      return { ...item, status: 'expired' as QueueItemStatus, updated_at: ts };
+    }
+    return item;
+  });
+  if (expiredCount > 0) {
+    await saveQueue({ ...queue, items: updatedItems });
+    console.log(`[review-queue] Auto-expired ${expiredCount} stale pending item(s) (>${PENDING_EXPIRE_HOURS}h)`);
+  }
+  return expiredCount;
+}
+
+/**
+ * Get only "active" pending items — those still within the expiry window.
+ * Use this for brief display instead of getPendingItems() to avoid
+ * nagging the operator with stale topics.
+ */
+export async function getActivePendingItems(): Promise<QueueItem[]> {
+  const queue = await loadQueue();
+  return queue.items.filter(i =>
+    i.status === 'pending' && hoursSinceCreated(i) < PENDING_EXPIRE_HOURS,
+  );
 }
 
 // ─── Domain-level lifecycle APIs ─────────────────────────────────────────────
 // These enforce valid state transitions and set the correct metadata fields.
 // Callers should prefer these over the generic updateItemStatus().
 
-/** Valid transitions: pending → approved, editing → approved */
+/** Valid transitions: pending → approved, editing → approved, expired → approved (revive) */
 export async function markApproved(id: string): Promise<QueueItem | null> {
   const item = await getItem(id);
   if (!item) return null;
-  if (item.status !== 'pending' && item.status !== 'editing') return null;
+  if (item.status !== 'pending' && item.status !== 'editing' && item.status !== 'expired') return null;
   return updateItemStatus(id, 'approved');
 }
 

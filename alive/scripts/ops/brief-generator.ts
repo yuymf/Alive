@@ -11,6 +11,7 @@ import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy, PersonaAlign
 import { FilteredTrend } from './trend-analyzer';
 import { formatAlignmentBriefSection } from './persona-advisor';
 import { buildCandidateContext } from './discovery-engine';
+import { PENDING_EXPIRE_HOURS, hoursSinceCreated } from './review-queue';
 import type { HealthReport } from './health-check';
 
 // ─── Brief Enrichment (optional, backward-compatible) ────────────────────────
@@ -67,22 +68,33 @@ export function formatBriefCard(
     lines.push('');
   }
 
-  // Queue items (topics ready for review)
-  const pending = queueItems.filter(i => i.status === 'pending');
-  if (pending.length > 0) {
-    lines.push(`━━ AI 今日推荐选题（${pending.length}个）━━`);
-    pending.forEach((item, idx) => {
+  // Queue items (topics ready for review) — only show active pending items
+  const allPending = queueItems.filter(i => i.status === 'pending');
+  const activePending = allPending.filter(i => hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
+  const stalePending = allPending.filter(i => hoursSinceCreated(i) >= PENDING_EXPIRE_HOURS);
+  const expired = queueItems.filter(i => i.status === 'expired');
+
+  if (activePending.length > 0) {
+    lines.push(`━━ AI 今日推荐选题（${activePending.length}个）━━`);
+    activePending.forEach((item, idx) => {
       lines.push(`${idx + 1}️⃣  ${item.topic}`);
       lines.push(`   ${item.trend_hook}`);
     });
     lines.push('');
   }
 
+  // Stale + expired: one-line summary only, no repeated nagging
+  const suppressedCount = stalePending.length + expired.length;
+  if (suppressedCount > 0) {
+    lines.push(`💤 ${suppressedCount} 条旧选题已超${PENDING_EXPIRE_HOURS}h未处理，不再提醒（/post 可查看）`);
+    lines.push('');
+  }
+
   // ─── Enrichment sections (new: 生图Prompt, 视频分镜, 人设建议) ────────────
 
   const enrichItems = enrichment?.fullQueueItems
-    ?? pending;
-  const firstPending = enrichItems.find(i => i.status === 'pending');
+    ?? activePending;
+  const firstPending = enrichItems.find(i => i.status === 'pending' && hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
 
   // 🎨 今日生图 Prompt
   if (firstPending) {
@@ -212,7 +224,7 @@ export function formatBriefCard(
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 
-  if (pending.length > 0) {
+  if (activePending.length > 0) {
     lines.push('━━ 操作 ━━');
     lines.push('回复 1~N 选择 · /post 查看详情 · 跳过 今天不发');
   } else {

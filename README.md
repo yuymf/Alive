@@ -74,23 +74,81 @@ Alive 作为 OpenClaw skill 运行，安装后会复制到 `~/.openclaw/skills/a
 ### 方式一：交互式安装（推荐）
 
 ```bash
-cd /Users/halyu/Documents/Code/Alive
+cd /path/to/Alive
 node bin/cli.js
 ```
 
 安装程序会依次：
-1. 验证 OpenClaw 目录存在
-2. 让你选择或指定 persona
-3. 复制 alive 框架到 `~/.openclaw/skills/alive/`
-4. 在 `openclaw.json` 中注册 skill（含 env 环境变量）
-5. 设置参考图（可选）
-6. 初始化记忆目录 `~/.openclaw/workspace/memory/<persona-slug>/`
-7. 注册 cron 任务（morning / tick / night）
+1. 自动加载 `.env` 文件（如存在）
+2. 运行 **环境预检**（Preflight Check），检测所有依赖
+3. 让你选择或指定 persona
+4. 复制 alive 框架到 `~/.openclaw/skills/alive/`
+5. 配置环境变量（有 `.env` 则跳过交互问答）
+6. 设置参考图（可选）
+7. 初始化记忆目录 `~/.openclaw/workspace/memory/<persona-slug>/`
+8. 注册 cron 任务（morning / tick / night）
 
 ### 方式二：指定 persona 文件
 
 ```bash
 node bin/cli.js --persona ./alive/personas/minase.yaml
+```
+
+### 方式三：使用 `.env` 文件安装（非交互式）
+
+适合服务器部署、CI/CD 或不想逐项输入 API Key 的场景：
+
+```bash
+# 1. 复制模板并填入你的 API Key
+cp .env.example .env
+vim .env
+
+# 2. 安装时自动读取 .env，跳过所有交互式问答
+node bin/cli.js --persona ./alive/personas/minase.yaml
+```
+
+也可以显式指定 `.env` 文件路径：
+
+```bash
+node bin/cli.js --persona ./persona.yaml --env-file /path/to/.env
+```
+
+`.env` 文件加载优先级：
+1. `--env-file <path>` — 命令行显式指定（最高优先）
+2. 当前工作目录下的 `.env`
+3. 项目根目录下的 `.env`
+
+> **提示**：参见项目根目录的 `.env.example` 了解完整的可配置变量。
+
+### 环境预检（Preflight Check）
+
+安装器会在执行前自动检测所有依赖，**任何必需项缺失会打印修复命令并停止安装**：
+
+| 检测项 | 类型 | 说明 |
+|--------|------|------|
+| Node.js ≥ 18 | 必需 | 运行环境 |
+| `~/.openclaw` 目录 | 必需 | OpenClaw 安装目录 |
+| git | 按需 | 平台技能自动下载需要 |
+| OpenClaw CLI | 推荐 | cron 调度与 ClawHub 技能发现 |
+| uv（Python 包管理器） | 平台技能需要 | 小红书/抖音等平台依赖 |
+| Python 3.10+ | 平台技能需要 | 通过 uv 管理 |
+| Chrome / Chromium | 平台技能需要 | 浏览器自动化 |
+| DISPLAY 环境变量 | 无头 Linux | GUI 可用性检测 |
+
+```
+  ╭─────────────────────────────────────────────╮
+  │       🔍 Preflight Dependency Check          │
+  ╰─────────────────────────────────────────────╯
+
+  ✓ Node.js v20.11.0
+  ✓ OpenClaw directory found (~/.openclaw)
+  ✓ git available
+  ✓ OpenClaw CLI available
+  ✓ uv available (uv 0.6.1)
+  ✓ Python available (Python 3.12.3)
+  ✓ Chrome available (/usr/bin/google-chrome)
+
+  All checks passed!
 ```
 
 ### 保留现有 env 配置
@@ -99,7 +157,7 @@ node bin/cli.js --persona ./alive/personas/minase.yaml
 
 | 命令 | env 行为 |
 |------|---------|
-| `install` | 跳过提示 → 保留现有值 |
+| `install` | 有 `.env` → 自动读取；无 → 交互输入，跳过则保留现有值 |
 | `update` | 自动保留现有值 |
 | `reinstall` | 会提示输入，会覆盖 |
 | `real-day-test` | 自动保留现有值 |
@@ -125,6 +183,24 @@ git clone https://github.com/yourname/alive.git
 cd alive
 npm install
 npm run build
+```
+
+### 配置环境变量
+
+```bash
+cp .env.example .env
+# 编辑 .env，填入你的 API Key
+```
+
+`.env.example` 包含所有支持的变量：
+
+```env
+LLM_API_KEY=sk-your-api-key-here
+LLM_API_BASE=https://aihubmix.com/v1
+LLM_MODEL=claude-sonnet-4-20250514
+# AIHUBMIX_API_KEY=sk-your-image-api-key
+# CHROME_BIN=/usr/bin/chromium-browser
+# CHROME_FLAGS=--no-sandbox --headless=new
 ```
 
 ### 运行（开发模式）
@@ -174,6 +250,7 @@ node bin/cli.js --persona ./my-persona.yaml
 |------|------|
 | `node bin/cli.js` | 交互式选择内置角色并安装 |
 | `node bin/cli.js --persona <path>` | 安装指定 persona（完整安装） |
+| `node bin/cli.js --persona <path> --env-file .env` | 使用 `.env` 非交互式安装 |
 | `node bin/cli.js --update --persona <path>` | 更新框架代码，**保留** env 和记忆 |
 | `node bin/cli.js --reinstall --persona <path>` | 完全重置（代码+记忆+cron） |
 | `node bin/cli.js --uninstall --persona <path>` | 卸载 skill 和 cron |
@@ -208,6 +285,62 @@ node bin/cli.js --persona ./my-persona.yaml
 | `/alive memory` | 查看记忆统计 |
 | `/alive reset all` | 重置所有状态 |
 | `/alive help` | 显示帮助 |
+
+## 无头环境 / 服务器部署
+
+Alive 的小红书、抖音等平台技能依赖 Chrome 浏览器自动化。在没有显示器的服务器（Linux headless）上部署时，安装器会自动检测并提供指引。
+
+### 环境要求
+
+```bash
+# 安装 Chrome/Chromium
+sudo apt install -y chromium-browser   # Debian/Ubuntu
+# 或
+sudo yum install -y chromium           # CentOS/RHEL
+
+# 安装 Python 包管理器 uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 无头运行方案
+
+**方案一：Chrome Headless 模式（推荐）**
+
+安装器会**自动检测** Chrome / Chromium 的安装位置（支持 PATH 搜索 + macOS `.app` 路径 + snap / flatpak 等），并将检测到的路径自动写入 `CHROME_BIN` 环境变量，无需手动配置。
+
+预检输出示例：
+```
+  ✓ Chrome auto-detected: /usr/bin/google-chrome-stable
+  ✓ CHROME_BIN auto-set → /usr/bin/google-chrome-stable
+```
+
+只有当自动检测失败时，才需要在 `.env` 中手动指定：
+
+```env
+CHROME_BIN=/usr/bin/chromium-browser
+CHROME_FLAGS=--no-sandbox --headless=new
+```
+
+> root 用户会自动加上 `--no-sandbox`；无头 Linux 环境会自动验证 Chrome headless 启动是否正常。
+
+**方案二：Xvfb 虚拟显示器**
+
+```bash
+sudo apt install -y xvfb
+export DISPLAY=:99
+Xvfb :99 -screen 0 1280x1024x24 &
+node bin/cli.js --persona ./persona.yaml --env-file .env
+```
+
+### Cookie 登录（无头环境必需）
+
+无头环境无法弹出浏览器登录，需要预先导入 cookie：
+
+1. 在有浏览器的电脑上登录小红书 / 抖音
+2. 使用浏览器扩展导出 cookie 为 JSON
+3. 将 cookie 文件放到 `~/.openclaw/skills/alive/scripts/adapters/platforms/<platform>/cookies/`
+
+安装器会在检测到无头环境时显示详细的 cookie 导入指南。
 
 ## 开发
 

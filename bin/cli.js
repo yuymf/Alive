@@ -22,6 +22,298 @@ const TEMPLATES_DIR = path.join(ALIVE_SRC, 'templates');
 
 const REFERENCE_FILES = ['front.png', 'half-body.png', 'full-body.png', 'left-profile.png'];
 
+// ─── .env File Loader ────────────────────────────────────────────────────────
+
+/**
+ * Parse a .env file and return key-value pairs.
+ * Supports: KEY=VALUE, KEY="VALUE", KEY='VALUE', comments (#), empty lines.
+ * Does NOT override existing process.env values (unless force=true).
+ */
+function loadEnvFile(envPath, { force = false } = {}) {
+  if (!fs.existsSync(envPath)) return {};
+  const content = fs.readFileSync(envPath, 'utf8');
+  const vars = {};
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    let val = trimmed.slice(eqIdx + 1).trim();
+    // Strip surrounding quotes
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    vars[key] = val;
+    if (force || !process.env[key]) {
+      process.env[key] = val;
+    }
+  }
+  return vars;
+}
+
+/**
+ * Find and load .env file from CLI args (--env-file <path>) or default locations.
+ * Search order:
+ *   1. --env-file <path> (explicit)
+ *   2. .env in CWD
+ *   3. .env in project root (alive repo root)
+ * Returns the loaded vars object (empty if no .env found).
+ */
+function autoLoadEnvFile() {
+  const cliArgs = process.argv.slice(2);
+  const envFileIdx = cliArgs.indexOf('--env-file');
+  if (envFileIdx !== -1 && envFileIdx + 1 < cliArgs.length) {
+    const envPath = path.resolve(cliArgs[envFileIdx + 1]);
+    if (!fs.existsSync(envPath)) {
+      console.error(`  ✗ --env-file specified but not found: ${envPath}`);
+      process.exit(1);
+    }
+    const vars = loadEnvFile(envPath);
+    ok(`Loaded ${Object.keys(vars).length} vars from ${envPath}`);
+    return vars;
+  }
+  // Auto-detect .env in CWD or project root
+  const candidates = [
+    path.join(process.cwd(), '.env'),
+    path.join(__dirname, '..', '.env'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      const vars = loadEnvFile(candidate);
+      if (Object.keys(vars).length > 0) {
+        ok(`Auto-loaded ${Object.keys(vars).length} vars from ${candidate}`);
+        return vars;
+      }
+    }
+  }
+  return {};
+}
+
+// ─── Preflight Dependency Check ──────────────────────────────────────────────
+
+/**
+ * Comprehensive environment preflight check.
+ * Checks ALL required dependencies upfront and reports them clearly.
+ * If any REQUIRED dependency is missing, prints instructions and exits.
+ *
+ * @param {object} options
+ * @param {boolean} options.opsEnabled - Whether ops features are needed (XHS/Douyin)
+ * @returns {{ warnings: string[] }} Non-fatal warnings
+ */
+function preflightCheck({ opsEnabled = false } = {}) {
+  console.log('\n  ╭─────────────────────────────────────────────╮');
+  console.log('  │       🔍 Preflight Dependency Check          │');
+  console.log('  ╰─────────────────────────────────────────────╯\n');
+
+  const errors = [];   // Fatal — will stop install
+  const warnings = []; // Non-fatal — install continues with reduced features
+
+  // ── 1. Node.js version ──
+  const [nodeMajor] = process.versions.node.split('.').map(Number);
+  if (nodeMajor < 18) {
+    errors.push({
+      name: 'Node.js >= 18',
+      status: `current: v${process.versions.node}`,
+      fix: 'Install Node.js 18+: https://nodejs.org/ or use nvm: nvm install 18',
+    });
+  } else {
+    ok(`Node.js v${process.versions.node}`);
+  }
+
+  // ── 2. OpenClaw directory (~/.openclaw) ──
+  if (!fs.existsSync(OPENCLAW_DIR)) {
+    errors.push({
+      name: 'OpenClaw (~/.openclaw)',
+      status: 'not found',
+      fix: 'Install OpenClaw first: https://openclaw.ai',
+    });
+  } else {
+    ok(`OpenClaw directory found (~/.openclaw)`);
+  }
+
+  // ── 3. Git ──
+  let gitAvailable = false;
+  try {
+    execSync('git --version', { stdio: 'ignore', timeout: 5000 });
+    gitAvailable = true;
+    ok('git available');
+  } catch {
+    if (opsEnabled) {
+      errors.push({
+        name: 'git',
+        status: 'not found',
+        fix: 'Install git: sudo apt install -y git  (required for platform skills auto-download)',
+      });
+    } else {
+      warnings.push('git not found — auto-download of platform skills disabled');
+      warn('git not found — auto-download of platform skills will be disabled');
+    }
+  }
+
+  // ── 4. OpenClaw CLI (optional but recommended) ──
+  const clawAvailable = isOpenClawCLIAvailable();
+  if (clawAvailable) {
+    ok('OpenClaw CLI available');
+  } else {
+    warnings.push('OpenClaw CLI not found — cron scheduling & ClawHub skills disabled');
+    warn('OpenClaw CLI not found — cron scheduling & ClawHub skills will be disabled');
+  }
+
+  // ── Ops-specific checks (only when ops enabled) ──
+  if (opsEnabled) {
+    // ── 5. uv (Python package manager) ──
+    let uvAvailable = false;
+    try {
+      const uvVer = execSync('uv --version', { encoding: 'utf8', timeout: 5000 }).trim();
+      uvAvailable = true;
+      ok(`uv available (${uvVer})`);
+    } catch {
+      errors.push({
+        name: 'uv (Python package manager)',
+        status: 'not found',
+        fix: 'Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh\n         Then restart your shell or run: source $HOME/.local/bin/env',
+      });
+    }
+
+    // ── 6. Python 3.10+ ──
+    if (uvAvailable) {
+      try {
+        const pyVer = execSync('uv run python --version', { encoding: 'utf8', timeout: 10000 }).trim();
+        ok(`Python available (${pyVer})`);
+      } catch {
+        try {
+          const pyVer = execSync('python3 --version', { encoding: 'utf8', timeout: 5000 }).trim();
+          ok(`Python available (${pyVer})`);
+        } catch {
+          errors.push({
+            name: 'Python 3.10+',
+            status: 'not found',
+            fix: 'Install Python 3.10+: sudo apt install -y python3 python3-venv',
+          });
+        }
+      }
+    }
+
+    // ── 7. Chrome / Chromium (auto-detect & persist) ──
+    let chromeFound = false;
+    let detectedChromePath = null;
+
+    // Well-known binary names to search via $PATH
+    const chromeCandidates = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome'];
+    // Well-known absolute paths for macOS / snap / flatpak / Windows WSL
+    const chromeAbsolutePaths = [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',        // macOS
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',                  // macOS Chromium
+      '/usr/bin/google-chrome-stable',                                       // Linux apt
+      '/usr/bin/chromium-browser',                                           // Debian/Ubuntu
+      '/usr/bin/chromium',                                                   // Arch/Fedora
+      '/snap/bin/chromium',                                                  // snap
+      '/usr/lib/chromium/chromium',                                          // some distros
+    ];
+
+    // 1) Check explicit CHROME_BIN first
+    if (process.env.CHROME_BIN) {
+      try {
+        execSync(`"${process.env.CHROME_BIN}" --version`, { stdio: 'ignore', timeout: 5000 });
+        chromeFound = true;
+        detectedChromePath = process.env.CHROME_BIN;
+        ok(`Chrome available (CHROME_BIN=${process.env.CHROME_BIN})`);
+      } catch {
+        warn(`CHROME_BIN set but not working: ${process.env.CHROME_BIN}`);
+      }
+    }
+
+    // 2) Search $PATH candidates
+    if (!chromeFound) {
+      for (const bin of chromeCandidates) {
+        try {
+          const resolved = execSync(`which ${bin}`, { encoding: 'utf8', timeout: 2000 }).trim();
+          if (resolved) {
+            chromeFound = true;
+            detectedChromePath = resolved;
+            ok(`Chrome auto-detected: ${resolved}`);
+            break;
+          }
+        } catch { /* try next */ }
+      }
+    }
+
+    // 3) Search well-known absolute paths (macOS .app bundles, snap, etc.)
+    if (!chromeFound) {
+      for (const absPath of chromeAbsolutePaths) {
+        if (fs.existsSync(absPath)) {
+          try {
+            execSync(`"${absPath}" --version`, { stdio: 'ignore', timeout: 5000 });
+            chromeFound = true;
+            detectedChromePath = absPath;
+            ok(`Chrome auto-detected: ${absPath}`);
+            break;
+          } catch { /* exists but won't run */ }
+        }
+      }
+    }
+
+    // Persist the detected path so downstream code (setupPlatformBridgeSkills,
+    // Python CDP scripts) can use it without re-scanning.
+    if (chromeFound && detectedChromePath) {
+      if (!process.env.CHROME_BIN) {
+        process.env.CHROME_BIN = detectedChromePath;
+        ok(`CHROME_BIN auto-set → ${detectedChromePath}`);
+      }
+    }
+
+    if (!chromeFound) {
+      const isMac = os.platform() === 'darwin';
+      errors.push({
+        name: 'Chrome / Chromium',
+        status: 'not found',
+        fix: isMac
+          ? 'Install Chrome: brew install --cask google-chrome'
+          : [
+              'Install Chrome/Chromium:',
+              '    Ubuntu/Debian: sudo apt install -y chromium-browser',
+              '    Or: wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo dpkg -i google-chrome-stable_current_amd64.deb',
+            ].join('\n         '),
+      });
+    }
+
+    // ── 8. Headless display check (Xvfb / DISPLAY) ──
+    const isLinux = os.platform() === 'linux';
+    const hasDisplay = !!process.env.DISPLAY || !!process.env.WAYLAND_DISPLAY;
+    if (isLinux && !hasDisplay) {
+      // Check if Chrome supports --headless=new (modern headless mode)
+      // This is informational — not a hard error since Chrome can run headless
+      warnings.push('No DISPLAY set — Chrome will run in headless mode. Login flows may need special handling.');
+      warn('No DISPLAY set — Chrome will run in headless mode');
+      warn('For login flows, consider: sudo apt install -y xvfb && Xvfb :99 & export DISPLAY=:99');
+    }
+  }
+
+  // ── Report ──
+  if (errors.length > 0) {
+    console.log('\n  ┌──────────────────────────────────────────────┐');
+    console.log('  │  ✗ MISSING REQUIRED DEPENDENCIES              │');
+    console.log('  └──────────────────────────────────────────────┘\n');
+    for (const err of errors) {
+      console.log(`  ✗ ${err.name}: ${err.status}`);
+      console.log(`    Fix: ${err.fix}\n`);
+    }
+    console.log('  Install the dependencies above, then re-run the command.\n');
+    process.exit(1);
+  }
+
+  if (warnings.length > 0) {
+    console.log('');
+    ok(`Preflight check passed (${warnings.length} warning${warnings.length > 1 ? 's' : ''})`);
+  } else {
+    console.log('');
+    ok('Preflight check passed — all dependencies OK');
+  }
+
+  return { warnings };
+}
+
 // External ClawHub skills required by ops scripts
 const REQUIRED_CLAWHUB_SKILLS = [
   'daily-hot-news',      // trend-analyzer: 微博/知乎/B站热榜
@@ -416,17 +708,31 @@ function installRequiredClawHubSkills() {
  *   - check-login (verifies Chrome can start and reach the site)
  *   - Non-interactive: skips login prompt, just verifies the CLI works
  *
+ * Headless server improvements:
+ *   - Auto-detects headless (no DISPLAY on Linux) and adjusts Chrome flags
+ *   - Passes --no-sandbox flag when running as root
+ *   - Provides clear cookie-import instructions for headless environments
+ *   - Distinguishes "Chrome won't start" from "not logged in" errors
+ *
  * @param {boolean} nonInteractive - Skip prompts (CI / headless install)
  */
 function setupPlatformBridgeSkills(nonInteractive = false) {
   const HOME = process.env.HOME;
   const skillsBase = path.join(HOME, '.openclaw', 'skills');
 
+  // Detect headless environment
+  const isLinux = os.platform() === 'linux';
+  const hasDisplay = !!process.env.DISPLAY || !!process.env.WAYLAND_DISPLAY;
+  const isHeadless = isLinux && !hasDisplay;
+  const isRoot = process.getuid && process.getuid() === 0;
+
+  if (isHeadless) {
+    log('Headless environment detected — adjusting platform skill setup...');
+  }
+
   // Verify uv is available (required to run Python skills)
-  let uvAvailable = false;
   try {
     execSync('uv --version', { stdio: 'ignore', timeout: 5000 });
-    uvAvailable = true;
   } catch {
     warn('uv not found — Python platform skills (XHS, Douyin) will not work.');
     warn('Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh');
@@ -435,25 +741,85 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
 
   // Verify Chrome is available (required for CDP)
   let chromeAvailable = false;
-  try {
-    const chromeBin = process.env.CHROME_BIN ||
-      (() => {
-        for (const c of ['google-chrome', 'chromium', 'chromium-browser', 'chrome']) {
-          try { execSync(`which ${c}`, { stdio: 'ignore', timeout: 2000 }); return c; } catch { /* next */ }
+  let chromeBinPath = process.env.CHROME_BIN || null;
+
+  // If preflightCheck already found Chrome and set CHROME_BIN, skip re-scanning
+  if (chromeBinPath) {
+    try {
+      execSync(`"${chromeBinPath}" --version`, { stdio: 'ignore', timeout: 5000 });
+      chromeAvailable = true;
+    } catch {
+      chromeBinPath = null; // stale CHROME_BIN, re-detect
+    }
+  }
+
+  // Re-detect if needed (covers direct calls without preflightCheck)
+  if (!chromeBinPath) {
+    const candidates = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome'];
+    const absPathFallbacks = [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/chromium',
+      '/snap/bin/chromium',
+    ];
+    for (const c of candidates) {
+      try {
+        const resolved = execSync(`which ${c}`, { encoding: 'utf8', timeout: 2000 }).trim();
+        if (resolved) { chromeBinPath = resolved; break; }
+      } catch { /* next */ }
+    }
+    if (!chromeBinPath) {
+      for (const p of absPathFallbacks) {
+        if (fs.existsSync(p)) { chromeBinPath = p; break; }
+      }
+    }
+    if (chromeBinPath) {
+      chromeAvailable = true;
+      process.env.CHROME_BIN = chromeBinPath;
+      ok(`Chrome auto-detected: ${chromeBinPath}`);
+    }
+  }
+
+  if (chromeBinPath) {
+    chromeAvailable = true;
+    // On headless Linux, verify Chrome can actually start
+    if (isHeadless) {
+      try {
+        const chromeFlags = isRoot ? '--headless=new --no-sandbox --disable-gpu' : '--headless=new --disable-gpu';
+        execSync(`"${chromeBinPath}" ${chromeFlags} --dump-dom about:blank`, {
+          stdio: 'ignore',
+          timeout: 10000,
+        });
+        ok(`Chrome verified in headless mode: ${chromeBinPath}`);
+      } catch (err) {
+        warn(`Chrome found at ${chromeBinPath} but headless test failed: ${err.message}`);
+        if (isRoot) {
+          warn('Running as root — ensure --no-sandbox is passed to Chrome');
+          warn('Try: CHROME_FLAGS="--no-sandbox" or set in the platform skill config');
         }
-        return null;
-      })();
-    if (chromeBin) chromeAvailable = true;
-  } catch { /* ignore */ }
+        // Chrome binary exists but may not work — continue anyway, health check will catch it
+      }
+    }
+  }
 
   if (!chromeAvailable) {
     warn('Chrome/Chromium not found — XHS and Douyin CDP features will not work.');
-    warn('Install: sudo apt install chromium-browser  OR  set CHROME_BIN env var');
+    warn('Install: sudo apt install -y chromium-browser  OR  set CHROME_BIN env var');
   }
+
+  // Ensure git is available for auto-download
+  let gitAvailable = false;
+  try {
+    execSync('git --version', { stdio: 'ignore', timeout: 5000 });
+    gitAvailable = true;
+  } catch { /* git not found */ }
 
   const PLATFORM_SKILLS = [
     {
       name: 'xiaohongshu-skills',
+      repo: 'https://github.com/autoclaw-cc/xiaohongshu-skills.git',
       dir: path.join(skillsBase, 'xiaohongshu-skills'),
       cli: path.join(skillsBase, 'xiaohongshu-skills', 'scripts', 'cli.py'),
       checkCmd: ['check-login'],
@@ -461,6 +827,7 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
     },
     {
       name: 'douyin-skills',
+      repo: 'https://github.com/yuymf/douyin-skills.git',
       dir: path.join(skillsBase, 'douyin-skills'),
       cli: path.join(skillsBase, 'douyin-skills', 'scripts', 'cli.py'),
       checkCmd: ['check-login'],
@@ -469,28 +836,65 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
   ];
 
   for (const skill of PLATFORM_SKILLS) {
+    // Auto-download: if skill directory doesn't exist, clone from GitHub
     if (!fs.existsSync(skill.dir)) {
-      warn(`${skill.name} not found at ${skill.dir} — skipping`);
-      warn(`Clone or copy the skill to ${skill.dir} to enable this platform`);
-      continue;
-    }
-    if (!fs.existsSync(skill.cli)) {
-      warn(`${skill.name} CLI not found at ${skill.cli}`);
-      continue;
+      if (!gitAvailable) {
+        warn(`${skill.name} not found at ${skill.dir} and git is not available — skipping`);
+        warn(`Install git, then re-run, or manually clone: git clone ${skill.repo} ${skill.dir}`);
+        continue;
+      }
+      log(`${skill.name} not found — downloading from ${skill.repo}...`);
+      try {
+        // Ensure parent directory exists
+        fs.mkdirSync(skillsBase, { recursive: true });
+        execSync(`git clone --depth 1 ${skill.repo} ${skill.dir}`, {
+          stdio: 'pipe',
+          timeout: 120000,
+          env: { ...process.env },
+        });
+        ok(`${skill.name} downloaded successfully`);
+      } catch (err) {
+        warn(`${skill.name} download failed: ${err.message}`);
+        warn(`Manual install: git clone ${skill.repo} ${skill.dir}`);
+        continue;
+      }
+    } else {
+      // Directory exists — try to update (git pull) to get latest version
+      const gitDir = path.join(skill.dir, '.git');
+      if (gitAvailable && fs.existsSync(gitDir)) {
+        try {
+          execSync('git pull --ff-only', {
+            cwd: skill.dir,
+            stdio: 'pipe',
+            timeout: 30000,
+          });
+          ok(`${skill.name} updated to latest`);
+        } catch {
+          // pull failed (offline, dirty state, etc.) — not fatal, continue with current version
+          ok(`${skill.name} directory found (update skipped)`);
+        }
+      } else {
+        ok(`${skill.name} directory found`);
+      }
     }
 
-    ok(`${skill.name} directory found`);
+    if (!fs.existsSync(skill.cli)) {
+      warn(`${skill.name} CLI not found at ${skill.cli} — directory may be incomplete`);
+      warn(`Try: rm -rf ${skill.dir} && git clone ${skill.repo} ${skill.dir}`);
+      continue;
+    }
 
     // Install Python dependencies via uv
     try {
       execSync(`uv sync --directory ${skill.dir}`, {
         stdio: 'pipe',
-        timeout: 60000,
+        timeout: 120000,
         env: { ...process.env },
       });
       ok(`${skill.name} Python dependencies installed`);
     } catch (err) {
       warn(`${skill.name} uv sync failed: ${err.message}`);
+      warn('Check your Python version (>= 3.10) and internet connection');
     }
 
     // Health check: verify CLI starts and Chrome is reachable (headless safe)
@@ -500,16 +904,29 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
     }
 
     try {
+      // Build Chrome env for headless environments
+      const chromeEnv = { ...process.env };
+      if (isHeadless) {
+        chromeEnv.CI = '1';
+        // Pass headless Chrome flags if not already set
+        if (!chromeEnv.CHROME_FLAGS && isRoot) {
+          chromeEnv.CHROME_FLAGS = '--no-sandbox';
+        }
+        if (chromeBinPath && !chromeEnv.CHROME_BIN) {
+          chromeEnv.CHROME_BIN = chromeBinPath;
+        }
+      }
+      if (nonInteractive) {
+        chromeEnv.CI = '1';
+      }
+
       const result = require('child_process').spawnSync(
         'uv',
         ['run', '--directory', skill.dir, 'python', skill.cli, ...skill.checkCmd],
         {
           encoding: 'utf8',
           timeout: 30000,
-          env: {
-            ...process.env,
-            CI: nonInteractive ? '1' : (process.env.CI || ''),
-          },
+          env: chromeEnv,
         },
       );
       const output = (result.stdout || '') + (result.stderr || '');
@@ -520,7 +937,26 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
             ok(`${skill.name} health check: logged in ✓`);
           } else {
             warn(`${skill.name} health check: Chrome started but not logged in`);
-            warn(skill.envNote);
+            if (isHeadless) {
+              console.log('');
+              console.log('  ┌─ Headless Login Guide ─────────────────────────────────────┐');
+              console.log('  │ On a headless server, you cannot login interactively.       │');
+              console.log('  │                                                             │');
+              console.log('  │ Option 1: Cookie Import (recommended)                       │');
+              console.log('  │   1. Login on your local machine (with browser)              │');
+              console.log('  │   2. Copy cookies to server:                                 │');
+              console.log(`  │      scp ~/.openclaw/skills/${skill.name}/cookies.json \\   │`);
+              console.log('  │          server:~/.openclaw/skills/' + skill.name + '/      │');
+              console.log('  │                                                             │');
+              console.log('  │ Option 2: Virtual Display (Xvfb)                            │');
+              console.log('  │   sudo apt install -y xvfb                                  │');
+              console.log('  │   xvfb-run uv run --directory ~/.openclaw/skills/           │');
+              console.log(`  │     ${skill.name} python scripts/cli.py login             │`);
+              console.log('  └─────────────────────────────────────────────────────────────┘');
+              console.log('');
+            } else {
+              warn(skill.envNote);
+            }
           }
         } catch {
           ok(`${skill.name} health check: CLI responded`);
@@ -529,15 +965,33 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
         warn(`${skill.name} health check failed (exit ${result.status})`);
         if (output.includes('未找到 Chrome') || output.includes('Chrome not found')) {
           warn('Chrome not found — set CHROME_BIN env var or install Chrome');
+        } else if (output.includes('no-sandbox') || output.includes('Running as root without --no-sandbox')) {
+          warn('Chrome sandbox error — try: export CHROME_FLAGS="--no-sandbox"');
+          warn('Or run Chrome with: --no-sandbox flag');
         } else if (output.includes('ModuleNotFoundError') || output.includes('ImportError')) {
           warn(`${skill.name} missing Python dependencies — re-run: uv sync --directory ${skill.dir}`);
+        } else if (output.includes('DISPLAY') || output.includes('cannot open display')) {
+          warn('No display available — this is expected on headless servers');
+          warn('Chrome should run in headless mode. Set: CHROME_FLAGS="--headless=new"');
         } else {
-          warn(`Output: ${output.slice(0, 200)}`);
+          warn(`Output: ${output.slice(0, 300)}`);
         }
       }
     } catch (err) {
       warn(`${skill.name} health check error: ${err.message}`);
     }
+  }
+
+  // Summary for headless environments
+  if (isHeadless) {
+    console.log('');
+    log('═══ Headless Server Notes ═══');
+    console.log('  Platform skills (XHS/Douyin) require logged-in cookies to work.');
+    console.log('  On a headless server, the recommended approach is:');
+    console.log('    1. Login on a machine with a browser (your local Mac/PC)');
+    console.log('    2. Export and copy the cookies.json to the server');
+    console.log('    3. Alternatively, use Xvfb: sudo apt install xvfb && xvfb-run <login-command>');
+    console.log('');
   }
 }
 
@@ -1033,17 +1487,11 @@ async function install() {
   console.log('\n  Alive Framework — Install Digital Life Persona');
   console.log('  ===============================================\n');
 
-  // Step 1: Verify OpenClaw
-  log('Step 1/7: Verifying OpenClaw installation...');
-  if (!fs.existsSync(OPENCLAW_DIR)) {
-    console.error('  ✗ OpenClaw not found at ~/.openclaw');
-    console.error('    Install OpenClaw first: https://openclaw.ai');
-    process.exit(1);
-  }
-  ok('OpenClaw found');
+  // Step 0: Load .env file (before anything else)
+  const envVars = autoLoadEnvFile();
 
-  // Step 2: Load persona config
-  log('Step 2/7: Loading persona configuration...');
+  // Step 1: Load persona config (needed for preflight to know if ops is enabled)
+  log('Step 1/8: Loading persona configuration...');
   let personaPath = getPersonaArg();
   let resolvedPersonaPath;
 
@@ -1084,11 +1532,15 @@ async function install() {
   const skillSlug = 'alive';
   ok(`Persona: ${personaName} (persona: ${personaSlug}, skill: ${skillSlug})`);
 
+  // Step 1.5: Preflight dependency check — MUST pass before continuing
+  const opsEnabled = !!(persona.ops && persona.ops.enabled);
+  preflightCheck({ opsEnabled });
+
   const skillDest = path.join(SKILLS_DIR, skillSlug);
   const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
 
-  // Step 2.5: Build TypeScript → dist-alive (ensures JS is up-to-date)
-  log('Step 2.5/7: Building TypeScript...');
+  // Step 2: Build TypeScript → dist-alive (ensures JS is up-to-date)
+  log('Step 2/8: Building TypeScript...');
   const tsconfig = path.join(__dirname, '..', 'tsconfig.alive.json');
   if (fs.existsSync(tsconfig)) {
     try {
@@ -1107,7 +1559,7 @@ async function install() {
   }
 
   // Step 3: Copy alive framework files
-  log('Step 3/7: Installing alive framework files...');
+  log('Step 3/8: Installing alive framework files...');
   if (fs.existsSync(skillDest)) {
     warn(`Existing skill found at ${skillDest} — overwriting`);
   }
@@ -1137,7 +1589,7 @@ async function install() {
   }
 
   // Step 4: Register in OpenClaw config
-  log('Step 4/7: Registering skill in OpenClaw config...');
+  log('Step 4/8: Registering skill in OpenClaw config...');
 
   // Load any existing env keys so we can preserve them if the user presses Enter
   let existingEnv = {};
@@ -1153,28 +1605,50 @@ async function install() {
     } catch { /* fresh config */ }
   }
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  // Determine env values: .env file > existing config > interactive prompt
+  // If .env file provided required keys, skip interactive prompts entirely
+  const envFromFile = envVars;
+  const hasEnvFile = Object.keys(envFromFile).length > 0;
 
-  const hintLlmKey = maskSecret(existingEnv.LLM_API_KEY);
-  const hintBase = existingEnv.LLM_API_BASE || '';
-  const hintModel = existingEnv.LLM_MODEL || '';
-  const hintImageKey = maskSecret(existingEnv.AIHUBMIX_API_KEY);
+  let llmApiKey, llmApiBase, llmModel, imageApiKey;
 
-  console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
-  const llmApiKey = await ask(rl, hintLlmKey
-    ? `  LLM_API_KEY (current: ${hintLlmKey}, Enter to keep): `
-    : '  LLM_API_KEY (press Enter to skip): ');
-  const llmApiBase = await ask(rl, hintBase
-    ? `  LLM_API_BASE (current: ${hintBase}, Enter to keep): `
-    : '  LLM_API_BASE (default: https://aihubmix.com/v1): ');
-  const llmModel = await ask(rl, hintModel
-    ? `  LLM_MODEL (current: ${hintModel}, Enter to keep): `
-    : '  LLM_MODEL (default: claude-sonnet-4-20250514): ');
+  if (hasEnvFile && (envFromFile.LLM_API_KEY || existingEnv.LLM_API_KEY)) {
+    // Non-interactive: use .env values, falling back to existing config
+    llmApiKey = envFromFile.LLM_API_KEY || '';
+    llmApiBase = envFromFile.LLM_API_BASE || '';
+    llmModel = envFromFile.LLM_MODEL || '';
+    imageApiKey = envFromFile.AIHUBMIX_API_KEY || '';
+    ok('Using env from .env file (non-interactive mode)');
+    if (llmApiKey) ok(`LLM_API_KEY: ${maskSecret(llmApiKey || existingEnv.LLM_API_KEY)}`);
+    if (llmApiBase || existingEnv.LLM_API_BASE) ok(`LLM_API_BASE: ${llmApiBase || existingEnv.LLM_API_BASE}`);
+    if (llmModel || existingEnv.LLM_MODEL) ok(`LLM_MODEL: ${llmModel || existingEnv.LLM_MODEL}`);
+  } else {
+    // Interactive mode: prompt for each key
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  console.log('\n  Optional: Configure image generation API key (for reference image generation):');
-  const imageApiKey = await ask(rl, hintImageKey
-    ? `  AIHUBMIX_API_KEY (current: ${hintImageKey}, Enter to keep): `
-    : '  AIHUBMIX_API_KEY (press Enter to skip): ');
+    const hintLlmKey = maskSecret(existingEnv.LLM_API_KEY);
+    const hintBase = existingEnv.LLM_API_BASE || '';
+    const hintModel = existingEnv.LLM_MODEL || '';
+    const hintImageKey = maskSecret(existingEnv.AIHUBMIX_API_KEY);
+
+    console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
+    llmApiKey = await ask(rl, hintLlmKey
+      ? `  LLM_API_KEY (current: ${hintLlmKey}, Enter to keep): `
+      : '  LLM_API_KEY (press Enter to skip): ');
+    llmApiBase = await ask(rl, hintBase
+      ? `  LLM_API_BASE (current: ${hintBase}, Enter to keep): `
+      : '  LLM_API_BASE (default: https://aihubmix.com/v1): ');
+    llmModel = await ask(rl, hintModel
+      ? `  LLM_MODEL (current: ${hintModel}, Enter to keep): `
+      : '  LLM_MODEL (default: claude-sonnet-4-20250514): ');
+
+    console.log('\n  Optional: Configure image generation API key (for reference image generation):');
+    imageApiKey = await ask(rl, hintImageKey
+      ? `  AIHUBMIX_API_KEY (current: ${hintImageKey}, Enter to keep): `
+      : '  AIHUBMIX_API_KEY (press Enter to skip): ');
+
+    rl.close();
+  }
 
   config.skills = config.skills || {};
   config.skills.entries = config.skills.entries || {};
@@ -1199,23 +1673,24 @@ async function install() {
   ok('openclaw.json updated (entries)');
 
   // Step 5: Setup reference images
-  log('Step 5/7: Setting up reference images for AI image generation...');
+  log('Step 5/8: Setting up reference images for AI image generation...');
   const envForRefs = {
     ...(imageApiKey && { AIHUBMIX_API_KEY: imageApiKey }),
   };
+  const rlForRefs = hasEnvFile ? null : readline.createInterface({ input: process.stdin, output: process.stdout });
   await setupReferenceImages({
     persona,
     personaYamlDir: path.dirname(resolvedPersonaPath),
     skillDest,
     memoryDir,
-    rl,
+    rl: rlForRefs,
     env: envForRefs,
+    nonInteractive: hasEnvFile,
   });
-
-  rl.close();
+  if (rlForRefs) rlForRefs.close();
 
   // Step 6: Initialize memory
-  log('Step 6/7: Setting up memory directories...');
+  log('Step 6/8: Setting up memory directories...');
   fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
   const today = new Date().toISOString().slice(0, 10);
 
@@ -2522,6 +2997,7 @@ if (args.includes('--help') || args.includes('-h')) {
   Usage:
     alive                                        Interactive persona selection (built-in presets)
     alive --persona <path>                       Install a persona (full)
+    alive --persona <path> --env-file .env       Install with env vars from .env file (non-interactive)
     alive --update --persona <path>              Update code only (preserves memory & config)
     alive --reinstall --persona <path>           Wipe everything & reinstall from scratch
     alive --uninstall --persona <path>           Uninstall a persona
@@ -2533,6 +3009,21 @@ if (args.includes('--help') || args.includes('-h')) {
     alive --real-day-test --persona <path>       Uninstall + reinstall + run full day E2E test
     alive --real-day-test --persona <path> --dry-run   Same but skip actual API calls
     alive --help                                 Show this help
+
+  Environment Configuration:
+    The installer reads API keys from these sources (in priority order):
+      1. --env-file <path>    Explicit .env file path
+      2. .env in current dir  Auto-detected
+      3. .env in repo root    Auto-detected
+      4. Interactive prompts   If no .env file found
+
+    .env file format:
+      LLM_API_KEY=sk-your-key-here
+      LLM_API_BASE=https://aihubmix.com/v1
+      LLM_MODEL=claude-sonnet-4-20250514
+      AIHUBMIX_API_KEY=sk-your-image-key    # optional, for reference image generation
+
+    For headless servers, create a .env file before running install to skip prompts.
 
   The skill is always installed at ~/.openclaw/skills/alive/.
   Each persona gets its own memory directory at ~/.openclaw/workspace/memory/<persona-slug>/.
@@ -2549,7 +3040,8 @@ if (args.includes('--help') || args.includes('-h')) {
 
   Examples:
     alive                                          # Interactive selection
-    alive --persona ./persona.yaml                 # Custom persona
+    alive --persona ./persona.yaml                 # Custom persona (interactive)
+    alive --persona ./persona.yaml --env-file .env # Non-interactive with .env
     alive --switch-persona --persona ./another-persona.yaml
     alive --create                                 # Random new persona
     alive --create --name "陈小鱼" --tagline "爱吃甜食的插画师"

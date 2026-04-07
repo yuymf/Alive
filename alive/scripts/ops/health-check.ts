@@ -9,7 +9,7 @@ import { now } from '../utils/time-utils';
 import type {
   PerformanceLog, AnalysisLog, ContentPatterns,
 } from '../utils/types';
-import { loadQueue } from './review-queue';
+import { loadQueue, PENDING_EXPIRE_HOURS, hoursSinceCreated } from './review-queue';
 
 export interface HealthCheckItem {
   name: string;
@@ -36,11 +36,18 @@ export async function runHealthCheck(): Promise<HealthReport> {
   // 1. Review queue — any published items?
   const queue = await loadQueue();
   const published = queue.items.filter(i => i.status === 'published');
-  const pending = queue.items.filter(i => i.status === 'pending');
+  const allPending = queue.items.filter(i => i.status === 'pending');
+  const activePending = allPending.filter(i => hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
+  const stalePending = allPending.filter(i => hoursSinceCreated(i) >= PENDING_EXPIRE_HOURS);
+  const expired = queue.items.filter(i => i.status === 'expired');
+
   if (published.length > 0) {
     items.push({ name: '发布记录', status: 'ok', detail: `${published.length} 条已发布` });
-  } else if (pending.length > 0) {
-    items.push({ name: '发布记录', status: 'warn', detail: `${pending.length} 条待审核，0 条已发布` });
+  } else if (activePending.length > 0) {
+    items.push({ name: '发布记录', status: 'warn', detail: `${activePending.length} 条待审核，0 条已发布` });
+  } else if (stalePending.length > 0 || expired.length > 0) {
+    const totalStale = stalePending.length + expired.length;
+    items.push({ name: '发布记录', status: 'warn', detail: `${totalStale} 条已过期（超${PENDING_EXPIRE_HOURS}h未处理），0 条已发布` });
   } else {
     items.push({ name: '发布记录', status: 'missing', detail: '审核队列为空' });
   }

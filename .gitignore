@@ -7,6 +7,10 @@ dist-alive/
 .rerun-worktree
 .superpowers/
 
+# Secrets
+.env
+!.env.example
+
 # Runtime data
 ig-session.json
 __pycache__/

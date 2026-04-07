@@ -9,6 +9,7 @@ import {
   getItem, cleanupOldItems, DEFAULT_REVIEW_QUEUE,
   getPendingItems, updateItemContent,
   markApproved, markDiscarded, markPublished, markPerformanceTracked,
+  expireStalePendingItems, getActivePendingItems, PENDING_EXPIRE_HOURS,
 } from '../../scripts/ops/review-queue';
 import { QueueItem } from '../../scripts/utils/types';
 
@@ -320,5 +321,115 @@ describe('markPerformanceTracked', () => {
     const item = await addItem({ topic: 'a', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
     const result = await markPerformanceTracked(item.id);
     expect(result).toBeNull();
+  });
+});
+
+// ─── Pending expiry tests ────────────────────────────────────────────────────
+
+describe('expireStalePendingItems', () => {
+  it('expires pending items older than PENDING_EXPIRE_HOURS', async () => {
+    // Create item, then backdate created_at to simulate old pending
+    const item = await addItem({ topic: 'stale', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    const q = await loadQueue();
+    const oldDate = new Date('2026-03-26T10:00:00Z').toISOString(); // 4 days before now (2026-03-30)
+    await saveQueue({
+      ...q,
+      items: [{ ...q.items[0], created_at: oldDate }],
+    });
+
+    const count = await expireStalePendingItems();
+    expect(count).toBe(1);
+
+    const after = await loadQueue();
+    expect(after.items[0].status).toBe('expired');
+  });
+
+  it('does not expire fresh pending items', async () => {
+    await addItem({ topic: 'fresh', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    const count = await expireStalePendingItems();
+    expect(count).toBe(0);
+
+    const after = await loadQueue();
+    expect(after.items[0].status).toBe('pending');
+  });
+
+  it('does not touch non-pending items', async () => {
+    const item = await addItem({ topic: 'approved', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    await updateItemStatus(item.id, 'approved');
+    // Backdate created_at
+    const q = await loadQueue();
+    await saveQueue({
+      ...q,
+      items: [{ ...q.items[0], created_at: '2026-03-20T00:00:00Z' }],
+    });
+
+    const count = await expireStalePendingItems();
+    expect(count).toBe(0);
+
+    const after = await loadQueue();
+    expect(after.items[0].status).toBe('approved');
+  });
+});
+
+describe('getActivePendingItems', () => {
+  it('returns only pending items within the expiry window', async () => {
+    // Add two pending items: one fresh, one old
+    const fresh = await addItem({ topic: 'fresh', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    const stale = await addItem({ topic: 'stale', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+
+    // Backdate the stale item
+    const q = await loadQueue();
+    const staleIdx = q.items.findIndex(i => i.id === stale.id);
+    const updatedItems = [...q.items];
+    updatedItems[staleIdx] = { ...updatedItems[staleIdx], created_at: '2026-03-26T00:00:00Z' };
+    await saveQueue({ ...q, items: updatedItems });
+
+    const active = await getActivePendingItems();
+    expect(active).toHaveLength(1);
+    expect(active[0].id).toBe(fresh.id);
+  });
+});
+
+describe('cleanupOldItems with expiry integration', () => {
+  it('auto-expires stale pending and removes old expired items in one pass', async () => {
+    // Item 1: stale pending (created 4 days ago) → should be expired
+    const stalePending = await addItem({ topic: 'stale-pending', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    // Item 2: old expired (updated 10 days ago) → should be removed
+    const oldExpired = await addItem({ topic: 'old-expired', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    // Item 3: fresh pending → should stay
+    const fresh = await addItem({ topic: 'fresh', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+
+    const q = await loadQueue();
+    const items = q.items.map(item => {
+      if (item.id === stalePending.id) {
+        return { ...item, created_at: '2026-03-26T00:00:00Z' };
+      }
+      if (item.id === oldExpired.id) {
+        return { ...item, status: 'expired' as const, updated_at: '2026-03-15T00:00:00Z' };
+      }
+      return item;
+    });
+    await saveQueue({ ...q, items });
+
+    await cleanupOldItems();
+
+    const after = await loadQueue();
+    // old-expired should be cleaned (>7 days), stale-pending should be expired but kept (<7 days)
+    expect(after.items).toHaveLength(2);
+    const staleItem = after.items.find(i => i.id === stalePending.id);
+    expect(staleItem?.status).toBe('expired');
+    const freshItem = after.items.find(i => i.id === fresh.id);
+    expect(freshItem?.status).toBe('pending');
+    // old-expired should be gone
+    expect(after.items.find(i => i.id === oldExpired.id)).toBeUndefined();
+  });
+});
+
+describe('markApproved from expired', () => {
+  it('allows expired → approved (revive stale topic)', async () => {
+    const item = await addItem({ topic: 'revive', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    await updateItemStatus(item.id, 'expired');
+    const result = await markApproved(item.id);
+    expect(result?.status).toBe('approved');
   });
 });

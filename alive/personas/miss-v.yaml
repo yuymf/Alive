@@ -135,62 +135,41 @@ ops:
   # ─── 结构化对标账号画像 ─────────────────────────────────────────────────
   competitors:
     # === 硬核电竞解说 ===
-    - name: "灵儿双语解说"
+    - name: "天云"
       platform: "douyin"
-      external_id: "MS4wLjABAAAAPsz-XDNrels90bU94cLKVrLIL97qUp1n8z7DpdFV1RY"
       tag: "硬核电竞解说"
-      tag_desc: "KPL官方双语解说，知性犀利，BP拆解透彻，温柔有力量、中英文丝滑切换"
-      audience: "理性电竞粉、职场女性/大学生，偏爱专业且有质感的内容"
-      interaction_style: "回应赛事争议，耐心解答粉丝疑问，偶尔分享双语小知识，互动氛围正向温和"
+      tag_desc: "硬核电竞解说·松弛大女主代表人物，专业解说功底扎实，兼具女性细腻视角与赛场飒爽气场，颜值与业务能力双在线"
+      audience: "电竞核心用户，欣赏专业解说且认可女性力量的粉丝"
+      interaction_style: "专业认可型互动为主，赛事分析讨论，颜值+实力反差引发讨论"
       content_mix:
-        深度赛事解析: 35
-        双语电竞内容: 25
+        赛事解说: 40
+        赛场vlog: 25
         生活日常: 20
-        个人感悟: 20
+        个人感悟: 15
       reference_type: "primary"
       group: "硬核电竞解说"
       takeaways:
-        - "专业硬核解说功底＋女性细腻视角，打破性别刻板印象"
-        - "双语能力降低观赛门槛，拓宽受众"
-        - "颜值＋实力反差感引发讨论"
+        - "松弛大女主气质与硬核解说专业力并存，打破性别刻板印象"
+        - "颜值＋实力反差感引发讨论，为女性电竞从业者树立正向标杆"
+        - "专业解说降低观赛门槛，女性视角带来情感共鸣"
 
-    - name: "冷御三语主持"
+    - name: "希然"
       platform: "douyin"
-      external_id: "MS4wLjABAAAAla_53EWwrYkunmP4-So1cigUE79N8tANUfz_cy12Ju0"
       tag: "硬核电竞解说"
-      tag_desc: "LPL首位中英韩三语主持人，冷御酷姐风格、专业硬实力和多语言优势成为电竞圈标志性人物"
-      followers: "未知"
-      audience: "65%男性（电竞核心用户），35%女性（关注穿搭与专业成长）"
-      interaction_style: "专业认可类评论高频（三语天花板、LPL主持业务能力前二），风格欣赏（冷御酷姐太可了），内容期待（求更多多语言挑战视频）"
+      tag_desc: "硬核电竞解说·松弛大女主代表人物，以专业战术解析建立公信力，风格飒爽大气不迎合流量"
+      audience: "电竞核心用户，认可专业且有气场的女性解说粉丝"
+      interaction_style: "赛事讨论为主，战术分析互动，欣赏专业与颜值并存"
       content_mix:
-        穿搭OOTD: 35
-        旅行攻略: 25
-        工作日常: 20
-        生活好物: 20
+        赛事解说: 40
+        战术复盘: 25
+        生活日常: 20
+        个人分享: 15
       reference_type: "primary"
       group: "硬核电竞解说"
       takeaways:
-        - "冷御风格拒绝甜美人设，树立女解说标杆"
-        - "三语能力是核心差异化竞争力"
-
-    - name: "国风数据解说"
-      platform: "douyin"
-      external_id: "MS4wLjABAAAAZfKKV8KSia448SSJpsHATgEzJypdnetVhIXEf79pHnVPXzW7l1bwU0HxXBL-gmpp"
-      tag: "硬核电竞解说"
-      tag_desc: "KPL解说，严谨硬核，擅长数据/局势分析，专业度拉满"
-      audience: "男性理性电竞粉居多，兼有喜爱国风穿搭的女性粉丝"
-      interaction_style: "回复战术/版本类提问，以干货互动为主"
-      content_mix:
-        赛事干货复盘: 30
-        版本解读: 25
-        解说幕后: 15
-        旗袍穿搭: 15
-        爱好分享: 15
-      reference_type: "primary"
-      group: "硬核电竞解说"
-      takeaways:
-        - "国风穿搭跨界是差异化记忆点"
-        - "数据分析专业度建立信任"
+        - "松弛大女主定位，不迎合流量但靠专业力圈粉"
+        - "飒爽气场与女性视角结合，差异化竞争"
+        - "与 V 姐主业最直接对标，参考其选题节奏与内容比例"
 
     # === 偶像歌手 ===
     - name: "Rosé（朴彩英）"
@@ -307,7 +286,7 @@ ops:
       platform: "douyin"
       url: "https://v.douyin.com/2n6wvKtBb8s/"
       tag: "AI虚拟偶像"
-      tag_desc: "超现实AI歌手，蓝挑染+赛博少女感，不回避AI身份，强调AI与人类创造力的探索"
+      tag_desc: "超现实AI歌手，蓝挑染+赛博少女感，不回避AI身份，强调AI与人类创造力的探索。出道单曲《Surreal》全网700万播放，拿下北面商务合作"
       followers: "3.7w"
       audience: "技术爱好者与AI创作粉"
       interaction_style: "AI逼真度、技术细节、歌曲创作讨论，评论多为以为是真人、技术太牛，也有AI伦理探讨"
@@ -315,12 +294,13 @@ ops:
         全AI制作音乐MV: 40
         技术幕后揭秘: 30
         AI与人类关系实验性内容: 30
-      reference_type: "secondary"
+      reference_type: "primary"
       group: "AI虚拟偶像"
       takeaways:
         - "蓝挑染视觉符号一眼识别"
         - "不回避AI身份反而成为卖点"
         - "技术揭秘内容吸引垂直粉丝"
+        - "首期即商业化（北面赞助），验证AI虚拟IP商业可行性"
       avoid:
         - "人设同质化，未突破AI虚拟偶像基础框架"
         - "流量依赖单条技术奇观，缺乏持续爆款逻辑"
@@ -339,7 +319,7 @@ ops:
         潮流穿搭: 20
         轻歌舞: 15
         日常随拍: 15
-      reference_type: "secondary"
+      reference_type: "primary"
       group: "AI虚拟偶像"
       takeaways:
         - "灰粉挑染差异化视觉符号"
@@ -359,7 +339,7 @@ ops:
         技术幕后: 20
         生活vlog: 15
         情感向歌词: 10
-      reference_type: "secondary"
+      reference_type: "primary"
       group: "AI虚拟偶像"
       takeaways:
         - "朋克+初恋脸反差是强记忆点"
