@@ -156,6 +156,7 @@ function cmdOpsProxy(cmd: ParsedCommand): CommandResult {
 const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<CommandResult>> = {
   help: cmdHelp,
   status: cmdStatus,
+  setup: cmdSetup,
   emotion: cmdEmotion,
   schedule: cmdSchedule,
   skills: cmdSkills,
@@ -216,6 +217,9 @@ function cmdHelp(): CommandResult {
 | Command | Description |
 |---------|-------------|
 | \`/alive status\` | 查看角色综合状态 |
+| \`/alive setup\` | 查看当前 env 配置状态 |
+| \`/alive setup llm\` | 配置自定义 LLM key |
+| \`/alive setup instagram\` | 配置 Instagram 凭据 |
 | \`/alive emotion\` | 查看情绪详情 |
 | \`/alive emotion --reset\` | 重置情绪到 MBTI 基线 |
 | \`/alive schedule\` | 查看作息配置 |
@@ -953,6 +957,106 @@ async function cmdOpsPatterns(_cmd: ParsedCommand): Promise<CommandResult> {
     ),
   ];
   return { output: lines.join('\n') };
+}
+
+// ── Setup Command ───────────────────────────────────────────────────
+
+const OPENCLAW_CONFIG_PATH = process.env.OPENCLAW_CONFIG_FILE
+  ?? (process.env.HOME ? path.join(process.env.HOME, '.openclaw', 'openclaw.json') : null);
+
+function readOpenClawEnv(): Record<string, string> {
+  const configPath = process.env.OPENCLAW_CONFIG_FILE ?? OPENCLAW_CONFIG_PATH;
+  if (!configPath || !fs.existsSync(configPath)) return {};
+  try {
+    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    return (cfg?.skills?.entries?.alive?.env as Record<string, string>) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function maskKey(val: string | undefined): string {
+  if (!val) return '—';
+  if (val.length <= 8) return '****';
+  return val.slice(0, 4) + '****' + val.slice(-2);
+}
+
+function cmdSetup(cmd: ParsedCommand): CommandResult {
+  const sub = cmd.args[0] ?? '';
+
+  if (sub === 'llm') {
+    return {
+      output: `## 🔧 配置自定义 LLM
+
+在终端运行以下命令（留空则继续使用 OpenClaw 内置 Claude）：
+
+\`\`\`bash
+openclaw env set LLM_API_KEY <your-api-key>
+openclaw env set LLM_API_BASE https://aihubmix.com/v1    # 可选，默认 aihubmix
+openclaw env set LLM_MODEL claude-sonnet-4-20250514       # 可选
+\`\`\`
+
+设置后重启 OpenClaw 生效。
+
+> 💡 留空 \`LLM_API_KEY\` 时，心跳自动使用 OpenClaw 内置 Claude。`,
+    };
+  }
+
+  if (sub === 'instagram') {
+    return {
+      output: `## 📸 配置 Instagram 自动发帖
+
+在终端运行以下命令：
+
+\`\`\`bash
+openclaw env set INSTAGRAM_USERNAME <your-username>
+openclaw env set INSTAGRAM_PASSWORD <your-password>
+openclaw env set AIHUBMIX_API_KEY <key>   # 可选，用于 AI 配图生成
+openclaw env set IMGURL_TOKEN <token>     # 可选，用于图片公共托管
+\`\`\`
+
+设置后重启 OpenClaw 生效。`,
+    };
+  }
+
+  if (sub !== '') {
+    return {
+      output: `❌ 未知配置项: \`${sub}\`\n\n可用选项：\`/alive setup llm\`、\`/alive setup instagram\``,
+      error: true,
+    };
+  }
+
+  // No subarg: show current env status
+  const env = readOpenClawEnv();
+  const rows: [string, string | undefined, string][] = [
+    ['LLM_API_KEY', env.LLM_API_KEY, '自定义 LLM（空=内置 Claude）'],
+    ['LLM_API_BASE', env.LLM_API_BASE, 'LLM 接口地址'],
+    ['LLM_MODEL', env.LLM_MODEL, 'LLM 模型名称'],
+    ['AIHUBMIX_API_KEY', env.AIHUBMIX_API_KEY, 'AI 图片生成'],
+    ['FAL_KEY', env.FAL_KEY, 'fal.ai 图片生成'],
+    ['INSTAGRAM_USERNAME', env.INSTAGRAM_USERNAME, 'Instagram 账号'],
+    ['INSTAGRAM_PASSWORD', env.INSTAGRAM_PASSWORD, 'Instagram 密码'],
+    ['IMGURL_TOKEN', env.IMGURL_TOKEN, '图片公共托管'],
+    ['XHS_SKILLS_DIR', env.XHS_SKILLS_DIR, '小红书技能目录'],
+  ];
+
+  const tableRows = rows
+    .map(([key, val, desc]) => `| \`${key}\` | ${maskKey(val)} | ${desc} |`)
+    .join('\n');
+
+  return {
+    output: `## ⚙️ Alive 环境配置
+
+| 变量 | 当前值 | 用途 |
+|------|--------|------|
+${tableRows}
+
+**修改配置：**
+- \`/alive setup llm\` — 配置自定义 LLM
+- \`/alive setup instagram\` — 配置 Instagram 发帖
+
+> 🔄 改完后重启 OpenClaw 生效`,
+  };
 }
 
 // ── CLI Entry Point ────────────────────────────────────────────────
