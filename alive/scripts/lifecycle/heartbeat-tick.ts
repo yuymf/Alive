@@ -186,7 +186,7 @@ async function executeSimulatedAction(
   scheduleContext: string,
   voiceDirective: string,
   recentDiaryEntries: string,
-  llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T> },
+  llm: { callJSON<T>(prompt: string): Promise<T> },
 ): Promise<ActionOutput> {
   let template = readTemplate('simulated-action.md');
   template = injectPersona(template);
@@ -250,7 +250,7 @@ function resolveSkillConfig(skillName: string, actionContext?: string, persona?:
  * Regular heartbeat tick.
  */
 export async function regularTick(
-  llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T>; call(prompt: string, maxTokens?: number): Promise<string> },
+  llm: { callJSON<T>(prompt: string): Promise<T>; call(prompt: string): Promise<string> },
 ): Promise<void> {
   const currentTime = now();
   const hour = getLocalHour(currentTime);
@@ -935,7 +935,7 @@ function writeFlowTickState(
 
 // Entry point: route to the right handler
 export async function main(
-  llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T>; call(prompt: string, maxTokens?: number): Promise<string> },
+  llm: { callJSON<T>(prompt: string): Promise<T>; call(prompt: string): Promise<string> },
 ): Promise<void> {
   const currentTime = now();
   const hour = getLocalHour(currentTime);

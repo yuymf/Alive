@@ -232,7 +232,7 @@ describe('callLLM', () => {
 
   it('sends response_format when options.responseFormat is set', async () => {
     mockFetchOk('{"a":1}');
-    await callLLM('test', 4096, 'test-caller', {
+    await callLLM('test', 'test-caller', {
       responseFormat: { type: 'json_object' },
     });
 
@@ -307,7 +307,7 @@ describe('callLLM', () => {
     const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
     fetchSpy.mockRejectedValueOnce(abortError);
 
-    await expect(callLLM('test', 16384, 'test-caller', { signal: controller.signal })).rejects.toThrow('aborted');
+    await expect(callLLM('test', 'test-caller', { signal: controller.signal })).rejects.toThrow('aborted');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
@@ -390,31 +390,27 @@ describe('callLLMJSON', () => {
   });
 
   it('retries with doubled maxTokens on truncation', async () => {
-    // First call: truncated
-    mockFetchOk('{"incomplete":', 'length');
-    // Second call: complete
+    // First call: truncated but parseable — no retry since max_tokens is no longer sent
     mockFetchOk('{"complete":true}', 'stop');
 
-    const result = await callLLMJSON<{ complete: boolean }>('test', 8192);
+    const result = await callLLMJSON<{ complete: boolean }>('test');
     expect(result).toEqual({ complete: true });
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
 
-    // Verify second call has doubled maxTokens
+    // Verify max_tokens is NOT sent
     const body1 = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    const body2 = JSON.parse(fetchSpy.mock.calls[1][1].body);
-    expect(body1.max_tokens).toBe(8192);
-    expect(body2.max_tokens).toBe(16384);
+    expect(body1.max_tokens).toBeUndefined();
 
-    // Both calls should have response_format
+    // response_format should still be set
     expect(body1.response_format).toEqual({ type: 'json_object' });
-    expect(body2.response_format).toEqual({ type: 'json_object' });
   });
 
-  it('does not retry truncation when already at MAX_RETRY_TOKENS', async () => {
-    mockFetchOk('{"data":true}', 'length');
-    const result = await callLLMJSON<{ data: boolean }>('test', 32768);
+  it('does not send max_tokens in request body', async () => {
+    mockFetchOk('{"data":true}', 'stop');
+    const result = await callLLMJSON<{ data: boolean }>('test');
     expect(result).toEqual({ data: true });
-    expect(fetchSpy).toHaveBeenCalledTimes(1); // No retry
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.max_tokens).toBeUndefined();
   });
 
   it('throws on unparseable response', async () => {

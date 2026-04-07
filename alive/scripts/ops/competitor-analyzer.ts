@@ -22,7 +22,6 @@ import { buildAccountKey, parseAccountKey } from './competitor-fetcher';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const MIN_POSTS_FOR_ANALYSIS = 5;
-export const ANALYSIS_MAX_TOKENS = 2000;
 
 // ─── Default store ────────────────────────────────────────────────────────────
 
@@ -190,7 +189,7 @@ export async function analyzeCompetitors(
     const prompt = buildAnalysisPrompt(profile, posts);
 
     try {
-      const raw = await llm.call(prompt, ANALYSIS_MAX_TOKENS);
+      const raw = await llm.call(prompt);
       const analysis = parseAnalysisResponse(raw, accountName, platform);
       if (analysis !== null) {
         analyses[accountKey] = { ...analysis, auto_cluster: true } as AccountAnalysis;

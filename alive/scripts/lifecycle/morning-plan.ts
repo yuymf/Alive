@@ -36,7 +36,7 @@ interface MorningPlanDecision {
 }
 
 export async function runMorningPlan(
-  llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T> },
+  llm: { callJSON<T>(prompt: string): Promise<T> },
 ): Promise<void> {
   const persona = loadPersona();
   // Set timezone from persona config before any time operations

@@ -137,6 +137,8 @@ ops:
     # === 硬核电竞解说 ===
     - name: "天云"
       platform: "douyin"
+      url: "https://www.douyin.com/user/MS4wLjABAAAA6xbgOAdpyQGXChSnmTZ-eErjUc7DI025bCu7CZ9A2r9nvOCgPoykWmjLQiCuUBNX"
+      external_id: "MS4wLjABAAAA6xbgOAdpyQGXChSnmTZ-eErjUc7DI025bCu7CZ9A2r9nvOCgPoykWmjLQiCuUBNX"
       tag: "硬核电竞解说"
       tag_desc: "硬核电竞解说·松弛大女主代表人物，专业解说功底扎实，兼具女性细腻视角与赛场飒爽气场，颜值与业务能力双在线"
       audience: "电竞核心用户，欣赏专业解说且认可女性力量的粉丝"
@@ -155,6 +157,8 @@ ops:
 
     - name: "希然"
       platform: "douyin"
+      url: "https://www.douyin.com/user/MS4wLjABAAAAuiSKqwUylnhFYiFMQ4H5_Z5zRZ7dHuY4ghsHv9xXR1xjHJ8Sj0dBFLNbTryRP62j"
+      external_id: "MS4wLjABAAAAuiSKqwUylnhFYiFMQ4H5_Z5zRZ7dHuY4ghsHv9xXR1xjHJ8Sj0dBFLNbTryRP62j"
       tag: "硬核电竞解说"
       tag_desc: "硬核电竞解说·松弛大女主代表人物，以专业战术解析建立公信力，风格飒爽大气不迎合流量"
       audience: "电竞核心用户，认可专业且有气场的女性解说粉丝"
@@ -284,7 +288,8 @@ ops:
     # === AI类账号参考（主要） ===
     - name: "Yuri尤栗"
       platform: "douyin"
-      url: "https://v.douyin.com/2n6wvKtBb8s/"
+      url: "https://www.douyin.com/user/MS4wLjABAAAAPsz-XDNrels90bU94cLKVrLIL97qUp1n8z7DpdFV1RY"
+      external_id: "MS4wLjABAAAAPsz-XDNrels90bU94cLKVrLIL97qUp1n8z7DpdFV1RY"
       tag: "AI虚拟偶像"
       tag_desc: "超现实AI歌手，蓝挑染+赛博少女感，不回避AI身份，强调AI与人类创造力的探索。出道单曲《Surreal》全网700万播放，拿下北面商务合作"
       followers: "3.7w"
@@ -307,7 +312,8 @@ ops:
 
     - name: "Miyaki米芽奇"
       platform: "douyin"
-      url: "https://v.douyin.com/VHc8vjiLQN8/"
+      url: "https://www.douyin.com/user/MS4wLjABAAAAZfKKV8KSia448SSJpsHATgEzJypdnetVhIXEf79pHnVPXzW7l1bwU0HxXBL-gmpp"
+      external_id: "MS4wLjABAAAAZfKKV8KSia448SSJpsHATgEzJypdnetVhIXEf79pHnVPXzW7l1bwU0HxXBL-gmpp"
       tag: "AI虚拟偶像"
       tag_desc: "甜酷街头虚拟少女，灰粉挑染+美式复古穿搭，走温暖治愈邻家路线，强调公益属性"
       followers: "0.4w"
@@ -327,7 +333,8 @@ ops:
 
     - name: "叶妮Yennie"
       platform: "douyin"
-      url: "https://v.douyin.com/3eooP9V0ECk/"
+      url: "https://www.douyin.com/user/MS4wLjABAAAAla_53EWwrYkunmP4-So1cigUE79N8tANUfz_cy12Ju0"
+      external_id: "MS4wLjABAAAAla_53EWwrYkunmP4-So1cigUE79N8tANUfz_cy12Ju0"
       tag: "AI虚拟偶像"
       tag_desc: "酷黑朋克初恋脸少女，朋克造型+软萌初恋脸反差，靠音乐戳中情绪点"
       followers: "1.2w"

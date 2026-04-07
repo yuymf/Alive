@@ -92,7 +92,7 @@ export function deduplicateWisdom(
 }
 
 export async function runNightReflect(
-  llm: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T>; call(prompt: string, maxTokens?: number): Promise<string> },
+  llm: { callJSON<T>(prompt: string): Promise<T>; call(prompt: string): Promise<string> },
 ): Promise<void> {
   const persona = loadPersona();
   // Set timezone from persona config before any time operations

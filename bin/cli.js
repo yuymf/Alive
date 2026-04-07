@@ -1048,8 +1048,7 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
               console.log('  │                                                             │');
               console.log('  │ Option 2: Virtual Display (Xvfb)                            │');
               console.log('  │   sudo apt install -y xvfb                                  │');
-              console.log('  │   xvfb-run uv run --directory ~/.openclaw/skills/           │');
-              console.log(`  │     ${skill.name} python scripts/cli.py login             │`);
+              console.log(`  │   xvfb-run uv run --directory ~/.openclaw/skills/${skill.name} python scripts/cli.py login  │`);
               console.log('  └─────────────────────────────────────────────────────────────┘');
               console.log('');
             } else {
@@ -1087,8 +1086,13 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
     console.log('  Platform skills (XHS/Douyin) require logged-in cookies to work.');
     console.log('  On a headless server, the recommended approach is:');
     console.log('    1. Login on a machine with a browser (your local Mac/PC)');
-    console.log('    2. Export and copy the cookies.json to the server');
-    console.log('    3. Alternatively, use Xvfb: sudo apt install xvfb && xvfb-run <login-command>');
+    console.log('    2. Copy cookies to the server:');
+    console.log('         scp ~/.openclaw/skills/xiaohongshu-skills/cookies.json server:~/.openclaw/skills/xiaohongshu-skills/');
+    console.log('         scp ~/.openclaw/skills/douyin-skills/cookies.json server:~/.openclaw/skills/douyin-skills/');
+    console.log('    3. Alternatively, use Xvfb on the server:');
+    console.log('         sudo apt install -y xvfb');
+    console.log('         xvfb-run uv run --directory ~/.openclaw/skills/xiaohongshu-skills python scripts/cli.py login');
+    console.log('         xvfb-run uv run --directory ~/.openclaw/skills/douyin-skills python scripts/cli.py login');
     console.log('');
   }
 }
@@ -1672,6 +1676,18 @@ async function install() {
   ok(`Alive framework copied to ${skillDest}`);
   ok(`Persona config copied to ${path.join(memoryDir, 'persona.yaml')}`);
 
+  // Link node_modules so installed scripts can resolve npm packages (e.g. yaml, zod)
+  const srcNodeModules = path.join(__dirname, '..', 'node_modules');
+  const destNodeModules = path.join(skillDest, 'node_modules');
+  if (fs.existsSync(srcNodeModules)) {
+    // Remove existing node_modules (dir or stale symlink) before creating fresh symlink
+    try { fs.lstatSync(destNodeModules); fs.rmSync(destNodeModules, { recursive: true, force: true }); } catch (_) {}
+    fs.symlinkSync(srcNodeModules, destNodeModules);
+    ok(`Linked node_modules → ${destNodeModules}`);
+  } else {
+    warn(`node_modules not found at ${srcNodeModules} — skipping symlink`);
+  }
+
   // Initialize competitor profiles markdown from persona config
   try {
     const { initProfilesFromPersona } = require(path.join(skillDest, 'scripts', 'ops', 'competitor-memory.js'));
@@ -1708,7 +1724,7 @@ async function install() {
   const envFromFile = envVars;
   const hasEnvFile = Object.keys(envFromFile).length > 0;
 
-  let llmApiKey, llmApiBase, llmModel, imageApiKey;
+  let llmApiKey, llmApiBase, llmModel, imageApiKey, bilibiliCookie;
 
   if (hasEnvFile && (envFromFile.LLM_API_KEY || existingEnv.LLM_API_KEY)) {
     // Non-interactive: use .env values, falling back to existing config
@@ -1716,6 +1732,7 @@ async function install() {
     llmApiBase = envFromFile.LLM_API_BASE || '';
     llmModel = envFromFile.LLM_MODEL || '';
     imageApiKey = envFromFile.AIHUBMIX_API_KEY || '';
+    bilibiliCookie = envFromFile.BILIBILI_COOKIE || '';
     ok('Using env from .env file (non-interactive mode)');
     if (llmApiKey) ok(`LLM_API_KEY: ${maskSecret(llmApiKey || existingEnv.LLM_API_KEY)}`);
     if (llmApiBase || existingEnv.LLM_API_BASE) ok(`LLM_API_BASE: ${llmApiBase || existingEnv.LLM_API_BASE}`);
@@ -1757,6 +1774,18 @@ async function install() {
         : '  AIHUBMIX_API_KEY (press Enter to skip): ');
     }
 
+    if (opsEnabled) {
+      const hintBiliCookie = existingEnv.BILIBILI_COOKIE ? '(already set, Enter to keep)' : '(paste full cookie string, or Enter to skip)';
+      console.log('\n  Optional: Bilibili competitor tracking requires a login cookie.');
+      console.log('  Get it from: browser DevTools → Network → any bilibili.com request → Cookie header.');
+      const biliInput = await ask(rl, `  BILIBILI_COOKIE ${hintBiliCookie}: `);
+      if (biliInput.trim()) {
+        bilibiliCookie = biliInput.trim();
+      } else {
+        bilibiliCookie = '';
+      }
+    }
+
     rl.close();
   }
 
@@ -1771,6 +1800,7 @@ async function install() {
       ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
       ...(llmModel && { LLM_MODEL: llmModel }),
       ...(imageApiKey && { AIHUBMIX_API_KEY: imageApiKey }),
+      ...(bilibiliCookie && { BILIBILI_COOKIE: bilibiliCookie }),
       ALIVE_PERSONA: personaSlug,
     },
   };
@@ -1786,6 +1816,7 @@ async function install() {
   const hasLlm = !!(llmApiKey || existingEnv.LLM_API_KEY);
   const hasImage = !!(imageApiKey || envFromFile.AIHUBMIX_API_KEY || envFromFile.FAL_KEY || existingEnv.AIHUBMIX_API_KEY || existingEnv.FAL_KEY);
   const hasInstagram = !!(envFromFile.INSTAGRAM_USERNAME || existingEnv.INSTAGRAM_USERNAME);
+  const hasBilibili = !!(bilibiliCookie || existingEnv.BILIBILI_COOKIE);
   console.log('\n  ╭─────────────────────────────────────────────╮');
   console.log('  │         🌟 Feature Unlock Status             │');
   console.log('  ╰─────────────────────────────────────────────╯');
@@ -1795,6 +1826,9 @@ async function install() {
   console.log(`  ${hasImage ? '✓' : '○'} AI image gen        — ${hasImage ? 'enabled' : 'add AIHUBMIX_API_KEY or FAL_KEY'}`);
   console.log(`  ${hasInstagram ? '✓' : '○'} Instagram posting   — ${hasInstagram ? 'enabled' : 'add INSTAGRAM_USERNAME + PASSWORD'}`);
   console.log('  ○ Voice messages     — no key needed (Noiz TTS, ≤3/day)');
+  if (opsEnabled) {
+    console.log(`  ${hasBilibili ? '✓' : '○'} Bilibili tracking   — ${hasBilibili ? 'enabled' : 'add BILIBILI_COOKIE for competitor data'}`);
+  }
   console.log('');
 
   // Step 5: Setup reference images
@@ -2244,6 +2278,7 @@ async function reinstall() {
   const hintBase = capturedEnv.LLM_API_BASE || '';
   const hintModel = capturedEnv.LLM_MODEL || '';
   const hintImageKey = maskSecret(capturedEnv.AIHUBMIX_API_KEY);
+  const updateOpsEnabled = !!(persona.ops && persona.ops.enabled);
 
   console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
   const llmApiKey = await ask(rl, hintLlmKey
@@ -2261,6 +2296,14 @@ async function reinstall() {
     ? `  AIHUBMIX_API_KEY (current: ${hintImageKey}, Enter to keep): `
     : '  AIHUBMIX_API_KEY (press Enter to skip): ');
 
+  let bilibiliCookieUpdate = '';
+  if (updateOpsEnabled) {
+    const hintBiliCookie = capturedEnv.BILIBILI_COOKIE ? '(already set, Enter to keep)' : '(paste full cookie string, or Enter to skip)';
+    console.log('\n  Optional: Bilibili competitor tracking requires a login cookie.');
+    const biliInput = await ask(rl, `  BILIBILI_COOKIE ${hintBiliCookie}: `);
+    if (biliInput.trim()) bilibiliCookieUpdate = biliInput.trim();
+  }
+
   let config = {};
   if (fs.existsSync(CONFIG_FILE)) {
     try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* fresh */ }
@@ -2275,6 +2318,7 @@ async function reinstall() {
       ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
       ...(llmModel && { LLM_MODEL: llmModel }),
       ...(imageApiKey && { AIHUBMIX_API_KEY: imageApiKey }),
+      ...(bilibiliCookieUpdate && { BILIBILI_COOKIE: bilibiliCookieUpdate }),
       ALIVE_PERSONA: personaSlug,
     },
   };

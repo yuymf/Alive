@@ -26,7 +26,6 @@ const {
   loadCompetitorAnalysis,
   saveCompetitorAnalysis,
   MIN_POSTS_FOR_ANALYSIS,
-  ANALYSIS_MAX_TOKENS,
 } = await import('../scripts/ops/competitor-analyzer');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -378,7 +377,7 @@ describe('analyzeCompetitors', () => {
     };
 
     await analyzeCompetitors(store, profiles, llm);
-    expect(llm.call).toHaveBeenCalledWith(expect.any(String), ANALYSIS_MAX_TOKENS);
+    expect(llm.call).toHaveBeenCalledWith(expect.any(String));
   });
 });
 
@@ -477,9 +476,5 @@ describe('analyzeCompetitors — auto_cluster flag', () => {
 describe('constants', () => {
   it('MIN_POSTS_FOR_ANALYSIS is 5', () => {
     expect(MIN_POSTS_FOR_ANALYSIS).toBe(5);
-  });
-
-  it('ANALYSIS_MAX_TOKENS is 2000', () => {
-    expect(ANALYSIS_MAX_TOKENS).toBe(2000);
   });
 });

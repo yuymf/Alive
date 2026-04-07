@@ -164,10 +164,6 @@ export const LLM_CONFIG = {
   DEFAULT_API_BASE: 'https://aihubmix.com/v1',
   /** Default model name */
   DEFAULT_MODEL: 'claude-sonnet-4-20250514',
-  /** Max tokens for truncation retry */
-  MAX_RETRY_TOKENS: 32768 as number,
-  /** Default max tokens per call */
-  DEFAULT_MAX_TOKENS: 16384 as number,
   /** Retry delay in ms */
   RETRY_DELAY_MS: 10_000 as number,
   /** Log file max size in bytes (auto-rotate) */

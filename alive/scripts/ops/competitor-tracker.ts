@@ -161,8 +161,9 @@ export function resolveCompetitorAccounts(ops: OpsConfig): { xhs: string[]; douy
     for (const c of ops.competitors) {
       if (c.platform === 'xhs') xhs.add(c.name);
       if (c.platform === 'douyin') {
-        // Prefer external_id (sec_user_id) for API calls; fall back to name
-        douyin.add(c.external_id ?? c.name);
+        // Priority: external_id → sec_uid in url → name
+        const secUidFromUrl = c.url?.match(/douyin\.com\/user\/([A-Za-z0-9_=-]+)/)?.[1];
+        douyin.add(c.external_id ?? secUidFromUrl ?? c.name);
       }
     }
   }
@@ -266,37 +267,84 @@ function fetchDouyinAccount(secUid: string): CompetitorUpdate {
 
 function fetchBilibiliAccount(mid: string, displayName: string): CompetitorUpdate {
   try {
+    const cookie = process.env.BILIBILI_COOKIE ?? '';
+    // WBI signing with cookie: nav → img_key/sub_key → mixin key → signed request
     const script = `
 const https = require('https');
+const crypto = require('crypto');
 const mid = ${JSON.stringify(mid)};
-const url = 'https://api.bilibili.com/x/space/arc/search?mid=' + mid + '&ps=1&pn=1&order=pubdate';
-const req = https.get(url, {
-  headers: {
-    'User-Agent': 'Mozilla/5.0',
-    'Referer': 'https://space.bilibili.com/' + mid,
-    'Cookie': ''
-  }
-}, (res) => {
-  let data = '';
-  res.on('data', c => data += c);
-  res.on('end', () => {
-    try {
-      const d = JSON.parse(data);
-      const vlist = (d.data && d.data.list && d.data.list.vlist) || [];
-      if (!vlist.length) { process.stdout.write('{}'); return; }
-      const v = vlist[0];
-      process.stdout.write(JSON.stringify({
-        title: v.title || '',
-        play: v.play || 0,
-        created: v.created || 0
-      }));
-    } catch(e) { process.stdout.write('{}'); }
+const COOKIE = ${JSON.stringify(cookie)};
+
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+// WBI mixin key shuffle table (fixed by Bilibili)
+const MIXIN_KEY_ENC_TAB = [
+  46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,
+  27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,
+  37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,
+  22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52,
+];
+
+function getMixinKey(imgKey, subKey) {
+  const raw = imgKey + subKey;
+  return MIXIN_KEY_ENC_TAB.map(i => raw[i]).join('').slice(0, 32);
+}
+
+function get(url, extraHeaders) {
+  return new Promise((resolve, reject) => {
+    const headers = {
+      'User-Agent': UA,
+      'Referer': 'https://space.bilibili.com/' + mid + '/video',
+      'Origin': 'https://space.bilibili.com',
+      ...(COOKIE ? { 'Cookie': COOKIE } : {}),
+      ...(extraHeaders || {}),
+    };
+    const req = https.get(url, { headers }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+    });
+    req.on('error', reject);
+    req.setTimeout(12000, () => { req.destroy(); reject(new Error('timeout')); });
   });
-});
-req.on('error', () => process.stdout.write('{}'));
-req.setTimeout(10000, () => { req.destroy(); process.stdout.write('{}'); });
+}
+
+async function main() {
+  try {
+    // Step 1: get WBI keys (nav also validates cookie)
+    const nav = await get('https://api.bilibili.com/x/web-interface/nav');
+    const imgKey = nav?.data?.wbi_img?.img_url?.match(/([a-f0-9]+)\\.png/)?.[1] ?? '';
+    const subKey = nav?.data?.wbi_img?.sub_url?.match(/([a-f0-9]+)\\.png/)?.[1] ?? '';
+    if (!imgKey || !subKey) { process.stdout.write('{}'); return; }
+
+    const mixinKey = getMixinKey(imgKey, subKey);
+
+    // Step 2: sign params
+    const wts = Math.floor(Date.now() / 1000);
+    const params = { mid, ps: 1, pn: 1, order: 'pubdate', wts };
+    const query = Object.keys(params).sort()
+      .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k]).replace(/[!'()*]/g, '')))
+      .join('&');
+    const w_rid = crypto.createHash('md5').update(query + mixinKey).digest('hex');
+
+    // Step 3: fetch video list
+    const apiUrl = 'https://api.bilibili.com/x/space/wbi/arc/search?' + query + '&w_rid=' + w_rid;
+    const d = await get(apiUrl);
+    const vlist = d?.data?.list?.vlist ?? [];
+    if (!vlist.length) { process.stdout.write('{}'); return; }
+    const v = vlist[0];
+    process.stdout.write(JSON.stringify({
+      title: v.title || '',
+      play: v.play || 0,
+      created: v.created || 0,
+    }));
+  } catch(e) {
+    process.stdout.write('{}');
+  }
+}
+main();
 `;
-    const raw = execFileSync('node', ['-e', script], { timeout: 15_000, encoding: 'utf8' });
+    const raw = execFileSync('node', ['-e', script], { timeout: 20_000, encoding: 'utf8' });
     const info = JSON.parse(raw.trim()) as { title?: string; play?: number; created?: number };
     if (!info.title) {
       return { account: displayName, platform: 'bilibili', latest_post: null, days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: wallNow().toISOString() };

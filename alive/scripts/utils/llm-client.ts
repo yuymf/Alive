@@ -23,16 +23,15 @@ export interface LLMClient {
   /**
    * Send a prompt and get a plain-text completion.
    * @param prompt  Full prompt string (system + user merged or separated by host)
-   * @param maxTokens  Max tokens for the response (host decides default)
    */
-  call(prompt: string, maxTokens?: number): Promise<string>;
+  call(prompt: string): Promise<string>;
 
   /**
    * Send a prompt and parse the response as JSON of type T.
    * The implementation should handle markdown fences, trailing commas, etc.
    * Throws if the response cannot be parsed.
    */
-  callJSON<T>(prompt: string, maxTokens?: number): Promise<T>;
+  callJSON<T>(prompt: string): Promise<T>;
 }
 
 // === Options ===
@@ -44,8 +43,6 @@ export interface LLMCallOptions {
   temperature?: number;
   /** System message override */
   system?: string;
-  /** Max tokens for the response */
-  maxTokens?: number;
   /** OpenAI response_format */
   responseFormat?: ResponseFormat;
   /** Abort signal */
@@ -77,7 +74,6 @@ import { LLM_CONFIG } from '../config';
 
 const DEFAULT_API_BASE = LLM_CONFIG.DEFAULT_API_BASE;
 const DEFAULT_MODEL = LLM_CONFIG.DEFAULT_MODEL;
-const MAX_RETRY_TOKENS = LLM_CONFIG.MAX_RETRY_TOKENS;
 
 const isDebug = () => process.env.LLM_DEBUG === '1' || process.env.LLM_DEBUG === 'true';
 
@@ -185,7 +181,6 @@ function appendLlmLog(entry: Record<string, unknown>): void {
  */
 export async function callLLM(
   prompt: string,
-  maxTokens = LLM_CONFIG.DEFAULT_MAX_TOKENS,
   caller?: string,
   options?: LLMCallOptions,
 ): Promise<LLMResult> {
@@ -212,7 +207,7 @@ export async function callLLM(
   const apiBase = (process.env.LLM_API_BASE || DEFAULT_API_BASE).replace(/\/+$/, '');
   const model = options?.model || process.env.LLM_MODEL || DEFAULT_MODEL;
 
-  debugLog('REQUEST', `model: ${model} | maxTokens: ${maxTokens}\n\n${prompt}`);
+  debugLog('REQUEST', `model: ${model}\n\n${prompt}`);
 
   const totalStart = wallNow().getTime();
   let startTime = totalStart;
@@ -227,7 +222,6 @@ export async function callLLM(
         },
         body: JSON.stringify({
           model,
-          max_tokens: maxTokens,
           messages: [{ role: 'user', content: prompt }],
           ...(options?.responseFormat ? { response_format: options.responseFormat } : {}),
         }),
@@ -295,11 +289,10 @@ export async function callLLM(
 
 /**
  * Call LLM and parse response as JSON.
- * Sets response_format to json_object, with auto-retry on truncation.
+ * Sets response_format to json_object.
  */
 export async function callLLMJSON<T>(
   prompt: string,
-  maxTokens = LLM_CONFIG.DEFAULT_MAX_TOKENS,
   caller?: string,
   options?: LLMCallOptions,
 ): Promise<T> {
@@ -307,13 +300,13 @@ export async function callLLMJSON<T>(
     responseFormat: { type: 'json_object' },
     ...options,
   };
-  const result = await callLLM(prompt, maxTokens, caller, effectiveOptions);
+  const result = await callLLM(prompt, caller, effectiveOptions);
 
-  // Check for empty response (either length truncation or unknown/anomalous finish reason)
+  // Check for empty response
   if (!result.content.trim()) {
     let msg = '';
     if (result.finishReason === 'length') {
-      msg = `[llm-client] LLM returned empty content with finish_reason=length (maxTokens=${maxTokens}). This usually indicates an upstream issue.`;
+      msg = `[llm-client] LLM returned empty content with finish_reason=length. This usually indicates an upstream issue.`;
     } else if (result.finishReason === 'unknown') {
       msg = `[llm-client] LLM returned empty content with finish_reason=unknown. The backend may have encountered an internal error or the API endpoint is misconfigured.`;
     } else {
@@ -321,17 +314,6 @@ export async function callLLMJSON<T>(
     }
     console.error(msg);
     throw new Error(msg);
-  }
-
-  // If truncated, retry with doubled budget (capped)
-  if (result.finishReason === 'length' && maxTokens < MAX_RETRY_TOKENS) {
-    const retryTokens = Math.min(maxTokens * 2, MAX_RETRY_TOKENS);
-    console.warn(`[llm-client] Response truncated, retrying with maxTokens=${retryTokens}`);
-    const retryResult = await callLLM(prompt, retryTokens, caller, effectiveOptions);
-    if (retryResult.finishReason === 'length') {
-      console.warn(`[llm-client] Retry still truncated, attempting parse anyway`);
-    }
-    return extractJSON<T>(retryResult.content);
   }
 
   return extractJSON<T>(result.content);
@@ -345,12 +327,12 @@ export async function callLLMJSON<T>(
  */
 export function createRealLLMClient(caller?: string): LLMClient {
   return {
-    async call(prompt: string, maxTokens?: number): Promise<string> {
-      const result = await callLLM(prompt, maxTokens, caller);
+    async call(prompt: string): Promise<string> {
+      const result = await callLLM(prompt, caller);
       return result.content;
     },
-    async callJSON<T>(prompt: string, maxTokens?: number): Promise<T> {
-      return callLLMJSON<T>(prompt, maxTokens, caller);
+    async callJSON<T>(prompt: string): Promise<T> {
+      return callLLMJSON<T>(prompt, caller);
     },
   };
 }
@@ -590,8 +572,8 @@ export function extractJSON<T>(raw: string): T {
 export function wrapWithJSONSupport(client: Pick<LLMClient, 'call'>): LLMClient {
   return {
     call: client.call.bind(client),
-    async callJSON<T>(prompt: string, maxTokens?: number): Promise<T> {
-      const raw = await client.call(prompt, maxTokens);
+    async callJSON<T>(prompt: string): Promise<T> {
+      const raw = await client.call(prompt);
       return extractJSON<T>(raw);
     },
   };

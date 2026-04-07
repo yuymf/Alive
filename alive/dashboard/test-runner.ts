@@ -508,7 +508,7 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
         name: s.name,
         display_name: s.display_name,
         description: s.description,
-        actions: s.intent_bindings.map(b => b.action),
+        actions: [...new Set(s.intent_bindings.map(b => b.action))],
       })),
     };
   }

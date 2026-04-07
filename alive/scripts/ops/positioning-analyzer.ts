@@ -18,10 +18,6 @@ import type {
 } from '../utils/types';
 import type { LLMClient } from '../utils/llm-client';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-export const POSITIONING_MAX_TOKENS = 3000;
-
 // ─── Prompt builder ───────────────────────────────────────────────────────────
 
 /**
@@ -188,7 +184,7 @@ export async function analyzePositioning(
   const prompt = buildPositioningPrompt(analysisStore, persona, publishedItems);
 
   try {
-    const raw = await llm.call(prompt, POSITIONING_MAX_TOKENS);
+    const raw = await llm.call(prompt);
     return parsePositioningResponse(raw);
   } catch {
     return null;

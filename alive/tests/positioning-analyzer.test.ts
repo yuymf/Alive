@@ -26,7 +26,6 @@ const {
   analyzePositioning,
   savePositioningReport,
   loadPositioningReport,
-  POSITIONING_MAX_TOKENS,
 } = await import('../scripts/ops/positioning-analyzer');
 
 // ─── Test persona ─────────────────────────────────────────────────────────────
@@ -309,12 +308,12 @@ describe('analyzePositioning', () => {
     expect(result!.competitor_matrix).toBeDefined();
   });
 
-  it('calls LLM with POSITIONING_MAX_TOKENS', async () => {
+  it('calls LLM without max tokens', async () => {
     const analysisStore = makeAnalysisStore({ '@v姐:xhs': makeAnalysis() });
     const report = makePositioningReport();
     const llm = makeMockLLM(JSON.stringify(report));
     await analyzePositioning(analysisStore, minimalPersona, [], llm);
-    expect(llm.call).toHaveBeenCalledWith(expect.any(String), POSITIONING_MAX_TOKENS);
+    expect(llm.call).toHaveBeenCalledWith(expect.any(String));
   });
 
   it('returns null if LLM response is unparseable', async () => {

@@ -81,18 +81,23 @@ export function buildRelevancePrompt(
   personaIdentities: string,
   topicCount: number,
 ): string {
-  // Cap input to top 10 to control prompt length (avoid finish_reason=length).
+  // Cap input to top 25 to give LLM enough coverage for niche identity topics
+  // (Miss V's esports/music/racing topics may not rank in top 10 by velocity).
   // Assumes input is already sorted by velocity_score desc (or by volume for cold-start).
-  const capped = trends.slice(0, 10);
+  const capped = trends.slice(0, 25);
   const trendList = capped
     .map(t => `- ${t.keyword} (${t.platform}, velocity=${t.velocity_score.toFixed(1)}x, rank=${t.rank})`)
     .join('\n');
 
   // Cold-start detection: if all velocities are 1.0x (no history yet), relax the velocity requirement
   const isColStart = capped.every(t => t.velocity_score === 1.0);
+  // Also relax when max velocity is below 1.5 (data is early or flat — no clear breakout trends yet)
+  const maxVelocity = Math.max(...capped.map(t => t.velocity_score));
   const velocityRequirement = isColStart
     ? '无历史数据，按热度排名选择'
-    : '平台正在助推（velocity > 1.5）';
+    : maxVelocity < 1.5
+      ? `当前最高速度分为 ${maxVelocity.toFixed(1)}x，按相关性和热度排名选择，不要求速度分门槛`
+      : '平台正在助推（velocity > 1.5）';
 
   return `你是一个内容运营分析师。以下是今日平台热榜话题：
 

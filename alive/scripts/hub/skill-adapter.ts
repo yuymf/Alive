@@ -21,8 +21,8 @@ interface LlmManifestResponse {
 }
 
 interface LlmLike {
-  callJSON<T>(prompt: string, maxTokens?: number): Promise<T>;
-  call(prompt: string, maxTokens?: number): Promise<string>;
+  callJSON<T>(prompt: string): Promise<T>;
+  call(prompt: string): Promise<string>;
 }
 
 export interface AdaptResult {

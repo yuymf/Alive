@@ -13,8 +13,8 @@ import { SKILL_LIFECYCLE_CONFIG } from '../config';
 const MAX_PLANS = SKILL_LIFECYCLE_CONFIG.MAX_PLANS;
 
 interface LlmLike {
-  callJSON<T>(prompt: string, maxTokens?: number): Promise<T>;
-  call(prompt: string, maxTokens?: number): Promise<string>;
+  callJSON<T>(prompt: string): Promise<T>;
+  call(prompt: string): Promise<string>;
 }
 
 // ─── evaluateSkillNeeds ─────────────────────────────────
