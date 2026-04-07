@@ -128,7 +128,7 @@ export function collectKeywords(): KeywordEntry[] {
   // Source 3: competitor topics from competitor-analysis.json
   try {
     const persona = loadPersona();
-    const competitors: CompetitorProfile[] = persona.ops?.competitors ?? [];
+    const competitors: CompetitorProfile[] = [...(persona.ops?.competitors ?? [])];
     for (const comp of competitors) {
       for (const takeaway of comp.takeaways ?? []) {
         // Extract meaningful keywords from takeaways (first 2-3 words or the whole phrase if short)

@@ -159,7 +159,7 @@ async function actionSaveBreakdown(ctx: SubSkillContext): Promise<SubSkillResult
 
     writeBreakdown({
       platform: result.platform === 'generic' ? 'xhs' : result.platform,
-      track: ctx.intent.item_id ?? 'unknown', // identity mode passed via item_id field
+      track: (ctx.intent as unknown as Record<string, unknown>).item_id as string ?? 'unknown', // identity mode passed via item_id field
       competitor: 'manual',
       title: result.title,
       engagement: result.engagement_signals?.engagement_score ?? 0,
