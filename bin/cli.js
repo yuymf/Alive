@@ -1740,8 +1740,8 @@ async function install() {
 
   // Feature unlock summary
   const hasLlm = !!(llmApiKey || existingEnv.LLM_API_KEY);
-  const hasImage = !!(imageApiKey || existingEnv.AIHUBMIX_API_KEY || existingEnv.FAL_KEY);
-  const hasInstagram = !!(existingEnv.INSTAGRAM_USERNAME);
+  const hasImage = !!(imageApiKey || envFromFile.AIHUBMIX_API_KEY || envFromFile.FAL_KEY || existingEnv.AIHUBMIX_API_KEY || existingEnv.FAL_KEY);
+  const hasInstagram = !!(envFromFile.INSTAGRAM_USERNAME || existingEnv.INSTAGRAM_USERNAME);
   console.log('\n  ╭─────────────────────────────────────────────╮');
   console.log('  │         🌟 Feature Unlock Status             │');
   console.log('  ╰─────────────────────────────────────────────╯');
