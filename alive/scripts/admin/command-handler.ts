@@ -961,11 +961,9 @@ async function cmdOpsPatterns(_cmd: ParsedCommand): Promise<CommandResult> {
 
 // ── Setup Command ───────────────────────────────────────────────────
 
-const OPENCLAW_CONFIG_PATH = process.env.OPENCLAW_CONFIG_FILE
-  ?? (process.env.HOME ? path.join(process.env.HOME, '.openclaw', 'openclaw.json') : null);
-
 function readOpenClawEnv(): Record<string, string> {
-  const configPath = process.env.OPENCLAW_CONFIG_FILE ?? OPENCLAW_CONFIG_PATH;
+  const configPath = process.env.OPENCLAW_CONFIG_FILE
+    ?? (process.env.HOME ? path.join(process.env.HOME, '.openclaw', 'openclaw.json') : null);
   if (!configPath || !fs.existsSync(configPath)) return {};
   try {
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));

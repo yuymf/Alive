@@ -64,8 +64,10 @@ describe('/alive setup', () => {
     const result = await dispatch('/alive setup');
 
     expect(result.error).toBeFalsy();
-    expect(result.output).toContain('LLM_API_KEY');
-    expect(result.output).toContain('INSTAGRAM_USERNAME');
+    // 'sk-test' is 7 chars (≤8) → maskKey returns '****' — proves the file was read and value masked
+    expect(result.output).toMatch(/LLM_API_KEY.*\*\*\*\*/);
+    // XHS_SKILLS_DIR is not in config → should show '—' (not set)
+    expect(result.output).toMatch(/XHS_SKILLS_DIR.*—/);
   });
 
   it('returns setup instructions for /alive setup llm', async () => {
