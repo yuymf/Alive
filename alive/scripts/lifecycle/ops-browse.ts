@@ -42,7 +42,7 @@ export function buildBrowseSummary(results: BrowseSourceResult[]): string {
 
 // ── Main ─────────────────────────────────────────────────────────
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const persona = await loadPersona();
   const ops = persona.ops;
 
