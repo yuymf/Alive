@@ -118,9 +118,18 @@ ops:
     douyin:
       enabled: true
       style: "视频脚本，前3秒必须有冲突感或反差，BGM卡点，字幕简洁，结尾引导互动"
+  strategy_enabled: false
+  browse_interval: "0 */3 * * *"
+  browse_sources:
+    - platform: xhs
+      count: 5
+    - platform: bilibili
+      count: 3
+    - platform: dailyhot
+      count: 5
   automation:
     brief_delivery: session
-    enable_heartbeat_cron: true
+    enable_heartbeat_cron: false
     silent_background_jobs: false
 
   # ─── 结构化对标账号画像 ─────────────────────────────────────────────────
