@@ -1023,6 +1023,27 @@ body::after {
               <span class="btn-desc">爆款规律 / 竞品洞察 / 封面趋势</span>
             </div>
           </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-taste', this)" id="btn-ops-taste">
+            <div class="btn-icon">🎨</div>
+            <div class="btn-text">
+              <span class="btn-label">网感偏好</span>
+              <span class="btn-desc">视觉 / 钩子 / 语调 / 反模式 EMA 仪表盘</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-performance', this)" id="btn-ops-performance">
+            <div class="btn-icon">📉</div>
+            <div class="btn-text">
+              <span class="btn-label">发布效果追踪</span>
+              <span class="btn-desc">已发布内容互动数据 / Tier 归类</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-analysis-log', this)" id="btn-ops-analysis-log">
+            <div class="btn-icon">🔬</div>
+            <div class="btn-text">
+              <span class="btn-label">分析日志</span>
+              <span class="btn-desc">Post-analysis 记录 / Tier 分布 / 网感更新</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -1928,6 +1949,12 @@ function renderOpsData(command, data) {
     html = renderOpsAdvice(data);
   } else if (command === 'ops-analyze') {
     html = renderOpsAnalysis(data);
+  } else if (command === 'ops-taste') {
+    html = renderOpsTaste(data);
+  } else if (command === 'ops-performance') {
+    html = renderOpsPerformance(data);
+  } else if (command === 'ops-analysis-log') {
+    html = renderOpsAnalysisLog(data);
   } else {
     // Generic fallback
     html = '<div class="ops-data-card">'
@@ -2043,8 +2070,36 @@ function renderOpsBrief(data) {
     h += opsStatItem(data.data.queue_count || 0, '队列项');
     h += '</div>';
   }
+
+  // v3 段落检查清单 — 检测简报中关键段落是否存在
   if (data.brief) {
-    h += '<div class="ops-data-card-body">' + escHtml(data.brief) + '</div>';
+    var briefText = data.brief;
+    var v3Sections = [
+      { key: '今日灵感', icon: '💡', label: '今日灵感 (feed highlights)' },
+      { key: '用户反馈', icon: '📝', label: '用户反馈 (comment insights)' },
+      { key: '候选对标', icon: '🔍', label: '候选对标 (discovery candidates)' },
+      { key: '人设漂移', icon: '⚠️', label: '人设漂移预警 (personality drift)' },
+      { key: '关键词追踪', icon: '🔑', label: '关键词追踪 (keyword tracker)' },
+      { key: '链路健康', icon: '🏥', label: '链路健康 (health report)' },
+      { key: '运营建议', icon: '📊', label: '运营建议 (ops suggestions)' },
+      { key: '人设建议', icon: '💅', label: '人设建议 (persona suggestions)' },
+    ];
+
+    var foundCount = 0;
+    var checkHtml = '<div style="padding:8px;background:var(--bg-inset);border:1px solid var(--bg-deep);margin-bottom:8px;">';
+    checkHtml += '<div style="font-family:var(--font-pixel);font-size:8px;color:var(--text-dim);margin-bottom:6px;">V3 段落检查清单</div>';
+    v3Sections.forEach(function(sec) {
+      var found = briefText.indexOf(sec.key) >= 0;
+      if (found) foundCount++;
+      var icon = found ? '✅' : '❌';
+      var color = found ? 'var(--green-leaf)' : 'var(--text-dim)';
+      checkHtml += '<div style="font-size:11px;padding:1px 0;color:' + color + ';">' + icon + ' ' + sec.icon + ' ' + escHtml(sec.label) + '</div>';
+    });
+    checkHtml += '<div style="margin-top:4px;font-size:10px;color:var(--text-dim);">覆盖率: ' + foundCount + '/' + v3Sections.length + '</div>';
+    checkHtml += '</div>';
+    h += checkHtml;
+
+    h += '<div class="ops-data-card-body">' + escHtml(briefText) + '</div>';
   }
   h += '</div>';
   return h;
@@ -2101,11 +2156,70 @@ function renderOpsStrategy(data) {
   if (!s) {
     h += '<div class="ops-data-card-body">暂无策略 — 运行「重新计算策略」生成</div>';
   } else {
-    h += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">生成于: ' + escHtml(s.generated_at || '?') + ' | 状态: ' + (s.confirmed ? '✅ 已确认' : '⏳ 待确认') + '</div>';
+    h += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">生成于: ' + escHtml(s.generated_at || '?') + ' | 状态: ' + (s.confirmed || s.status === 'confirmed' ? '✅ 已确认' : '⏳ 待确认') + '</div>';
+
+    // Performance summary
+    if (s.performance_summary) {
+      var ps = s.performance_summary;
+      h += '<div class="ops-stat-grid">';
+      h += opsStatItem(ps.total_posts || 0, '总发布');
+      h += opsStatItem(ps.best_performing_template || '—', '最佳模板');
+      h += opsStatItem(ps.engagement_trend === 'rising' ? '📈 上升' : ps.engagement_trend === 'declining' ? '📉 下降' : '➡️ 稳定', '互动趋势');
+      h += '</div>';
+    }
+
+    // Ops suggestions vs Persona suggestions (分流展示)
+    var hasOps = s.ops_suggestions && s.ops_suggestions.length > 0;
+    var hasPersona = s.persona_suggestions && s.persona_suggestions.length > 0;
+    if (hasOps || hasPersona) {
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">';
+      // Ops side
+      h += '<div style="padding:8px;background:var(--bg-inset);border:1px solid var(--bg-deep);">';
+      h += '<div style="font-family:var(--font-pixel);font-size:8px;color:var(--blue-sky);margin-bottom:6px;">📊 运营建议</div>';
+      if (hasOps) {
+        s.ops_suggestions.forEach(function(sug) {
+          h += '<div style="font-size:11px;color:var(--text-secondary);padding:2px 0;">• ' + escHtml(sug) + '</div>';
+        });
+      } else {
+        h += '<div style="font-size:10px;color:var(--text-dim);">暂无</div>';
+      }
+      h += '</div>';
+      // Persona side
+      h += '<div style="padding:8px;background:var(--bg-inset);border:1px solid var(--bg-deep);">';
+      h += '<div style="font-family:var(--font-pixel);font-size:8px;color:var(--pink-blossom);margin-bottom:6px;">💅 人设建议</div>';
+      if (hasPersona) {
+        s.persona_suggestions.forEach(function(sug) {
+          h += '<div style="font-size:11px;color:var(--text-secondary);padding:2px 0;">• ' + escHtml(sug) + '</div>';
+        });
+      } else {
+        h += '<div style="font-size:10px;color:var(--text-dim);">暂无</div>';
+      }
+      h += '</div>';
+      h += '</div>';
+    }
+
+    // Next week recommendations
+    if (s.next_week_recommendations) {
+      var nw = s.next_week_recommendations;
+      h += '<div style="margin-top:8px;padding:8px;background:var(--bg-inset);border:1px solid var(--bg-deep);">';
+      h += '<div style="font-family:var(--font-pixel);font-size:8px;color:var(--green-leaf);margin-bottom:4px;">📋 下周建议</div>';
+      if (nw.content_direction) h += '<div style="font-size:11px;margin-bottom:4px;">方向: ' + escHtml(nw.content_direction) + '</div>';
+      if (nw.recommended_templates && nw.recommended_templates.length > 0) {
+        h += '<div style="font-size:10px;">推荐模板: ' + nw.recommended_templates.map(function(t) { return '<span class="ops-badge approved">' + escHtml(t) + '</span>'; }).join(' ') + '</div>';
+      }
+      if (nw.avoid_templates && nw.avoid_templates.length > 0) {
+        h += '<div style="font-size:10px;margin-top:2px;">避免模板: ' + nw.avoid_templates.map(function(t) { return '<span class="ops-badge discarded">' + escHtml(t) + '</span>'; }).join(' ') + '</div>';
+      }
+      if (nw.recommended_patterns && nw.recommended_patterns.length > 0) {
+        h += '<div style="font-size:10px;margin-top:2px;">推荐模式: ' + nw.recommended_patterns.map(function(p) { return '<span class="ops-badge">' + escHtml(p) + '</span>'; }).join(' ') + '</div>';
+      }
+      if (nw.experiment_suggestion) h += '<div style="font-size:10px;margin-top:4px;color:var(--purple-berry);">🧪 实验: ' + escHtml(nw.experiment_suggestion) + '</div>';
+      h += '</div>';
+    }
+
     if (data.formatted) {
-      h += '<div class="ops-data-card-body">' + escHtml(data.formatted) + '</div>';
-    } else {
-      h += '<div class="ops-data-card-body">' + escHtml(JSON.stringify(s, null, 2)) + '</div>';
+      h += '<details style="margin-top:8px;"><summary style="font-size:10px;color:var(--text-dim);cursor:pointer;">展开原始格式化文本</summary>';
+      h += '<div class="ops-data-card-body">' + escHtml(data.formatted) + '</div></details>';
     }
   }
   h += '</div>';
@@ -2130,22 +2244,49 @@ function renderOpsDiscovery(data) {
   }
   h += '</div>';
 
+  // Candidate accounts
+  var approved = candidates.candidates.filter(function(c) { return c.status === 'approved'; });
+  var pending = candidates.candidates.filter(function(c) { return c.status !== 'approved' && c.status !== 'dismissed'; });
+  var dismissed = candidates.candidates.filter(function(c) { return c.status === 'dismissed'; });
+
   h += '<div class="ops-data-card"><div class="ops-data-card-title">👤 候选账号 (' + candidates.candidates.length + ')</div>';
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(approved.length, '已批准');
+  h += opsStatItem(pending.length, '待处理');
+  h += opsStatItem(dismissed.length, '已忽略');
+  h += '</div>';
+
+  // Persona.yaml write verification hint
+  if (approved.length > 0) {
+    h += '<div style="padding:6px 8px;margin-bottom:8px;background:#E8FFE8;border:1px solid var(--green-leaf);font-size:11px;">';
+    h += '✅ <strong>' + approved.length + '</strong> 个账号已批准写入 persona.yaml (tag: discovered)';
+    h += ' — <button class="ops-mini-btn" onclick="verifyPersonaCompetitors()" style="margin-left:6px;">🔍 验证 persona.yaml</button>';
+    h += '</div>';
+  }
+
   if (candidates.candidates.length > 0) {
     candidates.candidates.forEach(function(c) {
+      var statusIcon = c.status === 'approved' ? '✅' : c.status === 'dismissed' ? '🚫' : '⏳';
       h += '<div style="padding:6px;margin-bottom:4px;border:1px solid var(--bg-deep);background:var(--bg-inset);display:flex;align-items:center;gap:8px;">';
+      h += '<span>' + statusIcon + '</span>';
       h += '<strong style="font-size:12px;">@' + escHtml(c.name || c.account || '') + '</strong>';
       h += '<span class="ops-badge">' + escHtml(c.platform || '') + '</span>';
       if (c.score) h += '<span style="font-size:11px;color:var(--text-dim);">评分: ' + c.score.toFixed(1) + '</span>';
+      if (c.reason) h += '<span style="font-size:10px;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml((c.reason || '').slice(0, 40)) + '</span>';
       h += '<span style="flex:1"></span>';
-      h += '<button class="ops-mini-btn approve" onclick="opsCandidateAction(\'approve\', \'' + escAttr(c.name || c.account || '') + '\', \'' + escAttr(c.platform || '') + '\')">✓ 批准</button>';
-      h += '<button class="ops-mini-btn discard" onclick="opsCandidateAction(\'dismiss\', \'' + escAttr(c.name || c.account || '') + '\', \'' + escAttr(c.platform || '') + '\')">✗ 忽略</button>';
+      if (c.status !== 'approved' && c.status !== 'dismissed') {
+        h += '<button class="ops-mini-btn approve" onclick="opsCandidateAction(\'approve\', \'' + escAttr(c.name || c.account || '') + '\', \'' + escAttr(c.platform || '') + '\')">✓ 批准</button>';
+        h += '<button class="ops-mini-btn discard" onclick="opsCandidateAction(\'dismiss\', \'' + escAttr(c.name || c.account || '') + '\', \'' + escAttr(c.platform || '') + '\')">✗ 忽略</button>';
+      }
       h += '</div>';
     });
   } else {
     h += '<div class="ops-data-card-body">暂无候选账号</div>';
   }
   h += '</div>';
+
+  // Verification result container
+  h += '<div id="personaVerifyResult"></div>';
   return h;
 }
 
@@ -2245,6 +2386,171 @@ function renderOpsAnalysis(data) {
       h += '<div class="ops-data-card-body">' + escHtml(JSON.stringify(a, null, 2)) + '</div>';
     }
   }
+  h += '</div>';
+  return h;
+}
+
+function renderOpsTaste(data) {
+  var taste = data.taste || {};
+  var summary = data.summary || {};
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🎨 网感偏好仪表盘</div>';
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(summary.visual || 0, '视觉偏好');
+  h += opsStatItem(summary.hook || 0, '钩子偏好');
+  h += opsStatItem(summary.tone || 0, '语调偏好');
+  h += opsStatItem(summary.anti_patterns || 0, '反模式');
+  h += '</div>';
+
+  if (summary.last_updated) {
+    h += '<div style="font-size:10px;color:var(--text-dim);margin-bottom:8px;">最后更新: ' + escHtml(summary.last_updated) + '</div>';
+  }
+
+  // Visual preferences
+  var visual = taste.visual_preferences || [];
+  if (visual.length > 0) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">🖼️ 视觉偏好</strong></div>';
+    h += '<table class="ops-queue-table"><thead><tr><th>风格</th><th>亲和度</th><th>样本数</th></tr></thead><tbody>';
+    visual.slice(0, 10).forEach(function(p) {
+      var bar = tasteBar(p.affinity);
+      h += '<tr><td>' + escHtml(p.label) + '</td><td>' + bar + '</td><td>' + (p.sample_count || 0) + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+
+  // Hook preferences
+  var hooks = taste.hook_preferences || [];
+  if (hooks.length > 0) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">🪝 钩子偏好</strong></div>';
+    h += '<table class="ops-queue-table"><thead><tr><th>公式</th><th>亲和度</th><th>样本数</th></tr></thead><tbody>';
+    hooks.slice(0, 10).forEach(function(p) {
+      var bar = tasteBar(p.affinity);
+      h += '<tr><td>' + escHtml(p.label) + '</td><td>' + bar + '</td><td>' + (p.sample_count || 0) + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+
+  // Tone preferences
+  var tones = taste.tone_preferences || [];
+  if (tones.length > 0) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">🗣️ 语调偏好</strong></div>';
+    h += '<table class="ops-queue-table"><thead><tr><th>语调</th><th>亲和度</th><th>样本数</th></tr></thead><tbody>';
+    tones.slice(0, 10).forEach(function(p) {
+      var bar = tasteBar(p.affinity);
+      h += '<tr><td>' + escHtml(p.label) + '</td><td>' + bar + '</td><td>' + (p.sample_count || 0) + '</td></tr>';
+    });
+    h += '</tbody></table>';
+  }
+
+  // Anti patterns
+  var anti = taste.anti_patterns || [];
+  if (anti.length > 0) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">🚫 反模式</strong></div>';
+    anti.slice(0, 10).forEach(function(p) {
+      var bar = tasteBar(p.affinity);
+      h += '<div style="padding:4px 0;font-size:11px;display:flex;align-items:center;gap:6px;">'
+        + '<span style="flex:1;">✗ ' + escHtml(p.label) + '</span>'
+        + bar
+        + '<span style="font-size:10px;color:var(--text-dim);">n=' + (p.sample_count || 0) + '</span>'
+        + '</div>';
+    });
+  }
+
+  if (visual.length === 0 && hooks.length === 0 && tones.length === 0 && anti.length === 0) {
+    h += '<div class="ops-data-card-body">暂无网感偏好数据 — 需要先运行 post-analysis 生成</div>';
+  }
+
+  h += '</div>';
+  return h;
+}
+
+function tasteBar(affinity) {
+  var pct = Math.max(0, Math.min(100, Math.round((affinity || 0) * 100)));
+  var color = pct >= 60 ? 'var(--green-leaf)' : pct >= 30 ? 'var(--gold-warm)' : 'var(--terra)';
+  return '<span style="display:inline-block;width:60px;height:8px;background:var(--bg-inset);border:1px solid var(--bg-deep);position:relative;">'
+    + '<span style="display:block;height:100%;width:' + pct + '%;background:' + color + ';"></span>'
+    + '</span> <span style="font-size:10px;">' + pct + '%</span>';
+}
+
+function renderOpsPerformance(data) {
+  var entries = data.entries || [];
+  var tiers = data.tier_counts || {};
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">📉 发布效果追踪</div>';
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(data.total || 0, '总记录');
+  h += opsStatItem(tiers.viral || 0, '爆款 🔥');
+  h += opsStatItem(tiers.above_avg || 0, '高于均值');
+  h += opsStatItem(tiers.average || 0, '平均');
+  h += opsStatItem(tiers.below_avg || 0, '低于均值');
+  h += opsStatItem(tiers.flop || 0, '扑街');
+  h += '</div>';
+
+  if (data.last_updated) {
+    h += '<div style="font-size:10px;color:var(--text-dim);margin-bottom:8px;">最后更新: ' + escHtml(data.last_updated) + '</div>';
+  }
+
+  if (entries.length > 0) {
+    h += '<table class="ops-queue-table"><thead><tr><th>主题</th><th>平台</th><th>Tier</th><th>快照数</th><th>峰值互动</th></tr></thead><tbody>';
+    entries.slice(0, 20).forEach(function(e) {
+      var tierBadge = tierBadgeHtml(e.tier);
+      var peakLikes = (e.peak_metrics && e.peak_metrics.likes) || 0;
+      var peakComments = (e.peak_metrics && e.peak_metrics.comments) || 0;
+      h += '<tr>'
+        + '<td>' + escHtml((e.topic || '').slice(0, 30)) + '</td>'
+        + '<td>' + escHtml(e.platform || '') + '</td>'
+        + '<td>' + tierBadge + '</td>'
+        + '<td>' + (e.snapshots ? e.snapshots.length : 0) + '</td>'
+        + '<td>❤️' + peakLikes + ' 💬' + peakComments + '</td>'
+        + '</tr>';
+    });
+    h += '</tbody></table>';
+  } else {
+    h += '<div class="ops-data-card-body">暂无发布效果数据</div>';
+  }
+
+  h += '</div>';
+  return h;
+}
+
+function tierBadgeHtml(tier) {
+  var cls = tier === 'viral' ? 'approved' : tier === 'above_avg' ? 'pending' : tier === 'flop' ? 'discarded' : '';
+  var label = tier === 'viral' ? '🔥 爆款' : tier === 'above_avg' ? '↑ 高于' : tier === 'below_avg' ? '↓ 低于' : tier === 'flop' ? '✗ 扑街' : '— 平均';
+  return '<span class="ops-badge ' + cls + '">' + escHtml(label) + '</span>';
+}
+
+function renderOpsAnalysisLog(data) {
+  var entries = data.entries || [];
+  var tiers = data.tier_counts || {};
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🔬 分析日志</div>';
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(data.total || 0, '总记录');
+  h += opsStatItem(data.taste_updated_count || 0, '已更新网感');
+  h += opsStatItem(tiers.viral || 0, '爆款 🔥');
+  h += opsStatItem(tiers.above_avg || 0, '高于均值');
+  h += '</div>';
+
+  if (data.last_updated) {
+    h += '<div style="font-size:10px;color:var(--text-dim);margin-bottom:8px;">最后更新: ' + escHtml(data.last_updated) + '</div>';
+  }
+
+  if (entries.length > 0) {
+    h += '<table class="ops-queue-table"><thead><tr><th>主题</th><th>平台</th><th>Tier</th><th>网感更新</th><th>分析时间</th></tr></thead><tbody>';
+    entries.slice(0, 20).forEach(function(e) {
+      var tierBadge = tierBadgeHtml(e.tier);
+      var tasteIcon = e.taste_updated ? '✅' : '—';
+      var analyzedAt = e.analyzed_at ? escHtml(e.analyzed_at.slice(0, 16)) : '—';
+      h += '<tr>'
+        + '<td>' + escHtml((e.topic || '').slice(0, 30)) + '</td>'
+        + '<td>' + escHtml(e.platform || '') + '</td>'
+        + '<td>' + tierBadge + '</td>'
+        + '<td>' + tasteIcon + '</td>'
+        + '<td>' + analyzedAt + '</td>'
+        + '</tr>';
+    });
+    h += '</tbody></table>';
+  } else {
+    h += '<div class="ops-data-card-body">暂无分析日志 — 需要先运行 post-analysis</div>';
+  }
+
   h += '</div>';
   return h;
 }
@@ -2350,6 +2656,41 @@ async function opsCandidateAction(action, name, platform) {
     runOps('ops-discovery', document.getElementById('btn-ops-discovery'));
   } catch (err) {
     updateLogEntry(logId, 'error', { error: err.message }, 0);
+  }
+}
+
+/** Verify persona.yaml competitor write after candidate approval */
+async function verifyPersonaCompetitors() {
+  var resultEl = document.getElementById('personaVerifyResult');
+  if (!resultEl) return;
+  resultEl.innerHTML = '<div style="padding:8px;background:var(--gold-pale);font-size:11px;">🔄 正在验证 persona.yaml...</div>';
+  try {
+    var res = await fetch(apiUrl('ops-verify-persona'), { method: 'POST' });
+    var data = await res.json();
+    var match = data.match;
+    var h = '<div class="ops-data-card" style="border-color:' + (match ? 'var(--green-leaf)' : 'var(--terra)') + ';">';
+    h += '<div class="ops-data-card-title">' + (match ? '✅' : '⚠️') + ' persona.yaml 竞品验证</div>';
+    h += '<div class="ops-stat-grid">';
+    h += opsStatItem(data.total || 0, '竞品总数');
+    h += opsStatItem(data.discovered || 0, 'discovered');
+    h += opsStatItem(data.manual || 0, '手动添加');
+    h += opsStatItem(data.approved_candidates || 0, '已批准候选');
+    h += '</div>';
+    if (!match) {
+      h += '<div style="padding:4px 8px;font-size:11px;color:var(--terra);">⚠ 不匹配: discovered (' + (data.discovered || 0) + ') < approved (' + (data.approved_candidates || 0) + ') — 部分候选可能未成功写入</div>';
+    }
+    if (data.competitors && data.competitors.length > 0) {
+      h += '<table class="ops-queue-table"><thead><tr><th>账号</th><th>平台</th><th>来源</th></tr></thead><tbody>';
+      data.competitors.forEach(function(c) {
+        var tagBadge = c.tag === 'discovered' ? '<span class="ops-badge approved">discovered</span>' : '<span class="ops-badge">manual</span>';
+        h += '<tr><td>@' + escHtml(c.name || '') + '</td><td>' + escHtml(c.platform || '') + '</td><td>' + tagBadge + '</td></tr>';
+      });
+      h += '</tbody></table>';
+    }
+    h += '</div>';
+    resultEl.innerHTML = h;
+  } catch (err) {
+    resultEl.innerHTML = '<div style="padding:8px;background:#FFE0E0;font-size:11px;color:var(--terra);">验证失败: ' + escHtml(err.message) + '</div>';
   }
 }
 

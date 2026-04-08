@@ -190,7 +190,7 @@ function fetchXhsAccount(account: string): CompetitorUpdate {
     const raw = execFileSync('uv', [
       'run', '--directory', xhsDir, 'python', xhsCli,
       'search-feeds', '--keyword', account,
-    ], { timeout: 30_000, encoding: 'utf8' });
+    ], { timeout: 30_000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     // Output is JSON with a "feeds" array
     const parsed = JSON.parse(raw.trim()) as {
       feeds?: Array<{

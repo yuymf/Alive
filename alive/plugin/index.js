@@ -74,8 +74,11 @@ export default definePluginEntry({
           try {
             return { text: runScript(opsHandlerPath, opsArgs) };
           } catch (err) {
-            const stderr = err.stderr?.toString().trim() ?? '';
-            return { text: `❌ ${stderr || err.message}` };
+            // Prefer stdout (ops-command-handler writes user-facing message to stdout even on failure).
+            // Never expose raw stderr — it contains internal logs, not user-facing content.
+            const stdout = err.stdout?.toString().trim() ?? '';
+            if (stdout) return { text: stdout };
+            return { text: '⚠️ 命令执行遇到问题，请稍后重试' };
           }
         }
 
@@ -84,8 +87,9 @@ export default definePluginEntry({
           try {
             return { text: runScript(opsHandlerPath, ['message', rawArgs]) };
           } catch (err) {
-            const stderr = err.stderr?.toString().trim() ?? '';
-            return { text: `❌ ${stderr || err.message}` };
+            const stdout = err.stdout?.toString().trim() ?? '';
+            if (stdout) return { text: stdout };
+            return { text: '⚠️ 命令执行遇到问题，请稍后重试' };
           }
         }
 
@@ -93,9 +97,14 @@ export default definePluginEntry({
         try {
           return { text: runScript(adminHandlerPath, [rawArgs], 30000) };
         } catch (err) {
+          const stdout = err.stdout?.toString().trim() ?? '';
+          if (stdout) return { text: stdout };
           const stderr = err.stderr?.toString().trim() ?? '';
-          const message = stderr || err.message;
-          return { text: `❌ ${message}` };
+          // Only surface stderr if it looks like a user-facing error (not a technical log).
+          const userFacingPattern = /^[⚠️❌✅]|未启用|未登录|未找到|无效|暂无|未知命令|请提供/;
+          const firstLine = stderr.split('\n')[0] ?? '';
+          if (userFacingPattern.test(firstLine)) return { text: `❌ ${firstLine}` };
+          return { text: '⚠️ 命令执行遇到问题，请稍后重试' };
         }
       },
     });

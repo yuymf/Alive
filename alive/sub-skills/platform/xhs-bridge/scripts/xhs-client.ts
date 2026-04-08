@@ -59,7 +59,7 @@ function callXhsCli(command: string, args: string[] = []): Promise<unknown> {
     const uvArgs = ['run', '--directory', xhsDir, 'python', cliPath, command, ...args];
 
     execFile('uv', uvArgs, { timeout: XHS_CLI_TIMEOUT }, (error, stdout, stderr) => {
-      if (stderr) console.error(`[xhs-bridge] ${stderr.trim()}`);
+      if (stderr && (process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true')) console.error(`[xhs-bridge] ${stderr.trim()}`);
       if (error) {
         try {
           const parsed = JSON.parse(stdout);

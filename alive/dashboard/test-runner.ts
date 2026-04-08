@@ -50,6 +50,9 @@ import { loadStrategy, computeStrategy, confirmStrategy } from '../scripts/ops/s
 import { loadDiscoveryPool, loadCandidateAccounts, approveCandidate, dismissCandidate } from '../scripts/ops/discovery-engine';
 import { loadKeywordState, buildKeywordContext } from '../scripts/ops/keyword-tracker';
 import { loadContentPatterns, getRelevantPatterns } from '../scripts/ops/content-analyzer';
+import { loadContentTaste } from '../scripts/ops/taste-engine';
+import { loadPerformanceLog } from '../scripts/ops/performance-tracker';
+import { loadAnalysisLog } from '../scripts/ops/post-analyzer';
 
 // ── Parse CLI args ────────────────────────────────────────────────
 
@@ -842,6 +845,89 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
       message: `内容模式: ${patterns.patterns.length} 个模式, ${patterns.competitor_insights.length} 个竞品洞察`,
       patterns,
       relevant_summary: relevant,
+    };
+  }
+
+  // ── Ops: Verify persona.yaml competitor write ─────────────────
+  if (cmd === 'ops-verify-persona') {
+    const personaConfig = loadPersona();
+    const competitors = personaConfig.ops?.competitors || [];
+    const discovered = competitors.filter((c: Record<string, unknown>) => c.tag === 'discovered');
+    const manual = competitors.filter((c: Record<string, unknown>) => c.tag !== 'discovered');
+    const candidates = loadCandidateAccounts();
+    const approvedCandidates = candidates.candidates.filter(c => c.status === 'approved');
+    return {
+      command: 'ops-verify-persona',
+      message: `persona.yaml 竞品: ${competitors.length} 总计 (${discovered.length} discovered, ${manual.length} 手动)`,
+      total: competitors.length,
+      discovered: discovered.length,
+      manual: manual.length,
+      approved_candidates: approvedCandidates.length,
+      match: discovered.length >= approvedCandidates.length,
+      competitors: competitors.map((c: Record<string, unknown>) => ({
+        name: c.name || c.account,
+        platform: c.platform,
+        tag: c.tag || 'manual',
+      })),
+    };
+  }
+
+  // ── Ops: Content Taste ────────────────────────────────────────
+  if (cmd === 'ops-taste') {
+    const taste = loadContentTaste();
+    const visualCount = taste.visual_preferences?.length || 0;
+    const hookCount = taste.hook_preferences?.length || 0;
+    const toneCount = taste.tone_preferences?.length || 0;
+    const antiCount = taste.anti_patterns?.length || 0;
+    return {
+      command: 'ops-taste',
+      message: `网感偏好: ${visualCount} 视觉, ${hookCount} 钩子, ${toneCount} 语调, ${antiCount} 反模式`,
+      taste,
+      summary: {
+        visual: visualCount,
+        hook: hookCount,
+        tone: toneCount,
+        anti_patterns: antiCount,
+        last_updated: taste.last_updated || null,
+      },
+    };
+  }
+
+  // ── Ops: Performance Log ──────────────────────────────────────
+  if (cmd === 'ops-performance') {
+    const log = loadPerformanceLog();
+    const tierCounts = { viral: 0, above_avg: 0, average: 0, below_avg: 0, flop: 0 };
+    log.entries.forEach(e => {
+      const t = e.tier || 'average';
+      if (t in tierCounts) (tierCounts as Record<string, number>)[t]++;
+    });
+    return {
+      command: 'ops-performance',
+      message: `发布效果追踪: ${log.entries.length} 条记录`,
+      entries: log.entries,
+      total: log.entries.length,
+      tier_counts: tierCounts,
+      last_updated: log.last_updated || null,
+    };
+  }
+
+  // ── Ops: Analysis Log ─────────────────────────────────────────
+  if (cmd === 'ops-analysis-log') {
+    const log = loadAnalysisLog();
+    const tierCounts = { viral: 0, above_avg: 0, average: 0, below_avg: 0, flop: 0 };
+    log.entries.forEach(e => {
+      const t = e.tier || 'average';
+      if (t in tierCounts) (tierCounts as Record<string, number>)[t]++;
+    });
+    const tasteUpdated = log.entries.filter(e => e.taste_updated).length;
+    return {
+      command: 'ops-analysis-log',
+      message: `分析日志: ${log.entries.length} 条记录, ${tasteUpdated} 条已更新网感`,
+      entries: log.entries,
+      total: log.entries.length,
+      tier_counts: tierCounts,
+      taste_updated_count: tasteUpdated,
+      last_updated: log.last_updated || null,
     };
   }
 

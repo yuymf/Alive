@@ -14,6 +14,8 @@ import { now, getLocalDate } from '../utils/time-utils';
 import { TrendItem, TrendHistory, OpsConfig, PersonaConfig } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
 
+const isDebug = () => process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true';
+
 // ─── Pure functions (exported for testing) ───────────────────────────────────
 
 /**
@@ -302,15 +304,15 @@ function fetchWithFallback(platform: string, limit = 30): TrendItem[] {
 
   // Fallback to direct APIs for critical platforms
   if (platform === 'douyin') {
-    console.log(`[trend-analyzer] DailyHot douyin returned 0 items, trying direct API fallback...`);
+    if (isDebug()) console.log(`[trend-analyzer] DailyHot douyin returned 0 items, trying direct API fallback...`);
     return callDouyinDirectApi(limit);
   }
   if (platform === 'weibo') {
-    console.log(`[trend-analyzer] DailyHot weibo returned 0 items, trying direct API fallback...`);
+    if (isDebug()) console.log(`[trend-analyzer] DailyHot weibo returned 0 items, trying direct API fallback...`);
     return callWeiboDirectApi(limit);
   }
   if (platform === 'bilibili') {
-    console.log(`[trend-analyzer] DailyHot bilibili returned 0 items, trying direct API fallback...`);
+    if (isDebug()) console.log(`[trend-analyzer] DailyHot bilibili returned 0 items, trying direct API fallback...`);
     return callBilibiliDirectApi(limit);
   }
 
@@ -371,7 +373,7 @@ export async function analyzeTrends(
   const toutiaoItems = fetchWithFallback('toutiao', 20);
   const baiduItems = fetchWithFallback('baidu', 15);
   const rawAll = [...douyinItems, ...weiboItems, ...bilibiliItems, ...toutiaoItems, ...baiduItems];
-  console.log(`[trend-analyzer] DEBUG: rawAll items: ${rawAll.length} (douyin=${douyinItems.length}, weibo=${weiboItems.length}, bilibili=${bilibiliItems.length}, toutiao=${toutiaoItems.length}, baidu=${baiduItems.length})`);
+  if (isDebug()) console.log(`[trend-analyzer] DEBUG: rawAll items: ${rawAll.length} (douyin=${douyinItems.length}, weibo=${weiboItems.length}, bilibili=${bilibiliItems.length}, toutiao=${toutiaoItems.length}, baidu=${baiduItems.length})`);
 
 
   // Deduplicate by keyword+platform
@@ -382,7 +384,7 @@ export async function analyzeTrends(
     seen.add(key);
     return true;
   });
-  console.log(`[trend-analyzer] DEBUG: deduped items: ${deduped.length}`);
+  if (isDebug()) console.log(`[trend-analyzer] DEBUG: deduped items: ${deduped.length}`);
 
   // 2. Load history once, then compute velocity scores
   const history = readJSON<TrendHistory[]>(PATHS.trendHistory, []);
@@ -391,35 +393,37 @@ export async function analyzeTrends(
     const velocity_score = computeVelocityScore(item.current_volume, avg7d);
     return { ...item, avg_7d: avg7d, velocity_score };
   });
-  console.log(`[trend-analyzer] DEBUG: withVelocity items: ${withVelocity.length}`);
+  if (isDebug()) console.log(`[trend-analyzer] DEBUG: withVelocity items: ${withVelocity.length}`);
 
   // 3. Persist today's data for future velocity calculations
   persistTodayTrends(withVelocity);
 
   // 4. Filter by threshold — cold-start bypass: if all have no history, skip threshold
   const hasHistory = withVelocity.some(i => i.avg_7d > 0);
-  console.log(`[trend-analyzer] DEBUG: hasHistory=${hasHistory}, threshold=${ops.trend_score_threshold}`);
+  if (isDebug()) console.log(`[trend-analyzer] DEBUG: hasHistory=${hasHistory}, threshold=${ops.trend_score_threshold}`);
   const aboveThreshold = hasHistory
     ? filterByThreshold(withVelocity, ops.trend_score_threshold)
         .sort((a, b) => b.velocity_score - a.velocity_score)  // Sort by velocity desc before capping
     : withVelocity.sort((a, b) => b.current_volume - a.current_volume).slice(0, 30);
-  console.log(`[trend-analyzer] DEBUG: aboveThreshold items: ${aboveThreshold.length}`);
+  if (isDebug()) console.log(`[trend-analyzer] DEBUG: aboveThreshold items: ${aboveThreshold.length}`);
   if (aboveThreshold.length === 0) {
-    console.log(`[trend-analyzer] DEBUG: No trends above threshold, returning empty`);
+    if (isDebug()) console.log(`[trend-analyzer] DEBUG: No trends above threshold, returning empty`);
     return [];
   }
 
   // 5. LLM relevance filter
   const prompt = buildRelevancePrompt(aboveThreshold, personaIdentities, ops.topic_count);
-  const trendListDebug = aboveThreshold
-    .map(t => `- ${t.keyword} (${t.platform}, velocity=${t.velocity_score.toFixed(1)}x, rank=${t.rank})`)
-    .join('\n');
-  console.log(`[trend-analyzer] DEBUG: input trends (${aboveThreshold.length}):\n${trendListDebug}`);
+  if (isDebug()) {
+    const trendListDebug = aboveThreshold
+      .map(t => `- ${t.keyword} (${t.platform}, velocity=${t.velocity_score.toFixed(1)}x, rank=${t.rank})`)
+      .join('\n');
+    console.log(`[trend-analyzer] DEBUG: input trends (${aboveThreshold.length}):\n${trendListDebug}`);
+  }
   try {
     const envelope = await llm.callJSON<LLMTrendEnvelope>(prompt, 4000);
-    console.log(`[trend-analyzer] DEBUG: LLM response received:`, envelope);
+    if (isDebug()) console.log(`[trend-analyzer] DEBUG: LLM response received:`, envelope);
     const results = Array.isArray(envelope) ? envelope : (envelope.topics ?? []);
-    console.log(`[trend-analyzer] DEBUG: LLM results count: ${results.length}`);
+    if (isDebug()) console.log(`[trend-analyzer] DEBUG: LLM results count: ${results.length}`);
 
     // Track used original trends to prevent multiple LLM results from mapping to the same one
     const usedOriginalKeys = new Set<string>();
@@ -478,14 +482,14 @@ export async function analyzeTrends(
 
         // Raised threshold from 0.35 → 0.45 to reduce false positives
         if (!bestMatch || bestScore < 0.45) {
-          console.log(`[trend-analyzer] DEBUG: Fuzzy match failed for "${r.keyword}" (norm: "${rNorm}"), bestScore=${bestScore.toFixed(3)}`);
+          if (isDebug()) console.log(`[trend-analyzer] DEBUG: Fuzzy match failed for "${r.keyword}" (norm: "${rNorm}"), bestScore=${bestScore.toFixed(3)}`);
           return null;
         }
 
         // Claim this original so subsequent LLM results won't map to it
         const matchKey = `${bestMatch.platform}:${bestMatch.keyword}`;
         usedOriginalKeys.add(matchKey);
-        console.log(`[trend-analyzer] DEBUG: Matched "${r.keyword}" → "${bestMatch.keyword}" (score=${bestScore.toFixed(3)})`);
+        if (isDebug()) console.log(`[trend-analyzer] DEBUG: Matched "${r.keyword}" → "${bestMatch.keyword}" (score=${bestScore.toFixed(3)}`);
 
         return {
           ...bestMatch,
@@ -496,7 +500,7 @@ export async function analyzeTrends(
       })
       .filter((r): r is FilteredTrend => r !== null);
   } catch (err) {
-    console.error(`[trend-analyzer] DEBUG: LLM call failed:`, err);
+    console.error(`[trend-analyzer] LLM call failed:`, err);
     return [];
   }
 }

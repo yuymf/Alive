@@ -241,7 +241,9 @@ export function loadSkillEnvVars(skillName: string = 'alive'): void {
         loadedCount++;
       }
     }
-    console.log(`[loadSkillEnvVars] Loaded ${loadedCount} environment variables for skill "${skillName}"`);
+    if (process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true') {
+      console.log(`[loadSkillEnvVars] Loaded ${loadedCount} environment variables for skill "${skillName}"`);
+    }
   } catch (err) {
     console.error(`[loadSkillEnvVars] Failed to load environment variables:`, err);
   }
