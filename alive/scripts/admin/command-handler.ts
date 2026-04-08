@@ -148,9 +148,44 @@ function cmdOpsProxy(cmd: ParsedCommand): CommandResult {
     });
     return { output: (output as string).trim() || '✅ Done.' };
   } catch (err) {
+    // 子进程的 stdout 包含 ops-command-handler 自己格式化好的用户友好输出
+    const stdout = (err as { stdout?: Buffer | string }).stdout?.toString().trim() ?? '';
+    if (stdout) {
+      // ops-command-handler 已经做了错误处理，stdout 里的内容是安全的
+      return { output: stdout, error: true };
+    }
+    // stdout 为空时，从 stderr 提取用户友好的错误摘要（不暴露内部细节）
     const stderr = (err as { stderr?: Buffer | string }).stderr?.toString().trim() ?? '';
-    return { output: `❌ ${stderr || (err as Error).message}`, error: true };
+    return { output: extractUserFriendlyError(stderr, err as Error), error: true };
   }
+}
+
+/**
+ * 从子进程 stderr 中提取用户友好的错误信息，
+ * 过滤掉 Python traceback、CDP 日志、内部类名等技术细节。
+ */
+function extractUserFriendlyError(stderr: string, err: Error): string {
+  const patterns: Array<{ re: RegExp; msg: string }> = [
+    { re: /NoFeedsError|没有捕获到 feeds 数据/, msg: '小红书搜索数据获取失败，可能需要重新登录小红书' },
+    { re: /NotLoggedInError|未登录/, msg: '小红书未登录，请先执行登录' },
+    { re: /等待.*INITIAL_STATE.*超时|等待.*超时/, msg: '小红书页面加载超时，请检查网络或重新登录' },
+    { re: /会话 tab.*已失效/, msg: '浏览器会话已过期，请重启 Chrome 后重试' },
+    { re: /CDPError|CDP.*错误/, msg: '浏览器连接异常，请确认 Chrome 已启动' },
+    { re: /ECONNREFUSED/, msg: 'Chrome 浏览器未启动或远程调试端口未开启' },
+    { re: /ETIMEDOUT|timeout/i, msg: '请求超时，请稍后重试' },
+    { re: /RateLimitError|rate.?limit/i, msg: '操作过于频繁，请稍后重试' },
+    { re: /ENOTFOUND/, msg: '网络连接失败，请检查网络' },
+    { re: /ops 未启用/, msg: 'ops 未启用，请在 persona.yaml 中设置 ops.enabled: true' },
+  ];
+
+  for (const { re, msg } of patterns) {
+    if (re.test(stderr) || re.test(err.message)) {
+      return `⚠️ ${msg}`;
+    }
+  }
+
+  // 兜底：不暴露内部技术细节
+  return '⚠️ 命令执行遇到问题，请稍后重试或查看服务器日志';
 }
 
 const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<CommandResult>> = {
@@ -193,8 +228,10 @@ export async function handleCommand(cmd: ParsedCommand): Promise<CommandResult> 
   try {
     return await handler(cmd);
   } catch (err) {
+    // 不暴露内部错误细节给用户
+    console.error(`[command-handler] Error executing '${cmd.subcommand}':`, err);
     return {
-      output: `❌ Error executing \`${cmd.subcommand}\`: ${(err as Error).message}`,
+      output: `⚠️ 命令 \`${cmd.subcommand}\` 执行遇到问题，请稍后重试`,
       error: true,
     };
   }

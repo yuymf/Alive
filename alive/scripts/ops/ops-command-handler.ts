@@ -333,13 +333,23 @@ async function main(): Promise<void> {
         result = `⚠️ 未知命令: ${command}\n\n${cmdHelp()}`;
     }
   } catch (err) {
-    result = `❌ 命令执行失败: ${(err as Error).message}`;
+    const msg = (err as Error).message ?? '';
+    // 只暴露已知的、用户可理解的错误信息
+    if (/未启用|未登录|未找到|无效编号|暂无|未知命令|请提供/.test(msg)) {
+      result = `⚠️ ${msg}`;
+    } else {
+      // 内部错误只写日志，不暴露技术细节给用户
+      console.error(`[ops-command-handler] Internal error:`, err);
+      result = '⚠️ 命令执行遇到问题，请稍后重试';
+    }
   }
 
   printAndExit(result);
 }
 
 main().catch(err => {
-  console.error(`ops-command-handler ERROR: ${err}`);
+  console.error(`[ops-command-handler] Fatal error:`, err);
+  // 不暴露内部细节，只输出用户友好提示到 stdout
+  process.stdout.write('⚠️ 命令执行遇到问题，请稍后重试');
   process.exit(1);
 });
