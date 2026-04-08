@@ -116,10 +116,13 @@ export const actions = {
         .join('、') || '（暂无）';
 
       const intentTemplate = loadTemplate('search-intent-prompt.md');
+      const moodValence = emotion.mood?.valence ?? 0;
+      const moodEnergy = emotion.energy ?? 0.5;
+      const moodCreativity = emotion.creativity ?? 0.4;
       const intentPrompt = intentTemplate
         .replace('{persona_name}', persona.meta.name)
         .replace('{persona_traits}', (persona.personality.core_traits ?? []).join('、'))
-        .replace('{emotion_summary}', `${emotion.mood.description} (valence=${emotion.mood.valence.toFixed(1)}, energy=${emotion.energy.toFixed(1)}, creativity=${emotion.creativity.toFixed(1)})`)
+        .replace('{emotion_summary}', `${emotion.mood?.description ?? '平静'} (valence=${moodValence.toFixed(1)}, energy=${moodEnergy.toFixed(1)}, creativity=${moodCreativity.toFixed(1)})`)
         .replace('{action_context}', actionContext || '（没有特别想做的事，随便刷刷）')
         .replace('{recent_inspirations}', recentTitles)
         .replace('{default_keywords}', fallbackKeywords.join('、'));

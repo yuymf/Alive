@@ -176,13 +176,6 @@ function callDailyHotNews(platform: string, limit = 30): TrendItem[] {
   }
 }
 
-/**
- * Fetch Douyin hot topics from remote DailyHot API.
- */
-function callDouyinHotTrend(limit = 30): TrendItem[] {
-  return callDailyHotNews('douyin', limit);
-}
-
 // ─── Fallback: Direct Weibo Hot Search API ───────────────────────────────────
 
 interface WeiboHotSearchItem {
@@ -268,6 +261,38 @@ function callBilibiliDirectApi(limit = 20): TrendItem[] {
   }
 }
 
+// ─── Fallback: Direct Douyin Hot Search API ──────────────────────────────────
+
+/**
+ * Fallback for douyin: directly call douyin.com trending API via the
+ * tophub aggregator endpoint (public, no auth required).
+ */
+function callDouyinDirectApi(limit = 30): TrendItem[] {
+  try {
+    // Use tophub.today as a reliable proxy for Douyin hot search
+    const raw = execFileSync('curl', [
+      '-s', '--max-time', '10',
+      'https://tophub.today/api/nodes/1',
+      '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+      '-H', 'Accept: application/json',
+    ], { timeout: 15_000, encoding: 'utf8' });
+    const parsed = JSON.parse(raw.trim()) as { data?: { items?: Array<{ title?: string; extra?: { hot?: number } }> } };
+    const items = parsed.data?.items ?? [];
+    if (items.length === 0) return [];
+    return items.slice(0, limit).map((item, idx) => ({
+      platform: 'douyin',
+      keyword: item.title ?? '',
+      current_volume: item.extra?.hot ?? 0,
+      avg_7d: 0,
+      velocity_score: 0,
+      rank: idx + 1,
+    })).filter(i => i.keyword !== '');
+  } catch (err) {
+    console.warn('[trend-analyzer] douyin direct API fallback failed:', (err as Error).message);
+    return [];
+  }
+}
+
 /**
  * Fetch platform data with fallback: try DailyHot first, then direct API.
  */
@@ -276,6 +301,10 @@ function fetchWithFallback(platform: string, limit = 30): TrendItem[] {
   if (items.length > 0) return items;
 
   // Fallback to direct APIs for critical platforms
+  if (platform === 'douyin') {
+    console.log(`[trend-analyzer] DailyHot douyin returned 0 items, trying direct API fallback...`);
+    return callDouyinDirectApi(limit);
+  }
   if (platform === 'weibo') {
     console.log(`[trend-analyzer] DailyHot weibo returned 0 items, trying direct API fallback...`);
     return callWeiboDirectApi(limit);
@@ -336,11 +365,11 @@ export async function analyzeTrends(
   llm: LLMClient,
 ): Promise<FilteredTrend[]> {
   // 1. Collect raw trends from remote DailyHot API (with direct-API fallback)
-  const douyinItems = callDouyinHotTrend(30);
+  const douyinItems = fetchWithFallback('douyin', 30);
   const weiboItems = fetchWithFallback('weibo', 20);
   const bilibiliItems = fetchWithFallback('bilibili', 20);
-  const toutiaoItems = callDailyHotNews('toutiao', 20);
-  const baiduItems = callDailyHotNews('baidu', 15);
+  const toutiaoItems = fetchWithFallback('toutiao', 20);
+  const baiduItems = fetchWithFallback('baidu', 15);
   const rawAll = [...douyinItems, ...weiboItems, ...bilibiliItems, ...toutiaoItems, ...baiduItems];
   console.log(`[trend-analyzer] DEBUG: rawAll items: ${rawAll.length} (douyin=${douyinItems.length}, weibo=${weiboItems.length}, bilibili=${bilibiliItems.length}, toutiao=${toutiaoItems.length}, baidu=${baiduItems.length})`);
 
@@ -382,7 +411,10 @@ export async function analyzeTrends(
 
   // 5. LLM relevance filter
   const prompt = buildRelevancePrompt(aboveThreshold, personaIdentities, ops.topic_count);
-  console.log(`[trend-analyzer] DEBUG: About to call LLM with prompt (first 200 chars): ${prompt.slice(0, 200)}`);
+  const trendListDebug = aboveThreshold
+    .map(t => `- ${t.keyword} (${t.platform}, velocity=${t.velocity_score.toFixed(1)}x, rank=${t.rank})`)
+    .join('\n');
+  console.log(`[trend-analyzer] DEBUG: input trends (${aboveThreshold.length}):\n${trendListDebug}`);
   try {
     const envelope = await llm.callJSON<LLMTrendEnvelope>(prompt, 4000);
     console.log(`[trend-analyzer] DEBUG: LLM response received:`, envelope);

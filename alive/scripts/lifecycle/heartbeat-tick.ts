@@ -47,6 +47,7 @@ import { loadPersona, injectPersona, buildVoiceSignature, getEmotionCouplingConf
 import { resolveRoute, resolveRouteBySkillName, fuzzyResolveSkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
 import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
 import { ContentProviderRegistry } from '../adapters/content-provider';
+import { exaWebSearch } from '../utils/exa-client';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
 import { processInspirationForDiscovery, processInspirationForAccountDiscovery } from '../ops/discovery-engine';
 import { runKeywordSearch } from '../ops/keyword-tracker';
@@ -234,6 +235,7 @@ function resolveSkillConfig(skillName: string, actionContext?: string, persona?:
     config = createContentBrowseConfig({
       contentSources,
       registry,
+      webSearch: (query, limit) => exaWebSearch(query, limit ?? 5),
     }) as unknown as Record<string, unknown>;
   } else {
     const factory = skillConfigFactories[skillName];

@@ -763,10 +763,11 @@ export function hydrateEmotionState(raw: Record<string, unknown>): EmotionState 
   const state = raw as Partial<EmotionState> & Record<string, unknown>;
 
   // Backward compat: flatten format (valence/arousal at top level, no mood object)
-  const mood = state.mood ?? {
-    valence: (raw.valence as number) ?? 0,
-    arousal: (raw.arousal as number) ?? 0.5,
-    description: (raw.description as string) ?? '',
+  const rawMood = state.mood as Partial<EmotionState['mood']> | undefined;
+  const mood = {
+    valence: rawMood?.valence ?? (raw.valence as number) ?? 0,
+    arousal: rawMood?.arousal ?? (raw.arousal as number) ?? 0.5,
+    description: rawMood?.description ?? (raw.description as string) ?? '',
   };
 
   return {

@@ -374,7 +374,28 @@ main();
 export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
   const accounts = resolveCompetitorAccounts(ops);
   const xhsUpdates = accounts.xhs.map(fetchXhsAccount);
-  const douyinUpdates = accounts.douyin.map(fetchDouyinAccount);
+
+  // Build sec_uid → display name map for Douyin accounts
+  const douyinDisplayNames = new Map<string, string>();
+  if (ops.competitors) {
+    for (const c of ops.competitors) {
+      if (c.platform === 'douyin') {
+        const secUidFromUrl = c.url?.match(/douyin\.com\/user\/([A-Za-z0-9_=-]+)/)?.[1];
+        const secUid = c.external_id ?? secUidFromUrl ?? c.name;
+        douyinDisplayNames.set(secUid, c.name);
+      }
+    }
+  }
+
+  const douyinUpdates = accounts.douyin.map(secUid => {
+    const update = fetchDouyinAccount(secUid);
+    // Replace sec_uid with human-readable display name
+    const displayName = douyinDisplayNames.get(secUid);
+    if (displayName && update.account !== displayName) {
+      return { ...update, account: displayName };
+    }
+    return update;
+  });
 
   // Bilibili accounts from competitors[] with platform === 'bilibili'
   const bilibiliEntries = (ops.competitors ?? [])
