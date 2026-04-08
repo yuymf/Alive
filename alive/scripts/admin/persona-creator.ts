@@ -727,7 +727,7 @@ export async function generatePersonaQuickAsync(options: QuickCreateOptions = {}
       .replace('{user_constraints}', buildConstraintSection(options));
 
     // 3. Call LLM
-    const llmOutput = await callLLMJSON<LLMPersonaOutput>(prompt, 16384, 'persona-creator');
+    const llmOutput = await callLLMJSON<LLMPersonaOutput>(prompt, 'persona-creator');
 
     // 4. Validate critical fields before mapping
     validateLLMOutput(llmOutput);
@@ -813,7 +813,7 @@ export async function generatePersonaGuidedAsync(options: GuidedCreateOptions): 
       .replace('{user_constraints}', buildGuidedConstraintSection(options));
 
     // 3. Call LLM
-    const llmOutput = await callLLMJSON<LLMPersonaOutput>(prompt, 16384, 'persona-creator');
+    const llmOutput = await callLLMJSON<LLMPersonaOutput>(prompt, 'persona-creator');
 
     // 4. Validate critical fields before mapping
     validateLLMOutput(llmOutput);

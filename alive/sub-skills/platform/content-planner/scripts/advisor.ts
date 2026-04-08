@@ -103,7 +103,7 @@ export async function consultAdvisor(ctx: AdvisorContext): Promise<string> {
         return 'advisor';
       }
     })();
-    const result = await callLLM(prompt, undefined, advisorName, { signal: controller.signal });
+    const result = await callLLM(prompt, advisorName, { signal: controller.signal });
     return (result.content ?? '').trim() || '';
   } catch (err) {
     const message = timedOut ? 'advisor timeout' : (err as Error).message;

@@ -402,7 +402,7 @@ export async function planPhoto(): Promise<PhotoIntent> {
     .replace('{inspiration_refs}', formatInspirationRefs())
     .replace('{travel_spots}', travelSpotsStr);
 
-  const parsed = await callLLMJSON<PhotoIntent>(prompt, undefined, 'content-planner');
+  const parsed = await callLLMJSON<PhotoIntent>(prompt, 'content-planner');
 
   const style = parsed.style ?? 'daily';
   const refinedShots = (parsed.shots ?? (parsed.wantToShoot ? [{
@@ -588,7 +588,7 @@ export async function planPost(options?: { skipAdvisor?: boolean }): Promise<Pos
     .replace('{trending_hashtags}', inspiration.instagram_trends.trending_hashtags.join(', ') || '暂无数据')
     .replace('{advisor_suggestion}', advisorSuggestion);
 
-  const parsed = await callLLMJSON<PostIntent>(prompt, undefined, 'content-planner');
+  const parsed = await callLLMJSON<PostIntent>(prompt, 'content-planner');
 
   if (!parsed.wantToPost) {
     return {

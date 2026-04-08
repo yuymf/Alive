@@ -714,8 +714,8 @@ export interface SubSkillContext {
   memory: MemoryAccessor;
   socialGraph: SocialGraphAccessor;
   llm: {
-    callJSON<T>(prompt: string): Promise<T>;
-    call(prompt: string): Promise<string>;
+    callJSON<T>(prompt: string, maxTokens?: number): Promise<T>;
+    call(prompt: string, maxTokens?: number): Promise<string>;
   };
   config: Record<string, unknown>;
 }

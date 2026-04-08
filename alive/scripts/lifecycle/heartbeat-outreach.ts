@@ -142,7 +142,7 @@ export async function generateProactiveMessage(
     .replace('{recent_diary}', input.recentDiary)
     .replace('{hour}', String(input.hour));
 
-  return callLLMJSON<ProactiveMessageOutput>(prompt, undefined, 'heartbeat-outreach');
+  return callLLMJSON<ProactiveMessageOutput>(prompt, 'heartbeat-outreach');
 }
 
 // ── Send ──────────────────────────────────────────────────────────

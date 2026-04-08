@@ -22,16 +22,18 @@ import { execSync } from 'child_process';
 export interface LLMClient {
   /**
    * Send a prompt and get a plain-text completion.
-   * @param prompt  Full prompt string (system + user merged or separated by host)
+   * @param prompt     Full prompt string (system + user merged or separated by host)
+   * @param maxTokens  Optional max tokens hint (informational; host may ignore)
    */
-  call(prompt: string): Promise<string>;
+  call(prompt: string, maxTokens?: number): Promise<string>;
 
   /**
    * Send a prompt and parse the response as JSON of type T.
    * The implementation should handle markdown fences, trailing commas, etc.
    * Throws if the response cannot be parsed.
+   * @param maxTokens  Optional max tokens hint (informational; host may ignore)
    */
-  callJSON<T>(prompt: string): Promise<T>;
+  callJSON<T>(prompt: string, maxTokens?: number): Promise<T>;
 }
 
 // === Options ===
@@ -327,11 +329,11 @@ export async function callLLMJSON<T>(
  */
 export function createRealLLMClient(caller?: string): LLMClient {
   return {
-    async call(prompt: string): Promise<string> {
+    async call(prompt: string, _maxTokens?: number): Promise<string> {
       const result = await callLLM(prompt, caller);
       return result.content;
     },
-    async callJSON<T>(prompt: string): Promise<T> {
+    async callJSON<T>(prompt: string, _maxTokens?: number): Promise<T> {
       return callLLMJSON<T>(prompt, caller);
     },
   };

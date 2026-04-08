@@ -236,7 +236,7 @@ export function buildContext(
   vitality: number,
   confidence: number,
   intent: ResolvedIntent,
-  llmClient: { callJSON<T>(prompt: string): Promise<T>; call(prompt: string): Promise<string> },
+  llmClient: { callJSON<T>(prompt: string, maxTokens?: number): Promise<T>; call(prompt: string, maxTokens?: number): Promise<string> },
   skillConfig: Record<string, unknown> = {},
 ): SubSkillContext {
   // Build memory accessor
