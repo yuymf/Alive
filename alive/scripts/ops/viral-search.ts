@@ -49,7 +49,7 @@ const MAX_RADAR_KEYWORDS = 5;
 const MAX_DISCOVERY_ITEMS = 30;
 
 /** Cooldown: minimum hours between viral-search runs */
-export const VIRAL_SEARCH_COOLDOWN_HOURS = 6;
+export const VIRAL_SEARCH_COOLDOWN_HOURS = 8;
 
 /** State file for tracking last run times */
 const VIRAL_SEARCH_STATE_KEY = 'viral-search-state';
@@ -284,14 +284,23 @@ export async function runViralSearch(
   }
 
   // Inject active tags from tag vocabulary (tag-engine.ts) as additional search keywords
-  const tagVocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
+  const tagVocab = readJSON<TagVocabulary | null>(PATHS.tagVocabulary, null);
   if (tagVocab?.active?.length) {
-    const tagKeywords = tagVocab.active
+    const tagKeywords = [...tagVocab.active]
       .sort((a, b) => b.score - a.score)
       .slice(0, 10)
       .map(t => t.tag);
     keywords.push(...tagKeywords);
   }
+
+  // Dedup keywords (case-insensitive)
+  const seen = new Set<string>();
+  keywords = keywords.filter(k => {
+    const lower = k.toLowerCase();
+    if (seen.has(lower)) return false;
+    seen.add(lower);
+    return true;
+  });
 
   if (keywords.length === 0) {
     console.log('[viral-search] No keywords available — skipped');

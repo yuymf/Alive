@@ -184,21 +184,26 @@ describe('runColdStart', () => {
     expect(vocab.version).toBe(1);
     expect(vocab.active.some(e => e.tag === '#电竞女生')).toBe(true);
   });
-  it('skips low-engagement XHS posts (likes < 1000)', async () => {
-    mockSearchXhsNotes.mockResolvedValue([
-      { id: '1', title: '#低流量', description: '', likes: 500, tags: [], user: 'user1', url: 'http://x', cover: '' },
-    ]);
+  it('extracts tags from Douyin when platform is douyin', async () => {
+    mockSearchXhsNotes.mockResolvedValue([]);
+    mockSearchDouyinVideos.mockReturnValue({
+      success: true,
+      videos: [
+        { aweme_id: '1', desc: '#抖音赛车 精彩比赛', digg_count: 6000, author: 'u1' },
+      ],
+    });
     const ops = {
       enabled: true,
-      competitors: [{ account: 'comp', platform: 'xhs' }],
+      competitors: [{ account: 'douyin_comp', platform: 'douyin' }],
       trend_score_threshold: 1.5,
       topic_count: 3,
       brief_time: '09:00',
     };
     await runColdStart(ops as any, '2026-04-09T10:00:00.000Z');
     const vocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
-    expect(vocab.active).toHaveLength(0);
-    expect(vocab.dormant).toHaveLength(0);
+    // With only 1 competitor, tag goes to dormant (freq < 2)
+    const allTags = [...vocab.active, ...vocab.dormant];
+    expect(allTags.some(e => e.tag === '#抖音赛车')).toBe(true);
   });
 });
 
@@ -209,6 +214,71 @@ import {
   runDailyMaintenance,
   runTagEngine,
 } from '../../scripts/ops/tag-engine';
+
+describe('refreshActiveTags', () => {
+  it('updates hit_count and score when XHS search finds high-engagement content', async () => {
+    mockSearchXhsNotes.mockResolvedValue([
+      { id: '1', title: '#电竞 测试', description: '', likes: 2000, tags: [], user: 'u1', url: '', cover: '' },
+    ]);
+    mockSearchDouyinVideos.mockReturnValue({ success: true, videos: [] });
+
+    const ts = '2026-04-09T10:00:00.000Z';
+    const entry: TagEntry = {
+      tag: '#电竞', platform: 'xhs', score: 50,
+      sources: [{ type: 'competitor', account: 'a1', platform: 'xhs' }],
+      first_seen: ts, last_hit: ts, hit_count: 2, peak_score: 50,
+    };
+
+    const result = await refreshActiveTags([entry], ts);
+    const updated = result.find(e => e.tag === '#电竞')!;
+    expect(updated.score).toBeGreaterThan(50);
+    expect(updated.hit_count).toBeGreaterThan(2);
+    expect(updated.last_hit).toBe(ts);
+  });
+
+  it('discovers new tags from XHS hit content with correct platform attribution', async () => {
+    mockSearchXhsNotes.mockResolvedValue([
+      { id: '1', title: '#电竞 #新发现tag', description: '', likes: 2000, tags: [], user: 'u1', url: '', cover: '' },
+    ]);
+    mockSearchDouyinVideos.mockReturnValue({ success: true, videos: [] });
+
+    const ts = '2026-04-09T10:00:00.000Z';
+    const entry: TagEntry = {
+      tag: '#电竞', platform: 'xhs', score: 50,
+      sources: [{ type: 'competitor', account: 'a1', platform: 'xhs' }],
+      first_seen: ts, last_hit: ts, hit_count: 1, peak_score: 50,
+    };
+
+    const result = await refreshActiveTags([entry], ts);
+    const newTag = result.find(e => e.tag === '#新发现tag');
+    expect(newTag).toBeDefined();
+    expect(newTag!.platform).toBe('xhs');
+    expect(newTag!.sources[0].platform).toBe('xhs');
+  });
+
+  it('discovers new tags from Douyin hits with correct platform attribution', async () => {
+    mockSearchXhsNotes.mockResolvedValue([]);
+    mockSearchDouyinVideos.mockReturnValue({
+      success: true,
+      videos: [
+        { aweme_id: '1', desc: '#电竞 #抖音新tag', digg_count: 6000, author: 'u1' },
+      ],
+    });
+
+    const ts = '2026-04-09T10:00:00.000Z';
+    const entry: TagEntry = {
+      tag: '#电竞', platform: 'xhs', score: 50,
+      sources: [{ type: 'competitor', account: 'a1', platform: 'xhs' }],
+      first_seen: ts, last_hit: ts, hit_count: 1, peak_score: 50,
+    };
+
+    const result = await refreshActiveTags([entry], ts);
+    const newTag = result.find(e => e.tag === '#抖音新tag');
+    expect(newTag).toBeDefined();
+    expect(newTag!.platform).toBe('douyin');
+    expect(newTag!.sources[0].platform).toBe('douyin');
+  });
+});
 
 // ─── Daily maintenance ───────────────────────────────────────────────────────
 

@@ -148,7 +148,7 @@ function searchDouyinHighEngagement(
 /** Resolve the search keyword for a competitor entry.
  * Supports both `CompetitorProfile` (has `name`) and ad-hoc test objects (has `account`).
  */
-function resolveCompetitorKeyword(comp: Record<string, unknown>): string {
+function resolveCompetitorKeyword(comp: { name?: string; account?: string; [key: string]: unknown }): string {
   if (typeof comp['name'] === 'string') return comp['name'] as string;
   if (typeof comp['account'] === 'string') return comp['account'] as string;
   return String(comp['name'] ?? comp['account'] ?? '');
@@ -156,7 +156,8 @@ function resolveCompetitorKeyword(comp: Record<string, unknown>): string {
 
 export async function runColdStart(ops: OpsConfig, timestamp: string): Promise<TagVocabulary> {
   const tagMaps: Array<Map<string, { score: number; sources: TagSource[] }>> = [];
-  const competitors = (ops.competitors ?? []) as unknown as ReadonlyArray<Record<string, unknown>>;
+  type CompetitorEntry = { name?: string; account?: string; platform?: string; [key: string]: unknown };
+  const competitors = (ops.competitors ?? []) as unknown as ReadonlyArray<CompetitorEntry>;
 
   for (const comp of competitors) {
     const platform = (comp['platform'] as string | undefined) ?? 'xhs';
@@ -221,7 +222,11 @@ export async function runColdStart(ops: OpsConfig, timestamp: string): Promise<T
       }
       if (tagMap.size > 0) tagMaps.push(tagMap);
     }
-  } catch {
+  } catch (err) {
+    const msg = (err as Error)?.message ?? '';
+    if (!msg.includes('Cannot find module') && !msg.includes('MODULE_NOT_FOUND')) {
+      throw err;
+    }
     // keyword-tracker not available — skip
   }
 
@@ -325,12 +330,22 @@ export async function refreshActiveTags(
       });
     }
 
-    // Discover new tags from hit content
-    for (const hit of [...xhsHits, ...douyinHits]) {
+    // Discover new tags from XHS hits
+    for (const hit of xhsHits) {
       for (const newTag of hit.tags) {
         if (!updated.has(newTag)) {
           const source: TagSource = { type: 'keyword_search', keyword: entry.tag, platform: 'xhs' };
           updated.set(newTag, buildInitialEntry(newTag, 'xhs', XHS_HIT_SCORE, source, timestamp));
+        }
+      }
+    }
+
+    // Discover new tags from Douyin hits
+    for (const hit of douyinHits) {
+      for (const newTag of hit.tags) {
+        if (!updated.has(newTag)) {
+          const source: TagSource = { type: 'keyword_search', keyword: entry.tag, platform: 'douyin' };
+          updated.set(newTag, buildInitialEntry(newTag, 'douyin', DOUYIN_HIT_SCORE, source, timestamp));
         }
       }
     }
