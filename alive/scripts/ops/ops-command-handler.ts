@@ -55,6 +55,9 @@ async function cmdBrief(): Promise<string> {
 
   const llm = createRealLLMClient('ops-brief-cmd');
   const identities = buildPersonaIdentities(persona);
+  const identityKeys = Object.keys(
+    (persona as { identities?: Record<string, unknown> }).identities ?? {},
+  );
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
   await cleanupOldItems();
@@ -88,7 +91,7 @@ async function cmdBrief(): Promise<string> {
 
   const enrichment: BriefEnrichment = { personaReport, fullQueueItems: pending };
   const date = now().toISOString().slice(0, 10);
-  return formatBriefCard(date, trends, competitors, pending, enrichment);
+  return formatBriefCard(date, trends, competitors, pending, enrichment, identityKeys);
 }
 
 // ─── Command: /trends ─────────────────────────────────────────────────────────

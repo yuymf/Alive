@@ -18,6 +18,7 @@ import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import { clearPersonaCache } from '../persona/persona-loader';
 import type { CompetitorProfile, PersonaConfig } from '../utils/types';
+import { rankCandidates } from './candidate-scorer';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -332,25 +333,30 @@ export function buildDiscoveryContext(): string {
 
 /**
  * Build a candidate accounts context for the daily brief.
- * Only includes pending candidates with enough evidence.
+ * Ranks by composite score when identityKeys provided; falls back to avg_engagement sort.
+ *
+ * @param identityKeys  Optional persona identity keys for track_overlap scoring
  */
-export function buildCandidateContext(): string {
+export function buildCandidateContext(identityKeys?: string[]): string {
   const store = loadCandidateAccounts();
-  const pending = store.candidates
-    .filter(c => c.status === 'pending' && c.appearance_count >= MIN_APPEARANCES_FOR_SUGGESTION)
-    .sort((a, b) => b.avg_engagement - a.avg_engagement)
+  const keys = identityKeys ?? [];
+
+  const ranked = rankCandidates(store, keys, 'pending')
+    .filter(c => c.appearance_count >= MIN_APPEARANCES_FOR_SUGGESTION)
     .slice(0, 3);
 
-  if (pending.length === 0) return '';
+  if (ranked.length === 0) return '';
 
   const lines = ['━━ 🔍 发现候选对标 ━━'];
-  for (const c of pending) {
-    lines.push(`  @${c.name}（${c.platform}）出现${c.appearance_count}次 均互动${c.avg_engagement}`);
+  for (const c of ranked) {
+    const composite = c.score_breakdown.composite.toFixed(2);
+    const peak = (c as { peak_engagement?: number }).peak_engagement ?? c.avg_engagement;
+    lines.push(`  @${c.name}（${c.platform}）综合 ${composite}  出现${c.appearance_count}次  ❤️均值${c.avg_engagement} / 峰值${peak}`);
     if (c.topics.length > 0) {
       lines.push(`    话题: ${c.topics.slice(0, 3).join('、')}`);
     }
   }
-  lines.push('  回复 /competitor add @名称 平台 来添加');
+  lines.push('  回复 /candidates 查看全部 | /competitor add @名称 平台 添加');
 
   return lines.join('\n');
 }

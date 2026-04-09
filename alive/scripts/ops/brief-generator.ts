@@ -35,6 +35,7 @@ export function formatBriefCard(
   competitors: CompetitorUpdate[],
   queueItems: QueueItem[],
   enrichment?: BriefEnrichment,
+  identityKeys?: string[],
 ): string {
   const lines: string[] = [`📊 今日简报  ${date}`, ''];
 
@@ -168,7 +169,7 @@ export function formatBriefCard(
   }
 
   // 🔍 候选对标（from discovery-engine account discovery）
-  const candidateCtx = buildCandidateContext();
+  const candidateCtx = buildCandidateContext(identityKeys);
   if (candidateCtx) {
     lines.push(candidateCtx);
     lines.push('');
@@ -415,9 +416,10 @@ export async function sendDailyBrief(
   queueItems: QueueItem[],
   enrichment?: BriefEnrichment,
   deliveryMode?: BriefDeliveryMode,
+  identityKeys?: string[],
 ): Promise<boolean> {
   const date = now().toISOString().slice(0, 10);
-  let card = formatBriefCard(date, trends, competitors, queueItems, enrichment);
+  let card = formatBriefCard(date, trends, competitors, queueItems, enrichment, identityKeys);
 
   const { loadStrategy } = await import('./strategy-engine');
   const strategy = loadStrategy();

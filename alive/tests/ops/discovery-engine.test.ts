@@ -319,21 +319,44 @@ describe('buildCandidateContext', () => {
     expect(buildCandidateContext()).toBe('');
   });
 
-  it('shows pending candidates', () => {
+  it('shows pending candidates with composite score using provided identityKeys', () => {
     const store = {
       candidates: [{
         name: 'testuser', platform: 'xhs',
-        appearance_count: 3, avg_engagement: 5000, peak_engagement: 7000,
-        topics: ['电竞', '日常'],
+        appearance_count: 5, avg_engagement: 1000,
+        peak_engagement: 5000,
+        topics: ['音乐', '赛车', '电竞', '日常'],
+        first_seen: '2026-04-01', last_seen: '2026-04-05',
+        status: 'pending' as const,
+      }],
+      last_updated: '',
+    };
+    writeJSON(PATHS.candidateAccounts, store);
+    const ctx = buildCandidateContext(['singer', 'racer', 'esports', 'daily']);
+    expect(ctx).toContain('候选对标');
+    expect(ctx).toContain('testuser');
+    // New format shows composite score
+    expect(ctx).toContain('综合');
+    // New format shows peak engagement
+    expect(ctx).toContain('峰值');
+  });
+
+  it('still works with no identityKeys argument (backward compatible)', () => {
+    const store = {
+      candidates: [{
+        name: 'legacyuser', platform: 'douyin',
+        appearance_count: 3, avg_engagement: 2000,
+        peak_engagement: 2000,
+        topics: ['日常'],
         first_seen: '2026-04-01', last_seen: '2026-04-03',
         status: 'pending' as const,
       }],
       last_updated: '',
     };
     writeJSON(PATHS.candidateAccounts, store);
-    const ctx = buildCandidateContext();
+    const ctx = buildCandidateContext(); // no args
     expect(ctx).toContain('候选对标');
-    expect(ctx).toContain('testuser');
+    expect(ctx).toContain('legacyuser');
   });
 });
 
