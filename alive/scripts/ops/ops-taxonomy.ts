@@ -31,6 +31,9 @@ export function matchesTaxonomy(identityMode: IdentityMode, label: string): bool
   );
 }
 
+/** All supported identity modes. Used for cross-mode writes (e.g. AI虚拟偶像 accounts). */
+export const ALL_IDENTITY_MODES: IdentityMode[] = Object.keys(OPS_IDENTITY_TAXONOMY) as IdentityMode[];
+
 /**
  * Given a competitor group/tag, find which identity mode it maps to.
  * Returns undefined if no match.

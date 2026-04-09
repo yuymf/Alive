@@ -9,10 +9,11 @@
  */
 
 import { execFileSync } from 'child_process';
+import * as path from 'path';
 import {
   OpsConfig, ContentTemplate, CompetitorProfile, IdentityMode,
   QueueItemTemplateSpec, QueueItemCompetitorBenchmark, QueueItem, QueueItemContent,
-  CompetitorAnalysisStore,
+  CompetitorAnalysisStore, ViralEntry,
 } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
 import { FilteredTrend } from './trend-analyzer';
@@ -24,11 +25,40 @@ import { parseAccountKey } from './competitor-fetcher';
 import { incrementPatternUsage } from './content-analyzer';
 import { buildTasteContext } from './taste-engine';
 import { buildDiscoveryContext } from './discovery-engine';
+import { loadFormulaStore, queryFormulasByMode } from './formula-store';
 import { PATHS, readJSON } from '../utils/file-utils';
 import { CompetitorLog, CompetitorUpdate, ContentStrategy, ContentPatterns } from '../utils/types';
 import { now } from '../utils/time-utils';
+import { queryTrack, upsertEntry } from './viral-kb-store';
 
 import { matchesTaxonomy } from './ops-taxonomy';
+
+// ─── Viral KB context builder ────────────────────────────────────────────────
+
+/**
+ * Format top viral entries for a given platform track into a prompt paragraph.
+ * Returns '' if entries list is empty (cold start — no viral data yet).
+ */
+export function buildViralContext(entries: ViralEntry[], platform: string): string {
+  if (entries.length === 0) return '';
+
+  const platformLabel = platform === 'xhs' ? '小红书' : platform === 'douyin' ? '抖音' : platform;
+  const identityLabel = entries[0].dissection?.identity_mode ?? '';
+
+  const lines = entries.map((e, idx) => {
+    const d = e.dissection;
+    if (!d) return null;
+    return [
+      `${idx + 1}. 钩子：${d.hook_type} | 情绪弧：${d.emotion_arc} | 互动：${d.interaction_design}`,
+      `   一句话逻辑：${d.summary}`,
+    ].join('\n');
+  }).filter(Boolean);
+
+  return [
+    `近期${platformLabel}上【${identityLabel}】赛道爆款规律（供参考，不强制模仿）：`,
+    ...lines,
+  ].join('\n');
+}
 
 // ─── Pure functions (exported for testing) ───────────────────────────────────
 
@@ -179,6 +209,32 @@ ${template.reference_links && template.reference_links.length > 0
     : ''}
 
 请严格按照以上场景、镜头、造型要求来构思内容。`;
+}
+
+// ─── Formula context builder ─────────────────────────────────────────────────
+
+/**
+ * Build a competitor formula context string for LLM prompt injection.
+ * Loads the FormulaStore, queries formulas for the given identityMode,
+ * and formats them as a bulleted reference section.
+ * Returns '' if the store is empty or no formulas exist for the mode.
+ */
+export function buildFormulaContext(
+  identityMode: IdentityMode,
+  options?: { maxFormulas?: number },
+): string {
+  const store = loadFormulaStore();
+  const formulas = queryFormulasByMode(store, identityMode);
+  if (formulas.length === 0) return '';
+
+  const max = options?.maxFormulas ?? 6;
+  const lines = formulas.slice(0, max).map(f => {
+    const freq = f.frequency === '高' ? '高频' : f.frequency === '中' ? '中频' : '低频';
+    const account = f.source_account.split(':')[0];
+    return `- ${f.formula}（${freq} · 来自 ${account}）`;
+  });
+
+  return `【竞品爆款句式参考（可借鉴改编，保持V姐风格）】\n${lines.join('\n')}`;
 }
 
 // ─── Platform writing guidelines (inspired by content-writer skill) ──────────
@@ -398,6 +454,9 @@ export async function generateTopics(
 ): Promise<void> {
   const topN = trends.slice(0, ops.topic_count);
 
+  // Derive memory base path for viral KB queries
+  const basePath = path.dirname(PATHS.emotionState);
+
   const strategy = loadConfirmedStrategy();
   const patterns = readJSON<ContentPatterns | null>(PATHS.contentPatterns, null);
 
@@ -461,8 +520,28 @@ export async function generateTopics(
     const tasteContext = buildTasteContext();
     const discoveryContext = buildDiscoveryContext();
     const contextParts: string[] = [];
+    const formulaContext = buildFormulaContext(identityMode);
+
+    // === Viral KB: inject top-3 track patterns (cold-start safe) ===
+    const trackPlatform = (trend.platform === 'xhs' || trend.platform === 'douyin')
+      ? trend.platform
+      : undefined;
+    const trackPatterns = queryTrack(basePath, {
+      platform: trackPlatform,
+      identity_mode: identityMode,
+      limit: 3,
+      sort: 'recency',
+    });
+    const viralContext = buildViralContext(trackPatterns, trend.platform);
+    // Increment times_referenced for entries we're injecting
+    for (const entry of trackPatterns) {
+      upsertEntry(basePath, { ...entry, times_referenced: entry.times_referenced + 1 });
+    }
+
     if (templateConstraint) contextParts.push(templateConstraint);
     if (competitorCtx) contextParts.push(`【对标竞品参考】\n${competitorCtx}`);
+    if (formulaContext) contextParts.push(formulaContext);
+    if (viralContext) contextParts.push(viralContext);
     if (patternsContext) contextParts.push(patternsContext);
     if (strategyContext) contextParts.push(strategyContext);
     if (tasteContext) contextParts.push(tasteContext);

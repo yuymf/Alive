@@ -4,8 +4,10 @@ import { setTimeOverride } from '../../scripts/utils/time-utils';
 import {
   buildContentPrompt, selectIdentityMode,
   selectContentTemplate, buildCompetitorBenchmarks,
-  buildTemplateConstraint,
+  buildTemplateConstraint, buildFormulaContext,
 } from '../../scripts/ops/topic-generator';
+import { saveFormulaStore } from '../../scripts/ops/formula-store';
+import type { FormulaStore } from '../../scripts/utils/types';
 import { FilteredTrend } from '../../scripts/ops/trend-analyzer';
 import { ContentTemplate, CompetitorProfile } from '../../scripts/utils/types';
 import * as os from 'os';
@@ -210,5 +212,78 @@ describe('buildTemplateConstraint', () => {
     };
     const constraint = buildTemplateConstraint(template);
     expect(constraint).not.toContain('参考案例');
+  });
+});
+
+describe('buildFormulaContext', () => {
+  it('returns empty string when no formula store exists', () => {
+    expect(buildFormulaContext('esports')).toBe('');
+  });
+
+  it('returns empty string when store has no formulas for the requested mode', () => {
+    const store: FormulaStore = {
+      version: 1,
+      formulas: { singer: { 'acc:xhs': [{ formula: '歌手句式', examples: [], frequency: '高', source_account: 'acc:xhs', source_platform: 'xhs', last_analyzed: '' }] } },
+      last_updated: '',
+    };
+    saveFormulaStore(store);
+    expect(buildFormulaContext('esports')).toBe('');
+  });
+
+  it('returns formatted context string for a mode with formulas', () => {
+    const store: FormulaStore = {
+      version: 1,
+      formulas: {
+        esports: {
+          'GameKOL:xhs': [
+            { formula: '[数字]个电竞选手不会告诉你的秘密', examples: [], frequency: '高', source_account: 'GameKOL:xhs', source_platform: 'xhs', last_analyzed: '' },
+          ],
+        },
+      },
+      last_updated: '',
+    };
+    saveFormulaStore(store);
+    const ctx = buildFormulaContext('esports');
+    expect(ctx).toContain('竞品爆款句式参考');
+    expect(ctx).toContain('[数字]个电竞选手不会告诉你的秘密');
+    expect(ctx).toContain('高频');
+    expect(ctx).toContain('GameKOL');
+  });
+
+  it('respects maxFormulas option', () => {
+    const formulas = Array.from({ length: 10 }, (_, i) => ({
+      formula: `句式${i}`,
+      examples: [] as string[],
+      frequency: '中' as const,
+      source_account: `acc${i}:xhs`,
+      source_platform: 'xhs',
+      last_analyzed: '',
+    }));
+    const store: FormulaStore = {
+      version: 1,
+      formulas: { racer: { 'acc:xhs': formulas } },
+      last_updated: '',
+    };
+    saveFormulaStore(store);
+    const ctx = buildFormulaContext('racer', { maxFormulas: 3 });
+    // Count occurrences of "中频" — should match exactly 3 lines
+    const matches = ctx.match(/中频/g);
+    expect(matches).toHaveLength(3);
+  });
+
+  it('shows account name without platform suffix', () => {
+    const store: FormulaStore = {
+      version: 1,
+      formulas: {
+        singer: {
+          'SingerZ:douyin': [{ formula: '歌手专属句式', examples: [], frequency: '中', source_account: 'SingerZ:douyin', source_platform: 'douyin', last_analyzed: '' }],
+        },
+      },
+      last_updated: '',
+    };
+    saveFormulaStore(store);
+    const ctx = buildFormulaContext('singer');
+    expect(ctx).toContain('SingerZ');
+    expect(ctx).not.toContain(':douyin');
   });
 });
