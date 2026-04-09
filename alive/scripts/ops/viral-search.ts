@@ -22,7 +22,7 @@ import { searchDouyinVideos } from '../../sub-skills/platform/douyin-bridge/scri
 import type { XhsNote } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 import type { DouyinVideo } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 import type { DiscoveryItem } from './discovery-engine';
-import type { TrendHistory, TrendItem, PostAnalysisLog, PersonaConfig } from '../utils/types';
+import type { TrendHistory, TrendItem, PostAnalysisLog, PersonaConfig, TagVocabulary } from '../utils/types';
 import type { LLMClient } from '../utils/llm-client';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -281,6 +281,16 @@ export async function runViralSearch(
     keywords = collected
       .slice(0, MAX_VIRAL_KEYWORDS)
       .map(k => k.keyword);
+  }
+
+  // Inject active tags from tag vocabulary (tag-engine.ts) as additional search keywords
+  const tagVocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
+  if (tagVocab?.active?.length) {
+    const tagKeywords = tagVocab.active
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .map(t => t.tag);
+    keywords.push(...tagKeywords);
   }
 
   if (keywords.length === 0) {

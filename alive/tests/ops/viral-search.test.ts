@@ -9,7 +9,7 @@ import { setBasePaths, resetBasePaths, PATHS, writeJSON, readJSON } from '../../
 import { clearPersonaCache } from '../../scripts/persona/persona-loader';
 import { loadDiscoveryPool, saveDiscoveryPool } from '../../scripts/ops/discovery-engine';
 import YAML from 'yaml';
-import type { PersonaConfig, TrendHistory, PostAnalysisLog } from '../../scripts/utils/types';
+import type { PersonaConfig, TrendHistory, PostAnalysisLog, TagVocabulary } from '../../scripts/utils/types';
 
 // Must import after mocks are set up
 import {
@@ -574,5 +574,30 @@ describe('runAutoBreakdown', () => {
     expect(result.candidates_found).toBe(0);
     expect(result.analyzed).toBe(0);
     expect(mockAnalyzePost).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Tag vocabulary injection ─────────────────────────────────────────────
+
+describe('runViralSearch — tag vocabulary injection', () => {
+  it('includes active tag strings in searched keywords when tag-vocabulary.json exists', async () => {
+    const vocab: TagVocabulary = {
+      version: 1,
+      last_updated: new Date().toISOString(),
+      active: [
+        {
+          tag: '#tag_vocab_keyword', platform: 'xhs', score: 80,
+          sources: [{ type: 'competitor', account: 'a1', platform: 'xhs' }],
+          first_seen: new Date().toISOString(), last_hit: new Date().toISOString(),
+          hit_count: 3, peak_score: 80,
+        },
+      ],
+      dormant: [],
+    };
+    writeJSON(PATHS.tagVocabulary, vocab);
+    mockSearchXhsNotes.mockResolvedValue([]);
+    mockSearchDouyinVideos.mockReturnValue({ success: true, videos: [] });
+    const result = await runViralSearch({ forceFresh: true });
+    expect(result.searched_keywords).toContain('#tag_vocab_keyword');
   });
 });
