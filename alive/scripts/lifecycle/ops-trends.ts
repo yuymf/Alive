@@ -9,12 +9,16 @@
 import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
-import { loadSkillEnvVars, setPersonaName } from '../utils/file-utils';
+import { loadSkillEnvVars, setPersonaName, PATHS } from '../utils/file-utils';
 import { analyzeTrends, buildPersonaIdentities } from '../ops/trend-analyzer';
 import { trackCompetitors } from '../ops/competitor-tracker';
 import { analyzeNewHits, cleanupOldBreakdowns, trimObservationNotes } from '../ops/competitor-memory';
-import { PATHS, readJSON } from '../utils/file-utils';
+import { readJSON } from '../utils/file-utils';
 import { CompetitorLog } from '../utils/types';
+import { detectViral, TrendLikeItem } from '../ops/viral-detector';
+import { addToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
+import { dissectBatch } from '../ops/content-dissector';
+import * as path from 'path';
 
 async function main(): Promise<void> {
   // Load environment variables from openclaw.json (needed for isolated cron sessions)
@@ -59,6 +63,76 @@ async function main(): Promise<void> {
   }
 
   console.log(`[${wallNow().toISOString()}] ops-trends: ${trendCount} trends, ${competitorCount} competitors tracked`);
+
+  // === 爆款知识库处理 ===
+  // Derive the memory base path from any known PATHS property
+  const basePath = path.dirname(PATHS.emotionState);
+
+  try {
+    const threshold = ops.viral_threshold ?? 5000;
+    const batchSize = ops.kb_dissect_batch ?? 3;
+
+    // 1. 构建可供检测的 TrendLikeItem 列表（趋势 + 竞品）
+    const VIRAL_PLATFORMS = new Set<string>(['douyin', 'xhs']);
+    const trendItems: TrendLikeItem[] = (trendsResult.status === 'fulfilled' ? trendsResult.value : [])
+      .filter(t => VIRAL_PLATFORMS.has(t.platform))
+      .map(t => ({
+        source_id: `${t.platform}:${t.keyword}`,
+        platform: t.platform as 'douyin' | 'xhs',
+        title: t.keyword,
+        description: t.keyword,
+        likes: t.current_volume,
+        comments: 0,
+        shares: 0,
+        source_type: 'trending_feed' as const,
+        identity_mode: t.identity_mode,
+      }));
+
+    const competitorItems: TrendLikeItem[] = competitorsResult.status === 'fulfilled'
+      ? competitorsResult.value
+          .filter(c => (c.platform === 'xhs' || c.platform === 'douyin') && c.latest_post !== null)
+          .map(c => ({
+            source_id: `${c.account}:${c.latest_post!.time}`,
+            platform: c.platform as 'xhs' | 'douyin',
+            title: c.latest_post!.topic,
+            description: c.latest_post!.summary,
+            likes: c.latest_post!.engagement,
+            comments: 0,
+            shares: 0,
+            source_type: 'competitor' as const,
+          }))
+      : [];
+
+    const allItems = [...trendItems, ...competitorItems];
+
+    // 2. 检测爆款候选
+    const candidates = detectViral(allItems, basePath, threshold);
+    if (candidates.length > 0) {
+      for (const candidate of candidates) {
+        addToQueue(basePath, candidate);
+      }
+      console.log(`[${wallNow().toISOString()}] [viral-kb] ${candidates.length} candidates queued`);
+    }
+
+    // 3. 批量拆解
+    const llmViral = createRealLLMClient('viral-dissector');
+    const toProcess = dequeueItems(basePath, batchSize);
+    if (toProcess.length > 0) {
+      const personaId = persona.meta.id ?? 'default';
+      const entries = await dissectBatch(toProcess, llmViral, personaId);
+      for (const entry of entries) {
+        upsertEntry(basePath, entry);
+        const result = checkFormulaPromotion(basePath, entry, PATHS.personaConfig);
+        if (result.promoted && result.formula) {
+          console.log(`[${wallNow().toISOString()}] [viral-kb] formula promoted: ${result.formula.content_type} + ${result.formula.hook_type} (${result.formula.platform})`);
+        }
+      }
+      console.log(`[${wallNow().toISOString()}] [viral-kb] ${entries.length} entries dissected`);
+    }
+  } catch (err) {
+    console.error(`[${wallNow().toISOString()}] [viral-kb] error:`, err);
+    // Non-fatal: viral KB errors should not fail the main ops-trends job
+  }
 
   // === 摘要输出（cron deliver 会投递 stdout） ===
   console.log(`\n📊 运营趋势速报`);

@@ -8,6 +8,7 @@ import * as path from 'path';
 import YAML from 'yaml';
 import { readJSON, readText, writeJSON, PATHS, setPersonaName, getPersonaName } from '../utils/file-utils';
 import { loadPersona, clearPersonaCache, getScheduleConfig } from '../persona/persona-loader';
+import { handleKbCommand } from '../../sub-skills/ops-desk/scripts/kb-query';
 import {
   generatePersonaQuick,
   generatePersonaGuided,
@@ -211,6 +212,8 @@ const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<C
   post: cmdOpsProxy,
   analyze: cmdOpsProxy,
   advice: cmdOpsProxy,
+  // ── 爆款知识库 ─────────────────────────────────────────────────
+  kb: cmdKb,
 };
 
 /**
@@ -282,6 +285,11 @@ function cmdHelp(): CommandResult {
 | \`/alive post [N]\` | 查看选题列表 / 第N个选题详情 |
 | \`/alive analyze <URL>\` | 爆款帖子拆解分析 |
 | \`/alive advice\` | 人设契合度建议 |
+| \`/alive kb status\` | 爆款知识库统计 |
+| \`/alive kb search <关键词>\` | 知识库全文搜索 |
+| \`/alive kb list [--platform X] [--type Y]\` | 按平台/类型列出条目 |
+| \`/alive kb formulas [--platform X]\` | 列出通用爆款公式 |
+| \`/alive kb top [--platform X] [--limit N]\` | 按点赞排 Top N |
 
 > ⚡ 这些命令不经过角色人格、不写入日记、不影响记忆。`,
   };
@@ -1097,6 +1105,12 @@ ${tableRows}
 // ── CLI Entry Point ────────────────────────────────────────────────
 // When executed as `node command-handler.js <rawArgs>`, parse argv and
 // dispatch, printing the result to stdout so the plugin can capture it.
+
+function cmdKb(cmd: ParsedCommand): CommandResult {
+  const basePath = path.dirname(PATHS.emotionState);
+  const output = handleKbCommand(cmd.args, cmd.flags, basePath);
+  return { output };
+}
 
 async function main(): Promise<void> {
   const raw = process.argv.slice(2).join(' ').trim() || 'help';

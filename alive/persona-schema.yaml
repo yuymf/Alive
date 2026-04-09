@@ -365,6 +365,18 @@ schema:
           reference_links: { type: array, items: string, required: false, description: "参考链接" }
           platforms: { type: array, items: string, required: false, description: "适用平台" }
           identity_mode: { type: string, required: false, enum: [esports, singer, racer, daily] }
+      viral_threshold:
+        type: integer
+        required: false
+        default: 5000
+        description: 点赞阈值，超过此值的内容进入爆款知识库候选队列
+      kb_dissect_batch:
+        type: integer
+        required: false
+        default: 3
+        min: 1
+        max: 10
+        description: 每次 ops-trends 运行时最多拆解的爆款条数（控制 LLM 成本）
       trend_score_threshold: { type: number, required: true }
       topic_count: { type: number, required: true }
       topic_filter_prompt: { type: string, required: true }
