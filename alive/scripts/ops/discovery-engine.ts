@@ -95,6 +95,10 @@ const MAX_CANDIDATES = 20;
 const HIGH_ENGAGEMENT_THRESHOLD = 500;
 /** Minimum appearances before suggesting as candidate */
 const MIN_APPEARANCES_FOR_SUGGESTION = 2;
+/** Auto-approve composite score threshold */
+const AUTO_APPROVE_THRESHOLD = 0.80;
+/** Maximum number of auto-approvals per discovery tick */
+const AUTO_APPROVE_PER_TICK = 1;
 
 // ─── I/O ────────────────────────────────────────────────────────────────────
 
@@ -210,7 +214,7 @@ export function processInspirationForDiscovery(): number {
  * Extract author names from inspiration state and discovery pool.
  * Tracks frequency and engagement to identify potential competitor accounts.
  */
-export function processInspirationForAccountDiscovery(): number {
+export function processInspirationForAccountDiscovery(identityKeys?: string[]): number {
   const inspoState = readJSON<InspirationState>(PATHS.inspirationState, {
     last_refreshed_at: null,
     feed_highlights: [],
@@ -253,6 +257,30 @@ export function processInspirationForAccountDiscovery(): number {
     // Use source_title as a proxy for author (not perfect but available data)
     // Skip — saved_inspirations don't reliably have author info
     void platform;
+  }
+
+  // Auto-approve candidates before updating engagement stats this tick.
+  // Scoring uses the store's current (pre-update) avg_engagement so that
+  // the historically established peak/avg burst ratio is preserved.
+  if (identityKeys && identityKeys.length > 0) {
+    try {
+      const topCandidates = rankCandidates(store, identityKeys, 'pending')
+        .filter(c => c.score_breakdown.composite >= AUTO_APPROVE_THRESHOLD);
+      let autoApproved = 0;
+      for (const candidate of topCandidates) {
+        if (autoApproved >= AUTO_APPROVE_PER_TICK) break;
+        const approved = approveCandidate(candidate.name, candidate.platform);
+        if (approved) {
+          console.log(`[discovery-engine] 🌟 自动批准 @${candidate.name}（${candidate.platform}）综合分 ${candidate.score_breakdown.composite.toFixed(2)}`);
+          // Reload store since approveCandidate writes to disk
+          const updated = loadCandidateAccounts();
+          store.candidates = updated.candidates;
+          autoApproved++;
+        }
+      }
+    } catch (err) {
+      console.warn(`[discovery-engine] Auto-approve failed: ${(err as Error).message}`);
+    }
   }
 
   let newCandidates = 0;

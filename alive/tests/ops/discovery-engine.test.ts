@@ -515,6 +515,140 @@ describe('addCompetitorToPersona', () => {
   });
 });
 
+describe('auto-approve: high-scoring candidates are automatically approved', () => {
+  it('auto-approves a candidate with composite score ≥ 0.80', () => {
+    writePersonaYaml();
+
+    // Set up a candidate that will score very high:
+    // - all 4 identity tracks hit (track_overlap = 1.0)
+    // - peak/avg = 5 (burst_intensity = 1.0)
+    // - appearance_count = 5 (frequency = 1.0)
+    // → composite = 1.0 * 0.45 + 1.0 * 0.35 + 1.0 * 0.20 = 1.0 ≥ 0.80
+    saveCandidateAccounts({
+      candidates: [{
+        name: 'superstar',
+        platform: 'xhs',
+        appearance_count: 5,
+        avg_engagement: 1000,
+        peak_engagement: 5000,
+        topics: ['音乐', '赛车', '电竞', '日常'],
+        first_seen: '2026-04-01',
+        last_seen: '2026-04-05',
+        status: 'pending',
+      }],
+      last_updated: '',
+    });
+
+    saveDiscoveryPool({
+      items: [
+        { title: 'T1', author: 'superstar', source: 'xhs', engagement: 5000, topic: '音乐', score: 90, discovered_at: '' },
+        { title: 'T2', author: 'superstar', source: 'xhs', engagement: 5000, topic: '赛车', score: 90, discovered_at: '' },
+        { title: 'T3', author: 'superstar', source: 'xhs', engagement: 5000, topic: '电竞', score: 90, discovered_at: '' },
+        { title: 'T4', author: 'superstar', source: 'xhs', engagement: 5000, topic: '日常', score: 90, discovered_at: '' },
+        { title: 'T5', author: 'superstar', source: 'xhs', engagement: 5000, topic: '音乐', score: 90, discovered_at: '' },
+      ],
+      last_updated: '',
+    });
+
+    writeJSON(PATHS.inspirationState, {
+      last_refreshed_at: new Date().toISOString(),
+      feed_highlights: [],
+      trending_topics: [],
+      domain_insights: [],
+      saved_inspirations: [],
+    });
+
+    // Call with identityKeys so scorer can compute track_overlap
+    processInspirationForAccountDiscovery(['singer', 'racer', 'esports', 'daily']);
+
+    const store = loadCandidateAccounts();
+    const superstar = store.candidates.find(c => c.name === 'superstar')!;
+    expect(superstar.status).toBe('approved');
+  });
+
+  it('does not auto-approve a candidate below 0.80 threshold', () => {
+    writePersonaYaml();
+
+    saveCandidateAccounts({
+      candidates: [{
+        name: 'mediocre',
+        platform: 'xhs',
+        appearance_count: 2,
+        avg_engagement: 1000,
+        peak_engagement: 1000,
+        topics: ['未知话题'],
+        first_seen: '2026-04-01',
+        last_seen: '2026-04-01',
+        status: 'pending',
+      }],
+      last_updated: '',
+    });
+    saveDiscoveryPool({
+      items: [
+        { title: 'A', author: 'mediocre', source: 'xhs', engagement: 1000, topic: '未知话题', score: 50, discovered_at: '' },
+        { title: 'B', author: 'mediocre', source: 'xhs', engagement: 1000, topic: '未知话题', score: 50, discovered_at: '' },
+      ],
+      last_updated: '',
+    });
+    writeJSON(PATHS.inspirationState, {
+      last_refreshed_at: new Date().toISOString(),
+      feed_highlights: [], trending_topics: [], domain_insights: [], saved_inspirations: [],
+    });
+
+    processInspirationForAccountDiscovery(['singer', 'racer', 'esports', 'daily']);
+
+    const store = loadCandidateAccounts();
+    const mediocre = store.candidates.find(c => c.name === 'mediocre')!;
+    expect(mediocre.status).toBe('pending'); // not auto-approved
+  });
+
+  it('auto-approves at most 1 candidate per tick even if multiple qualify', () => {
+    writePersonaYaml();
+
+    // Two equally high-scoring candidates
+    saveCandidateAccounts({
+      candidates: [
+        {
+          name: 'star_a', platform: 'xhs',
+          appearance_count: 5, avg_engagement: 1000, peak_engagement: 5000,
+          topics: ['音乐', '赛车', '电竞', '日常'],
+          first_seen: '2026-04-01', last_seen: '2026-04-05', status: 'pending',
+        },
+        {
+          name: 'star_b', platform: 'xhs',
+          appearance_count: 5, avg_engagement: 1000, peak_engagement: 5000,
+          topics: ['音乐', '赛车', '电竞', '日常'],
+          first_seen: '2026-04-01', last_seen: '2026-04-05', status: 'pending',
+        },
+      ],
+      last_updated: '',
+    });
+    saveDiscoveryPool({
+      items: [
+        ...(['T1','T2','T3','T4','T5'] as const).map((t, i) => ({
+          title: t, author: 'star_a', source: 'xhs' as const,
+          engagement: 5000, topic: ['音乐','赛车','电竞','日常','音乐'][i], score: 90, discovered_at: '',
+        })),
+        ...(['U1','U2','U3','U4','U5'] as const).map((t, i) => ({
+          title: t, author: 'star_b', source: 'xhs' as const,
+          engagement: 5000, topic: ['音乐','赛车','电竞','日常','音乐'][i], score: 90, discovered_at: '',
+        })),
+      ],
+      last_updated: '',
+    });
+    writeJSON(PATHS.inspirationState, {
+      last_refreshed_at: new Date().toISOString(),
+      feed_highlights: [], trending_topics: [], domain_insights: [], saved_inspirations: [],
+    });
+
+    processInspirationForAccountDiscovery(['singer', 'racer', 'esports', 'daily']);
+
+    const store = loadCandidateAccounts();
+    const approvedCount = store.candidates.filter(c => c.status === 'approved').length;
+    expect(approvedCount).toBe(1); // max 1 per tick
+  });
+});
+
 describe('approveCandidate auto-writes to persona.yaml', () => {
   it('auto-adds approved candidate to persona.yaml competitors', () => {
     writePersonaYaml();
