@@ -25,6 +25,11 @@ import { setPersonaName, PATHS, readJSON, writeJSON, loadSkillEnvVars } from '..
 import { createRealLLMClient } from '../scripts/utils/llm-client';
 import { createContentBrowseConfig, createInstagramConfig, createSocialEngagementConfig } from '../scripts/adapters/instagram-adapter';
 import { ContentProviderRegistry } from '../scripts/adapters/content-provider';
+import { BilibiliProvider } from '../scripts/adapters/providers/bilibili-provider';
+import { RedditProvider } from '../scripts/adapters/providers/reddit-provider';
+import { DailyHotApiProvider } from '../scripts/adapters/providers/dailyhot-provider';
+import { WeiboProvider } from '../scripts/adapters/providers/weibo-provider';
+import { ZhihuProvider } from '../scripts/adapters/providers/zhihu-provider';
 import { getContentSourcesConfig } from '../scripts/persona/persona-loader';
 import { regularTick } from '../scripts/lifecycle/heartbeat-tick';
 import { runMorningPlan } from '../scripts/lifecycle/morning-plan';
@@ -451,6 +456,11 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     if (skillName === 'content-browse') {
       const contentSources = getContentSourcesConfig(personaConfig);
       const registry = new ContentProviderRegistry();
+      registry.register(new BilibiliProvider());
+      registry.register(new RedditProvider());
+      registry.register(new DailyHotApiProvider());
+      registry.register(new WeiboProvider());
+      registry.register(new ZhihuProvider());
       skillConfig = createContentBrowseConfig({ contentSources, registry }) as unknown as Record<string, unknown>;
     } else if (skillName === 'instagram') {
       skillConfig = createInstagramConfig() as unknown as Record<string, unknown>;

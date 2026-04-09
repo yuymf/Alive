@@ -47,6 +47,11 @@ import { loadPersona, injectPersona, buildVoiceSignature, getEmotionCouplingConf
 import { resolveRoute, resolveRouteBySkillName, fuzzyResolveSkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
 import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
 import { ContentProviderRegistry } from '../adapters/content-provider';
+import { BilibiliProvider } from '../adapters/providers/bilibili-provider';
+import { RedditProvider } from '../adapters/providers/reddit-provider';
+import { DailyHotApiProvider } from '../adapters/providers/dailyhot-provider';
+import { WeiboProvider } from '../adapters/providers/weibo-provider';
+import { ZhihuProvider } from '../adapters/providers/zhihu-provider';
 import { exaWebSearch } from '../utils/exa-client';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
 import { processInspirationForDiscovery, processInspirationForAccountDiscovery } from '../ops/discovery-engine';
@@ -233,6 +238,13 @@ function resolveSkillConfig(skillName: string, actionContext?: string, persona?:
   if (skillName === 'content-browse') {
     const contentSources = persona ? getContentSourcesConfig(persona) : undefined;
     const registry = new ContentProviderRegistry();
+    // Register content providers (BilibiliProvider & RedditProvider support search;
+    // others provide trending feeds and gracefully return [] for search)
+    registry.register(new BilibiliProvider());
+    registry.register(new RedditProvider());
+    registry.register(new DailyHotApiProvider());
+    registry.register(new WeiboProvider());
+    registry.register(new ZhihuProvider());
     config = createContentBrowseConfig({
       contentSources,
       registry,

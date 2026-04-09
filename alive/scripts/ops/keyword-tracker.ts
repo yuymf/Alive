@@ -379,11 +379,30 @@ export function buildKeywordContext(): string {
   if (active.length === 0) return '';
 
   const lines = ['━━ 🔍 关键词追踪 ━━'];
-  const topByVelocity = [...active].sort((a, b) => b.velocity - a.velocity).slice(0, 5);
+
+  // If all active keywords have zero velocity, show a compact alert instead of listing each one
+  const hasResults = active.some(k => k.velocity > 0);
+  if (!hasResults) {
+    lines.push(`  ⚠️ ${active.length}个关键词已搜索，但均未产出内容`);
+    lines.push(`  累计搜索: ${state.total_searches}次`);
+    return lines.join('\n');
+  }
+
+  // Show top keywords that actually have results, sorted by velocity
+  const topByVelocity = [...active]
+    .filter(k => k.velocity > 0)
+    .sort((a, b) => b.velocity - a.velocity)
+    .slice(0, 5);
 
   for (const k of topByVelocity) {
     const sourceTag = k.source === 'persona' ? '📌' : k.source === 'competitor' ? '🎯' : '📈';
     lines.push(`  ${sourceTag} "${k.keyword}" — 搜索${k.search_count}次, 均产出${k.velocity}条`);
+  }
+
+  // Also note how many zero-velocity keywords exist
+  const zeroCount = active.filter(k => k.velocity === 0).length;
+  if (zeroCount > 0) {
+    lines.push(`  ⚠️ 另有${zeroCount}个关键词未产出内容`);
   }
 
   lines.push(`  累计搜索: ${state.total_searches}次`);
