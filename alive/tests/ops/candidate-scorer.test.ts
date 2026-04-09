@@ -77,6 +77,14 @@ describe('burst_intensity', () => {
     const scored = scoreCandidateAccount(candidate, [], []);
     expect(scored.score_breakdown.burst_intensity).toBeCloseTo(0.2, 5);
   });
+
+  it('avg_engagement = 0 → does not divide by zero, burst_intensity = 0.2', () => {
+    // Math.max(avg, 1) guard: treats avg as 1, peak=avg_engagement=0 → peak also 0 → ratio=0/1=0 → 0.0
+    // But wait: peak fallback = avg_engagement = 0, avg = max(0,1) = 1, ratio = 0/1 = 0, burst = 0/5 = 0
+    const candidate = makeCandidate({ avg_engagement: 0 });
+    const scored = scoreCandidateAccount(candidate, [], []);
+    expect(scored.score_breakdown.burst_intensity).toBe(0);
+  });
 });
 
 // ─── frequency ────────────────────────────────────────────────────────────────
@@ -166,5 +174,20 @@ describe('rankCandidates', () => {
     const store = makeStore([pending, approved]);
     const ranked = rankCandidates(store, []);
     expect(ranked).toHaveLength(2);
+  });
+
+  it('empty candidates array → returns empty array', () => {
+    const store = makeStore([]);
+    const ranked = rankCandidates(store, ['singer']);
+    expect(ranked).toHaveLength(0);
+  });
+
+  it('statusFilter "approved" isolates approved candidates', () => {
+    const pending = makeCandidate({ name: 'p', status: 'pending' });
+    const approved = makeCandidate({ name: 'a', status: 'approved' });
+    const store = makeStore([pending, approved]);
+    const ranked = rankCandidates(store, [], 'approved');
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0].name).toBe('a');
   });
 });

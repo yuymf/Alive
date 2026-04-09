@@ -30,6 +30,9 @@ const WEIGHT_TRACK_OVERLAP   = 0.45;
 const WEIGHT_BURST_INTENSITY = 0.35;
 const WEIGHT_FREQUENCY       = 0.20;
 
+const BURST_CAP_RATIO           = 5;  // peak/avg ratio that saturates burst score
+const FREQUENCY_SATURATION_COUNT = 5; // appearances needed to reach frequency = 1.0
+
 // ─── Sub-calculators (pure functions) ─────────────────────────────────────────
 
 function calcTrackOverlap(topics: string[], identityKeys: string[]): number {
@@ -49,12 +52,12 @@ function calcTrackOverlap(topics: string[], identityKeys: string[]): number {
 function calcBurstIntensity(candidate: CandidateAccount): number {
   const peak = (candidate as { peak_engagement?: number }).peak_engagement ?? candidate.avg_engagement;
   const avg  = Math.max(candidate.avg_engagement, 1);
-  const ratio = Math.min(peak / avg, 5);
-  return ratio / 5;
+  const ratio = Math.min(peak / avg, BURST_CAP_RATIO);
+  return ratio / BURST_CAP_RATIO;
 }
 
 function calcFrequency(appearanceCount: number): number {
-  return Math.min(appearanceCount / 5, 1);
+  return Math.min(appearanceCount / FREQUENCY_SATURATION_COUNT, 1);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
