@@ -21,6 +21,7 @@ import {
   addCompetitorToPersona,
   DEFAULT_DISCOVERY_POOL,
 } from '../../scripts/ops/discovery-engine';
+import type { CandidateAccount } from '../../scripts/ops/discovery-engine';
 import { writeJSON } from '../../scripts/utils/file-utils';
 import { clearPersonaCache } from '../../scripts/persona/persona-loader';
 import YAML from 'yaml';
@@ -242,6 +243,54 @@ describe('processInspirationForAccountDiscovery', () => {
     const candidate = store.candidates.find(c => c.name === 'creator_stable')!;
     // peak_engagement should remain 10000 (not updated by lower engagements)
     expect(candidate.peak_engagement).toBe(10000);
+  });
+
+  it('候选无 peak_engagement 字段时（旧存档），fallback 到 avg_engagement', () => {
+    // Seed a candidate that is missing peak_engagement (simulates a legacy record).
+    // The code runs: existing.avg_engagement = avgEngagement  (line A)
+    //   then:        existing.peak_engagement = Math.max(existing.peak_engagement ?? existing.avg_engagement, data.maxEngagement)
+    // Because line A fires first, the fallback uses the newly-computed avg from pool data.
+    const legacyCandidate: CandidateAccount = {
+      name: 'legacy_user',
+      platform: 'xhs',
+      avg_engagement: 9999, // will be overwritten by pool-derived avg; kept distinct for clarity
+      appearance_count: 2,
+      topics: ['赛车'],
+      status: 'pending',
+      first_seen: '2026-01-01',
+      last_seen: '2026-01-01',
+      // peak_engagement is intentionally absent (legacy record)
+    } as unknown as CandidateAccount;
+    saveCandidateAccounts({ candidates: [legacyCandidate], last_updated: '' });
+
+    // Two pool items for the same author, both with engagement 3000.
+    // pool-derived: avgEngagement = 3000, maxEngagement = 3000
+    // After line A: existing.avg_engagement = 3000
+    // peak_engagement = Math.max(undefined ?? 3000, 3000) = 3000
+    saveDiscoveryPool({
+      items: [
+        { title: 'P1', author: 'legacy_user', source: 'xhs', engagement: 3000, topic: '漂移', score: 65, discovered_at: '' },
+        { title: 'P2', author: 'legacy_user', source: 'xhs', engagement: 3000, topic: '漂移', score: 65, discovered_at: '' },
+      ],
+      last_updated: '',
+    });
+
+    writeJSON(PATHS.inspirationState, {
+      last_refreshed_at: new Date().toISOString(),
+      feed_highlights: [],
+      trending_topics: [],
+      domain_insights: [],
+      saved_inspirations: [],
+    });
+
+    processInspirationForAccountDiscovery();
+
+    const updatedStore = loadCandidateAccounts();
+    const candidate = updatedStore.candidates.find(c => c.name === 'legacy_user');
+    expect(candidate).toBeDefined();
+    // The ?? branch fires (peak_engagement was undefined); result must equal
+    // Math.max(avg_engagement=3000, maxEngagement=3000) = 3000 — not undefined.
+    expect(candidate!.peak_engagement).toBe(3000);
   });
 });
 
