@@ -57,6 +57,15 @@ export interface CandidateAccount {
   appearance_count: number;
   /** Average engagement of their content */
   avg_engagement: number;
+  /** Highest engagement seen across all appearances (爆款帖指标) */
+  peak_engagement: number;
+  /** Optional score breakdown populated by candidate-scorer on demand */
+  score_breakdown?: {
+    track_overlap: number;
+    burst_intensity: number;
+    frequency: number;
+    composite: number;
+  };
   /** Topics they're associated with */
   topics: string[];
   /** First seen date */
@@ -218,6 +227,7 @@ export function processInspirationForAccountDiscovery(): number {
   const authorData = new Map<string, {
     count: number;
     totalEngagement: number;
+    maxEngagement: number;
     topics: Set<string>;
     platform: string;
   }>();
@@ -227,10 +237,11 @@ export function processInspirationForAccountDiscovery(): number {
     if (!item.author || item.author === '') continue;
     const key = `${item.author}:${item.source}`;
     const existing = authorData.get(key) ?? {
-      count: 0, totalEngagement: 0, topics: new Set(), platform: item.source,
+      count: 0, totalEngagement: 0, maxEngagement: 0, topics: new Set(), platform: item.source,
     };
     existing.count++;
     existing.totalEngagement += item.engagement;
+    existing.maxEngagement = Math.max(existing.maxEngagement, item.engagement);
     existing.topics.add(item.topic);
     authorData.set(key, existing);
   }
@@ -260,6 +271,7 @@ export function processInspirationForAccountDiscovery(): number {
       // Update existing candidate
       existing.appearance_count = Math.max(existing.appearance_count, data.count);
       existing.avg_engagement = avgEngagement;
+      existing.peak_engagement = Math.max(existing.peak_engagement ?? existing.avg_engagement, data.maxEngagement);
       existing.last_seen = dateStr;
       const newTopics = [...data.topics].filter(t => !existing.topics.includes(t));
       existing.topics = [...existing.topics, ...newTopics].slice(0, 10);
@@ -270,6 +282,7 @@ export function processInspirationForAccountDiscovery(): number {
         platform: data.platform,
         appearance_count: data.count,
         avg_engagement: avgEngagement,
+        peak_engagement: data.maxEngagement,
         topics: [...data.topics].slice(0, 10),
         first_seen: dateStr,
         last_seen: dateStr,

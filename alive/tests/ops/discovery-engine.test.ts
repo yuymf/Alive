@@ -139,6 +139,110 @@ describe('processInspirationForAccountDiscovery', () => {
     expect(store.candidates[0].avg_engagement).toBe(6500);
     expect(store.candidates[0].topics).toContain('电竞');
   });
+
+  it('新候选首次出现时正确初始化 peak_engagement', () => {
+    saveDiscoveryPool({
+      items: [
+        { title: 'A', author: 'newcreator', source: 'xhs', engagement: 3000, topic: '生活', score: 70, discovered_at: '' },
+        { title: 'B', author: 'newcreator', source: 'xhs', engagement: 7000, topic: '电竞', score: 85, discovered_at: '' },
+      ],
+      last_updated: '',
+    });
+
+    // Explicitly seed empty candidate store to ensure clean state
+    saveCandidateAccounts({ candidates: [], last_updated: '' });
+
+    writeJSON(PATHS.inspirationState, {
+      last_refreshed_at: new Date().toISOString(),
+      feed_highlights: [],
+      trending_topics: [],
+      domain_insights: [],
+      saved_inspirations: [],
+    });
+
+    processInspirationForAccountDiscovery();
+
+    const store = loadCandidateAccounts();
+    const candidate = store.candidates.find(c => c.name === 'newcreator');
+    expect(candidate).toBeDefined();
+    // peak_engagement should be the maximum engagement among all items for this author
+    expect(candidate!.peak_engagement).toBe(7000);
+  });
+
+  it('候选再次出现互动更高时 peak_engagement 更新', () => {
+    // Seed an existing candidate with peak_engagement = 5000
+    saveCandidateAccounts({
+      candidates: [{
+        name: 'creator_update', platform: 'xhs',
+        appearance_count: 2, avg_engagement: 5000, peak_engagement: 5000,
+        topics: ['音乐'],
+        first_seen: '2026-04-01', last_seen: '2026-04-01',
+        status: 'pending',
+      }],
+      last_updated: '',
+    });
+
+    // New pool items: same author with a higher engagement post
+    saveDiscoveryPool({
+      items: [
+        { title: 'X', author: 'creator_update', source: 'xhs', engagement: 4000, topic: '音乐', score: 80, discovered_at: '' },
+        { title: 'Y', author: 'creator_update', source: 'xhs', engagement: 9000, topic: '电竞', score: 95, discovered_at: '' },
+      ],
+      last_updated: '',
+    });
+
+    writeJSON(PATHS.inspirationState, {
+      last_refreshed_at: new Date().toISOString(),
+      feed_highlights: [],
+      trending_topics: [],
+      domain_insights: [],
+      saved_inspirations: [],
+    });
+
+    processInspirationForAccountDiscovery();
+
+    const store = loadCandidateAccounts();
+    const candidate = store.candidates.find(c => c.name === 'creator_update')!;
+    expect(candidate.peak_engagement).toBe(9000);
+  });
+
+  it('候选再次出现互动更低时 peak_engagement 不变', () => {
+    // Seed an existing candidate with peak_engagement = 10000
+    saveCandidateAccounts({
+      candidates: [{
+        name: 'creator_stable', platform: 'xhs',
+        appearance_count: 3, avg_engagement: 8000, peak_engagement: 10000,
+        topics: ['生活'],
+        first_seen: '2026-04-01', last_seen: '2026-04-02',
+        status: 'pending',
+      }],
+      last_updated: '',
+    });
+
+    // New pool items: same author but lower engagement
+    saveDiscoveryPool({
+      items: [
+        { title: 'P', author: 'creator_stable', source: 'xhs', engagement: 2000, topic: '生活', score: 60, discovered_at: '' },
+        { title: 'Q', author: 'creator_stable', source: 'xhs', engagement: 3000, topic: '美食', score: 65, discovered_at: '' },
+      ],
+      last_updated: '',
+    });
+
+    writeJSON(PATHS.inspirationState, {
+      last_refreshed_at: new Date().toISOString(),
+      feed_highlights: [],
+      trending_topics: [],
+      domain_insights: [],
+      saved_inspirations: [],
+    });
+
+    processInspirationForAccountDiscovery();
+
+    const store = loadCandidateAccounts();
+    const candidate = store.candidates.find(c => c.name === 'creator_stable')!;
+    // peak_engagement should remain 10000 (not updated by lower engagements)
+    expect(candidate.peak_engagement).toBe(10000);
+  });
 });
 
 describe('buildDiscoveryContext', () => {
@@ -170,7 +274,7 @@ describe('buildCandidateContext', () => {
     const store = {
       candidates: [{
         name: 'testuser', platform: 'xhs',
-        appearance_count: 3, avg_engagement: 5000,
+        appearance_count: 3, avg_engagement: 5000, peak_engagement: 7000,
         topics: ['电竞', '日常'],
         first_seen: '2026-04-01', last_seen: '2026-04-03',
         status: 'pending' as const,
@@ -188,8 +292,8 @@ describe('candidate management', () => {
   it('approves and dismisses candidates', () => {
     writeJSON(PATHS.candidateAccounts, {
       candidates: [
-        { name: 'a', platform: 'xhs', appearance_count: 3, avg_engagement: 5000, topics: [], first_seen: '', last_seen: '', status: 'pending' },
-        { name: 'b', platform: 'douyin', appearance_count: 2, avg_engagement: 3000, topics: [], first_seen: '', last_seen: '', status: 'pending' },
+        { name: 'a', platform: 'xhs', appearance_count: 3, avg_engagement: 5000, peak_engagement: 5000, topics: [], first_seen: '', last_seen: '', status: 'pending' },
+        { name: 'b', platform: 'douyin', appearance_count: 2, avg_engagement: 3000, peak_engagement: 3000, topics: [], first_seen: '', last_seen: '', status: 'pending' },
       ],
       last_updated: '',
     });
@@ -332,7 +436,7 @@ describe('approveCandidate auto-writes to persona.yaml', () => {
     writePersonaYaml();
     writeJSON(PATHS.candidateAccounts, {
       candidates: [
-        { name: 'hot_creator', platform: 'xhs', appearance_count: 5, avg_engagement: 8000, topics: ['电竞', '日常'], first_seen: '2026-04-01', last_seen: '2026-04-03', status: 'pending' },
+        { name: 'hot_creator', platform: 'xhs', appearance_count: 5, avg_engagement: 8000, peak_engagement: 10000, topics: ['电竞', '日常'], first_seen: '2026-04-01', last_seen: '2026-04-03', status: 'pending' },
       ],
       last_updated: '',
     });
@@ -359,7 +463,7 @@ describe('approveCandidate auto-writes to persona.yaml', () => {
     // No persona.yaml — approve should still work (candidate status changes)
     writeJSON(PATHS.candidateAccounts, {
       candidates: [
-        { name: 'solo', platform: 'douyin', appearance_count: 2, avg_engagement: 3000, topics: [], first_seen: '', last_seen: '', status: 'pending' },
+        { name: 'solo', platform: 'douyin', appearance_count: 2, avg_engagement: 3000, peak_engagement: 3000, topics: [], first_seen: '', last_seen: '', status: 'pending' },
       ],
       last_updated: '',
     });
