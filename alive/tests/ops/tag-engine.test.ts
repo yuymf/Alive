@@ -336,8 +336,8 @@ describe('runTagEngine', () => {
     expect(vocab).not.toBeNull();
     expect(vocab.version).toBe(1);
     expect(result.activeCount).toBe(vocab.active.length);
-    expect(result.activeCount).toBeGreaterThanOrEqual(0);
-    expect(result.dormantCount).toBeGreaterThanOrEqual(0);
+    expect(result.dormantCount).toBe(vocab.dormant.length);
+    expect(result.activeCount).toBeGreaterThan(0);
   });
 
   it('maintenance path: decays scores when vocab already exists', async () => {
@@ -372,5 +372,7 @@ describe('runTagEngine', () => {
     const entry = vocab.active.find(e => e.tag === '#赛车手');
     expect(entry).toBeDefined();
     expect(entry!.score).toBe(85); // floor(100 * 0.85)
+    expect(result.activeCount).toBe(vocab.active.length);
+    expect(vocab.dormant).toHaveLength(0);
   });
 });
