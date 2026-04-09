@@ -10,7 +10,7 @@
 
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now, getLocalDate } from '../utils/time-utils';
-import { TrendItem, TrendHistory, OpsConfig, PersonaConfig } from '../utils/types';
+import { TrendItem, TrendHistory, OpsConfig, PersonaConfig, TagVocabulary } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
 
 const isDebug = () => process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true';
@@ -124,6 +124,28 @@ ${trendList}
 \`\`\`json
 {"topics":[{"keyword":"...","platform":"...","velocity_score":0,"hook_angle":"...","identity_mode":"esports|singer|racer|daily"}]}
 \`\`\``;
+}
+
+/**
+ * Read the tag vocabulary and convert active tags into TrendItem signals.
+ * Exported for unit testing.
+ * Returns empty array when vocabulary file does not exist.
+ */
+export function injectTagVocabularyItems(): TrendItem[] {
+  const vocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
+  if (!vocab?.active?.length) return [];
+
+  return vocab.active
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+    .map(t => ({
+      platform: 'xhs' as const,
+      keyword: t.tag,
+      current_volume: t.score,
+      avg_7d: 0,
+      velocity_score: t.score / 100,
+      rank: 999,
+    }));
 }
 
 // ─── Remote DailyHot API (https://dailyhot-rho-nine.vercel.app) ──────────────
@@ -413,6 +435,12 @@ export async function analyzeTrends(
 
   // 3. Persist today's data for future velocity calculations
   persistTodayTrends(withVelocity);
+
+  // Inject tag vocabulary signals before threshold filter
+  const tagItems = injectTagVocabularyItems();
+  if (tagItems.length > 0) {
+    withVelocity.push(...tagItems);
+  }
 
   // 4. Filter by threshold — cold-start bypass: if all have no history, skip threshold
   const hasHistory = withVelocity.some(i => i.avg_7d > 0);

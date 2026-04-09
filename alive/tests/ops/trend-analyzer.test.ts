@@ -1,6 +1,31 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { computeVelocityScore, filterByThreshold, buildRelevancePrompt } from '../../scripts/ops/trend-analyzer';
-import { TrendItem } from '../../scripts/utils/types';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
+import {
+  computeVelocityScore,
+  filterByThreshold,
+  buildRelevancePrompt,
+  injectTagVocabularyItems,
+} from '../../scripts/ops/trend-analyzer';
+import { setBasePaths, resetBasePaths, PATHS, writeJSON } from '../../scripts/utils/file-utils';
+import { TrendItem, TagVocabulary } from '../../scripts/utils/types';
+
+// ─── Sandbox setup for tests that need file-system access ───────────────────
+
+const SANDBOX = path.join(os.tmpdir(), '__trend_analyzer_tag_sandbox__');
+
+beforeEach(() => {
+  fs.mkdirSync(SANDBOX, { recursive: true });
+  setBasePaths(SANDBOX, SANDBOX);
+});
+
+afterEach(() => {
+  resetBasePaths();
+  fs.rmSync(SANDBOX, { recursive: true, force: true });
+});
+
+// ─── Pure function tests ─────────────────────────────────────────────────────
 
 describe('computeVelocityScore', () => {
   it('returns current/avg when avg > 0', () => {
@@ -42,5 +67,38 @@ describe('buildRelevancePrompt', () => {
     const prompt = buildRelevancePrompt(items, '赛车手、歌手', 3);
     expect(prompt).toContain('#电竞女孩');
     expect(prompt).toContain('赛车手、歌手');
+  });
+});
+
+// ─── Tag vocabulary injection tests ─────────────────────────────────────────
+
+describe('tag vocabulary injection into withVelocity', () => {
+  it('injectTagVocabularyItems returns TrendItem array from active tags', () => {
+    const vocab: TagVocabulary = {
+      version: 1,
+      last_updated: new Date().toISOString(),
+      active: [
+        {
+          tag: '#注入测试', platform: 'xhs', score: 50,
+          sources: [{ type: 'competitor', account: 'a1', platform: 'xhs' }],
+          first_seen: new Date().toISOString(), last_hit: new Date().toISOString(),
+          hit_count: 2, peak_score: 50,
+        },
+      ],
+      dormant: [],
+    };
+    writeJSON(PATHS.tagVocabulary, vocab);
+
+    const items = injectTagVocabularyItems();
+    expect(items).toHaveLength(1);
+    expect(items[0].keyword).toBe('#注入测试');
+    expect(items[0].platform).toBe('xhs');
+    expect(items[0].velocity_score).toBeCloseTo(0.5); // score/100 = 50/100
+    expect(items[0].rank).toBe(999);
+  });
+
+  it('injectTagVocabularyItems returns empty array when no vocabulary file', () => {
+    const items = injectTagVocabularyItems();
+    expect(items).toEqual([]);
   });
 });
