@@ -141,7 +141,7 @@ function cmdOpsProxy(cmd: ParsedCommand): CommandResult {
   const opsHandlerPath = path.resolve(__dirname, '../ops/ops-command-handler.js');
   const opsArgs = [cmd.subcommand, ...cmd.args];
   try {
-    const output = execFileSync('node', [opsHandlerPath, ...opsArgs], {
+    const output = execFileSync(process.execPath, [opsHandlerPath, ...opsArgs], {
       timeout: 120_000,
       encoding: 'utf8' as const,
       env: { ...process.env },

@@ -19,6 +19,12 @@ export const MAX_POSTS_PER_ACCOUNT = 20;
 export const POST_RETENTION_DAYS = 30;
 export const DOUYIN_FETCH_TIMEOUT = 45_000;
 
+/** 随机等待 minMs~maxMs 毫秒，用于账号间节流，降低风控触发率。 */
+function jitter(minMs: number, maxMs: number): Promise<void> {
+  const ms = minMs + Math.random() * (maxMs - minMs);
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // ─── Pure functions (exported for testing) ────────────────────────────────────
 
 /**
@@ -185,8 +191,11 @@ export async function fetchCompetitorPosts(
   const now = wallNow();
 
   // Fetch XHS accounts
-  for (const accountName of accounts.xhs) {
+  for (let i = 0; i < accounts.xhs.length; i++) {
+    const accountName = accounts.xhs[i];
     const key = buildAccountKey(accountName, 'xhs');
+    // 账号间节流：第一个账号不等，后续账号随机等待 2~6s
+    if (i > 0) await jitter(2000, 6000);
     try {
       const incoming = await fetchXhsPosts(accountName);
       const existingPosts = updatedAccounts[key] ?? [];
@@ -194,15 +203,24 @@ export async function fetchCompetitorPosts(
       const pruned = pruneOldPosts(merged, now);
       updatedAccounts[key] = pruned;
       success.push(key);
-    } catch {
-      // Retain previous data; mark as failed
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Not logged in')) {
+        console.warn(`[competitor-fetcher] XHS 未登录，跳过账号 ${key}，不影响其他平台抓取。请重新登录小红书。`);
+      } else {
+        console.warn(`[competitor-fetcher] XHS 抓取失败 ${key}: ${msg}`);
+      }
+      // 保留历史数据，只标记失败
       failed.push(key);
     }
   }
 
   // Fetch Douyin accounts
-  for (const accountId of accounts.douyin) {
+  for (let i = 0; i < accounts.douyin.length; i++) {
+    const accountId = accounts.douyin[i];
     const key = buildAccountKey(accountId, 'douyin');
+    // 账号间节流：随机等待 3~7s
+    if (i > 0) await jitter(3000, 7000);
     try {
       const incoming = fetchDouyinPosts(accountId);
       const existingPosts = updatedAccounts[key] ?? [];
@@ -210,7 +228,9 @@ export async function fetchCompetitorPosts(
       const pruned = pruneOldPosts(merged, now);
       updatedAccounts[key] = pruned;
       success.push(key);
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[competitor-fetcher] Douyin 抓取失败 ${key}: ${msg}`);
       failed.push(key);
     }
   }

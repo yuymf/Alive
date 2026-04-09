@@ -17,7 +17,13 @@
 import * as path from 'path';
 import { execFile } from 'child_process';
 
-const XHS_CLI_TIMEOUT = 30_000;
+const XHS_CLI_TIMEOUT = 75_000;  // 延长至 75s，减少因慢速响应触发的风控重试
+
+/** 随机等待 minMs~maxMs 毫秒，模拟人类操作节奏。 */
+function jitter(minMs: number, maxMs: number): Promise<void> {
+  const ms = minMs + Math.random() * (maxMs - minMs);
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 export interface XhsNote {
   id: string;
@@ -184,6 +190,15 @@ export async function getXhsNoteDetail(noteId: string, xsecToken: string): Promi
 
 /** Fetch a user's recent notes by account name. Falls back to search if CLI command unsupported. */
 export async function getUserNotes(accountName: string, limit = 20): Promise<XhsNote[]> {
+  // ── 预检登录闸门：未登录直接抛出，不执行高频抓取操作 ──
+  const loginOk = await isXhsAvailable();
+  if (!loginOk) {
+    throw new Error('[xhs-bridge] Not logged in — skipping getUserNotes to avoid rate-limit trigger');
+  }
+
+  // ── 节流：抓取前随机等待 1.5~4s，模拟人类间歇节奏 ──
+  await jitter(1500, 4000);
+
   try {
     const result = await callXhsCli('get-user-notes', ['--user', accountName, '--limit', String(limit)]);
     const data = result as Record<string, unknown>;
@@ -191,6 +206,7 @@ export async function getUserNotes(accountName: string, limit = 20): Promise<Xhs
     return notes.map(mapFeedToNote);
   } catch {
     console.error(`[xhs-bridge] get-user-notes not supported, falling back to search for "${accountName}"`);
+    await jitter(1000, 3000);  // fallback 前再加一次抖动
     return searchXhsNotes(accountName, { sortBy: '最新' });
   }
 }

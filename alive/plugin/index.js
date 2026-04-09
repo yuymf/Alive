@@ -1,11 +1,11 @@
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 import path from 'path';
 
-// Shared helper: run a Node.js script with args, return stdout as text
+// Shared helper: run a Node.js script with args, return stdout as text (async).
 // Note: child_process is loaded dynamically to satisfy plugin security policy.
-function runScript(scriptPath, args, timeoutMs = 120000) {
+function runScript(scriptPath, args, timeoutMs = 600000) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { execFileSync } = require('child_process'); // dynamic load — not a static dependency
+  const { execFile } = require('child_process'); // dynamic load — not a static dependency
   // Only forward the minimal set of env vars needed for the script to run.
   // Avoid spreading all of process.env to prevent false-positive credential-harvesting warnings.
   const safeEnv = {
@@ -17,16 +17,26 @@ function runScript(scriptPath, args, timeoutMs = 120000) {
     LLM_API_BASE: process.env.LLM_API_BASE,
     LLM_MODEL: process.env.LLM_MODEL,
   };
-  const output = execFileSync('node', [scriptPath, ...args], {
-    timeout: timeoutMs,
-    encoding: 'utf8',
-    env: safeEnv,
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, [scriptPath, ...args], {
+      timeout: timeoutMs,
+      encoding: 'utf8',
+      env: safeEnv,
+      maxBuffer: 10 * 1024 * 1024,
+    }, (err, stdout, stderr) => {
+      if (err) {
+        // Attach stdout/stderr to the error for upstream handlers
+        err.stdout = stdout;
+        err.stderr = stderr;
+        return reject(err);
+      }
+      const trimmed = (stdout ?? '').trim();
+      if (!trimmed) {
+        return reject(new Error('Handler returned empty output — possible CLI entry point issue.'));
+      }
+      resolve(trimmed);
+    });
   });
-  const trimmed = output.trim();
-  if (!trimmed) {
-    throw new Error('Handler returned empty output — possible CLI entry point issue.');
-  }
-  return trimmed;
 }
 
 // Ops commands that should be routed to ops-command-handler.js
@@ -72,7 +82,7 @@ export default definePluginEntry({
         if (OPS_COMMANDS.has(firstWord)) {
           const opsArgs = rawArgs.split(/\s+/);
           try {
-            return { text: runScript(opsHandlerPath, opsArgs) };
+            return { text: await runScript(opsHandlerPath, opsArgs) };
           } catch (err) {
             // Prefer stdout (ops-command-handler writes user-facing message to stdout even on failure).
             // Never expose raw stderr — it contains internal logs, not user-facing content.
@@ -85,7 +95,7 @@ export default definePluginEntry({
         // Route free-text review messages (publish confirmations, approvals, etc.)
         if (rawArgs && !rawArgs.startsWith('/') && looksLikeReviewMessage(rawArgs)) {
           try {
-            return { text: runScript(opsHandlerPath, ['message', rawArgs]) };
+            return { text: await runScript(opsHandlerPath, ['message', rawArgs]) };
           } catch (err) {
             const stdout = err.stdout?.toString().trim() ?? '';
             if (stdout) return { text: stdout };
@@ -95,7 +105,7 @@ export default definePluginEntry({
 
         // Route everything else to admin command-handler
         try {
-          return { text: runScript(adminHandlerPath, [rawArgs], 30000) };
+          return { text: await runScript(adminHandlerPath, [rawArgs], 30000) };
         } catch (err) {
           const stdout = err.stdout?.toString().trim() ?? '';
           if (stdout) return { text: stdout };

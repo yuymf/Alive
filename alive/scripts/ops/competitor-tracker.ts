@@ -344,7 +344,7 @@ async function main() {
 }
 main();
 `;
-    const raw = execFileSync('node', ['-e', script], { timeout: 20_000, encoding: 'utf8' });
+    const raw = execFileSync(process.execPath, ['-e', script], { timeout: 20_000, encoding: 'utf8' });
     const info = JSON.parse(raw.trim()) as { title?: string; play?: number; created?: number };
     if (!info.title) {
       return { account: displayName, platform: 'bilibili', latest_post: null, days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: wallNow().toISOString() };
