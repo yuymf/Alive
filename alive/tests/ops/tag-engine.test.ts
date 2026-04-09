@@ -207,6 +207,7 @@ import {
   reviveDormantSample,
   refreshActiveTags,
   runDailyMaintenance,
+  runTagEngine,
 } from '../../scripts/ops/tag-engine';
 
 // ─── Daily maintenance ───────────────────────────────────────────────────────
@@ -294,5 +295,82 @@ describe('runDailyMaintenance', () => {
     expect(result.last_updated).toBe('2026-04-09T10:00:00.000Z');
     // Score decayed: 50 * 0.85 = 42
     expect(result.active[0].score).toBe(42);
+  });
+});
+
+// ─── runTagEngine (E2E integration) ──────────────────────────────────────────
+
+describe('runTagEngine', () => {
+  const ops = {
+    enabled: true,
+    competitors: [
+      { account: 'test_account_a', platform: 'xhs' },
+      { account: 'test_account_b', platform: 'xhs' },
+    ],
+    trend_score_threshold: 1.5,
+    topic_count: 3,
+    brief_time: '09:00',
+  };
+
+  it('cold-start path: creates vocab from scratch when no file exists', async () => {
+    mockSearchXhsNotes.mockResolvedValue([
+      {
+        id: '1',
+        title: '#电竞女生 #赛车日常 今天好开心',
+        description: '',
+        likes: 5000,
+        tags: [],
+        user: 'user1',
+        url: 'http://x',
+        cover: '',
+      },
+    ]);
+    mockSearchDouyinVideos.mockReturnValue({ success: true, videos: [] });
+
+    const result = await runTagEngine(ops as any);
+
+    expect(result.mode).toBe('cold_start');
+    expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+
+    const vocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
+    expect(vocab).not.toBeNull();
+    expect(vocab.version).toBe(1);
+    expect(result.activeCount).toBe(vocab.active.length);
+    expect(result.activeCount).toBeGreaterThanOrEqual(0);
+    expect(result.dormantCount).toBeGreaterThanOrEqual(0);
+  });
+
+  it('maintenance path: decays scores when vocab already exists', async () => {
+    const existing: TagVocabulary = {
+      version: 1,
+      last_updated: '2026-04-08T10:00:00.000Z',
+      active: [
+        {
+          tag: '#赛车手',
+          platform: 'xhs',
+          score: 100,
+          sources: [{ type: 'competitor', account: 'test_account_a', platform: 'xhs' }],
+          first_seen: '2026-04-01T00:00:00.000Z',
+          last_hit: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+          hit_count: 3,
+          peak_score: 100,
+        },
+      ],
+      dormant: [],
+    };
+    writeJSON(PATHS.tagVocabulary, existing);
+
+    mockSearchXhsNotes.mockResolvedValue([]);
+    mockSearchDouyinVideos.mockReturnValue({ success: true, videos: [] });
+
+    const result = await runTagEngine(ops as any);
+
+    expect(result.mode).toBe('maintenance');
+    expect(result.activeCount).toBeGreaterThanOrEqual(0);
+
+    const vocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
+    const entry = vocab.active.find(e => e.tag === '#赛车手');
+    expect(entry).toBeDefined();
+    expect(entry!.score).toBe(85); // floor(100 * 0.85)
   });
 });
