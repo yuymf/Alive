@@ -7,6 +7,7 @@ import { searchXhsNotes } from '../../sub-skills/platform/xhs-bridge/scripts/xhs
 import { searchDouyinVideos } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 import type { TagEntry, TagVocabulary, TagSource } from '../utils/types';
 import type { OpsConfig } from '../utils/types';
+import { now } from '../utils/time-utils';
 
 const XHS_HIT_THRESHOLD = 1000;
 const DOUYIN_HIT_THRESHOLD = 5000;
@@ -15,6 +16,15 @@ const DOUYIN_HIT_SCORE = 15;
 const MULTI_COMPETITOR_BONUS = 20;
 const DORMANT_INITIAL_SCORE = 5;
 const HASHTAG_REGEX = /#[\w\u4e00-\u9fa5]+/g;
+
+const DECAY_FACTOR = 0.85;
+const DORMANT_SCORE_THRESHOLD = 5;
+const ACTIVE_TO_DORMANT_DAYS = 7;
+const DORMANT_DELETE_DAYS = 30;
+const TOP_ACTIVE_REFRESH = 10;
+const REFRESH_LIMIT = 5;
+const REVIVAL_SAMPLE_SIZE = 10;
+const REVIVAL_SCORE = 15;
 
 export function extractHashtags(text: string, text2?: string): string[] {
   const combined = text2 !== undefined ? `${text} ${text2}` : text;
@@ -225,4 +235,229 @@ export async function runColdStart(ops: OpsConfig, timestamp: string): Promise<T
 
   writeJSON(PATHS.tagVocabulary, vocab);
   return vocab;
+}
+
+// ─── Daily decay ─────────────────────────────────────────────────────────────
+
+/**
+ * Apply daily decay to all active entries.
+ * Entries with score < DORMANT_SCORE_THRESHOLD AND last_hit > ACTIVE_TO_DORMANT_DAYS
+ * are split off into newDormant[].
+ *
+ * @param opts.returnSplit  When true, returns { stillActive, newDormant }.
+ *                         When false (default), returns the still-active list directly.
+ */
+export function applyDailyDecay(
+  entries: TagEntry[],
+  opts: { returnSplit: true },
+): { stillActive: TagEntry[]; newDormant: TagEntry[] };
+export function applyDailyDecay(
+  entries: TagEntry[],
+  opts?: { returnSplit?: false },
+): TagEntry[];
+export function applyDailyDecay(
+  entries: TagEntry[],
+  opts?: { returnSplit?: boolean },
+): TagEntry[] | { stillActive: TagEntry[]; newDormant: TagEntry[] } {
+  const cutoff = Date.now() - ACTIVE_TO_DORMANT_DAYS * 24 * 60 * 60 * 1000;
+  const stillActive: TagEntry[] = [];
+  const newDormant: TagEntry[] = [];
+
+  for (const entry of entries) {
+    const decayed = Math.floor(entry.score * DECAY_FACTOR);
+    const lastHitTs = new Date(entry.last_hit).getTime();
+    const isDead = decayed < DORMANT_SCORE_THRESHOLD && lastHitTs < cutoff;
+    const updated: TagEntry = { ...entry, score: decayed, peak_score: Math.max(entry.peak_score, decayed) };
+    if (isDead) {
+      newDormant.push(updated);
+    } else {
+      stillActive.push(updated);
+    }
+  }
+
+  if (opts?.returnSplit) {
+    return { stillActive, newDormant };
+  }
+  return stillActive;
+}
+
+// ─── Active tag refresh ──────────────────────────────────────────────────────
+
+/**
+ * Refresh the top active tags by searching XHS (and Douyin when available).
+ * High-engagement hits → score += platform delta, last_hit updated.
+ * Returns the updated entries (immutable — new array).
+ */
+export async function refreshActiveTags(
+  active: TagEntry[],
+  timestamp: string,
+): Promise<TagEntry[]> {
+  const top = [...active].sort((a, b) => b.score - a.score).slice(0, TOP_ACTIVE_REFRESH);
+  const updated = new Map(active.map(e => [e.tag, e]));
+
+  for (const entry of top) {
+    // XHS search (sortBy: 最新 for recency)
+    const xhsHits = await searchXhsHighEngagement(entry.tag, REFRESH_LIMIT);
+    if (xhsHits.length > 0) {
+      const existing = updated.get(entry.tag)!;
+      const newScore = existing.score + xhsHits.length * XHS_HIT_SCORE;
+      updated.set(entry.tag, {
+        ...existing,
+        score: newScore,
+        peak_score: Math.max(existing.peak_score, newScore),
+        last_hit: timestamp,
+        hit_count: existing.hit_count + xhsHits.length,
+      });
+    }
+
+    // Douyin search (sync, best-effort)
+    const douyinHits = searchDouyinHighEngagement(entry.tag, REFRESH_LIMIT);
+    if (douyinHits.length > 0) {
+      const existing = updated.get(entry.tag)!;
+      const newScore = existing.score + douyinHits.length * DOUYIN_HIT_SCORE;
+      updated.set(entry.tag, {
+        ...existing,
+        score: newScore,
+        peak_score: Math.max(existing.peak_score, newScore),
+        last_hit: timestamp,
+        hit_count: existing.hit_count + douyinHits.length,
+        platform: existing.platform === 'xhs' ? 'both' : existing.platform,
+      });
+    }
+
+    // Discover new tags from hit content
+    for (const hit of [...xhsHits, ...douyinHits]) {
+      for (const newTag of hit.tags) {
+        if (!updated.has(newTag)) {
+          const source: TagSource = { type: 'keyword_search', keyword: entry.tag, platform: 'xhs' };
+          updated.set(newTag, buildInitialEntry(newTag, 'xhs', XHS_HIT_SCORE, source, timestamp));
+        }
+      }
+    }
+  }
+
+  return [...updated.values()];
+}
+
+// ─── Dormant revival ─────────────────────────────────────────────────────────
+
+/**
+ * Sample up to REVIVAL_SAMPLE_SIZE dormant entries, check for new XHS hits.
+ *   - last_hit > 30 days → delete (not returned in kept[])
+ *   - has fresh high-engagement hit → move to revived[] with score = REVIVAL_SCORE
+ *   - otherwise → stay in kept[]
+ */
+export async function reviveDormantSample(
+  dormant: TagEntry[],
+  _active: TagEntry[],
+): Promise<{ kept: TagEntry[]; revived: TagEntry[] }> {
+  const deleteCutoff = Date.now() - DORMANT_DELETE_DAYS * 24 * 60 * 60 * 1000;
+
+  // First pass: remove expired entries
+  const notExpired = dormant.filter(e => new Date(e.last_hit).getTime() >= deleteCutoff);
+
+  // Sample up to REVIVAL_SAMPLE_SIZE for XHS check
+  const sample = notExpired.slice(0, REVIVAL_SAMPLE_SIZE);
+
+  const kept: TagEntry[] = [];
+  const revived: TagEntry[] = [];
+  const checkedTags = new Set<string>();
+
+  for (const entry of sample) {
+    checkedTags.add(entry.tag);
+    const hits = await searchXhsHighEngagement(entry.tag, 5);
+    if (hits.length > 0) {
+      revived.push({ ...entry, score: REVIVAL_SCORE, last_hit: now().toISOString() });
+    } else {
+      kept.push(entry);
+    }
+  }
+
+  // Entries not in sample stay in kept
+  for (const entry of notExpired) {
+    if (!checkedTags.has(entry.tag)) {
+      kept.push(entry);
+    }
+  }
+
+  return { kept, revived };
+}
+
+// ─── Daily maintenance entry point ───────────────────────────────────────────
+
+/**
+ * Run the full daily maintenance cycle on the tag vocabulary.
+ *
+ * Steps:
+ *   1. Refresh top active tags (search XHS + Douyin for hits)
+ *   2. Apply daily decay to all active entries
+ *   3. Revive/prune dormant entries
+ *   4. Persist updated vocabulary
+ */
+export async function runDailyMaintenance(timestamp: string): Promise<TagVocabulary> {
+  const existing = readJSON<TagVocabulary>(PATHS.tagVocabulary, {
+    version: 1,
+    last_updated: timestamp,
+    active: [],
+    dormant: [],
+  });
+
+  // Step 1: Refresh active tags (find hits, discover new tags)
+  const refreshed = await refreshActiveTags(existing.active, timestamp);
+
+  // Step 2: Apply daily decay, split out newly dormant entries
+  const { stillActive, newDormant } = applyDailyDecay(refreshed, { returnSplit: true });
+
+  // Step 3: Revival check on dormant
+  const allDormant = [...existing.dormant, ...newDormant];
+  const { kept, revived } = await reviveDormantSample(allDormant, stillActive);
+
+  const finalActive = [...stillActive, ...revived];
+  const finalDormant = kept;
+
+  const vocab: TagVocabulary = {
+    version: 1,
+    last_updated: timestamp,
+    active: finalActive,
+    dormant: finalDormant,
+  };
+
+  writeJSON(PATHS.tagVocabulary, vocab);
+  return vocab;
+}
+
+// ─── Public entry point ──────────────────────────────────────────────────────
+
+/**
+ * Main entry: cold-start if vocabulary missing, else daily maintenance.
+ * Returns run stats for logging.
+ */
+export async function runTagEngine(ops: OpsConfig): Promise<{
+  mode: 'cold_start' | 'maintenance';
+  activeCount: number;
+  dormantCount: number;
+  timestamp: string;
+}> {
+  const timestamp = now().toISOString();
+  const existing = readJSON<TagVocabulary | null>(PATHS.tagVocabulary, null);
+
+  let vocab: TagVocabulary;
+  let mode: 'cold_start' | 'maintenance';
+
+  if (!existing) {
+    console.log('[tag-engine] No vocabulary found — running cold start');
+    vocab = await runColdStart(ops, timestamp);
+    mode = 'cold_start';
+  } else {
+    console.log(`[tag-engine] Running daily maintenance (${existing.active.length} active, ${existing.dormant.length} dormant)`);
+    vocab = await runDailyMaintenance(timestamp);
+    mode = 'maintenance';
+  }
+
+  return {
+    mode,
+    activeCount: vocab.active.length,
+    dormantCount: vocab.dormant.length,
+    timestamp,
+  };
 }

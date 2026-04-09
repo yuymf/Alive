@@ -201,3 +201,98 @@ describe('runColdStart', () => {
     expect(vocab.dormant).toHaveLength(0);
   });
 });
+
+import {
+  applyDailyDecay,
+  reviveDormantSample,
+  refreshActiveTags,
+  runDailyMaintenance,
+} from '../../scripts/ops/tag-engine';
+
+// ─── Daily maintenance ───────────────────────────────────────────────────────
+
+describe('applyDailyDecay', () => {
+  it('multiplies scores by 0.85 (floor)', () => {
+    const entry: TagEntry = {
+      tag: '#test', platform: 'xhs', score: 100,
+      sources: [], first_seen: '2026-04-01T00:00:00.000Z',
+      last_hit: '2026-04-09T00:00:00.000Z', hit_count: 5, peak_score: 100,
+    };
+    const decayed = applyDailyDecay([entry]);
+    expect(decayed[0].score).toBe(85); // floor(100 * 0.85)
+  });
+
+  it('moves entry to dormant list when score < 5 and last_hit > 7 days ago', () => {
+    const oldDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    const entry: TagEntry = {
+      tag: '#stale', platform: 'xhs', score: 6,
+      sources: [], first_seen: oldDate, last_hit: oldDate, hit_count: 1, peak_score: 10,
+    };
+    const { stillActive, newDormant } = applyDailyDecay([entry], { returnSplit: true });
+    // After decay: 6 * 0.85 = 5.1 → floor → 5 (still >= 5, stays active)
+    // Let's test with score 5 → 5*0.85=4.25 → floor=4 < 5 AND last_hit > 7 days
+    const entry2: TagEntry = { ...entry, score: 5 };
+    const result = applyDailyDecay([entry2], { returnSplit: true });
+    expect(result.newDormant).toHaveLength(1);
+    expect(result.stillActive).toHaveLength(0);
+  });
+});
+
+describe('reviveDormantSample', () => {
+  it('removes dormant entries where last_hit > 30 days', async () => {
+    const oldDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    const stale: TagEntry = {
+      tag: '#ancient', platform: 'xhs', score: 3,
+      sources: [], first_seen: oldDate, last_hit: oldDate, hit_count: 1, peak_score: 5,
+    };
+    const { kept } = await reviveDormantSample([stale], []);
+    expect(kept).toHaveLength(0);
+  });
+
+  it('moves entries to active list when revival search finds high-engagement content', () => {
+    // mockSearchXhsNotes returns a high-engagement post — revival should trigger
+    mockSearchXhsNotes.mockResolvedValueOnce([
+      { id: '1', title: '#复活词 测试', description: '', likes: 2000, tags: [], user: 'u1', url: '', cover: '' },
+    ]);
+
+    const recentDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    const dormantEntry: TagEntry = {
+      tag: '#复活词', platform: 'xhs', score: 3,
+      sources: [], first_seen: recentDate, last_hit: recentDate, hit_count: 1, peak_score: 8,
+    };
+
+    return reviveDormantSample([dormantEntry], []).then(result => {
+      expect(result.revived).toHaveLength(1);
+      expect(result.revived[0].score).toBe(15);
+    });
+  });
+});
+
+describe('runDailyMaintenance', () => {
+  it('returns a TagVocabulary and updates last_updated', async () => {
+    // Seed an existing vocabulary
+    const existing: TagVocabulary = {
+      version: 1,
+      last_updated: '2026-04-08T10:00:00.000Z',
+      active: [
+        {
+          tag: '#电竞', platform: 'xhs', score: 50,
+          sources: [{ type: 'competitor', account: 'a1', platform: 'xhs' }],
+          first_seen: '2026-04-01T00:00:00.000Z',
+          last_hit: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+          hit_count: 5, peak_score: 50,
+        },
+      ],
+      dormant: [],
+    };
+    writeJSON(PATHS.tagVocabulary, existing);
+
+    mockSearchXhsNotes.mockResolvedValue([]);
+    mockSearchDouyinVideos.mockReturnValue({ success: true, videos: [] });
+
+    const result = await runDailyMaintenance('2026-04-09T10:00:00.000Z');
+    expect(result.last_updated).toBe('2026-04-09T10:00:00.000Z');
+    // Score decayed: 50 * 0.85 = 42
+    expect(result.active[0].score).toBe(42);
+  });
+});
