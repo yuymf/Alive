@@ -260,6 +260,48 @@ async function cmdStatus(): Promise<string> {
   ].join('\n');
 }
 
+// ─── Command: /candidates ─────────────────────────────────────────────────────
+
+async function cmdCandidates(topNStr?: string): Promise<string> {
+  loadSkillEnvVars('alive');
+  const persona = await loadPersona();
+  if (!persona.ops?.enabled) return '⚠️ ops 未启用';
+
+  const identityKeys = Object.keys(persona.identities ?? {});
+
+  const { loadCandidateAccounts } = await import('./discovery-engine');
+  const { rankCandidates } = await import('./candidate-scorer');
+
+  const store = loadCandidateAccounts();
+  const showAll = topNStr === 'all';
+  const topN = showAll ? Infinity : (parseInt(topNStr ?? '5', 10) || 5);
+  const ranked = rankCandidates(store, identityKeys, 'pending');
+
+  if (ranked.length === 0) {
+    return '🔍 暂无待确认的候选对标账号\n\n候选账号通过 content-browse 自动发现，稍后再来查看。';
+  }
+
+  const display = showAll ? ranked : ranked.slice(0, topN);
+  const MEDALS = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+  const lines = [`🔍 候选对标排行（Top ${display.length}）`, ''];
+
+  display.forEach((c, idx) => {
+    const medal = MEDALS[idx] ?? `${idx + 1}.`;
+    const { track_overlap, burst_intensity, frequency, composite } = c.score_breakdown;
+    const peak = c.peak_engagement;
+    lines.push(`${medal} @${c.name}（${c.platform}）  综合分 ${composite.toFixed(2)}`);
+    lines.push(`   赛道 ${track_overlap.toFixed(2)} · 爆发 ${burst_intensity.toFixed(2)} · 频率 ${frequency.toFixed(2)}`);
+    if (c.topics.length > 0) {
+      lines.push(`   话题: ${c.topics.slice(0, 3).join('、')}  |  峰值互动 ${peak}  |  出现 ${c.appearance_count} 次`);
+    }
+    lines.push(`   → /competitor add @${c.name} ${c.platform}`);
+    lines.push('');
+  });
+
+  lines.push('/competitor add @名称 平台 将候选加入竞品库');
+  return lines.join('\n');
+}
+
 // ─── Command: /help ───────────────────────────────────────────────────────────
 
 function cmdHelp(): string {
@@ -273,6 +315,7 @@ function cmdHelp(): string {
     '/analyze <URL>  — 爆款帖子拆解分析',
     '/advice         — 人设契合度建议',
     '/status         — 查看队列状态',
+    '/candidates [N] — 查看 Top-N 候选对标（默认5，all=全部）',
     '/help           — 显示本帮助',
   ].join('\n');
 }
@@ -309,6 +352,9 @@ async function main(): Promise<void> {
         break;
       case 'status':
         result = await cmdStatus();
+        break;
+      case 'candidates':
+        result = await cmdCandidates(args[0]);
         break;
       case 'health': {
         const report = await runHealthCheck();
