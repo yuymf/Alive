@@ -135,7 +135,7 @@ export function injectTagVocabularyItems(): TrendItem[] {
   const vocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
   if (!vocab?.active?.length) return [];
 
-  return vocab.active
+  return [...vocab.active]
     .sort((a, b) => b.score - a.score)
     .slice(0, 10)
     .map(t => ({
@@ -426,7 +426,7 @@ export async function analyzeTrends(
 
   // 2. Load history once, then compute velocity scores
   const history = readJSON<TrendHistory[]>(PATHS.trendHistory, []);
-  const withVelocity: TrendItem[] = deduped.map(item => {
+  let withVelocity: TrendItem[] = deduped.map(item => {
     const avg7d = computeAvgFromHistory(history, item.keyword, item.platform);
     const velocity_score = computeVelocityScore(item.current_volume, avg7d);
     return { ...item, avg_7d: avg7d, velocity_score };
@@ -439,7 +439,7 @@ export async function analyzeTrends(
   // Inject tag vocabulary signals before threshold filter
   const tagItems = injectTagVocabularyItems();
   if (tagItems.length > 0) {
-    withVelocity.push(...tagItems);
+    withVelocity = [...withVelocity, ...tagItems];
   }
 
   // 4. Filter by threshold — cold-start bypass: if all have no history, skip threshold
