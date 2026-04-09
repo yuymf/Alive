@@ -317,14 +317,16 @@ export async function runViralSearch(
     existingTitles: new Set(pool.items.map(i => i.title)),
   };
 
-  // Search each keyword on both platforms
-  for (const kw of keywords) {
-    // XHS (async)
-    const xhsNotes = await searchXhsViral(kw, threshold);
+  // Run all XHS searches in parallel, then process results index-aligned
+  const xhsResults = await Promise.all(keywords.map(kw => searchXhsViral(kw, threshold)));
+
+  for (let i = 0; i < keywords.length; i++) {
+    const kw = keywords[i];
+    const xhsNotes = xhsResults[i];
     result.xhs_found += xhsNotes.length;
     result.injected += injectXhsNotesToPool(xhsNotes, `viral-search:xhs`, kw, poolHelper);
 
-    // Douyin (sync)
+    // Douyin (sync, best-effort)
     const dyVideos = searchDouyinViral(kw, threshold);
     result.douyin_found += dyVideos.length;
     result.injected += injectDouyinVideosToPool(dyVideos, `viral-search:douyin`, kw, poolHelper);

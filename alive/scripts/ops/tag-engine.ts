@@ -289,6 +289,27 @@ export function applyDailyDecay(
 // ─── Active tag refresh ──────────────────────────────────────────────────────
 
 /**
+ * Inject any tags from `hits` that are not already in `updated` as new entries.
+ */
+function discoverNewTagsFromHits(
+  hits: Array<{ tags: string[] }>,
+  platform: 'xhs' | 'douyin',
+  score: number,
+  keyword: string,
+  updated: Map<string, TagEntry>,
+  timestamp: string,
+): void {
+  for (const hit of hits) {
+    for (const newTag of hit.tags) {
+      if (!updated.has(newTag)) {
+        const source: TagSource = { type: 'keyword_search', keyword, platform };
+        updated.set(newTag, buildInitialEntry(newTag, platform, score, source, timestamp));
+      }
+    }
+  }
+}
+
+/**
  * Refresh the top active tags by searching XHS (and Douyin when available).
  * High-engagement hits → score += platform delta, last_hit updated.
  * Returns the updated entries (immutable — new array).
@@ -300,9 +321,15 @@ export async function refreshActiveTags(
   const top = [...active].sort((a, b) => b.score - a.score).slice(0, TOP_ACTIVE_REFRESH);
   const updated = new Map(active.map(e => [e.tag, e]));
 
-  for (const entry of top) {
-    // XHS search (sortBy: 最新 for recency)
-    const xhsHits = await searchXhsHighEngagement(entry.tag, REFRESH_LIMIT);
+  // Run all XHS searches in parallel (sortBy: 最新 for recency)
+  const xhsResults = await Promise.all(
+    top.map(entry => searchXhsHighEngagement(entry.tag, REFRESH_LIMIT)),
+  );
+
+  for (let i = 0; i < top.length; i++) {
+    const entry = top[i];
+    const xhsHits = xhsResults[i];
+
     if (xhsHits.length > 0) {
       const existing = updated.get(entry.tag)!;
       const newScore = existing.score + xhsHits.length * XHS_HIT_SCORE;
@@ -330,25 +357,8 @@ export async function refreshActiveTags(
       });
     }
 
-    // Discover new tags from XHS hits
-    for (const hit of xhsHits) {
-      for (const newTag of hit.tags) {
-        if (!updated.has(newTag)) {
-          const source: TagSource = { type: 'keyword_search', keyword: entry.tag, platform: 'xhs' };
-          updated.set(newTag, buildInitialEntry(newTag, 'xhs', XHS_HIT_SCORE, source, timestamp));
-        }
-      }
-    }
-
-    // Discover new tags from Douyin hits
-    for (const hit of douyinHits) {
-      for (const newTag of hit.tags) {
-        if (!updated.has(newTag)) {
-          const source: TagSource = { type: 'keyword_search', keyword: entry.tag, platform: 'douyin' };
-          updated.set(newTag, buildInitialEntry(newTag, 'douyin', DOUYIN_HIT_SCORE, source, timestamp));
-        }
-      }
-    }
+    discoverNewTagsFromHits(xhsHits, 'xhs', XHS_HIT_SCORE, entry.tag, updated, timestamp);
+    discoverNewTagsFromHits(douyinHits, 'douyin', DOUYIN_HIT_SCORE, entry.tag, updated, timestamp);
   }
 
   return [...updated.values()];
