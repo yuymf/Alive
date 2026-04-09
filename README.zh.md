@@ -94,6 +94,9 @@ npx alive
 /alive setup instagram     # 只配置 Instagram
 /alive memory              # 记忆统计
 /alive create              # 随机生成新角色
+/alive kb status           # 爆款知识库统计
+/alive kb search <关键词>  # 搜索爆款拆解记录
+/alive kb formulas         # 查看已升级的通用爆款公式
 /alive help                # 查看所有命令
 ```
 
@@ -114,7 +117,7 @@ alive/
 │   ├── ops/                 # 运营工作台（趋势/选题/简报/竞品）
 │   └── utils/               # 基础工具
 ├── sub-skills/              # 子技能（Instagram/语音/搜索/内容浏览/消息）
-└── tests/                   # 78 个测试文件
+└── tests/                   # 126 个测试文件
 ```
 
 ---

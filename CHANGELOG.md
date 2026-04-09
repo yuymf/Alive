@@ -4,6 +4,17 @@ All notable changes to Alive are documented here.
 
 ---
 
+## [1.2.0] — 2026-04-10
+
+### Added
+- **Viral Content Knowledge Base** — when posts hit a likes threshold (default 5,000), they're automatically dissected across 6 dimensions (hook type, content type, emotion arc, interaction design, visual style, CTA) and stored in a per-persona knowledge base. Track-specific patterns are injected into content drafts as soft context; universal patterns (same hook formula appearing 3× across platforms) auto-promote to `content_templates[]`. Query anytime with `/alive kb`.
+- **`/alive kb` commands** — `status`, `search <keyword>`, `list --platform --type`, `formulas`, `top --platform --limit`
+- **`ops.viral_threshold`** — configurable likes threshold per persona (default 5000)
+- **`ops.kb_dissect_batch`** — max items to dissect per hourly run (default 3, range 1–10)
+- **Auto-eviction** — viral KB entries older than 30 days are pruned automatically unless referenced by a formula or actively used in generation
+
+---
+
 ## [1.1.0] — 2026-04-07
 
 ### Added
