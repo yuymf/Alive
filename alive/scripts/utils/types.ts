@@ -1102,6 +1102,8 @@ export interface FetchResult {
 
 export interface HookPatternAnalysis {
   readonly pattern: string;
+  /** Reusable sentence template with [占位符] variables, e.g. "[数字]个[身份]不会告诉你的[场景]秘密" */
+  readonly formula: string;
   readonly examples: readonly string[];
   readonly frequency: string;
 }
@@ -1144,6 +1146,37 @@ export interface CompetitorAnalysisStore {
   readonly analyses: Readonly<Record<string, AccountAnalysis>>;
   readonly insufficient_data: readonly string[];
   readonly last_analyzed: string;
+}
+
+/** A reusable hook formula extracted from a competitor's post analysis. */
+export interface HookFormula {
+  /** Reusable sentence template with [占位符] variables, e.g. "[数字]个[身份]不会告诉你的[场景]秘密" */
+  readonly formula: string;
+  /** 2-4 verbatim example titles from source posts */
+  readonly examples: readonly string[];
+  /** How often this formula appears across the account's posts */
+  readonly frequency: '高' | '中' | '低';
+  /** Canonical account key: "name:platform" */
+  readonly source_account: string;
+  /** Platform of origin */
+  readonly source_platform: string;
+  /** ISO timestamp of last analysis run */
+  readonly last_analyzed: string;
+}
+
+/**
+ * Independent store of competitor-sourced hook formulas, indexed by IdentityMode.
+ * Semantically distinct from ContentPatterns (which tracks Miss V's own outcomes).
+ */
+export interface FormulaStore {
+  readonly version: 1;
+  /**
+   * Top-level key: IdentityMode ('esports' | 'singer' | 'racer' | 'daily')
+   * Second-level key: accountKey ("name:platform")
+   * Value: list of HookFormula for that account under that identity mode
+   */
+  readonly formulas: Partial<Record<IdentityMode, Record<string, HookFormula[]>>>;
+  readonly last_updated: string;
 }
 
 export interface PositioningCompetitorEntry {
@@ -1323,6 +1356,10 @@ export interface OpsConfig {
   strategy_enabled?: boolean;
   /** Cron expression for ops-browse (content browsing). Only used when heartbeat is disabled. */
   browse_interval?: string;
+  /** Likes threshold above which a trend/competitor post is queued for viral KB dissection. Default: 5000 */
+  viral_threshold?: number;
+  /** Max items to dissect from the queue per ops-trends run (1-10). Default: 3 */
+  kb_dissect_batch?: number;
   /** Content sources to browse in ops-browse mode */
   browse_sources?: ReadonlyArray<{ platform: string; count: number }>;
   /** Automation delivery config — controls which cron jobs exist and how they deliver */
@@ -1684,4 +1721,101 @@ export interface ContentAnalysis {
 export interface AnalysisLog {
   entries: ContentAnalysis[];
   last_updated: string;
+}
+
+// ─── Viral Knowledge Base Types ──────────────────────────────────────────────
+
+/** A dissected viral content entry stored in the knowledge base. */
+export interface ViralEntry {
+  id: string;                           // hash(platform + source_id)
+  platform: 'douyin' | 'xhs';
+  source_id: string;
+  source_type: 'competitor' | 'trending_feed' | 'search';
+  persona_id: string;                   // 归属 persona（多 persona 隔离）
+
+  // 原始数据
+  title: string;
+  description: string;
+  likes: number;
+  comments: number;
+  shares: number;
+  collected_at: string;                 // ISO timestamp
+
+  // 6维拆解（LLM 产出）
+  dissection: {
+    hook_type: string;
+    content_type: string;
+    identity_mode: string | null;       // 赛道标记；null = 通用
+    emotion_arc: string;
+    interaction_design: string;
+    visual_style: string;
+    cta_type: string;
+    summary: string;
+  };
+
+  dissection_status: 'pending' | 'done' | 'failed';
+  kb_tier: 'track' | 'universal';      // 赛道爆款 or 通用爆款
+  promoted_to_template: boolean;
+  times_referenced: number;
+}
+
+/**
+ * A universal viral formula derived from ≥3 entries sharing the same
+ * platform + content_type + hook_type combination.
+ */
+export interface UniversalFormula {
+  id: string;
+  platform: 'douyin' | 'xhs';
+  content_type: string;
+  hook_type: string;
+  formula_summary: string;             // 提炼的可复用公式描述
+  source_entry_ids: string[];
+  occurrence_count: number;            // ≥3 触发升级
+  injected_to_templates: boolean;
+  created_at: string;
+  last_seen_at: string;
+}
+
+/** In-memory dissect queue stored as a simple list of items. */
+export interface DissectQueue {
+  items: DissectQueueItem[];
+}
+
+/** A single item waiting to be dissected by the LLM. */
+export interface DissectQueueItem {
+  id: string;
+  platform: 'douyin' | 'xhs';
+  source_id: string;
+  source_type: 'competitor' | 'trending_feed' | 'search';
+  title: string;
+  description: string;
+  likes: number;
+  comments: number;
+  shares: number;
+  queued_at: string;
+  identity_mode?: string;
+}
+
+// === Tag Engine Types ===
+
+export type TagSource =
+  | { type: 'competitor'; account: string; platform: string }
+  | { type: 'keyword_search'; keyword: string; platform: string };
+
+export interface TagEntry {
+  tag: string;
+  platform: 'xhs' | 'douyin' | 'both';
+  score: number;
+  sources: TagSource[];
+  first_seen: string;
+  last_hit: string;
+  hit_count: number;
+  peak_score: number;
+}
+
+export interface TagVocabulary {
+  version: number;
+  last_updated: string;
+  active: TagEntry[];
+  dormant: TagEntry[];
 }

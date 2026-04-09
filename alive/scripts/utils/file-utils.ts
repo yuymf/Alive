@@ -88,6 +88,8 @@ export const PATHS = {
   get personaReportLog() { return path.join(getMemoryBase(), 'persona-report-log.json'); },
   get competitorPosts() { return path.join(getMemoryBase(), 'competitor-posts.json'); },
   get competitorAnalysis() { return path.join(getMemoryBase(), 'competitor-analysis.json'); },
+  get formulaStore() { return path.join(getMemoryBase(), 'formula-store.json'); },
+  get tagVocabulary() { return path.join(getMemoryBase(), 'tag-vocabulary.json'); },
   get competitorsDir() { return path.join(getMemoryBase(), 'competitors'); },
   get hitBreakdownsDir() { return path.join(getMemoryBase(), 'hit-breakdowns'); },
   get positioningReport() { return path.join(getMemoryBase(), 'positioning-report.json'); },
