@@ -51,9 +51,9 @@ export function mergeAccountFormulas(
   const newFormulas: Record<string, Record<string, HookFormula[]>> = {};
 
   // Copy all existing mode buckets
-  for (const [mode, accountMap] of Object.entries(store.formulas)) {
+  for (const [mode, accountMap] of Object.entries(store.formulas ?? {})) {
     newFormulas[mode] = {};
-    for (const [key, list] of Object.entries(accountMap)) {
+    for (const [key, list] of Object.entries(accountMap ?? {})) {
       newFormulas[mode][key] = list.map(f => ({ ...f, examples: [...f.examples] }));
     }
   }
