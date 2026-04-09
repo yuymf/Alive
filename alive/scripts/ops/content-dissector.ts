@@ -8,10 +8,10 @@
  * with dissection_status = "failed" — callers should store it for auditing.
  */
 
-import * as crypto from 'crypto';
 import { wallNow } from '../utils/time-utils';
 import { LLMClient } from '../utils/llm-client';
 import { DissectQueueItem, ViralEntry } from '../utils/types';
+import { buildEntryId } from './viral-kb-store';
 
 // ─── LLM output shape ─────────────────────────────────────────────────────────
 
@@ -54,10 +54,40 @@ function buildDissectPrompt(item: DissectQueueItem): string {
 只输出 JSON，不要任何解释或 markdown。`;
 }
 
-// ─── ID builder ───────────────────────────────────────────────────────────────
+// ─── Failed entry builder ─────────────────────────────────────────────────────
 
-function buildEntryId(platform: string, sourceId: string): string {
-  return crypto.createHash('md5').update(`${platform}:${sourceId}`).digest('hex');
+/**
+ * Build a ViralEntry with dissection_status = "failed" for an item that
+ * could not be dissected (LLM error or invalid JSON).
+ */
+function buildFailedEntry(item: DissectQueueItem, personaId: string): ViralEntry {
+  return {
+    id: buildEntryId(item.platform, item.source_id),
+    platform: item.platform,
+    source_id: item.source_id,
+    source_type: item.source_type,
+    persona_id: personaId,
+    title: item.title,
+    description: item.description,
+    likes: item.likes,
+    comments: item.comments,
+    shares: item.shares,
+    collected_at: wallNow().toISOString(),
+    promoted_to_template: false,
+    times_referenced: 0,
+    dissection: {
+      hook_type: '',
+      content_type: '',
+      identity_mode: item.identity_mode ?? null,
+      emotion_arc: '',
+      interaction_design: '',
+      visual_style: '',
+      cta_type: '',
+      summary: '',
+    },
+    dissection_status: 'failed',
+    kb_tier: item.identity_mode ? 'track' : 'universal',
+  };
 }
 
 // ─── Core dissect ─────────────────────────────────────────────────────────────
@@ -113,30 +143,14 @@ async function dissectOne(
       `[content-dissector] Failed to dissect item ${item.id} (${item.title}):`,
       (err as Error).message,
     );
-
-    return {
-      ...base,
-      dissection: {
-        hook_type: '',
-        content_type: '',
-        identity_mode: item.identity_mode ?? null,
-        emotion_arc: '',
-        interaction_design: '',
-        visual_style: '',
-        cta_type: '',
-        summary: '',
-      },
-      dissection_status: 'failed',
-      kb_tier: item.identity_mode ? 'track' : 'universal',
-    };
+    return buildFailedEntry(item, personaId);
   }
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
- * Dissect a batch of queue items using LLM.
- * Each item is processed sequentially to avoid overwhelming the LLM API.
+ * Dissect a batch of queue items using LLM in parallel (Promise.allSettled).
  * Failed items are returned with dissection_status = "failed" — never dropped.
  *
  * @param items     Items dequeued from dissect-queue
@@ -148,12 +162,11 @@ export async function dissectBatch(
   llm: LLMClient,
   personaId: string,
 ): Promise<ViralEntry[]> {
-  const results: ViralEntry[] = [];
+  const settled = await Promise.allSettled(
+    items.map(item => dissectOne(item, llm, personaId)),
+  );
 
-  for (const item of items) {
-    const entry = await dissectOne(item, llm, personaId);
-    results.push(entry);
-  }
-
-  return results;
+  return settled.map((r, i) =>
+    r.status === 'fulfilled' ? r.value : buildFailedEntry(items[i], personaId),
+  );
 }

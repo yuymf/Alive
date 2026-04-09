@@ -6,9 +6,8 @@
  * Pure function: does not write to disk. Callers decide what to do with results.
  */
 
-import * as crypto from 'crypto';
-import { loadEntries, loadQueue } from './viral-kb-store';
-import { DissectQueueItem } from '../utils/types';
+import { loadEntries, loadQueue, buildEntryId } from './viral-kb-store';
+import { DissectQueueItem, ViralPlatform, ViralSourceType } from '../utils/types';
 import { wallNow } from '../utils/time-utils';
 
 // ─── Input type ───────────────────────────────────────────────────────────────
@@ -17,20 +16,14 @@ import { wallNow } from '../utils/time-utils';
 export interface TrendLikeItem {
   /** Unique identifier on the source platform. */
   source_id: string;
-  platform: 'douyin' | 'xhs';
+  platform: ViralPlatform;
   title: string;
   description: string;
   likes: number;
   comments: number;
   shares: number;
-  source_type: 'competitor' | 'trending_feed' | 'search';
+  source_type: ViralSourceType;
   identity_mode?: string;
-}
-
-// ─── ID helpers ───────────────────────────────────────────────────────────────
-
-function buildEntryId(platform: string, sourceId: string): string {
-  return crypto.createHash('md5').update(`${platform}:${sourceId}`).digest('hex');
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────

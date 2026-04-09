@@ -1727,12 +1727,18 @@ export interface AnalysisLog {
 
 // ─── Viral Knowledge Base Types ──────────────────────────────────────────────
 
+/** Platforms supported by the viral knowledge base. */
+export type ViralPlatform = 'douyin' | 'xhs';
+
+/** Source categories for viral content items. */
+export type ViralSourceType = 'competitor' | 'trending_feed' | 'search';
+
 /** A dissected viral content entry stored in the knowledge base. */
 export interface ViralEntry {
   id: string;                           // hash(platform + source_id)
-  platform: 'douyin' | 'xhs';
+  platform: ViralPlatform;
   source_id: string;
-  source_type: 'competitor' | 'trending_feed' | 'search';
+  source_type: ViralSourceType;
   persona_id: string;                   // 归属 persona（多 persona 隔离）
 
   // 原始数据
@@ -1755,7 +1761,7 @@ export interface ViralEntry {
     summary: string;
   };
 
-  dissection_status: 'pending' | 'done' | 'failed';
+  dissection_status: 'done' | 'failed';
   kb_tier: 'track' | 'universal';      // 赛道爆款 or 通用爆款
   promoted_to_template: boolean;
   times_referenced: number;
@@ -1767,7 +1773,7 @@ export interface ViralEntry {
  */
 export interface UniversalFormula {
   id: string;
-  platform: 'douyin' | 'xhs';
+  platform: ViralPlatform;
   content_type: string;
   hook_type: string;
   formula_summary: string;             // 提炼的可复用公式描述
@@ -1778,17 +1784,12 @@ export interface UniversalFormula {
   last_seen_at: string;
 }
 
-/** In-memory dissect queue stored as a simple list of items. */
-export interface DissectQueue {
-  items: DissectQueueItem[];
-}
-
 /** A single item waiting to be dissected by the LLM. */
 export interface DissectQueueItem {
   id: string;
-  platform: 'douyin' | 'xhs';
+  platform: ViralPlatform;
   source_id: string;
-  source_type: 'competitor' | 'trending_feed' | 'search';
+  source_type: ViralSourceType;
   title: string;
   description: string;
   likes: number;

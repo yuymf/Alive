@@ -29,7 +29,7 @@ import { loadFormulaStore, queryFormulasByMode } from './formula-store';
 import { PATHS, readJSON } from '../utils/file-utils';
 import { CompetitorLog, CompetitorUpdate, ContentStrategy, ContentPatterns } from '../utils/types';
 import { now } from '../utils/time-utils';
-import { queryTrack, upsertEntry } from './viral-kb-store';
+import { queryTrackInMemory, loadEntries, saveEntries } from './viral-kb-store';
 
 import { matchesTaxonomy } from './ops-taxonomy';
 
@@ -492,6 +492,11 @@ export async function generateTopics(
   // A v2: load competitor analysis once for dynamic cluster context
   const analysisStore = loadCompetitorAnalysis();
 
+  // Load all viral KB entries once (avoids N re-reads inside the per-trend loop)
+  const allViralEntries = loadEntries(basePath);
+  // Accumulate times_referenced increments: id → delta
+  const refIncrements = new Map<string, number>();
+
   // Cache benchmarks by identityMode — only identityMode varies per trend
   const benchmarkCache = new Map<string, ReturnType<typeof buildCompetitorBenchmarks>>();
 
@@ -526,16 +531,17 @@ export async function generateTopics(
     const trackPlatform = (trend.platform === 'xhs' || trend.platform === 'douyin')
       ? trend.platform
       : undefined;
-    const trackPatterns = queryTrack(basePath, {
+    // Query in-memory (no disk I/O) — entries were loaded once above
+    const trackPatterns = queryTrackInMemory(allViralEntries, {
       platform: trackPlatform,
       identity_mode: identityMode,
       limit: 3,
       sort: 'recency',
     });
     const viralContext = buildViralContext(trackPatterns, trend.platform);
-    // Increment times_referenced for entries we're injecting
+    // Accumulate times_referenced increments (apply in one pass after the loop)
     for (const entry of trackPatterns) {
-      upsertEntry(basePath, { ...entry, times_referenced: entry.times_referenced + 1 });
+      refIncrements.set(entry.id, (refIncrements.get(entry.id) ?? 0) + 1);
     }
 
     if (templateConstraint) contextParts.push(templateConstraint);
@@ -614,5 +620,15 @@ export async function generateTopics(
     for (const p of injectedPatterns) {
       incrementPatternUsage(p.type, p.source);
     }
+  }
+
+  // Apply all accumulated times_referenced increments in a single read+write pass
+  if (refIncrements.size > 0) {
+    const currentEntries = loadEntries(basePath);
+    const updatedEntries = currentEntries.map(e => {
+      const delta = refIncrements.get(e.id);
+      return delta ? { ...e, times_referenced: e.times_referenced + delta } : e;
+    });
+    saveEntries(basePath, updatedEntries);
   }
 }

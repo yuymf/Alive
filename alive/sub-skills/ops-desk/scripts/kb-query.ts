@@ -17,7 +17,7 @@ import {
   queryFormulas,
   KBStats,
 } from '../../../scripts/ops/viral-kb-store';
-import { ViralEntry, UniversalFormula } from '../../../scripts/utils/types';
+import { ViralEntry, UniversalFormula, ViralPlatform } from '../../../scripts/utils/types';
 
 // ─── Markdown formatters ──────────────────────────────────────────────────────
 
@@ -139,7 +139,7 @@ export function handleKbCommand(
     }
 
     case 'list': {
-      const platform = flags['platform'] as 'douyin' | 'xhs' | undefined;
+      const platform = flags['platform'] as ViralPlatform | undefined;
       const type = flags['type'];
       const entries = queryAll(basePath, { platform, type });
       const titleParts = ['条目列表'];
@@ -149,13 +149,13 @@ export function handleKbCommand(
     }
 
     case 'formulas': {
-      const platform = flags['platform'] as 'douyin' | 'xhs' | undefined;
+      const platform = flags['platform'] as ViralPlatform | undefined;
       const formulas = queryFormulas(basePath, { platform });
       return formatFormulas(formulas);
     }
 
     case 'top': {
-      const platform = flags['platform'] as 'douyin' | 'xhs' | undefined;
+      const platform = flags['platform'] as ViralPlatform | undefined;
       const rawLimit = flags['limit'] ? parseInt(flags['limit'], 10) : 10;
       const limit = Number.isNaN(rawLimit) || rawLimit <= 0 ? 10 : rawLimit;
       const entries = queryAll(basePath, { platform, sort: 'likes', limit });

@@ -16,7 +16,7 @@ import { analyzeNewHits, cleanupOldBreakdowns, trimObservationNotes } from '../o
 import { readJSON } from '../utils/file-utils';
 import { CompetitorLog } from '../utils/types';
 import { detectViral, TrendLikeItem } from '../ops/viral-detector';
-import { addToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
+import { addManyToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
 import { dissectBatch } from '../ops/content-dissector';
 import * as path from 'path';
 
@@ -75,13 +75,12 @@ async function main(): Promise<void> {
     // 1. 构建可供检测的 TrendLikeItem 列表（仅竞品真实帖子，跳过趋势关键词）
     // Trending keywords are 2-5 word labels, not real posts — dissecting them produces hollow analysis.
     // Only competitor posts (source_type: 'competitor') carry real title/description/engagement data.
-    const VIRAL_PLATFORMS = new Set<string>(['douyin', 'xhs']);
-
-    const competitorItems: TrendLikeItem[] = competitorsResult.status === 'fulfilled'
+    // The platform OR filter already restricts to 'xhs' | 'douyin' — no secondary Set filter needed.
+    const allItems: TrendLikeItem[] = competitorsResult.status === 'fulfilled'
       ? competitorsResult.value
           .filter(c => (c.platform === 'xhs' || c.platform === 'douyin') && c.latest_post !== null)
           .map(c => ({
-            // Use raw account:time as source_id — buildEntryId in viral-detector.ts already
+            // Use raw account:time as source_id — buildEntryId in viral-kb-store already
             // prepends platform, so we must NOT duplicate it here.
             source_id: `${c.account}:${c.latest_post!.time}`,
             platform: c.platform as 'xhs' | 'douyin',
@@ -94,15 +93,10 @@ async function main(): Promise<void> {
           }))
       : [];
 
-    // Filter to only the platforms we support for viral KB
-    const allItems = competitorItems.filter(item => VIRAL_PLATFORMS.has(item.platform));
-
     // 2. 检测爆款候选
     const candidates = detectViral(allItems, basePath, threshold);
     if (candidates.length > 0) {
-      for (const candidate of candidates) {
-        addToQueue(basePath, candidate);
-      }
+      addManyToQueue(basePath, candidates);
       console.log(`[${wallNow().toISOString()}] [viral-kb] ${candidates.length} candidates queued`);
     }
 

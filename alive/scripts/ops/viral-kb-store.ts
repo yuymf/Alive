@@ -16,7 +16,7 @@ import * as fs from 'fs';
 import YAML from 'yaml';
 import { readJSON, writeJSON } from '../utils/file-utils';
 import { wallNow } from '../utils/time-utils';
-import { ViralEntry, UniversalFormula, DissectQueueItem } from '../utils/types';
+import { ViralEntry, UniversalFormula, DissectQueueItem, ViralPlatform } from '../utils/types';
 
 // ─── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -36,6 +36,12 @@ function queuePath(basePath: string): string {
   return path.join(kbDir(basePath), 'dissect-queue.json');
 }
 
+// ─── ID builder (shared, exported for use in viral-detector & content-dissector) ──
+
+export function buildEntryId(platform: string, sourceId: string): string {
+  return crypto.createHash('md5').update(`${platform}:${sourceId}`).digest('hex');
+}
+
 // ─── Statistics ───────────────────────────────────────────────────────────────
 
 export interface KBStats {
@@ -53,6 +59,42 @@ export interface PromotionResult {
   formula?: UniversalFormula;
 }
 
+// ─── Eviction ─────────────────────────────────────────────────────────────────
+
+/**
+ * Prune entries older than maxAgeDays UNLESS they:
+ * - are referenced in any formula (source_entry_ids), or
+ * - have times_referenced > 0
+ *
+ * This keeps the entries file from growing unboundedly.
+ */
+function pruneOldEntries(
+  entries: ViralEntry[],
+  formulas: UniversalFormula[],
+  maxAgeDays = 30,
+): ViralEntry[] {
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+
+  // Build a fast-lookup set of all entry ids that are in at least one formula
+  const referencedIds = new Set<string>();
+  for (const f of formulas) {
+    for (const id of f.source_entry_ids) {
+      referencedIds.add(id);
+    }
+  }
+
+  return entries.filter(e => {
+    // Keep if referenced in a formula
+    if (referencedIds.has(e.id)) return true;
+    // Keep if has been used as context
+    if (e.times_referenced > 0) return true;
+    // Keep if within the age window (treat invalid/missing timestamps as "keep")
+    const age = new Date(e.collected_at).getTime();
+    if (isNaN(age)) return true;
+    return age >= cutoff;
+  });
+}
+
 // ─── Read / Write ─────────────────────────────────────────────────────────────
 
 export function loadEntries(basePath: string): ViralEntry[] {
@@ -60,8 +102,9 @@ export function loadEntries(basePath: string): ViralEntry[] {
 }
 
 export function saveEntries(basePath: string, entries: ViralEntry[]): void {
-  fs.mkdirSync(kbDir(basePath), { recursive: true });
-  writeJSON(entriesPath(basePath), entries);
+  const formulas = loadFormulas(basePath);
+  const pruned = pruneOldEntries(entries, formulas);
+  writeJSON(entriesPath(basePath), pruned);
 }
 
 export function loadFormulas(basePath: string): UniversalFormula[] {
@@ -69,7 +112,6 @@ export function loadFormulas(basePath: string): UniversalFormula[] {
 }
 
 export function saveFormulas(basePath: string, formulas: UniversalFormula[]): void {
-  fs.mkdirSync(kbDir(basePath), { recursive: true });
   writeJSON(formulasPath(basePath), formulas);
 }
 
@@ -78,7 +120,6 @@ export function loadQueue(basePath: string): DissectQueueItem[] {
 }
 
 export function saveQueue(basePath: string, items: DissectQueueItem[]): void {
-  fs.mkdirSync(kbDir(basePath), { recursive: true });
   writeJSON(queuePath(basePath), items);
 }
 
@@ -92,6 +133,20 @@ export function addToQueue(basePath: string, item: DissectQueueItem): void {
   const current = loadQueue(basePath);
   if (current.some(q => q.id === item.id)) return;
   saveQueue(basePath, [...current, item]);
+}
+
+/**
+ * Add multiple items to the dissect queue in a single read+write pass.
+ * Items already present (by id) are silently skipped.
+ * More efficient than calling addToQueue N times.
+ */
+export function addManyToQueue(basePath: string, items: DissectQueueItem[]): void {
+  if (items.length === 0) return;
+  const current = loadQueue(basePath);
+  const existingIds = new Set(current.map(q => q.id));
+  const toAdd = items.filter(item => !existingIds.has(item.id));
+  if (toAdd.length === 0) return;
+  saveQueue(basePath, [...current, ...toAdd]);
 }
 
 /**
@@ -299,10 +354,27 @@ function injectTemplateIntoPersona(personaConfigPath: string, formula: Universal
   }
 }
 
+// ─── Sort helper ──────────────────────────────────────────────────────────────
+
+/**
+ * Return a sorted copy of entries.
+ * 'likes'   → descending by likes
+ * 'recency' (default) → descending by collected_at
+ */
+function sortEntries(entries: ViralEntry[], sort?: 'recency' | 'likes'): ViralEntry[] {
+  if (sort === 'likes') {
+    return [...entries].sort((a, b) => b.likes - a.likes);
+  }
+  // default: recency (collected_at descending)
+  return [...entries].sort(
+    (a, b) => new Date(b.collected_at).getTime() - new Date(a.collected_at).getTime(),
+  );
+}
+
 // ─── Query ────────────────────────────────────────────────────────────────────
 
 export interface QueryTrackOptions {
-  platform?: 'douyin' | 'xhs';
+  platform?: ViralPlatform;
   identity_mode?: string;
   limit?: number;
   sort?: 'recency' | 'likes';
@@ -312,29 +384,31 @@ export interface QueryTrackOptions {
  * Query track-tier entries filtered by platform and identity_mode.
  */
 export function queryTrack(basePath: string, opts: QueryTrackOptions): ViralEntry[] {
-  let entries = loadEntries(basePath).filter(e => e.kb_tier === 'track');
+  const allEntries = loadEntries(basePath);
+  return queryTrackInMemory(allEntries, opts);
+}
+
+/**
+ * Query track-tier entries from an already-loaded array (no disk I/O).
+ * Use this inside loops to avoid repeated reads.
+ */
+export function queryTrackInMemory(entries: ViralEntry[], opts: QueryTrackOptions): ViralEntry[] {
+  let filtered = entries.filter(e => e.kb_tier === 'track');
 
   if (opts.platform) {
-    entries = entries.filter(e => e.platform === opts.platform);
+    filtered = filtered.filter(e => e.platform === opts.platform);
   }
   if (opts.identity_mode) {
-    entries = entries.filter(e => e.dissection?.identity_mode === opts.identity_mode);
+    filtered = filtered.filter(e => e.dissection?.identity_mode === opts.identity_mode);
   }
 
-  if (opts.sort === 'likes') {
-    entries = [...entries].sort((a, b) => b.likes - a.likes);
-  } else {
-    // default: recency (collected_at descending)
-    entries = [...entries].sort(
-      (a, b) => new Date(b.collected_at).getTime() - new Date(a.collected_at).getTime(),
-    );
-  }
+  filtered = sortEntries(filtered, opts.sort);
 
-  return opts.limit ? entries.slice(0, opts.limit) : entries;
+  return opts.limit ? filtered.slice(0, opts.limit) : filtered;
 }
 
 export interface QueryAllOptions {
-  platform?: 'douyin' | 'xhs';
+  platform?: ViralPlatform;
   type?: string;
   keyword?: string;
   limit?: number;
@@ -364,19 +438,13 @@ export function queryAll(basePath: string, opts: QueryAllOptions = {}): ViralEnt
     );
   }
 
-  if (opts.sort === 'likes') {
-    entries = [...entries].sort((a, b) => b.likes - a.likes);
-  } else {
-    entries = [...entries].sort(
-      (a, b) => new Date(b.collected_at).getTime() - new Date(a.collected_at).getTime(),
-    );
-  }
+  entries = sortEntries(entries, opts.sort);
 
   return opts.limit ? entries.slice(0, opts.limit) : entries;
 }
 
 export interface QueryFormulasOptions {
-  platform?: 'douyin' | 'xhs';
+  platform?: ViralPlatform;
 }
 
 /**
