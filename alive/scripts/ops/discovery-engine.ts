@@ -350,7 +350,7 @@ export function buildCandidateContext(identityKeys?: string[]): string {
   const lines = ['━━ 🔍 发现候选对标 ━━'];
   for (const c of ranked) {
     const composite = c.score_breakdown.composite.toFixed(2);
-    const peak = (c as { peak_engagement?: number }).peak_engagement ?? c.avg_engagement;
+    const peak = c.peak_engagement;
     lines.push(`  @${c.name}（${c.platform}）综合 ${composite}  出现${c.appearance_count}次  ❤️均值${c.avg_engagement} / 峰值${peak}`);
     if (c.topics.length > 0) {
       lines.push(`    话题: ${c.topics.slice(0, 3).join('、')}`);

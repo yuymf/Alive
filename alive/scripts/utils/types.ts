@@ -107,6 +107,8 @@ export interface PersonaConfig {
   /** Work impulse configuration — persona-level overrides for the work impulse engine */
   work_impulse?: WorkImpulseConfig;
   conversation_style?: ConversationStyleConfig;
+  /** Persona identity tracks (e.g. singer, racer, esports) used for candidate scoring */
+  identities?: Record<string, { weight?: number; content_types?: string[]; [key: string]: unknown }>;
 }
 
 // === Features Configuration ===

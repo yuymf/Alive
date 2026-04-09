@@ -55,9 +55,7 @@ async function cmdBrief(): Promise<string> {
 
   const llm = createRealLLMClient('ops-brief-cmd');
   const identities = buildPersonaIdentities(persona);
-  const identityKeys = Object.keys(
-    (persona as { identities?: Record<string, unknown> }).identities ?? {},
-  );
+  const identityKeys = Object.keys(persona.identities ?? {});
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
   await cleanupOldItems();

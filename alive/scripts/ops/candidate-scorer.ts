@@ -50,7 +50,7 @@ function calcTrackOverlap(topics: string[], identityKeys: string[]): number {
 }
 
 function calcBurstIntensity(candidate: CandidateAccount): number {
-  const peak = (candidate as { peak_engagement?: number }).peak_engagement ?? candidate.avg_engagement;
+  const peak = candidate.peak_engagement ?? candidate.avg_engagement;
   const avg  = Math.max(candidate.avg_engagement, 1);
   const ratio = Math.min(peak / avg, BURST_CAP_RATIO);
   return ratio / BURST_CAP_RATIO;

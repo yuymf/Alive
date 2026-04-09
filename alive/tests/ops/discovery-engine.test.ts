@@ -321,14 +321,24 @@ describe('buildCandidateContext', () => {
 
   it('shows pending candidates with composite score using provided identityKeys', () => {
     const store = {
-      candidates: [{
-        name: 'testuser', platform: 'xhs',
-        appearance_count: 5, avg_engagement: 1000,
-        peak_engagement: 5000,
-        topics: ['音乐', '赛车', '电竞', '日常'],
-        first_seen: '2026-04-01', last_seen: '2026-04-05',
-        status: 'pending' as const,
-      }],
+      candidates: [
+        {
+          name: 'testuser', platform: 'xhs',
+          appearance_count: 5, avg_engagement: 1000,
+          peak_engagement: 5000,
+          topics: ['音乐', '赛车', '电竞', '日常'],
+          first_seen: '2026-04-01', last_seen: '2026-04-05',
+          status: 'pending' as const,
+        },
+        {
+          name: 'lowcount', platform: 'xhs',
+          appearance_count: 1, avg_engagement: 500,
+          peak_engagement: 500,
+          topics: ['日常'],
+          first_seen: '2026-04-01', last_seen: '2026-04-01',
+          status: 'pending' as const,
+        },
+      ],
       last_updated: '',
     };
     writeJSON(PATHS.candidateAccounts, store);
@@ -339,6 +349,8 @@ describe('buildCandidateContext', () => {
     expect(ctx).toContain('综合');
     // New format shows peak engagement
     expect(ctx).toContain('峰值');
+    // lowcount candidate should be filtered out (appearance_count < MIN_APPEARANCES_FOR_SUGGESTION)
+    expect(ctx).not.toContain('lowcount');
   });
 
   it('still works with no identityKeys argument (backward compatible)', () => {

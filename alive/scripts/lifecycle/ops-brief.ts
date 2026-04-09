@@ -39,9 +39,7 @@ async function main(): Promise<void> {
   const llm = createRealLLMClient('ops-brief');
   const identities = buildPersonaIdentities(persona);
   // Extract identity keys (e.g. ['singer','racer']) from persona.identities for scorer
-  const identityKeys = Object.keys(
-    (persona as { identities?: Record<string, unknown> }).identities ?? {},
-  );
+  const identityKeys = Object.keys(persona.identities ?? {});
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
   console.log(`[${wallNow().toISOString()}] ops-brief: starting for ${persona.meta.id}`);
