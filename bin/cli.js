@@ -596,6 +596,7 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
     const bgJobs = [
       { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
       { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
+      { name: `${skillSlug}:${personaSlug}:ops-tags`, cron: '0 10,20 * * *', message: `[cron:ops-tags] 执行${personaName}Tag词表维护。`, timeout: 120 },
     ];
     for (const job of bgJobs) {
       specs.push({ ...job, noDeliver: silentBg });
