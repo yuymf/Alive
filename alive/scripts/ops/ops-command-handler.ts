@@ -37,6 +37,8 @@ import { handleReviewMessage } from './ops-review-handler';
 import { setActiveReviewItem } from './review-session';
 import { runHealthCheck, formatHealthReport } from './health-check';
 import { now } from '../utils/time-utils';
+import { loadCandidateAccounts } from './discovery-engine';
+import { rankCandidates } from './candidate-scorer';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -269,12 +271,12 @@ async function cmdCandidates(topNStr?: string): Promise<string> {
 
   const identityKeys = Object.keys(persona.identities ?? {});
 
-  const { loadCandidateAccounts } = await import('./discovery-engine');
-  const { rankCandidates } = await import('./candidate-scorer');
-
   const store = loadCandidateAccounts();
   const showAll = topNStr === 'all';
-  const topN = showAll ? Infinity : (parseInt(topNStr ?? '5', 10) || 5);
+  const topN = parseInt(topNStr ?? '5', 10) || 5;
+  if (topN < 1) {
+    return '⚠️ 请输入有效数量（正整数）或 all';
+  }
   const ranked = rankCandidates(store, identityKeys, 'pending');
 
   if (ranked.length === 0) {
@@ -283,7 +285,8 @@ async function cmdCandidates(topNStr?: string): Promise<string> {
 
   const display = showAll ? ranked : ranked.slice(0, topN);
   const MEDALS = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
-  const lines = [`🔍 候选对标排行（Top ${display.length}）`, ''];
+  const header = showAll ? `🔍 候选对标全览（共 ${display.length} 个）` : `🔍 候选对标排行（Top ${display.length}）`;
+  const lines = [header, ''];
 
   display.forEach((c, idx) => {
     const medal = MEDALS[idx] ?? `${idx + 1}.`;
