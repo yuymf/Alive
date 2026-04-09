@@ -667,18 +667,18 @@ function modifySchedule(flags: Record<string, string>): CommandResult {
   const raw = fs.readFileSync(yamlPath, 'utf8');
   const persona = YAML.parse(raw) as PersonaConfig;
 
-  if (!persona.schedule) {
-    persona.schedule = { wake_hour: 8, sleep_hour: 23, timezone: 'system', active_peaks: [14, 21] };
-  }
-
   const changes: string[] = [];
+
+  // Validate flag values before building the updated schedule
+  let wakeHour: number | undefined;
+  let sleepHour: number | undefined;
 
   if (flags['wake']) {
     const hour = parseInt(flags['wake'], 10);
     if (isNaN(hour) || hour < 0 || hour > 23) {
       return { output: '❌ Invalid wake hour. Must be 0–23.', error: true };
     }
-    persona.schedule.wake_hour = hour;
+    wakeHour = hour;
     changes.push(`wake_hour → ${hour}`);
   }
 
@@ -687,19 +687,19 @@ function modifySchedule(flags: Record<string, string>): CommandResult {
     if (isNaN(hour) || hour < 0 || hour > 23) {
       return { output: '❌ Invalid sleep hour. Must be 0–23.', error: true };
     }
-    persona.schedule.sleep_hour = hour;
+    sleepHour = hour;
     changes.push(`sleep_hour → ${hour}`);
   }
 
   if (flags['timezone']) {
-    persona.schedule.timezone = flags['timezone'];
     changes.push(`timezone → ${flags['timezone']}`);
   }
 
+  let updatedPeaks: number[] | undefined;
   if (flags['peaks']) {
     const peaks = flags['peaks'].split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
     if (peaks.length > 0) {
-      persona.schedule.active_peaks = peaks;
+      updatedPeaks = peaks;
       changes.push(`active_peaks → [${peaks.join(', ')}]`);
     }
   }
@@ -708,10 +708,21 @@ function modifySchedule(flags: Record<string, string>): CommandResult {
     return { output: '⚠️ No changes specified.', error: true };
   }
 
+  // Build new schedule immutably — never mutate the parsed persona object
+  const existingSchedule = persona.schedule ?? { wake_hour: 8, sleep_hour: 23, timezone: 'system', active_peaks: [14, 21] };
+  const updatedSchedule = {
+    ...existingSchedule,
+    ...(wakeHour !== undefined   ? { wake_hour: wakeHour }         : {}),
+    ...(sleepHour !== undefined  ? { sleep_hour: sleepHour }        : {}),
+    ...(flags['timezone']        ? { timezone: flags['timezone'] }  : {}),
+    ...(updatedPeaks             ? { active_peaks: updatedPeaks }   : {}),
+  };
+  const updatedPersona = { ...persona, schedule: updatedSchedule };
+
   // Write back
   const backupPath = yamlPath + '.bak';
   fs.copyFileSync(yamlPath, backupPath);
-  fs.writeFileSync(yamlPath, YAML.stringify(persona, { indent: 2 }));
+  fs.writeFileSync(yamlPath, YAML.stringify(updatedPersona, { indent: 2 }));
 
   // Clear persona cache so next load picks up changes
   clearPersonaCache();

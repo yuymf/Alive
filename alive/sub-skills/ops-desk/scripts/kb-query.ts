@@ -156,7 +156,8 @@ export function handleKbCommand(
 
     case 'top': {
       const platform = flags['platform'] as 'douyin' | 'xhs' | undefined;
-      const limit = flags['limit'] ? parseInt(flags['limit'], 10) : 10;
+      const rawLimit = flags['limit'] ? parseInt(flags['limit'], 10) : 10;
+      const limit = Number.isNaN(rawLimit) || rawLimit <= 0 ? 10 : rawLimit;
       const entries = queryAll(basePath, { platform, sort: 'likes', limit });
       const titleParts = ['Top 点赞榜'];
       if (platform) titleParts.push(platform);

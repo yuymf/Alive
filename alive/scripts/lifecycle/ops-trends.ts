@@ -72,26 +72,17 @@ async function main(): Promise<void> {
     const threshold = ops.viral_threshold ?? 5000;
     const batchSize = ops.kb_dissect_batch ?? 3;
 
-    // 1. 构建可供检测的 TrendLikeItem 列表（趋势 + 竞品）
+    // 1. 构建可供检测的 TrendLikeItem 列表（仅竞品真实帖子，跳过趋势关键词）
+    // Trending keywords are 2-5 word labels, not real posts — dissecting them produces hollow analysis.
+    // Only competitor posts (source_type: 'competitor') carry real title/description/engagement data.
     const VIRAL_PLATFORMS = new Set<string>(['douyin', 'xhs']);
-    const trendItems: TrendLikeItem[] = (trendsResult.status === 'fulfilled' ? trendsResult.value : [])
-      .filter(t => VIRAL_PLATFORMS.has(t.platform))
-      .map(t => ({
-        source_id: `${t.platform}:${t.keyword}`,
-        platform: t.platform as 'douyin' | 'xhs',
-        title: t.keyword,
-        description: t.keyword,
-        likes: t.current_volume,
-        comments: 0,
-        shares: 0,
-        source_type: 'trending_feed' as const,
-        identity_mode: t.identity_mode,
-      }));
 
     const competitorItems: TrendLikeItem[] = competitorsResult.status === 'fulfilled'
       ? competitorsResult.value
           .filter(c => (c.platform === 'xhs' || c.platform === 'douyin') && c.latest_post !== null)
           .map(c => ({
+            // Use raw account:time as source_id — buildEntryId in viral-detector.ts already
+            // prepends platform, so we must NOT duplicate it here.
             source_id: `${c.account}:${c.latest_post!.time}`,
             platform: c.platform as 'xhs' | 'douyin',
             title: c.latest_post!.topic,
@@ -103,7 +94,8 @@ async function main(): Promise<void> {
           }))
       : [];
 
-    const allItems = [...trendItems, ...competitorItems];
+    // Filter to only the platforms we support for viral KB
+    const allItems = competitorItems.filter(item => VIRAL_PLATFORMS.has(item.platform));
 
     // 2. 检测爆款候选
     const candidates = detectViral(allItems, basePath, threshold);

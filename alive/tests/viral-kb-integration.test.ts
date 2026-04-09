@@ -293,3 +293,89 @@ describe('Scenario 5: buildViralContext cold start — empty KB', () => {
     expect(viralCtx).toBe('');
   });
 });
+
+// ─── HIGH-5: Failed dissection path ──────────────────────────────────────────
+
+describe('HIGH-5: failed dissection path', () => {
+  it('LLM throws → entry stored with dissection_status=failed → checkFormulaPromotion returns promoted=false, no formula created', async () => {
+    // Create a mock LLM that always throws
+    const throwingLlm = {
+      async call(): Promise<string> { throw new Error('LLM API error'); },
+      async callJSON<T>(): Promise<T> { throw new Error('LLM API error'); },
+    };
+
+    const item = makeQueueItem({ id: 'fail-q1', source_id: 'fail-src-1' });
+
+    const entries = await dissectBatch([item], throwingLlm, 'test-persona');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].dissection_status).toBe('failed');
+
+    // Store the failed entry
+    upsertEntry(sandboxDir, entries[0]);
+
+    // checkFormulaPromotion should reject it — failed entries must not promote formulas
+    const result = checkFormulaPromotion(sandboxDir, entries[0]);
+    expect(result.promoted).toBe(false);
+
+    // No formula should have been created at all
+    const { loadFormulas } = await import('../scripts/ops/viral-kb-store');
+    const formulas = loadFormulas(sandboxDir);
+    expect(formulas).toHaveLength(0);
+  });
+
+  it('partial batch failure: 1 success + 1 failure → only the successful entry can contribute to formula promotion', async () => {
+    const successResponse = JSON.stringify({
+      hook_type: '数字冲击',
+      content_type: '种草类',
+      identity_mode: null,
+      emotion_arc: '焦虑→解脱',
+      interaction_design: '问答',
+      visual_style: '简约',
+      cta_type: '关注',
+      summary: '数字吸引眼球',
+    });
+
+    // Mock that succeeds on first call and throws on second
+    let callCount = 0;
+    const partialFailLlm = {
+      async call(): Promise<string> {
+        callCount++;
+        if (callCount === 1) return successResponse;
+        throw new Error('Second LLM call failed');
+      },
+      async callJSON<T>(): Promise<T> {
+        callCount++;
+        if (callCount === 1) return JSON.parse(successResponse) as T;
+        throw new Error('Second LLM call failed');
+      },
+    };
+
+    const items = [
+      makeQueueItem({ id: 'p-q1', source_id: 'p-src-1' }),
+      makeQueueItem({ id: 'p-q2', source_id: 'p-src-2' }),
+    ];
+
+    const entries = await dissectBatch(items, partialFailLlm, 'test-persona');
+    expect(entries).toHaveLength(2);
+
+    const [successEntry, failedEntry] = entries;
+    expect(successEntry.dissection_status).toBe('done');
+    expect(failedEntry.dissection_status).toBe('failed');
+
+    // Only the successful entry should contribute to formula promotion
+    upsertEntry(sandboxDir, successEntry);
+    const successResult = checkFormulaPromotion(sandboxDir, successEntry);
+    expect(successResult.promoted).toBe(false); // count=1, not yet promoted
+
+    upsertEntry(sandboxDir, failedEntry);
+    const failResult = checkFormulaPromotion(sandboxDir, failedEntry);
+    // Failed entry is gated out — should return promoted=false with no new formula added
+    expect(failResult.promoted).toBe(false);
+
+    // Confirm formula count is still 1 (created from success), not 2
+    const { loadFormulas } = await import('../scripts/ops/viral-kb-store');
+    const formulas = loadFormulas(sandboxDir);
+    expect(formulas).toHaveLength(1);
+    expect(formulas[0].occurrence_count).toBe(1);
+  });
+});

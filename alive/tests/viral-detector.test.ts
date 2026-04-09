@@ -130,6 +130,22 @@ describe('detectViral', () => {
     expect(result[0].identity_mode).toBeUndefined();
   });
 
+  it('threshold=0: items with likes=0 are excluded (strictly greater than threshold)', () => {
+    const items = [
+      makeItem({ source_id: 'zero-likes', likes: 0 }),
+    ];
+    expect(detectViral(items, sandboxDir, 0)).toHaveLength(0);
+  });
+
+  it('threshold=0: items with likes=1 are included (strictly greater than 0)', () => {
+    const items = [
+      makeItem({ source_id: 'one-like', likes: 1 }),
+    ];
+    const result = detectViral(items, sandboxDir, 0);
+    expect(result).toHaveLength(1);
+    expect(result[0].source_id).toBe('one-like');
+  });
+
   it('returns correct fields on a valid candidate', () => {
     const item = makeItem({
       source_id: 'full-test',

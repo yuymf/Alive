@@ -131,26 +131,33 @@ export function upsertEntry(basePath: string, entry: ViralEntry): void {
  * Check whether the given entry triggers a new UniversalFormula promotion.
  *
  * Logic:
- * - Only universal entries (identity_mode == null) participate.
+ * - Only successfully-dissected universal entries (dissection_status == 'done'
+ *   AND identity_mode == null) participate.
  * - Find an existing formula matching platform + content_type + hook_type.
  * - If none: create with count = 1.
  * - If count < 3: increment count, update last_seen_at.
- * - If count reaches 3 for the first time: mark as promoted, return it.
+ * - If count reaches 3 for the first time: attempt persona injection;
+ *   only mark injected_to_templates = true if the write succeeded.
  * - At most 1 formula can be promoted per call (protection mechanism).
+ * - Same entry.id never inflates occurrence_count twice (dedup via source_entry_ids).
  *
  * When promotion occurs and personaConfigPath is provided:
  * - Reads the persona.yaml at personaConfigPath
  * - Appends a new ContentTemplate object to ops.content_templates[]
  * - Writes back with .bak backup
- * - Marks the formula as injected_to_templates = true
+ * - Marks the formula as injected_to_templates = true ONLY if write succeeded
  */
 export function checkFormulaPromotion(
   basePath: string,
   entry: ViralEntry,
   personaConfigPath?: string,
 ): PromotionResult {
-  // Only universal entries count towards formula promotion
-  if (!entry.dissection || entry.dissection.identity_mode !== null) {
+  // Only successfully-dissected universal entries count towards formula promotion
+  if (
+    !entry.dissection ||
+    entry.dissection_status !== 'done' ||
+    entry.dissection.identity_mode !== null
+  ) {
     return { promoted: false };
   }
 
@@ -189,15 +196,43 @@ export function checkFormulaPromotion(
     return { promoted: false };
   }
 
-  const updatedCount = existing.occurrence_count + 1;
+  // Dedup: same entry.id must not inflate occurrence_count more than once
+  const alreadyCounted = existing.source_entry_ids.includes(entry.id);
+  const updatedCount = alreadyCounted ? existing.occurrence_count : existing.occurrence_count + 1;
+  const updatedSourceIds = alreadyCounted
+    ? existing.source_entry_ids
+    : [...existing.source_entry_ids, entry.id];
+
   const shouldPromote = updatedCount >= 3;
+
+  // Attempt persona injection BEFORE saving the formula so we know whether it succeeded.
+  // If no personaConfigPath is provided, skip injection but still mark as promoted.
+  let injectionSucceeded = false;
+  if (shouldPromote && personaConfigPath) {
+    const tentativeFormula: UniversalFormula = {
+      ...existing,
+      occurrence_count: updatedCount,
+      last_seen_at: wallNow().toISOString(),
+      source_entry_ids: updatedSourceIds,
+      injected_to_templates: false, // will be set to true only on success
+    };
+    injectionSucceeded = injectTemplateIntoPersona(personaConfigPath, tentativeFormula);
+  }
+
+  // injected_to_templates = true when:
+  //   - promoted AND no personaConfigPath provided (no write required, promotion gate is reached)
+  //   - promoted AND personaConfigPath write succeeded
+  // injected_to_templates = false when promoted AND write failed (allows retry on next run)
+  const injectedToTemplates = shouldPromote
+    ? (personaConfigPath ? injectionSucceeded : true)
+    : existing.injected_to_templates;
 
   const updatedFormula: UniversalFormula = {
     ...existing,
     occurrence_count: updatedCount,
     last_seen_at: wallNow().toISOString(),
-    source_entry_ids: [...existing.source_entry_ids, entry.id],
-    injected_to_templates: shouldPromote ? true : existing.injected_to_templates,
+    source_entry_ids: updatedSourceIds,
+    injected_to_templates: injectedToTemplates,
   };
 
   const updatedFormulas = [
@@ -208,9 +243,6 @@ export function checkFormulaPromotion(
   saveFormulas(basePath, updatedFormulas);
 
   if (shouldPromote) {
-    if (personaConfigPath) {
-      injectTemplateIntoPersona(personaConfigPath, updatedFormula);
-    }
     return { promoted: true, formula: updatedFormula };
   }
   return { promoted: false };
@@ -219,9 +251,10 @@ export function checkFormulaPromotion(
 /**
  * Append a new ContentTemplate derived from a promoted formula to persona.yaml.
  * Uses YAML parse + stringify with .bak backup (via fs rename before write).
- * Silently skips if the persona.yaml cannot be read or parsed.
+ * Returns true if the write succeeded, false otherwise.
+ * Callers must check the return value before marking injected_to_templates = true.
  */
-function injectTemplateIntoPersona(personaConfigPath: string, formula: UniversalFormula): void {
+function injectTemplateIntoPersona(personaConfigPath: string, formula: UniversalFormula): boolean {
   try {
     const raw = fs.readFileSync(personaConfigPath, 'utf8');
     const doc = YAML.parse(raw) as Record<string, unknown>;
@@ -259,8 +292,10 @@ function injectTemplateIntoPersona(personaConfigPath: string, formula: Universal
       fs.copyFileSync(personaConfigPath, bakPath);
     }
     fs.writeFileSync(personaConfigPath, YAML.stringify(updatedDoc), 'utf8');
+    return true;
   } catch (err) {
     console.error('[viral-kb-store] Failed to inject template into persona.yaml:', (err as Error).message);
+    return false;
   }
 }
 

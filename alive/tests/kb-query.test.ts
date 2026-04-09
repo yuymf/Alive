@@ -205,6 +205,17 @@ describe('handleKbCommand — top', () => {
     const result = handleKbCommand(['top'], { limit: '2' }, dir);
     expect(result).toContain('2 条');
   });
+
+  it('falls back to 10 when --limit is non-numeric (NaN)', () => {
+    const dir = makeTmpDir();
+    for (let i = 0; i < 15; i++) {
+      upsertEntry(dir, makeEntry({ id: `e${i}`, likes: i * 1000 }));
+    }
+
+    // 'abc' parses to NaN — should fall back to default limit of 10
+    const result = handleKbCommand(['top'], { limit: 'abc' }, dir);
+    expect(result).toContain('10 条');
+  });
 });
 
 describe('handleKbCommand — unknown subcommand', () => {
