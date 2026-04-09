@@ -2,8 +2,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import { setBasePaths, resetBasePaths, PATHS, writeJSON } from '../../scripts/utils/file-utils';
-import type { TagVocabulary, TagEntry } from '../../scripts/utils/types';
+import { setBasePaths, resetBasePaths, PATHS, writeJSON, readJSON } from '../../scripts/utils/file-utils';
+import type { TagVocabulary, TagEntry, TagSource } from '../../scripts/utils/types';
 
 // ─── Sandbox paths ────────────────────────────────────────────────────────────
 const TEST_DIR = path.join(__dirname, '__tag_engine_sandbox__');
@@ -11,8 +11,10 @@ const MEMORY_DIR = path.join(TEST_DIR, 'memory');
 const SKILL_DIR = path.join(TEST_DIR, 'skill');
 
 // ─── Platform client mocks ────────────────────────────────────────────────────
-const mockSearchXhsNotes = vi.fn();
-const mockSearchDouyinVideos = vi.fn();
+const { mockSearchXhsNotes, mockSearchDouyinVideos } = vi.hoisted(() => ({
+  mockSearchXhsNotes: vi.fn(),
+  mockSearchDouyinVideos: vi.fn(),
+}));
 
 vi.mock('../../sub-skills/platform/xhs-bridge/scripts/xhs-client', () => ({
   searchXhsNotes: mockSearchXhsNotes,
@@ -75,5 +77,127 @@ describe('TagVocabulary types', () => {
       peak_score: 15,
     };
     expect(entry.sources[0].type).toBe('keyword_search');
+  });
+});
+
+// ─── Hashtag extraction ───────────────────────────────────────────────────
+
+import {
+  extractHashtags,
+  scoreForPlatform,
+  buildInitialEntry,
+  mergeTags,
+  runColdStart,
+} from '../../scripts/ops/tag-engine';
+
+describe('extractHashtags', () => {
+  it('extracts hashtags from a string with # prefix', () => {
+    const tags = extractHashtags('#电竞女生 我的日常 #赛车手');
+    expect(tags).toContain('#电竞女生');
+    expect(tags).toContain('#赛车手');
+    expect(tags).not.toContain('我的日常');
+  });
+  it('extracts hashtags from combined title and description', () => {
+    const tags = extractHashtags('今天去赛车了 #赛车日常', '好开心 #电竞');
+    expect(tags).toContain('#赛车日常');
+    expect(tags).toContain('#电竞');
+  });
+  it('returns empty array when no hashtags present', () => {
+    expect(extractHashtags('这是一段没有话题标签的文字')).toEqual([]);
+  });
+  it('deduplicates hashtags', () => {
+    const tags = extractHashtags('#电竞 #电竞');
+    expect(tags.filter(t => t === '#电竞')).toHaveLength(1);
+  });
+});
+
+describe('scoreForPlatform', () => {
+  it('returns 10 for xhs', () => { expect(scoreForPlatform('xhs')).toBe(10); });
+  it('returns 15 for douyin', () => { expect(scoreForPlatform('douyin')).toBe(15); });
+});
+
+describe('buildInitialEntry', () => {
+  it('builds a TagEntry with correct fields', () => {
+    const source: TagSource = { type: 'competitor', account: 'v_jie', platform: 'xhs' };
+    const entry = buildInitialEntry('#电竞女生', 'xhs', 10, source, '2026-04-09T10:00:00.000Z');
+    expect(entry.tag).toBe('#电竞女生');
+    expect(entry.platform).toBe('xhs');
+    expect(entry.score).toBe(10);
+    expect(entry.hit_count).toBe(1);
+    expect(entry.peak_score).toBe(10);
+    expect(entry.sources).toHaveLength(1);
+    expect(entry.sources[0]).toEqual(source);
+  });
+});
+
+describe('mergeTags', () => {
+  const ts = '2026-04-09T10:00:00.000Z';
+  it('merges two sources for same tag into one entry, sums scores', () => {
+    const maps = [
+      new Map([['#电竞', { score: 10, sources: [{ type: 'competitor' as const, account: 'a1', platform: 'xhs' }] }]]),
+      new Map([['#电竞', { score: 15, sources: [{ type: 'keyword_search' as const, keyword: 'gaming', platform: 'douyin' }] }]]),
+    ];
+    const { active, dormant } = mergeTags(maps, ts);
+    expect(active).toHaveLength(1);
+    expect(active[0].tag).toBe('#电竞');
+    expect(active[0].score).toBe(25);
+    expect(dormant).toHaveLength(0);
+  });
+  it('puts single-source tags into dormant with score 5', () => {
+    const maps = [
+      new Map([['#新手标签', { score: 10, sources: [{ type: 'competitor' as const, account: 'a1', platform: 'xhs' }] }]]),
+    ];
+    const { active, dormant } = mergeTags(maps, ts);
+    expect(active).toHaveLength(0);
+    expect(dormant).toHaveLength(1);
+    expect(dormant[0].score).toBe(5);
+  });
+  it('adds multi-competitor bonus +20 when same tag appears from 2+ competitor sources', () => {
+    const maps = [
+      new Map([['#电竞', { score: 10, sources: [{ type: 'competitor' as const, account: 'a1', platform: 'xhs' }] }]]),
+      new Map([['#电竞', { score: 10, sources: [{ type: 'competitor' as const, account: 'a2', platform: 'xhs' }] }]]),
+    ];
+    const { active } = mergeTags(maps, ts);
+    expect(active[0].score).toBe(40); // 10+10+20
+  });
+});
+
+describe('runColdStart', () => {
+  it('writes tag-vocabulary.json with active and dormant lists', async () => {
+    mockSearchXhsNotes.mockResolvedValue([
+      { id: '1', title: '#电竞女生 测试帖子', description: '', likes: 2000, tags: [], user: 'user1', url: 'http://x', cover: '' },
+    ]);
+    mockSearchDouyinVideos.mockReturnValue({ success: true, videos: [] });
+    const ops = {
+      enabled: true,
+      competitors: [
+        { account: 'competitor_a', platform: 'xhs' },
+        { account: 'competitor_b', platform: 'xhs' },
+      ],
+      trend_score_threshold: 1.5,
+      topic_count: 3,
+      brief_time: '09:00',
+    };
+    await runColdStart(ops as any, '2026-04-09T10:00:00.000Z');
+    const vocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
+    expect(vocab).not.toBeNull();
+    expect(vocab.version).toBe(1);
+    expect(vocab.active.some(e => e.tag === '#电竞女生')).toBe(true);
+  });
+  it('skips low-engagement XHS posts (likes < 1000)', async () => {
+    mockSearchXhsNotes.mockResolvedValue([
+      { id: '1', title: '#低流量', description: '', likes: 500, tags: [], user: 'user1', url: 'http://x', cover: '' },
+    ]);
+    const ops = {
+      enabled: true,
+      competitors: [{ account: 'comp', platform: 'xhs' }],
+      trend_score_threshold: 1.5,
+      topic_count: 3,
+      brief_time: '09:00',
+    };
+    await runColdStart(ops as any, '2026-04-09T10:00:00.000Z');
+    const vocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
+    expect(vocab.active).toHaveLength(0);
+    expect(vocab.dormant).toHaveLength(0);
   });
 });
