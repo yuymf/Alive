@@ -51,6 +51,7 @@ import { exaWebSearch } from '../utils/exa-client';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
 import { processInspirationForDiscovery, processInspirationForAccountDiscovery } from '../ops/discovery-engine';
 import { runKeywordSearch } from '../ops/keyword-tracker';
+import { runViralSearch, runCrossPlatformRadar, runAutoBreakdown } from '../ops/viral-search';
 import { buildDriftContext } from '../engines/personality-drift';
 import { HEARTBEAT_CONFIG } from '../config';
 import { runMorningPlan } from './morning-plan';
@@ -753,6 +754,36 @@ export async function regularTick(
               }
             } catch (kwErr) {
               console.warn(`[keyword-tracker] Post-browse keyword search failed: ${(kwErr as Error).message}`);
+            }
+
+            // Viral search: proactive high-engagement content discovery
+            try {
+              const vsResult = await runViralSearch();
+              if (vsResult.injected > 0) {
+                console.log(`[viral-search] +${vsResult.injected} viral discoveries (${vsResult.xhs_found} XHS, ${vsResult.douyin_found} Douyin)`);
+              }
+            } catch (vsErr) {
+              console.warn(`[viral-search] Post-browse viral search failed: ${(vsErr as Error).message}`);
+            }
+
+            // Cross-platform radar: detect trending topics across platforms
+            try {
+              const radarResult = await runCrossPlatformRadar();
+              if (radarResult.injected > 0) {
+                console.log(`[radar] +${radarResult.injected} cross-platform discoveries (${radarResult.trend_keywords_used.join(', ')})`);
+              }
+            } catch (radarErr) {
+              console.warn(`[radar] Post-browse radar failed: ${(radarErr as Error).message}`);
+            }
+
+            // Auto-breakdown: analyze high-engagement items from discovery pool
+            try {
+              const abResult = await runAutoBreakdown(llm);
+              if (abResult.analyzed > 0) {
+                console.log(`[auto-breakdown] Analyzed ${abResult.analyzed} items: ${abResult.titles.join(', ')}`);
+              }
+            } catch (abErr) {
+              console.warn(`[auto-breakdown] Post-browse auto-breakdown failed: ${(abErr as Error).message}`);
             }
           }
         } catch (err) {

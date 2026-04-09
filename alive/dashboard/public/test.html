@@ -1016,6 +1016,27 @@ body::after {
               <span class="btn-desc">主动搜索关键词状态 / 速度追踪</span>
             </div>
           </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-viral-search', this)" id="btn-ops-viral-search">
+            <div class="btn-icon">🔥</div>
+            <div class="btn-text">
+              <span class="btn-label">爆款搜索</span>
+              <span class="btn-desc">按互动量阈值主动搜索 XHS/抖音爆款</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-radar', this)" id="btn-ops-radar">
+            <div class="btn-icon">📡</div>
+            <div class="btn-text">
+              <span class="btn-label">跨平台雷达</span>
+              <span class="btn-desc">热搜话题 → 跨平台爆款匹配</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-auto-breakdown', this)" id="btn-ops-auto-breakdown">
+            <div class="btn-icon">🧪</div>
+            <div class="btn-text">
+              <span class="btn-label">自动拆解</span>
+              <span class="btn-desc">对高互动内容自动触发爆款拆解</span>
+            </div>
+          </button>
           <button class="action-btn ops-btn ops-data" onclick="runOps('ops-patterns', this)" id="btn-ops-patterns">
             <div class="btn-icon">🧬</div>
             <div class="btn-text">
@@ -1943,6 +1964,12 @@ function renderOpsData(command, data) {
     html = renderOpsDiscovery(data);
   } else if (command === 'ops-keywords') {
     html = renderOpsKeywords(data);
+  } else if (command === 'ops-viral-search') {
+    html = renderOpsViralSearch(data);
+  } else if (command === 'ops-radar') {
+    html = renderOpsRadar(data);
+  } else if (command === 'ops-auto-breakdown') {
+    html = renderOpsAutoBreakdown(data);
   } else if (command === 'ops-patterns') {
     html = renderOpsPatterns(data);
   } else if (command === 'ops-advice') {
@@ -2310,6 +2337,42 @@ function renderOpsKeywords(data) {
     h += '<div style="margin-top:8px;padding:8px;background:var(--bg-inset);font-family:var(--font-mono);font-size:10px;white-space:pre-wrap;max-height:200px;overflow-y:auto;">' + escHtml(data.context) + '</div>';
   }
   h += '</div>';
+  return h;
+}
+
+function renderOpsViralSearch(data) {
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🔥 爆款搜索结果</div>';
+  h += '<div class="ops-data-card-body">';
+  h += '<p><strong>搜索关键词:</strong> ' + (data.searched_keywords || []).map(escHtml).join(', ') + '</p>';
+  h += '<p><strong>XHS 发现:</strong> ' + (data.xhs_found || 0) + ' 条</p>';
+  h += '<p><strong>抖音发现:</strong> ' + (data.douyin_found || 0) + ' 条</p>';
+  h += '<p><strong>注入发现池:</strong> ' + (data.injected || 0) + ' 条</p>';
+  h += '</div></div>';
+  return h;
+}
+
+function renderOpsRadar(data) {
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">📡 跨平台雷达结果</div>';
+  h += '<div class="ops-data-card-body">';
+  h += '<p><strong>热搜关键词:</strong> ' + (data.trend_keywords_used || []).map(escHtml).join(', ') + '</p>';
+  h += '<p><strong>XHS 发现:</strong> ' + (data.xhs_found || 0) + ' 条</p>';
+  h += '<p><strong>抖音发现:</strong> ' + (data.douyin_found || 0) + ' 条</p>';
+  h += '<p><strong>注入发现池:</strong> ' + (data.injected || 0) + ' 条</p>';
+  h += '</div></div>';
+  return h;
+}
+
+function renderOpsAutoBreakdown(data) {
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🧪 自动拆解结果</div>';
+  h += '<div class="ops-data-card-body">';
+  h += '<p><strong>候选内容:</strong> ' + (data.candidates_found || 0) + ' 条</p>';
+  h += '<p><strong>已分析:</strong> ' + (data.analyzed || 0) + ' 条</p>';
+  if (data.titles && data.titles.length > 0) {
+    h += '<p><strong>分析标题:</strong></p><ul>';
+    data.titles.forEach(function(t) { h += '<li>' + escHtml(t) + '</li>'; });
+    h += '</ul>';
+  }
+  h += '</div></div>';
   return h;
 }
 

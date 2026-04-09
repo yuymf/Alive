@@ -8,7 +8,6 @@
  * (Previously used ClawHub skills — migrated to direct API calls for reliability.)
  */
 
-import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now, getLocalDate } from '../utils/time-utils';
 import { TrendItem, TrendHistory, OpsConfig, PersonaConfig } from '../utils/types';
@@ -152,18 +151,20 @@ interface DailyHotApiResponse {
 }
 
 /**
- * Fetch hot topics from remote DailyHot API.
+ * Fetch hot topics from remote DailyHot API (async).
  * Supports: douyin, bilibili, weibo, toutiao, sina-news, etc.
  */
-function callDailyHotNews(platform: string, limit = 30): TrendItem[] {
+async function callDailyHotNews(platform: string, limit = 30): Promise<TrendItem[]> {
   const targetPlatform = DAILYHOT_AVAILABLE_PLATFORMS.has(platform) ? platform : null;
   if (!targetPlatform) return [];
   try {
-    const raw = execFileSync('curl', [
-      '-s', '--max-time', '15',
-      `${DAILYHOT_API_BASE}/${targetPlatform}?limit=${limit}`,
-    ], { timeout: 20_000, encoding: 'utf8' });
-    const parsed = JSON.parse(raw.trim()) as DailyHotApiResponse;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12_000);
+    const res = await fetch(`${DAILYHOT_API_BASE}/${targetPlatform}?limit=${limit}`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const parsed = await res.json() as DailyHotApiResponse;
     if (parsed.code !== 200) return [];
     return parsed.data.map((item, idx) => ({
       platform,
@@ -198,16 +199,20 @@ interface WeiboHotSearchResponse {
  * Fallback for weibo when DailyHot API fails: directly call weibo.com/ajax/side/hotSearch.
  * This is a public API that doesn't require authentication.
  */
-function callWeiboDirectApi(limit = 30): TrendItem[] {
+async function callWeiboDirectApi(limit = 30): Promise<TrendItem[]> {
   try {
-    const raw = execFileSync('curl', [
-      '-s', '--max-time', '10',
-      'https://weibo.com/ajax/side/hotSearch',
-      '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      '-H', 'Accept: application/json',
-      '-H', 'Referer: https://weibo.com/',
-    ], { timeout: 15_000, encoding: 'utf8' });
-    const parsed = JSON.parse(raw.trim()) as WeiboHotSearchResponse;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch('https://weibo.com/ajax/side/hotSearch', {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept': 'application/json',
+        'Referer': 'https://weibo.com/',
+      },
+    });
+    clearTimeout(timer);
+    const parsed = await res.json() as WeiboHotSearchResponse;
     if (parsed.ok !== 1 || !parsed.data?.realtime) return [];
     return parsed.data.realtime.slice(0, limit).map((item, idx) => ({
       platform: 'weibo',
@@ -239,15 +244,19 @@ interface BilibiliRankResponse {
 /**
  * Fallback for bilibili: directly call api.bilibili.com ranking API.
  */
-function callBilibiliDirectApi(limit = 20): TrendItem[] {
+async function callBilibiliDirectApi(limit = 20): Promise<TrendItem[]> {
   try {
-    const raw = execFileSync('curl', [
-      '-s', '--max-time', '10',
-      'https://api.bilibili.com/x/web-interface/ranking/v2',
-      '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      '-H', 'Referer: https://www.bilibili.com/',
-    ], { timeout: 15_000, encoding: 'utf8' });
-    const parsed = JSON.parse(raw.trim()) as BilibiliRankResponse;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch('https://api.bilibili.com/x/web-interface/ranking/v2', {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Referer': 'https://www.bilibili.com/',
+      },
+    });
+    clearTimeout(timer);
+    const parsed = await res.json() as BilibiliRankResponse;
     if (parsed.code !== 0 || !parsed.data?.list) return [];
     return parsed.data.list.slice(0, limit).map((item, idx) => ({
       platform: 'bilibili',
@@ -269,16 +278,19 @@ function callBilibiliDirectApi(limit = 20): TrendItem[] {
  * Fallback for douyin: directly call douyin.com trending API via the
  * tophub aggregator endpoint (public, no auth required).
  */
-function callDouyinDirectApi(limit = 30): TrendItem[] {
+async function callDouyinDirectApi(limit = 30): Promise<TrendItem[]> {
   try {
-    // Use tophub.today as a reliable proxy for Douyin hot search
-    const raw = execFileSync('curl', [
-      '-s', '--max-time', '10',
-      'https://tophub.today/api/nodes/1',
-      '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      '-H', 'Accept: application/json',
-    ], { timeout: 15_000, encoding: 'utf8' });
-    const parsed = JSON.parse(raw.trim()) as { data?: { items?: Array<{ title?: string; extra?: { hot?: number } }> } };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
+    const res = await fetch('https://tophub.today/api/nodes/1', {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+        'Accept': 'application/json',
+      },
+    });
+    clearTimeout(timer);
+    const parsed = await res.json() as { data?: { items?: Array<{ title?: string; extra?: { hot?: number } }> } };
     const items = parsed.data?.items ?? [];
     if (items.length === 0) return [];
     return items.slice(0, limit).map((item, idx) => ({
@@ -298,8 +310,8 @@ function callDouyinDirectApi(limit = 30): TrendItem[] {
 /**
  * Fetch platform data with fallback: try DailyHot first, then direct API.
  */
-function fetchWithFallback(platform: string, limit = 30): TrendItem[] {
-  const items = callDailyHotNews(platform, limit);
+async function fetchWithFallback(platform: string, limit = 30): Promise<TrendItem[]> {
+  const items = await callDailyHotNews(platform, limit);
   if (items.length > 0) return items;
 
   // Fallback to direct APIs for critical platforms
@@ -367,11 +379,15 @@ export async function analyzeTrends(
   llm: LLMClient,
 ): Promise<FilteredTrend[]> {
   // 1. Collect raw trends from remote DailyHot API (with direct-API fallback)
-  const douyinItems = fetchWithFallback('douyin', 30);
-  const weiboItems = fetchWithFallback('weibo', 20);
-  const bilibiliItems = fetchWithFallback('bilibili', 20);
-  const toutiaoItems = fetchWithFallback('toutiao', 20);
-  const baiduItems = fetchWithFallback('baidu', 15);
+  // Parallel fetch: all 5 platforms at once (was serial, could take 5×20s=100s; now max ~12s)
+  const [douyinItems, weiboItems, bilibiliItems, toutiaoItems, baiduItems] =
+    await Promise.all([
+      fetchWithFallback('douyin', 30),
+      fetchWithFallback('weibo', 20),
+      fetchWithFallback('bilibili', 20),
+      fetchWithFallback('toutiao', 20),
+      fetchWithFallback('baidu', 15),
+    ]);
   const rawAll = [...douyinItems, ...weiboItems, ...bilibiliItems, ...toutiaoItems, ...baiduItems];
   if (isDebug()) console.log(`[trend-analyzer] DEBUG: rawAll items: ${rawAll.length} (douyin=${douyinItems.length}, weibo=${weiboItems.length}, bilibili=${bilibiliItems.length}, toutiao=${toutiaoItems.length}, baidu=${baiduItems.length})`);
 

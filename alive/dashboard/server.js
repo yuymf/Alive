@@ -994,6 +994,12 @@ function createServer(options = {}) {
           command = 'ops-keywords';
         } else if (subPath === 'ops-patterns') {
           command = 'ops-patterns';
+        } else if (subPath === 'ops-viral-search') {
+          command = 'ops-viral-search';
+        } else if (subPath === 'ops-radar') {
+          command = 'ops-radar';
+        } else if (subPath === 'ops-auto-breakdown') {
+          command = 'ops-auto-breakdown';
         } else if (subPath === 'ops-taste') {
           command = 'ops-taste';
         } else if (subPath === 'ops-performance') {

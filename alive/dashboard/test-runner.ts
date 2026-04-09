@@ -49,6 +49,7 @@ import { generatePersonaReport, formatAlignmentCard } from '../scripts/ops/perso
 import { loadStrategy, computeStrategy, confirmStrategy } from '../scripts/ops/strategy-engine';
 import { loadDiscoveryPool, loadCandidateAccounts, approveCandidate, dismissCandidate } from '../scripts/ops/discovery-engine';
 import { loadKeywordState, buildKeywordContext } from '../scripts/ops/keyword-tracker';
+import { runViralSearch, runCrossPlatformRadar, runAutoBreakdown } from '../scripts/ops/viral-search';
 import { loadContentPatterns, getRelevantPatterns } from '../scripts/ops/content-analyzer';
 import { loadContentTaste } from '../scripts/ops/taste-engine';
 import { loadPerformanceLog } from '../scripts/ops/performance-tracker';
@@ -845,6 +846,37 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
       message: `内容模式: ${patterns.patterns.length} 个模式, ${patterns.competitor_insights.length} 个竞品洞察`,
       patterns,
       relevant_summary: relevant,
+    };
+  }
+
+  // ── Ops: Viral Search ────────────────────────────────────────────
+  if (cmd === 'ops-viral-search') {
+    const result = await runViralSearch({ forceFresh: true });
+    return {
+      command: 'ops-viral-search',
+      message: `爆款搜索完成: ${result.xhs_found} XHS + ${result.douyin_found} 抖音, 注入 ${result.injected} 条`,
+      ...result,
+    };
+  }
+
+  // ── Ops: Cross-Platform Radar ────────────────────────────────────
+  if (cmd === 'ops-radar') {
+    const result = await runCrossPlatformRadar({ forceFresh: true });
+    return {
+      command: 'ops-radar',
+      message: `跨平台雷达完成: ${result.xhs_found} XHS + ${result.douyin_found} 抖音, 注入 ${result.injected} 条`,
+      ...result,
+    };
+  }
+
+  // ── Ops: Auto-Breakdown ──────────────────────────────────────────
+  if (cmd === 'ops-auto-breakdown') {
+    const llm = createRealLLMClient('test-ops-auto-breakdown');
+    const result = await runAutoBreakdown(llm, { forceFresh: true });
+    return {
+      command: 'ops-auto-breakdown',
+      message: `自动拆解完成: ${result.analyzed}/${result.candidates_found} 条已分析`,
+      ...result,
     };
   }
 
