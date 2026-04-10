@@ -8,9 +8,14 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
+
+const execFileAsync = promisify(execFile);
 import {
   PostPlatform,
   PostContent,
@@ -118,18 +123,13 @@ export function stripVttTimestamps(raw: string): string {
  * Returns clean spoken text or null on any failure.
  */
 export async function fetchDouyinTranscript(url: string): Promise<string | null> {
-  const tmpDir = '/tmp';
-  // Use a unique prefix based on timestamp so parallel calls don't collide
-  const prefix = `alive-transcript-${Date.now()}`;
+  const tmpDir = os.tmpdir();
+  const prefix = `alive-transcript-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const outputTemplate = path.join(tmpDir, `${prefix}.%(id)s.%(ext)s`);
 
   let spawnedFiles: string[] = [];
 
   try {
-    const { execFile } = await import('child_process');
-    const { promisify } = await import('util');
-    const execFileAsync = promisify(execFile);
-
     await execFileAsync(
       'yt-dlp',
       [
@@ -143,10 +143,9 @@ export async function fetchDouyinTranscript(url: string): Promise<string | null>
       { timeout: 30_000 },
     );
 
-    // Discover generated subtitle files matching the prefix
-    const allTmp = fs.readdirSync(tmpDir);
-    spawnedFiles = allTmp
-      .filter(f => f.startsWith(prefix))
+    // Only look at .vtt files with our prefix — avoids scanning all of /tmp
+    spawnedFiles = fs.readdirSync(tmpDir)
+      .filter(f => f.startsWith(prefix) && f.endsWith('.vtt'))
       .map(f => path.join(tmpDir, f));
 
     // Priority order: zh-Hans → zh → en
@@ -154,7 +153,7 @@ export async function fetchDouyinTranscript(url: string): Promise<string | null>
     for (const lang of langPriority) {
       const candidate = spawnedFiles.find(f => f.includes(`.${lang}.vtt`));
       if (candidate) {
-        const raw = fs.readFileSync(candidate, 'utf8');
+        const raw = await fs.promises.readFile(candidate, 'utf8');
         return stripVttTimestamps(raw);
       }
     }
@@ -163,7 +162,6 @@ export async function fetchDouyinTranscript(url: string): Promise<string | null>
   } catch {
     return null;
   } finally {
-    // Clean up temp files regardless of success/failure
     for (const f of spawnedFiles) {
       try { fs.unlinkSync(f); } catch { /* ignore */ }
     }
@@ -188,6 +186,10 @@ export function buildAnalysisPrompt(
 
   const transcriptSection = post.transcript
     ? `\n【视频转录（口播文字稿）】\n${post.transcript}\n`
+    : '';
+
+  const transcriptHint = post.transcript
+    ? '（若有转录内容，请基于原文分析 hook_patterns 中的 example 和 content_structure）'
     : '';
 
   // C v2: engagement signal block (only when signals provided)
@@ -222,7 +224,7 @@ ${commentSection}${transcriptSection}
 ${signalBlock}
 分析人设背景：${personaIdentities}
 
-请从以下维度分析，返回 JSON${post.transcript ? '（若有转录内容，请基于原文分析 hook_patterns 中的 example 和 content_structure）' : ''}：
+请从以下维度分析，返回 JSON${transcriptHint}：
 
 1. hook_patterns: 钩子句式（2-4个），每个包含 formula（公式）、example（原文示例）、effectiveness_score（0-10）
 2. core_selling_points: 核心卖点（3-5条）
