@@ -18,12 +18,13 @@ vi.mock('child_process', () => ({
 
 vi.mock('../sub-skills/platform/xhs-bridge/scripts/xhs-client', () => ({
   getUserNotes: vi.fn(),
+  getUserProfileNotes: vi.fn(),
 }));
 
 // ─── Lazy imports (after mocks are set up) ────────────────────────────────────
 
 const { execFileSync } = await import('child_process');
-const { getUserNotes } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+const { getUserNotes, getUserProfileNotes } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
 const {
   buildAccountKey,
   mergeAndDedupPosts,
@@ -277,7 +278,7 @@ describe('fetchCompetitorPosts', () => {
     vi.mocked(execFileSync).mockReturnValue(mockOutput);
 
     const result = await fetchCompetitorPosts(
-      { xhs: ['@broken_xhs'], douyin: ['ok_douyin'] },
+      { xhs: ['@broken_xhs'], xhsUserIds: new Map(), douyin: ['ok_douyin'] },
       [],
       tmpDir
     );
@@ -303,7 +304,7 @@ describe('fetchCompetitorPosts', () => {
     // This account fails
     vi.mocked(getUserNotes).mockRejectedValue(new Error('network error'));
 
-    await fetchCompetitorPosts({ xhs: ['@saved_account'], douyin: [] }, [], tmpDir);
+    await fetchCompetitorPosts({ xhs: ['@saved_account'], xhsUserIds: new Map(), douyin: [] }, [], tmpDir);
 
     const store = readJSON<CompetitorPostsStore>(PATHS.competitorPosts, { version: 1, last_fetched: '', accounts: {} });
     // Previous data should still be present
@@ -314,7 +315,7 @@ describe('fetchCompetitorPosts', () => {
   it('writes version 1 and last_fetched timestamp', async () => {
     vi.mocked(getUserNotes).mockResolvedValue([]);
 
-    await fetchCompetitorPosts({ xhs: ['@any'], douyin: [] }, [], tmpDir);
+    await fetchCompetitorPosts({ xhs: ['@any'], xhsUserIds: new Map(), douyin: [] }, [], tmpDir);
 
     const store = readJSON<CompetitorPostsStore>(PATHS.competitorPosts, { version: 1, last_fetched: '', accounts: {} });
     expect(store.version).toBe(1);

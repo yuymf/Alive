@@ -54,9 +54,9 @@ export const DEFAULT_KEYWORD_STATE: KeywordState = {
 /** Maximum keywords to track */
 const MAX_KEYWORDS = 30;
 /** Minimum hours between re-searching the same keyword */
-const SEARCH_COOLDOWN_HOURS = 6;
+const SEARCH_COOLDOWN_HOURS = 8;
 /** Maximum keywords to search per heartbeat tick */
-const MAX_SEARCHES_PER_TICK = 3;
+const MAX_SEARCHES_PER_TICK = 2;
 /** Per-keyword search result limit */
 const SEARCH_RESULT_LIMIT = 10;
 /** Maximum discovery pool items */

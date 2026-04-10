@@ -25,6 +25,8 @@ export interface BriefEnrichment {
   competitorAnalysis?: CompetitorAnalysisStore | null;
   /** Health check report for 🏥链路健康 section (only shown when warnings/missing exist) */
   healthReport?: HealthReport | null;
+  /** Identity mode keys for candidate track-overlap scoring */
+  identityKeys?: string[];
 }
 
 // ─── Pure formatting (exported for testing) ──────────────────────────────────
@@ -35,7 +37,6 @@ export function formatBriefCard(
   competitors: CompetitorUpdate[],
   queueItems: QueueItem[],
   enrichment?: BriefEnrichment,
-  identityKeys?: string[],
 ): string {
   const lines: string[] = [`📊 今日简报  ${date}`, ''];
 
@@ -94,8 +95,8 @@ export function formatBriefCard(
   // ─── Enrichment sections (new: 生图Prompt, 视频分镜, 人设建议) ────────────
 
   const enrichItems = enrichment?.fullQueueItems
-    ?? activePending;
-  const firstPending = enrichItems.find(i => i.status === 'pending' && hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
+    ?? allPending;
+  const firstPending = enrichItems.find(i => i.status === 'pending');
 
   // 🎨 今日生图 Prompt
   if (firstPending) {
@@ -169,7 +170,7 @@ export function formatBriefCard(
   }
 
   // 🔍 候选对标（from discovery-engine account discovery）
-  const candidateCtx = buildCandidateContext(identityKeys);
+  const candidateCtx = buildCandidateContext(enrichment?.identityKeys);
   if (candidateCtx) {
     lines.push(candidateCtx);
     lines.push('');
@@ -416,10 +417,9 @@ export async function sendDailyBrief(
   queueItems: QueueItem[],
   enrichment?: BriefEnrichment,
   deliveryMode?: BriefDeliveryMode,
-  identityKeys?: string[],
 ): Promise<boolean> {
   const date = now().toISOString().slice(0, 10);
-  let card = formatBriefCard(date, trends, competitors, queueItems, enrichment, identityKeys);
+  let card = formatBriefCard(date, trends, competitors, queueItems, enrichment);
 
   const { loadStrategy } = await import('./strategy-engine');
   const strategy = loadStrategy();

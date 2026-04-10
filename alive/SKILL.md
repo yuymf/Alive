@@ -47,7 +47,7 @@ This skill is composed of sub-modules. Load them as needed:
 | `cron:tick` + send-message action | Heartbeat may proactively send a chat message — throttled to ≤2/day, 4h cooldown, only during active hours, and only when sociability is high enough |
 | `cron:tick` + voice-tts action | Heartbeat may synthesize and send a voice message — throttled to ≤3/day, 3h cooldown, 9-22h active window, requires sociability ≥ 0.30 and energy ≥ 0.25. Uses Noiz TTS (Guest Mode) for synthesis, openclaw --media for delivery |
 | `cron:tick` + unhandled/wished skill | Records capability gap to skill-needs.json — dual-channel capture: (1) route fails to find sub-skill, (2) LLM fills wished_skill field on simulated action. Pending needs shown in heartbeat prompt as expectations |
-| `cron:night` | Run night-reflect.js, daily reflection |
+| `cron:night` | Run scripts/lifecycle/night-reflect.js, daily reflection |
 | `cron:night` + skill gap analysis | Night reflect evaluates pending skill needs, searches ClawHub → skills.sh cascade, installs up to 2 skills/night (max 20 total). Adapted skills get `priority: 3` cap. Failed/unused skills archived to `.archived/` |
 | Sub-skill trigger | Dispatched by skill-router based on intent category |
 | Photo sharing in chat | Load photo-sharing.md, use `gallery-send.js` to search and send |

@@ -153,13 +153,29 @@ export function buildCompetitorContext(
  * This allows persona.yaml to use a human-readable display name while still
  * providing the correct sec_user_id for the web API.
  */
-export function resolveCompetitorAccounts(ops: OpsConfig): { xhs: string[]; douyin: string[] } {
+export function resolveCompetitorAccounts(ops: OpsConfig): {
+  xhs: string[];
+  xhsUserIds: Map<string, string>;   // user_id → display_name (precise fetch via user-profile)
+  douyin: string[];
+} {
   const xhs = new Set(ops.competitor_accounts.xhs);
   const douyin = new Set(ops.competitor_accounts.douyin);
+  const xhsUserIds = new Map<string, string>();
 
   if (ops.competitors) {
     for (const c of ops.competitors) {
-      if (c.platform === 'xhs') xhs.add(c.name);
+      if (c.platform === 'xhs') {
+        // Priority: external_id → xhs_user_id from url → fallback to search by name
+        const xhsUserIdFromUrl = c.url?.match(
+          /xiaohongshu\.com\/user\/profile\/([a-f0-9]{24})/
+        )?.[1];
+        if (c.external_id || xhsUserIdFromUrl) {
+          const userId = c.external_id ?? xhsUserIdFromUrl ?? '';
+          xhsUserIds.set(userId, c.name);
+        } else {
+          xhs.add(c.name);  // no url — search by name
+        }
+      }
       if (c.platform === 'douyin') {
         // Priority: external_id → sec_uid in url → name
         const secUidFromUrl = c.url?.match(/douyin\.com\/user\/([A-Za-z0-9_=-]+)/)?.[1];
@@ -168,7 +184,7 @@ export function resolveCompetitorAccounts(ops: OpsConfig): { xhs: string[]; douy
     }
   }
 
-  return { xhs: [...xhs], douyin: [...douyin] };
+  return { xhs: [...xhs], douyin: [...douyin], xhsUserIds };
 }
 
 import * as os from 'os';
@@ -222,6 +238,60 @@ function fetchXhsAccount(account: string): CompetitorUpdate {
     };
   } catch {
     return { account, platform: 'xhs', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
+  }
+}
+
+function fetchXhsAccountByUserId(userId: string, displayName: string): CompetitorUpdate {
+  try {
+    const xhsDir = resolveXhsSkillsDir();
+    const xhsCli = path.join(xhsDir, 'scripts', 'cli.py');
+    const raw = execFileSync('uv', [
+      'run', '--directory', xhsDir, 'python', xhsCli,
+      'user-profile', '--user-id', userId, '--xsec-token', '',
+    ], { timeout: 30_000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+
+    const parsed = JSON.parse(raw.trim()) as {
+      basicInfo?: { nickname?: string; redId?: string; desc?: string };
+      interactions?: Array<{ type?: string; name?: string; count?: number }>;
+      feeds?: Array<{
+        displayTitle?: string;
+        interactInfo?: { likedCount?: string };
+        createdAt?: string;
+      }>;
+    };
+
+    const results = parsed.feeds ?? [];
+    if (results.length === 0) {
+      return {
+        account: displayName, platform: 'xhs', latest_post: null,
+        days_since_last_post: NO_POSTS_FOUND_DAYS,
+        fetched_at: wallNow().toISOString(),
+      };
+    }
+
+    const latest = results[0];
+    const postedAt = latest.createdAt ? new Date(latest.createdAt) : now();
+    const daysSince = Math.floor(
+      (now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const likes = parseInt(latest.interactInfo?.likedCount ?? '0', 10) || 0;
+
+    return {
+      account: displayName,
+      platform: 'xhs',
+      latest_post: {
+        time: postedAt.toISOString(),
+        content_type: '图文',
+        topic: latest.displayTitle ?? '未知',
+        engagement: likes,
+        summary: latest.displayTitle ?? '',
+      },
+      days_since_last_post: daysSince,
+      fetched_at: wallNow().toISOString(),
+    };
+  } catch {
+    // Precise fetch failed — fallback to search by name
+    return fetchXhsAccount(displayName);
   }
 }
 
@@ -373,7 +443,16 @@ main();
 
 export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
   const accounts = resolveCompetitorAccounts(ops);
-  const xhsUpdates = accounts.xhs.map(fetchXhsAccount);
+
+  // XHS accounts with url — precise fetch by user_id
+  const xhsByIdUpdates = [...accounts.xhsUserIds.entries()].map(
+    ([userId, displayName]) => fetchXhsAccountByUserId(userId, displayName)
+  );
+
+  // XHS accounts without url — search by name
+  const xhsSearchUpdates = accounts.xhs.map(fetchXhsAccount);
+
+  const xhsUpdates = [...xhsByIdUpdates, ...xhsSearchUpdates];
 
   // Build sec_uid → display name map for Douyin accounts
   const douyinDisplayNames = new Map<string, string>();

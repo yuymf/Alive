@@ -19,9 +19,9 @@ OpenClaw cron 触发入口：
 
 | 触发器 | 脚本 | 说明 |
 |--------|------|------|
-| `cron:morning` | `morning-plan.js` | 晨规划 |
-| `cron:tick` | `heartbeat-tick.js` | 常规心跳 |
-| `cron:night` | `night-reflect.js` | 睡前反思 |
+| `cron:morning` | `scripts/lifecycle/morning-plan.js` | 晨规划 |
+| `cron:tick` | `scripts/lifecycle/heartbeat-tick.js` | 常规心跳 |
+| `cron:night` | `scripts/lifecycle/night-reflect.js` | 睡前反思 |
 
 `heartbeat-tick.js` 是统一入口，内部根据时间判断心跳类型。
 

@@ -30,6 +30,8 @@ import { RedditProvider } from '../scripts/adapters/providers/reddit-provider';
 import { DailyHotApiProvider } from '../scripts/adapters/providers/dailyhot-provider';
 import { WeiboProvider } from '../scripts/adapters/providers/weibo-provider';
 import { ZhihuProvider } from '../scripts/adapters/providers/zhihu-provider';
+import { XhsProvider } from '../scripts/adapters/providers/xhs-provider';
+import { DouyinProvider } from '../scripts/adapters/providers/douyin-provider';
 import { getContentSourcesConfig } from '../scripts/persona/persona-loader';
 import { regularTick } from '../scripts/lifecycle/heartbeat-tick';
 import { runMorningPlan } from '../scripts/lifecycle/morning-plan';
@@ -461,6 +463,8 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
       registry.register(new DailyHotApiProvider());
       registry.register(new WeiboProvider());
       registry.register(new ZhihuProvider());
+      registry.register(new XhsProvider());
+      registry.register(new DouyinProvider());
       skillConfig = createContentBrowseConfig({ contentSources, registry }) as unknown as Record<string, unknown>;
     } else if (skillName === 'instagram') {
       skillConfig = createInstagramConfig() as unknown as Record<string, unknown>;

@@ -315,10 +315,9 @@ function preflightCheck({ opsEnabled = false } = {}) {
 }
 
 // External ClawHub skills required by ops scripts
+// (daily-hot-news & douyin-hot-trend removed — trend-analyzer now calls DailyHot API directly)
 const REQUIRED_CLAWHUB_SKILLS = [
-  'daily-hot-news',      // trend-analyzer: 微博/知乎/B站热榜
-  'douyin-hot-trend',    // trend-analyzer: 抖音热搜
-  'yt-dlp-downloader',   // competitor-tracker, performance-tracker: 抖音视频信息
+  'yt-dlp-downloader',   // competitor-fetcher, competitor-tracker, viral-analyzer, performance-tracker: 抖音视频信息
   'tiktok-growth',       // topic-generator: 短视频 hook 创意
 ];
 

@@ -35,6 +35,18 @@ export function matchesTaxonomy(identityMode: IdentityMode, label: string): bool
 export const ALL_IDENTITY_MODES: IdentityMode[] = Object.keys(OPS_IDENTITY_TAXONOMY) as IdentityMode[];
 
 /**
+ * Topic keyword table for candidate track-overlap scoring.
+ * Maps identity mode keys to topic terms that indicate content relevance.
+ * Pre-computed lowercase version is generated at module load by candidate-scorer.
+ */
+export const IDENTITY_TOPIC_KEYWORDS: Record<string, readonly string[]> = {
+  singer:  ['音乐', '唱歌', '歌曲', 'vocal', '翻唱', '原创', 'mv', '歌手', '单曲'],
+  racer:   ['赛车', '漂移', '赛道', 'motorsport', 'gt', '超跑', '驾驶', '改装'],
+  esports: ['电竞', '游戏', '直播', '战队', '解说', 'fps', 'moba', '比赛'],
+  daily:   ['日常', 'vlog', '生活', '穿搭', '美食', '旅行', '打卡', '探店'],
+};
+
+/**
  * Given a competitor group/tag, find which identity mode it maps to.
  * Returns undefined if no match.
  */

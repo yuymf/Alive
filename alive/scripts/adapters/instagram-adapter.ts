@@ -54,6 +54,12 @@ import {
   isXhsAvailable,
 } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 
+// Douyin bridge
+import {
+  searchDouyinVideos,
+  checkDouyinLogin,
+} from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
+
 // Alive infra
 import * as fs from 'fs';
 import * as path from 'path';
@@ -596,6 +602,26 @@ export function createContentBrowseConfig(options?: {
         } catch { /* non-critical */ }
       }
 
+      // Douyin search (built-in)
+      try {
+        const douyinLogin = checkDouyinLogin();
+        if (douyinLogin.success && douyinLogin.logged_in) {
+          const douyinResult = searchDouyinVideos(keyword, 10);
+          if (douyinResult.success && douyinResult.videos) {
+            for (const video of douyinResult.videos.slice(0, 10)) {
+              items.push({
+                id: `douyin_${video.aweme_id}`,
+                title: video.desc,
+                likes: video.digg_count,
+                user: video.author,
+                source: 'douyin',
+                url: `https://www.douyin.com/video/${video.aweme_id}`,
+              });
+            }
+          }
+        }
+      } catch { /* non-critical */ }
+
       // Registry search (multi-platform bridge)
       if (registry) {
         try {
@@ -642,7 +668,7 @@ export function createContentBrowseConfig(options?: {
      * Source platforms summary (for LLM prompt injection)
      */
     get sourcePlatforms(): string[] {
-      const platforms = ['xhs', 'instagram'];
+      const platforms = ['xhs', 'douyin', 'instagram'];
       if (registry) {
         for (const p of registry.getProviders(platformFilter)) {
           if (!platforms.includes(p.meta.name)) {

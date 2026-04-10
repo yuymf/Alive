@@ -38,7 +38,7 @@ vi.mock('../scripts/utils/file-utils', () => ({
 }));
 
 vi.mock('../scripts/ops/competitor-tracker', () => ({
-  resolveCompetitorAccounts: vi.fn(() => ({ xhs: ['@testuser'], douyin: ['testdouyin'] })),
+  resolveCompetitorAccounts: vi.fn(() => ({ xhs: ['@testuser'], xhsUserIds: new Map(), douyin: ['testdouyin'] })),
 }));
 
 vi.mock('../scripts/ops/competitor-fetcher', () => ({

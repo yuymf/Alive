@@ -5,6 +5,8 @@
  */
 
 import type { CandidateAccount, CandidateAccountsStore } from './discovery-engine';
+import { IDENTITY_TOPIC_KEYWORDS } from './ops-taxonomy';
+import type { CandidateStatus } from '../utils/types';
 
 export interface ScoredCandidate extends CandidateAccount {
   score_breakdown: {
@@ -15,14 +17,10 @@ export interface ScoredCandidate extends CandidateAccount {
   };
 }
 
-// ─── Identity keyword table ────────────────────────────────────────────────────
-
-const IDENTITY_KEYWORDS: Record<string, string[]> = {
-  singer:  ['音乐', '唱歌', '歌曲', 'vocal', '翻唱', '原创', 'mv', '歌手', '单曲'],
-  racer:   ['赛车', '漂移', '赛道', 'motorsport', 'gt', '超跑', '驾驶', '改装'],
-  esports: ['电竞', '游戏', '直播', '战队', '解说', 'fps', 'moba', '比赛'],
-  daily:   ['日常', 'vlog', '生活', '穿搭', '美食', '旅行', '打卡', '探店'],
-};
+// Pre-computed lowercase keyword table for hot-path matching
+const IDENTITY_KEYWORDS_LOWER: Record<string, string[]> = Object.fromEntries(
+  Object.entries(IDENTITY_TOPIC_KEYWORDS).map(([k, v]) => [k, v.map(kw => kw.toLowerCase())]),
+);
 
 // ─── Weights ───────────────────────────────────────────────────────────────────
 
@@ -41,8 +39,8 @@ function calcTrackOverlap(topics: string[], identityKeys: string[]): number {
   for (const topic of topics) {
     const lowerTopic = topic.toLowerCase();
     for (const key of identityKeys) {
-      const keywords = IDENTITY_KEYWORDS[key] ?? [];
-      const matched = keywords.some(kw => lowerTopic.includes(kw.toLowerCase()));
+      const keywords = IDENTITY_KEYWORDS_LOWER[key] ?? [];
+      const matched = keywords.some(kw => lowerTopic.includes(kw));
       if (matched) hitKeys.add(key);
     }
   }
@@ -64,12 +62,10 @@ function calcFrequency(appearanceCount: number): number {
 
 /**
  * Score a single candidate account (pure function, safe to unit-test directly).
- * peerCandidates is reserved for future percentile-based scoring; currently unused.
  */
 export function scoreCandidateAccount(
   candidate: CandidateAccount,
   identityKeys: string[],
-  _peerCandidates: CandidateAccount[],
 ): ScoredCandidate {
   const track_overlap   = calcTrackOverlap(candidate.topics, identityKeys);
   const burst_intensity = calcBurstIntensity(candidate);
@@ -92,13 +88,13 @@ export function scoreCandidateAccount(
 export function rankCandidates(
   store: CandidateAccountsStore,
   identityKeys: string[],
-  statusFilter?: 'pending' | 'approved' | 'dismissed',
+  statusFilter?: CandidateStatus,
 ): ScoredCandidate[] {
   const filtered = statusFilter
     ? store.candidates.filter(c => c.status === statusFilter)
     : store.candidates;
 
   return filtered
-    .map(c => scoreCandidateAccount(c, identityKeys, filtered))
+    .map(c => scoreCandidateAccount(c, identityKeys))
     .sort((a, b) => b.score_breakdown.composite - a.score_breakdown.composite);
 }

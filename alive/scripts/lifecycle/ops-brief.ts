@@ -16,6 +16,7 @@ import { generateTopics } from '../ops/topic-generator';
 import { sendDailyBrief } from '../ops/brief-generator';
 import { loadQueue, cleanupOldItems } from '../ops/review-queue';
 import { generatePersonaReport } from '../ops/persona-advisor';
+import { getIdentityKeys } from '../utils/types';
 
 async function main(): Promise<void> {
   // Load environment variables from openclaw.json (needed for isolated cron sessions)
@@ -38,8 +39,7 @@ async function main(): Promise<void> {
 
   const llm = createRealLLMClient('ops-brief');
   const identities = buildPersonaIdentities(persona);
-  // Extract identity keys (e.g. ['singer','racer']) from persona.identities for scorer
-  const identityKeys = Object.keys(persona.identities ?? {});
+  const identityKeys = getIdentityKeys(persona);
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
   console.log(`[${wallNow().toISOString()}] ops-brief: starting for ${persona.meta.id}`);
@@ -74,7 +74,8 @@ async function main(): Promise<void> {
   const sent = await sendDailyBrief(trends, competitors, pending, {
     personaReport,
     fullQueueItems: pending,
-  }, deliveryMode, identityKeys);
+    identityKeys,
+  }, deliveryMode);
 
   console.log(`[${wallNow().toISOString()}] ops-brief: brief sent=${sent} (mode=${deliveryMode}), ${pending.length} pending topics`);
 }

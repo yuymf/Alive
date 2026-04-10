@@ -17,7 +17,7 @@ import YAML from 'yaml';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import { clearPersonaCache } from '../persona/persona-loader';
-import type { CompetitorProfile, PersonaConfig } from '../utils/types';
+import type { CompetitorProfile, PersonaConfig, CandidateStatus } from '../utils/types';
 import { rankCandidates } from './candidate-scorer';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ export interface CandidateAccount {
   /** Last seen date */
   last_seen: string;
   /** Status: pending = needs human review, approved = added to competitors, dismissed */
-  status: 'pending' | 'approved' | 'dismissed';
+  status: CandidateStatus;
 }
 
 export interface CandidateAccountsStore {
@@ -224,7 +224,7 @@ export function processInspirationForAccountDiscovery(identityKeys?: string[]): 
   });
 
   const pool = loadDiscoveryPool();
-  const store = loadCandidateAccounts();
+  let store = loadCandidateAccounts();
   const timestamp = now().toISOString();
   const dateStr = timestamp.slice(0, 10);
 
@@ -272,9 +272,15 @@ export function processInspirationForAccountDiscovery(identityKeys?: string[]): 
         const approved = approveCandidate(candidate.name, candidate.platform);
         if (approved) {
           console.log(`[discovery-engine] 🌟 自动批准 @${candidate.name}（${candidate.platform}）综合分 ${candidate.score_breakdown.composite.toFixed(2)}`);
-          // Reload store since approveCandidate writes to disk
-          const updated = loadCandidateAccounts();
-          store.candidates = updated.candidates;
+          // Update in-memory store immutably — no disk reload needed
+          store = {
+            ...store,
+            candidates: store.candidates.map(c =>
+              c.name === candidate.name && c.platform === candidate.platform
+                ? { ...c, status: 'approved' as const }
+                : c,
+            ),
+          };
           autoApproved++;
         }
       }

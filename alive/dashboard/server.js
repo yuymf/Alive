@@ -1026,9 +1026,10 @@ function createServer(options = {}) {
         }
         tsxArgs.push(...extraArgs);
 
-        // Longer timeout for heavy ops commands (10 min) vs standard (2 min)
+        // Timeout for non-SSE mode: heavy ops 10 min, standard 5 min.
+        // SSE mode relies on client-disconnect cleanup instead of spawn timeout.
         const heavyCommands = new Set(['full-day', 'ops-brief', 'ops-idea', 'ops-advice', 'ops-strategy-compute', 'ops-analyze']);
-        const timeoutMs = heavyCommands.has(command) ? 600000 : 120000;
+        const timeoutMs = heavyCommands.has(command) ? 600000 : 300000;
 
         // Find tsx binary: try npx tsx, then global tsx
         const { spawn } = require('child_process');
@@ -1044,10 +1045,10 @@ function createServer(options = {}) {
             'X-Accel-Buffering': 'no',
           });
 
+          // SSE mode: no spawn timeout — client-disconnect cleanup handles termination
           const child = spawn(npxPath, ['tsx', ...tsxArgs], {
             cwd: path.join(__dirname, '..'),
             env: { ...process.env },
-            timeout: timeoutMs,
             stdio: ['ignore', 'pipe', 'pipe'],
           });
 

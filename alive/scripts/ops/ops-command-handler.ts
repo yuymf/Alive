@@ -37,6 +37,7 @@ import { handleReviewMessage } from './ops-review-handler';
 import { setActiveReviewItem } from './review-session';
 import { runHealthCheck, formatHealthReport } from './health-check';
 import { now } from '../utils/time-utils';
+import { getIdentityKeys } from '../utils/types';
 import { loadCandidateAccounts } from './discovery-engine';
 import { rankCandidates } from './candidate-scorer';
 
@@ -57,7 +58,7 @@ async function cmdBrief(): Promise<string> {
 
   const llm = createRealLLMClient('ops-brief-cmd');
   const identities = buildPersonaIdentities(persona);
-  const identityKeys = Object.keys(persona.identities ?? {});
+  const identityKeys = getIdentityKeys(persona);
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
   await cleanupOldItems();
@@ -89,9 +90,9 @@ async function cmdBrief(): Promise<string> {
     // skip
   }
 
-  const enrichment: BriefEnrichment = { personaReport, fullQueueItems: pending };
+  const enrichment: BriefEnrichment = { personaReport, fullQueueItems: pending, identityKeys };
   const date = now().toISOString().slice(0, 10);
-  return formatBriefCard(date, trends, competitors, pending, enrichment, identityKeys);
+  return formatBriefCard(date, trends, competitors, pending, enrichment);
 }
 
 // ─── Command: /trends ─────────────────────────────────────────────────────────
@@ -269,7 +270,7 @@ async function cmdCandidates(topNStr?: string): Promise<string> {
   const persona = await loadPersona();
   if (!persona.ops?.enabled) return '⚠️ ops 未启用';
 
-  const identityKeys = Object.keys(persona.identities ?? {});
+  const identityKeys = getIdentityKeys(persona);
 
   const store = loadCandidateAccounts();
   const showAll = topNStr === 'all';
@@ -291,11 +292,10 @@ async function cmdCandidates(topNStr?: string): Promise<string> {
   display.forEach((c, idx) => {
     const medal = MEDALS[idx] ?? `${idx + 1}.`;
     const { track_overlap, burst_intensity, frequency, composite } = c.score_breakdown;
-    const peak = c.peak_engagement;
     lines.push(`${medal} @${c.name}（${c.platform}）  综合分 ${composite.toFixed(2)}`);
     lines.push(`   赛道 ${track_overlap.toFixed(2)} · 爆发 ${burst_intensity.toFixed(2)} · 频率 ${frequency.toFixed(2)}`);
     if (c.topics.length > 0) {
-      lines.push(`   话题: ${c.topics.slice(0, 3).join('、')}  |  峰值互动 ${peak}  |  出现 ${c.appearance_count} 次`);
+      lines.push(`   话题: ${c.topics.slice(0, 3).join('、')}  |  峰值互动 ${c.peak_engagement}  |  出现 ${c.appearance_count} 次`);
     }
     lines.push(`   → /competitor add @${c.name} ${c.platform}`);
     lines.push('');

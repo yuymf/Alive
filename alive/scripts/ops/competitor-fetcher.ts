@@ -103,6 +103,21 @@ async function fetchXhsPosts(accountName: string): Promise<CompetitorPost[]> {
   }));
 }
 
+async function fetchXhsPostsByUserId(userId: string, displayName: string): Promise<CompetitorPost[]> {
+  const { getUserProfileNotes } = await import('../../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+  const notes = await getUserProfileNotes(userId, MAX_POSTS_PER_ACCOUNT);
+  const fetchedAt = wallNow().toISOString();
+
+  return notes.map(note => ({
+    account_name: displayName,
+    platform: 'xhs' as const,
+    post_id: note.id || `xhs_${note.title.slice(0, 20)}_${fetchedAt}`,
+    title: note.title,
+    engagement: note.likes,
+    fetched_at: fetchedAt,
+  }));
+}
+
 interface YtDlpVideo {
   id?: string;
   title?: string;
@@ -173,7 +188,7 @@ function fetchDouyinPosts(accountId: string): CompetitorPost[] {
  * Results are written to PATHS.competitorPosts.
  */
 export async function fetchCompetitorPosts(
-  accounts: { xhs: string[]; douyin: string[] },
+  accounts: { xhs: string[]; xhsUserIds: Map<string, string>; douyin: string[] },
   _profiles: readonly CompetitorProfile[],
   _basePath: string,
 ): Promise<FetchResult> {
@@ -190,12 +205,48 @@ export async function fetchCompetitorPosts(
   const failed: string[] = [];
   const now = wallNow();
 
-  // Fetch XHS accounts
+  // Fetch XHS accounts by user_id (precise fetch)
+  const xhsUserIdEntries = [...(accounts.xhsUserIds?.entries() ?? [])];
+  for (let i = 0; i < xhsUserIdEntries.length; i++) {
+    const [userId, displayName] = xhsUserIdEntries[i];
+    const key = buildAccountKey(displayName, 'xhs');
+    if (i > 0) await jitter(5000, 12000);
+    try {
+      const incoming = await fetchXhsPostsByUserId(userId, displayName);
+      const existingPosts = updatedAccounts[key] ?? [];
+      const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
+      const pruned = pruneOldPosts(merged, now);
+      updatedAccounts[key] = pruned;
+      success.push(key);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Not logged in')) {
+        console.warn(`[competitor-fetcher] XHS 未登录，跳过账号 ${key}，不影响其他平台抓取。请重新登录小红书。`);
+      } else {
+        console.warn(`[competitor-fetcher] XHS user-profile 抓取失败 ${key}: ${msg}，尝试搜索回退`);
+        // Fallback to search by name
+        try {
+          const incoming = await fetchXhsPosts(displayName);
+          const existingPosts = updatedAccounts[key] ?? [];
+          const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
+          const pruned = pruneOldPosts(merged, now);
+          updatedAccounts[key] = pruned;
+          success.push(key);
+        } catch (fallbackErr) {
+          const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          console.warn(`[competitor-fetcher] XHS 搜索回退也失败 ${key}: ${fbMsg}`);
+          failed.push(key);
+        }
+      }
+    }
+  }
+
+  // Fetch XHS accounts by name (search)
   for (let i = 0; i < accounts.xhs.length; i++) {
     const accountName = accounts.xhs[i];
     const key = buildAccountKey(accountName, 'xhs');
-    // 账号间节流：第一个账号不等，后续账号随机等待 2~6s
-    if (i > 0) await jitter(2000, 6000);
+    // 账号间节流：第一个账号不等，后续账号随机等待 5~12s
+    if (i > 0) await jitter(5000, 12000);
     try {
       const incoming = await fetchXhsPosts(accountName);
       const existingPosts = updatedAccounts[key] ?? [];

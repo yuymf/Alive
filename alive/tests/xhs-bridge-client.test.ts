@@ -15,10 +15,13 @@ function simulateExecFile(stdout: string, stderr = '', error: Error | null = nul
 }
 
 describe('xhs-bridge-client', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     vi.resetModules();
     mockExecFile.mockReset();
+    // Reset rate limiter between tests to avoid inter-test interference
+    const { resetRateLimiterForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+    resetRateLimiterForTests();
   });
 
   describe('isXhsAvailable', () => {
@@ -40,6 +43,37 @@ describe('xhs-bridge-client', () => {
       const { isXhsAvailable } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
       const result = await isXhsAvailable();
       expect(result).toBe(false);
+    });
+
+    it('should use cached login status on second call (no extra CLI invocation)', async () => {
+      simulateExecFile(JSON.stringify({ logged_in: true }));
+      const { isXhsAvailable, resetRateLimiterForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetRateLimiterForTests();
+
+      const first = await isXhsAvailable();
+      expect(first).toBe(true);
+      const callCountAfterFirst = mockExecFile.mock.calls.length;
+
+      const second = await isXhsAvailable();
+      expect(second).toBe(true);
+      // Second call should NOT trigger another CLI invocation — login status was cached
+      expect(mockExecFile.mock.calls.length).toBe(callCountAfterFirst);
+    });
+
+    it('should re-check login after cache is invalidated by reset', async () => {
+      simulateExecFile(JSON.stringify({ logged_in: true }));
+      const { isXhsAvailable, resetRateLimiterForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetRateLimiterForTests();
+
+      await isXhsAvailable();
+      const callCountAfterFirst = mockExecFile.mock.calls.length;
+
+      // Reset cache
+      resetRateLimiterForTests();
+
+      await isXhsAvailable();
+      // After reset, should trigger a fresh CLI call
+      expect(mockExecFile.mock.calls.length).toBeGreaterThan(callCountAfterFirst);
     });
   });
 
@@ -85,15 +119,30 @@ describe('xhs-bridge-client', () => {
 
   describe('getUserNotes', () => {
     it('should parse user notes from CLI response', async () => {
+      vi.useFakeTimers();
       const cliResponse = {
         notes: [
           { id: 'n1', xsecToken: 'tok1', displayTitle: '赛车日记', user: { nickname: 'miss_v' }, interactInfo: { likedCount: '1.2万' } },
           { id: 'n2', xsecToken: 'tok2', displayTitle: '今日穿搭', user: { nickname: 'miss_v' }, interactInfo: { likedCount: '800' } },
         ],
       };
-      simulateExecFile(JSON.stringify(cliResponse));
-      const { getUserNotes } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
-      const notes = await getUserNotes('miss_v', 20);
+      // Mock: 1st call = check-login (success), 2nd call = get-user-notes (success)
+      mockExecFile
+        .mockImplementationOnce((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+          cb(null, JSON.stringify({ logged_in: true }), '');
+        })
+        .mockImplementationOnce((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+          cb(null, JSON.stringify(cliResponse), '');
+        });
+
+      const { getUserNotes, resetRateLimiterForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetRateLimiterForTests();
+
+      const promise = getUserNotes('miss_v', 20);
+      // Advance timers to skip jitter + rate limiter waits
+      await vi.advanceTimersByTimeAsync(20_000);
+      const notes = await promise;
+
       expect(notes).toHaveLength(2);
       expect(notes[0].id).toBe('n1');
       expect(notes[0].title).toBe('赛车日记');
@@ -105,20 +154,32 @@ describe('xhs-bridge-client', () => {
         expect.any(Object),
         expect.any(Function),
       );
+      vi.useRealTimers();
     });
 
     it('should fall back to search on CLI error', async () => {
-      // First call (get-user-notes) fails, second call (search fallback) returns empty feeds
+      vi.useFakeTimers();
+      // Mock: 1st = check-login (success), 2nd = get-user-notes (fail), 3rd = search-feeds (success)
       mockExecFile
+        .mockImplementationOnce((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+          cb(null, JSON.stringify({ logged_in: true }), '');
+        })
         .mockImplementationOnce((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
           cb(new Error('exit code 1'), '', 'command not found');
         })
         .mockImplementationOnce((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
           cb(null, JSON.stringify({ feeds: [], count: 0 }), '');
         });
-      const { getUserNotes } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
-      const notes = await getUserNotes('miss_v');
+
+      const { getUserNotes, resetRateLimiterForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetRateLimiterForTests();
+
+      const promise = getUserNotes('miss_v');
+      await vi.advanceTimersByTimeAsync(30_000);
+      const notes = await promise;
+
       expect(notes).toEqual([]);
+      vi.useRealTimers();
     });
   });
 
@@ -156,6 +217,28 @@ describe('xhs-bridge-client', () => {
         expect.any(Object),
         expect.any(Function),
       );
+    });
+  });
+
+  describe('resetRateLimiterForTests', () => {
+    it('should be exported and callable without errors', async () => {
+      const { resetRateLimiterForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      expect(() => resetRateLimiterForTests()).not.toThrow();
+    });
+
+    it('should clear login cache so isXhsAvailable re-checks', async () => {
+      // First: login succeeds
+      simulateExecFile(JSON.stringify({ logged_in: true }));
+      const { isXhsAvailable, resetRateLimiterForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetRateLimiterForTests();
+      expect(await isXhsAvailable()).toBe(true);
+
+      // Reset and switch mock to fail
+      resetRateLimiterForTests();
+      simulateExecFile('', '', new Error('not logged in'));
+
+      // Now should return false (cache was cleared)
+      expect(await isXhsAvailable()).toBe(false);
     });
   });
 });

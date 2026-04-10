@@ -128,6 +128,7 @@ describe('resolveCompetitorAccounts', () => {
     expect(result.xhs).toContain('老账号');
     expect(result.xhs).toContain('新账号');
     expect(result.douyin).toContain('抖音号');
+    expect(result.xhsUserIds.size).toBe(0);
   });
 
   it('deduplicates accounts', () => {
@@ -145,6 +146,89 @@ describe('resolveCompetitorAccounts', () => {
     };
     const result = resolveCompetitorAccounts(ops);
     expect(result.xhs).toEqual(['same']);
+  });
+
+  it('extracts xhs user_id from url for precise fetch', () => {
+    const ops: OpsConfig = {
+      enabled: true,
+      brief_time: '08:30',
+      competitor_accounts: { xhs: [], douyin: [] },
+      competitors: [
+        {
+          name: '碳酸饮料拜拜',
+          platform: 'xhs',
+          url: 'https://www.xiaohongshu.com/user/profile/5bc9d2fa636c170001715db8',
+          tag: '低调轻奢',
+          tag_desc: 'd',
+          reference_type: 'primary',
+        },
+        {
+          name: '谷爱凌',
+          platform: 'xhs',
+          url: 'https://www.xiaohongshu.com/user/profile/61a81710000000001000a823',
+          tag: '赛道飒爽',
+          tag_desc: 'd',
+          reference_type: 'primary',
+        },
+      ],
+      trend_score_threshold: 1.8,
+      topic_count: 3,
+      topic_filter_prompt: '',
+      platforms: {},
+    };
+    const result = resolveCompetitorAccounts(ops);
+    // Accounts with url should NOT be in xhs search list
+    expect(result.xhs).toEqual([]);
+    // They should be in xhsUserIds map
+    expect(result.xhsUserIds.size).toBe(2);
+    expect(result.xhsUserIds.get('5bc9d2fa636c170001715db8')).toBe('碳酸饮料拜拜');
+    expect(result.xhsUserIds.get('61a81710000000001000a823')).toBe('谷爱凌');
+  });
+
+  it('uses external_id over url for xhs', () => {
+    const ops: OpsConfig = {
+      enabled: true,
+      brief_time: '08:30',
+      competitor_accounts: { xhs: [], douyin: [] },
+      competitors: [
+        {
+          name: '测试账号',
+          platform: 'xhs',
+          external_id: 'custom_external_id',
+          url: 'https://www.xiaohongshu.com/user/profile/5bc9d2fa636c170001715db8',
+          tag: 't',
+          tag_desc: 'd',
+          reference_type: 'primary',
+        },
+      ],
+      trend_score_threshold: 1.8,
+      topic_count: 3,
+      topic_filter_prompt: '',
+      platforms: {},
+    };
+    const result = resolveCompetitorAccounts(ops);
+    expect(result.xhsUserIds.get('custom_external_id')).toBe('测试账号');
+    expect(result.xhsUserIds.has('5bc9d2fa636c170001715db8')).toBe(false);
+  });
+
+  it('falls back to name search for xhs without url', () => {
+    const ops: OpsConfig = {
+      enabled: true,
+      brief_time: '08:30',
+      competitor_accounts: { xhs: [], douyin: [] },
+      competitors: [
+        { name: 'annie（文徐允）', platform: 'xhs', tag: '低调轻奢', tag_desc: 'd', reference_type: 'primary' },
+        { name: '张元英', platform: 'xhs', tag: '低调轻奢', tag_desc: 'd', reference_type: 'primary' },
+      ],
+      trend_score_threshold: 1.8,
+      topic_count: 3,
+      topic_filter_prompt: '',
+      platforms: {},
+    };
+    const result = resolveCompetitorAccounts(ops);
+    expect(result.xhs).toContain('annie（文徐允）');
+    expect(result.xhs).toContain('张元英');
+    expect(result.xhsUserIds.size).toBe(0);
   });
 
   it('works without competitors field', () => {

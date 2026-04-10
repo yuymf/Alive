@@ -962,6 +962,13 @@ export function isSubSkillEnabled(persona: PersonaConfig, skillName: string): bo
 export type QueueItemStatus = 'pending' | 'approved' | 'published' | 'discarded' | 'editing' | 'expired';
 /** Identity mode — persona-agnostic string, configured per persona in ops.content_templates[].identity_mode */
 export type IdentityMode = string;
+/** Status of a discovered candidate account */
+export type CandidateStatus = 'pending' | 'approved' | 'dismissed';
+
+/** Extract identity mode keys from a persona config. */
+export function getIdentityKeys(persona: PersonaConfig): string[] {
+  return Object.keys(persona.identities ?? {});
+}
 
 export interface QueueItemContent {
   xhs: {

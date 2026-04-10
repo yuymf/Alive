@@ -52,6 +52,8 @@ import { RedditProvider } from '../adapters/providers/reddit-provider';
 import { DailyHotApiProvider } from '../adapters/providers/dailyhot-provider';
 import { WeiboProvider } from '../adapters/providers/weibo-provider';
 import { ZhihuProvider } from '../adapters/providers/zhihu-provider';
+import { XhsProvider } from '../adapters/providers/xhs-provider';
+import { DouyinProvider } from '../adapters/providers/douyin-provider';
 import { exaWebSearch } from '../utils/exa-client';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
 import { processInspirationForDiscovery, processInspirationForAccountDiscovery } from '../ops/discovery-engine';
@@ -245,6 +247,8 @@ function resolveSkillConfig(skillName: string, actionContext?: string, persona?:
     registry.register(new DailyHotApiProvider());
     registry.register(new WeiboProvider());
     registry.register(new ZhihuProvider());
+    registry.register(new XhsProvider());
+    registry.register(new DouyinProvider());
     config = createContentBrowseConfig({
       contentSources,
       registry,

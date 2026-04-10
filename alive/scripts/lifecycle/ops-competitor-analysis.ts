@@ -114,7 +114,7 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
 
   console.log(
     `[${wallNow().toISOString()}] ops-competitor-analysis: starting for ${persona.meta.id} ` +
-    `(${accounts.xhs.length} xhs, ${accounts.douyin.length} douyin accounts)`,
+    `(${accounts.xhs.length} xhs-search, ${accounts.xhsUserIds.size} xhs-precise, ${accounts.douyin.length} douyin accounts)`,
   );
 
   // ── Layer 1: Fetch posts ──────────────────────────────────────────────────

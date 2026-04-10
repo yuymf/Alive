@@ -24,8 +24,8 @@ const sampleQueueItem: QueueItem = {
   topic: '测试选题',
   trend_hook: '热度钩子',
   identity_mode: 'esports',
-  created_at: '2026-04-02T08:00:00Z',
-  updated_at: '2026-04-02T08:00:00Z',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
   content: {
     xhs: {
       title: '小红书标题',
