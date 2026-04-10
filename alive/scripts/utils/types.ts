@@ -1148,6 +1148,7 @@ export interface AccountAnalysis {
   readonly engagement_pattern: EngagementPatternAnalysis;
   readonly key_insight: string;
   readonly auto_cluster?: boolean;  // true = 由帖子标题自动归纳
+  readonly content_driven_factor?: number; // 0=账号驱动, 1=内容驱动 (CV/2, capped at 1)
 }
 
 export interface CompetitorAnalysisStore {
@@ -1606,6 +1607,7 @@ export interface PostContent {
   collected_count: number;
   share_count: number;
   comment_count?: number;
+  transcript?: string;  // 视频口播转录文字稿（抖音专属，best-effort）
 }
 
 export interface HookPattern {
@@ -1740,6 +1742,13 @@ export type ViralPlatform = 'douyin' | 'xhs';
 /** Source categories for viral content items. */
 export type ViralSourceType = 'competitor' | 'trending_feed' | 'search';
 
+/** Audience response analysis extracted from XHS comment text. */
+export interface AudienceResponse {
+  top_keywords: string[];
+  emotional_triggers: string[];
+  desire_signals: string[];
+}
+
 /** A dissected viral content entry stored in the knowledge base. */
 export interface ViralEntry {
   id: string;                           // hash(platform + source_id)
@@ -1766,6 +1775,7 @@ export interface ViralEntry {
     visual_style: string;
     cta_type: string;
     summary: string;
+    audience_response?: AudienceResponse; // XHS 评论受众分析（仅有评论文本时）
   };
 
   dissection_status: 'done' | 'failed';
@@ -1789,6 +1799,7 @@ export interface UniversalFormula {
   injected_to_templates: boolean;
   created_at: string;
   last_seen_at: string;
+  trigger_words?: string[];            // 高频情绪触发词（来自爆款标题分析）
 }
 
 /** A single item waiting to be dissected by the LLM. */
@@ -1804,13 +1815,15 @@ export interface DissectQueueItem {
   shares: number;
   queued_at: string;
   identity_mode?: string;
+  comment_texts?: string[];  // Top comments (XHS only) for audience response analysis
 }
 
 // === Tag Engine Types ===
 
 export type TagSource =
   | { type: 'competitor'; account: string; platform: string }
-  | { type: 'keyword_search'; keyword: string; platform: string };
+  | { type: 'keyword_search'; keyword: string; platform: string }
+  | { type: 'viral_kb'; entry_id: string; platform: string };
 
 export interface TagEntry {
   tag: string;

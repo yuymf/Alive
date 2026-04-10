@@ -6,7 +6,7 @@ import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { searchXhsNotes } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 import { searchDouyinVideos } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 import type { TagEntry, TagVocabulary, TagSource } from '../utils/types';
-import type { OpsConfig } from '../utils/types';
+import type { OpsConfig, ViralEntry } from '../utils/types';
 import { now } from '../utils/time-utils';
 
 const XHS_HIT_THRESHOLD = 1000;
@@ -406,6 +406,94 @@ export async function reviveDormantSample(
   }
 
   return { kept, revived };
+}
+
+// ─── Viral KB → Tag Engine feedback ───────────────────────────────────────────
+
+/**
+ * Boost tag scores from a newly inserted viral KB entry.
+ * Extracts hashtags from the entry's title/description + implicit tag from content_type,
+ * then updates the tag vocabulary accordingly.
+ *
+ * - Active tags: score += 25, hit_count++, source appended
+ * - Dormant tags: moved to active with score = 25, hit_count++
+ * - New tags: created with score = 25 via buildInitialEntry()
+ *
+ * No-op if vocabulary file does not exist (cold-start safe).
+ * Wrapped in try/catch at the call site — failures do not affect main flow.
+ */
+export function boostTagsFromViralEntry(entry: ViralEntry): void {
+  const existing = readJSON<TagVocabulary | null>(PATHS.tagVocabulary, null);
+  if (!existing) return; // cold start — no vocabulary yet
+
+  const tags = extractHashtags(entry.title, entry.description);
+
+  // Add implicit tag from content_type if available
+  if (entry.dissection?.content_type) {
+    const implicitTag = `#${entry.dissection.content_type}`;
+    if (!tags.includes(implicitTag)) {
+      tags.push(implicitTag);
+    }
+  }
+
+  if (tags.length === 0) return;
+
+  const timestamp = now().toISOString();
+  const source: TagSource = {
+    type: 'viral_kb',
+    entry_id: entry.id,
+    platform: entry.platform,
+  };
+  const entryPlatform: 'xhs' | 'douyin' =
+    entry.platform === 'douyin' ? 'douyin' : 'xhs';
+
+  const activeMap = new Map(existing.active.map(e => [e.tag, e]));
+  const dormantMap = new Map(existing.dormant.map(e => [e.tag, e]));
+  const BOOST_SCORE = 25;
+
+  for (const tag of tags) {
+    const activeEntry = activeMap.get(tag);
+    if (activeEntry) {
+      // Boost existing active tag
+      const newScore = activeEntry.score + BOOST_SCORE;
+      activeMap.set(tag, {
+        ...activeEntry,
+        score: newScore,
+        peak_score: Math.max(activeEntry.peak_score, newScore),
+        hit_count: activeEntry.hit_count + 1,
+        last_hit: timestamp,
+        sources: [...activeEntry.sources, source],
+      });
+      continue;
+    }
+
+    const dormantEntry = dormantMap.get(tag);
+    if (dormantEntry) {
+      // Revive dormant tag → move to active
+      dormantMap.delete(tag);
+      activeMap.set(tag, {
+        ...dormantEntry,
+        score: BOOST_SCORE,
+        peak_score: Math.max(dormantEntry.peak_score, BOOST_SCORE),
+        hit_count: dormantEntry.hit_count + 1,
+        last_hit: timestamp,
+        sources: [...dormantEntry.sources, source],
+      });
+      continue;
+    }
+
+    // Brand new tag
+    activeMap.set(tag, buildInitialEntry(tag, entryPlatform, BOOST_SCORE, source, timestamp));
+  }
+
+  const updatedVocab: TagVocabulary = {
+    ...existing,
+    last_updated: timestamp,
+    active: [...activeMap.values()],
+    dormant: [...dormantMap.values()],
+  };
+
+  writeJSON(PATHS.tagVocabulary, updatedVocab);
 }
 
 // ─── Daily maintenance entry point ───────────────────────────────────────────

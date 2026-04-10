@@ -7,6 +7,8 @@
  * Pure functions for URL parsing + prompt building; I/O functions for fetching + persistence.
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import {
@@ -83,6 +85,91 @@ export function extractDouyinVideoId(url: string): string | null {
   return match ? match[1] : null;
 }
 
+const VTT_MAX_CHARS = 3000;
+
+/**
+ * Strip VTT/SRT timestamps and headers, returning clean spoken text.
+ * Caps output at 3000 characters; appends truncation indicator if cut.
+ */
+export function stripVttTimestamps(raw: string): string {
+  const lines = raw.split('\n');
+  const kept: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Skip WEBVTT header
+    if (trimmed === 'WEBVTT' || trimmed.startsWith('WEBVTT ')) continue;
+    // Skip timestamp lines: 00:00:00.000 --> 00:00:01.000
+    if (/^\d{2}:\d{2}:\d{2}[.,]\d{3}\s+-->\s+\d{2}:\d{2}:\d{2}[.,]\d{3}/.test(trimmed)) continue;
+    // Skip pure numeric cue identifiers (SRT style)
+    if (/^\d+$/.test(trimmed)) continue;
+    // Skip empty lines
+    if (trimmed === '') continue;
+    kept.push(trimmed);
+  }
+
+  const joined = kept.join(' ');
+  if (joined.length <= VTT_MAX_CHARS) return joined;
+  return joined.slice(0, VTT_MAX_CHARS) + '…（已截断）';
+}
+
+/**
+ * Fetch Douyin video transcript via yt-dlp subtitle download (no video download).
+ * Returns clean spoken text or null on any failure.
+ */
+export async function fetchDouyinTranscript(url: string): Promise<string | null> {
+  const tmpDir = '/tmp';
+  // Use a unique prefix based on timestamp so parallel calls don't collide
+  const prefix = `alive-transcript-${Date.now()}`;
+  const outputTemplate = path.join(tmpDir, `${prefix}.%(id)s.%(ext)s`);
+
+  let spawnedFiles: string[] = [];
+
+  try {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+
+    await execFileAsync(
+      'yt-dlp',
+      [
+        '--write-auto-subs',
+        '--sub-langs', 'zh-Hans,zh,en',
+        '--skip-download',
+        '--no-warnings',
+        '-o', outputTemplate,
+        url,
+      ],
+      { timeout: 30_000 },
+    );
+
+    // Discover generated subtitle files matching the prefix
+    const allTmp = fs.readdirSync(tmpDir);
+    spawnedFiles = allTmp
+      .filter(f => f.startsWith(prefix))
+      .map(f => path.join(tmpDir, f));
+
+    // Priority order: zh-Hans → zh → en
+    const langPriority = ['zh-Hans', 'zh', 'en'];
+    for (const lang of langPriority) {
+      const candidate = spawnedFiles.find(f => f.includes(`.${lang}.vtt`));
+      if (candidate) {
+        const raw = fs.readFileSync(candidate, 'utf8');
+        return stripVttTimestamps(raw);
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  } finally {
+    // Clean up temp files regardless of success/failure
+    for (const f of spawnedFiles) {
+      try { fs.unlinkSync(f); } catch { /* ignore */ }
+    }
+  }
+}
+
 /**
  * Build LLM prompt for viral post analysis.
  */
@@ -98,6 +185,10 @@ export function buildAnalysisPrompt(
   const commentSection = post.comments.length > 0
     ? `评论区精选（${post.comments.length}条）：\n${post.comments.slice(0, 20).map(c => `- ${c}`).join('\n')}`
     : '评论区：暂无评论数据';
+
+  const transcriptSection = post.transcript
+    ? `\n【视频转录（口播文字稿）】\n${post.transcript}\n`
+    : '';
 
   // C v2: engagement signal block (only when signals provided)
   const signalBlock = signals ? `
@@ -127,11 +218,11 @@ export function buildAnalysisPrompt(
 【标题】${post.title}
 【正文】${post.description.slice(0, 2000)}
 【互动数据】点赞${post.likes} | 收藏${post.collected_count} | 分享${post.share_count}
-${commentSection}
+${commentSection}${transcriptSection}
 ${signalBlock}
 分析人设背景：${personaIdentities}
 
-请从以下维度分析，返回 JSON：
+请从以下维度分析，返回 JSON${post.transcript ? '（若有转录内容，请基于原文分析 hook_patterns 中的 example 和 content_structure）' : ''}：
 
 1. hook_patterns: 钩子句式（2-4个），每个包含 formula（公式）、example（原文示例）、effectiveness_score（0-10）
 2. core_selling_points: 核心卖点（3-5条）
@@ -330,7 +421,7 @@ export async function fetchDouyinPost(url: string): Promise<PostContent> {
       comment_count?: number;
       repost_count?: number;
     };
-    return {
+    const post: PostContent = {
       platform: 'douyin',
       url,
       title: info.title ?? '未知标题',
@@ -341,6 +432,12 @@ export async function fetchDouyinPost(url: string): Promise<PostContent> {
       collected_count: 0,
       share_count: info.repost_count ?? 0,
     };
+
+    const transcript = await fetchDouyinTranscript(url);
+    if (transcript) {
+      return { ...post, transcript };
+    }
+    return post;
   } catch {
     return {
       platform: 'douyin',

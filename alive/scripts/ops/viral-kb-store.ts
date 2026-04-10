@@ -20,6 +20,41 @@ import { ViralEntry, UniversalFormula, DissectQueueItem, ViralPlatform } from '.
 
 // ─── Path helpers ─────────────────────────────────────────────────────────────
 
+// ─── Emotion lexicon for trigger word extraction ─────────────────────────────
+
+export const EMOTION_LEXICON: readonly string[] = [
+  '震惊', '感动', '一定要', '千万别', '没想到', '居然', '太绝了', '泪目',
+  '笑死', '绝绝子', '离谱', '破防', '真香', '后悔', '心疼', '爆哭',
+  '上头', '救命', '无语', '崩溃', '炸裂', '封神', '绝了', '太牛了',
+] as const;
+
+/**
+ * Scan titles for emotion lexicon words and return those appearing ≥ minFreq times.
+ * Returns words sorted by frequency descending.
+ * Pure function — no side effects.
+ */
+export function extractTriggerWords(
+  titles: readonly string[],
+  minFreq = 2,
+): string[] {
+  const freqMap = new Map<string, number>();
+
+  for (const title of titles) {
+    for (const word of EMOTION_LEXICON) {
+      if (title.includes(word)) {
+        freqMap.set(word, (freqMap.get(word) ?? 0) + 1);
+      }
+    }
+  }
+
+  return [...freqMap.entries()]
+    .filter(([, count]) => count >= minFreq)
+    .sort((a, b) => b[1] - a[1])
+    .map(([word]) => word);
+}
+
+// ─── Path helpers (file system) ──────────────────────────────────────────────
+
 function kbDir(basePath: string): string {
   return path.join(basePath, 'viral-kb');
 }
@@ -178,6 +213,14 @@ export function upsertEntry(basePath: string, entry: ViralEntry): void {
         ...current.slice(idx + 1),
       ];
   saveEntries(basePath, updated);
+
+  // Boost tag scores from newly inserted viral entry (feedback loop)
+  try {
+    const { boostTagsFromViralEntry } = require('./tag-engine');
+    boostTagsFromViralEntry(entry);
+  } catch {
+    // tag-engine not available or failed — silent, non-blocking
+  }
 }
 
 // ─── Formula promotion ────────────────────────────────────────────────────────
@@ -288,6 +331,15 @@ export function checkFormulaPromotion(
     last_seen_at: wallNow().toISOString(),
     source_entry_ids: updatedSourceIds,
     injected_to_templates: injectedToTemplates,
+    // Extract trigger words from source entries when promotion occurs
+    ...(shouldPromote ? (() => {
+      const allEntries = loadEntries(basePath);
+      const sourceTitles = allEntries
+        .filter(e => updatedSourceIds.includes(e.id))
+        .map(e => e.title);
+      const triggerWords = extractTriggerWords(sourceTitles, 2);
+      return triggerWords.length > 0 ? { trigger_words: triggerWords } : {};
+    })() : {}),
   };
 
   const updatedFormulas = [

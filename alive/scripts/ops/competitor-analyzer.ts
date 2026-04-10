@@ -26,6 +26,36 @@ import { identityModeForLabel, ALL_IDENTITY_MODES } from './ops-taxonomy';
 
 export const MIN_POSTS_FOR_ANALYSIS = 5;
 
+// ─── Content-driven factor ────────────────────────────────────────────────────
+
+/**
+ * Compute a content-driven factor for an account from its post engagements.
+ *
+ * Algorithm:
+ *   CV = std_dev(engagements) / mean(engagements)
+ *   factor = min(CV / 2.0, 1.0)
+ *
+ * - 0 = account-driven (uniform engagement regardless of content)
+ * - 1 = content-driven (some posts go viral, others don't)
+ * - Returns 0 if fewer than 3 posts (insufficient data)
+ * - Returns 0 if mean is 0 (no engagement data)
+ *
+ * Pure function — no side effects.
+ */
+export function computeContentDrivenFactor(posts: readonly CompetitorPost[]): number {
+  if (posts.length < 3) return 0;
+
+  const engagements = posts.map(p => p.engagement);
+  const mean = engagements.reduce((sum, e) => sum + e, 0) / engagements.length;
+  if (mean === 0) return 0;
+
+  const variance = engagements.reduce((sum, e) => sum + (e - mean) ** 2, 0) / engagements.length;
+  const stdDev = Math.sqrt(variance);
+  const cv = stdDev / mean;
+
+  return Math.min(cv / 2.0, 1.0);
+}
+
 // ─── Default store ────────────────────────────────────────────────────────────
 
 function defaultStore(): CompetitorAnalysisStore {
@@ -207,7 +237,13 @@ export async function analyzeCompetitors(
       const raw = await llm.call(prompt);
       const analysis = parseAnalysisResponse(raw, accountName, platform);
       if (analysis !== null) {
-        analyses[accountKey] = { ...analysis, auto_cluster: true } as AccountAnalysis;
+        // Compute content-driven factor from raw post data
+        const cdf = computeContentDrivenFactor(posts);
+        analyses[accountKey] = {
+          ...analysis,
+          auto_cluster: true,
+          content_driven_factor: cdf,
+        } as AccountAnalysis;
 
         // Determine identity mode(s) for this account
         const label = (profile as { group?: string }).group ?? profile.tag;

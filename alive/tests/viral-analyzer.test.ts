@@ -38,6 +38,7 @@ import {
   persistAnalysis,
   analyzePost,
   computeEngagementSignals,
+  stripVttTimestamps,
 } from '../scripts/ops/viral-analyzer';
 
 // ─── detectPlatform ──────────────────────────────────────────────────────────
@@ -408,5 +409,89 @@ describe('buildAnalysisPrompt with signals', () => {
     const prompt = buildAnalysisPrompt(basePost, 'ENTJ三栖');
     expect(prompt).not.toContain('互动信号解读');
     expect(prompt).not.toContain('attribution');
+  });
+});
+
+// ─── stripVttTimestamps ───────────────────────────────────────────────────────
+
+describe('stripVttTimestamps', () => {
+  it('should strip WEBVTT header', () => {
+    const raw = 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n';
+    expect(stripVttTimestamps(raw)).toBe('Hello');
+  });
+
+  it('should strip timestamp lines and keep spoken text', () => {
+    const raw = [
+      'WEBVTT',
+      '',
+      '1',
+      '00:00:00.000 --> 00:00:02.000',
+      '大家好，欢迎来到我的频道',
+      '',
+      '2',
+      '00:00:02.000 --> 00:00:04.000',
+      '今天分享一个超实用的技巧',
+    ].join('\n');
+
+    const result = stripVttTimestamps(raw);
+    expect(result).toBe('大家好，欢迎来到我的频道 今天分享一个超实用的技巧');
+    expect(result).not.toContain('WEBVTT');
+    expect(result).not.toContain('-->');
+    expect(result).not.toContain('00:00');
+  });
+
+  it('should truncate text exceeding 3000 characters', () => {
+    // Build a VTT with a very long spoken line
+    const longText = 'a'.repeat(4000);
+    const raw = `WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n${longText}\n`;
+    const result = stripVttTimestamps(raw);
+    expect(result.length).toBeLessThanOrEqual(3000 + '…（已截断）'.length);
+    expect(result).toContain('…（已截断）');
+  });
+
+  it('should return text as-is when under 3000 characters', () => {
+    const raw = `WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n短文本\n`;
+    const result = stripVttTimestamps(raw);
+    expect(result).toBe('短文本');
+    expect(result).not.toContain('已截断');
+  });
+
+  it('should handle SRT-style numeric cue identifiers', () => {
+    const raw = '1\n00:00:00,000 --> 00:00:01,000\n你好世界\n\n2\n00:00:01,000 --> 00:00:02,000\n再见\n';
+    const result = stripVttTimestamps(raw);
+    expect(result).toBe('你好世界 再见');
+  });
+});
+
+// ─── buildAnalysisPrompt with transcript ─────────────────────────────────────
+
+describe('buildAnalysisPrompt with transcript', () => {
+  const basePost: PostContent = {
+    platform: 'douyin',
+    url: 'https://www.douyin.com/video/123456',
+    title: '三步搞定抖音爆款',
+    description: '简单实用的内容技巧',
+    images: [],
+    likes: 8000,
+    comments: [],
+    collected_count: 3000,
+    share_count: 500,
+  };
+
+  it('transcript 存在时 prompt 包含【视频转录】section', () => {
+    const postWithTranscript: PostContent = {
+      ...basePost,
+      transcript: '大家好今天教大家三步搞定抖音爆款第一步选题第二步钩子第三步CTA',
+    };
+    const prompt = buildAnalysisPrompt(postWithTranscript, 'ENTJ虚拟博主');
+    expect(prompt).toContain('【视频转录（口播文字稿）】');
+    expect(prompt).toContain('大家好今天教大家三步搞定抖音爆款');
+    expect(prompt).toContain('基于原文分析 hook_patterns');
+  });
+
+  it('transcript 为 undefined 时 prompt 不含转录 section', () => {
+    const prompt = buildAnalysisPrompt(basePost, 'ENTJ虚拟博主');
+    expect(prompt).not.toContain('【视频转录');
+    expect(prompt).not.toContain('基于原文分析 hook_patterns');
   });
 });

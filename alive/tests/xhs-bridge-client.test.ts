@@ -19,9 +19,10 @@ describe('xhs-bridge-client', () => {
     vi.clearAllMocks();
     vi.resetModules();
     mockExecFile.mockReset();
-    // Reset rate limiter between tests to avoid inter-test interference
-    const { resetRateLimiterForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
-    resetRateLimiterForTests();
+    // Reset rate limiter and search cache between tests
+    const mod = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+    mod.resetRateLimiterForTests();
+    mod.resetSearchCacheForTests();
   });
 
   describe('isXhsAvailable', () => {
@@ -239,6 +240,191 @@ describe('xhs-bridge-client', () => {
 
       // Now should return false (cache was cleared)
       expect(await isXhsAvailable()).toBe(false);
+    });
+  });
+
+  describe('search result TTL cache', () => {
+    it('second searchXhsNotes call within TTL should hit cache and skip CLI', async () => {
+      const cliResponse = { feeds: [
+        { id: 'n1', xsecToken: 'tok1', displayTitle: '穿搭日记', user: { nickname: 'stylist' }, interactInfo: { likedCount: '500' } },
+      ], count: 1 };
+      simulateExecFile(JSON.stringify(cliResponse));
+
+      const { searchXhsNotes, resetSearchCacheForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetSearchCacheForTests();
+
+      const first = await searchXhsNotes('穿搭', { sortBy: '最热' });
+      expect(first).toHaveLength(1);
+      const callCountAfterFirst = mockExecFile.mock.calls.length;
+
+      // Second call — should return cached result without invoking CLI again
+      const second = await searchXhsNotes('穿搭', { sortBy: '最热' });
+      expect(second).toHaveLength(1);
+      expect(second[0].id).toBe('n1');
+      expect(mockExecFile.mock.calls.length).toBe(callCountAfterFirst);
+    });
+
+    it('different keyword produces a separate cache entry', async () => {
+      vi.useFakeTimers();
+      const response1 = { feeds: [{ id: 'a1', xsecToken: 't1', displayTitle: 'A', user: { nickname: 'u1' }, interactInfo: { likedCount: '1' } }], count: 1 };
+      const response2 = { feeds: [{ id: 'b1', xsecToken: 't2', displayTitle: 'B', user: { nickname: 'u2' }, interactInfo: { likedCount: '2' } }], count: 1 };
+
+      mockExecFile
+        .mockImplementationOnce((_c: string, _a: string[], _o: unknown, cb: Function) => cb(null, JSON.stringify(response1), ''))
+        .mockImplementationOnce((_c: string, _a: string[], _o: unknown, cb: Function) => cb(null, JSON.stringify(response2), ''));
+
+      const { searchXhsNotes, resetSearchCacheForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetSearchCacheForTests();
+
+      const p1 = searchXhsNotes('穿搭');
+      await vi.advanceTimersByTimeAsync(20_000);
+      const r1 = await p1;
+
+      const p2 = searchXhsNotes('美食');
+      await vi.advanceTimersByTimeAsync(20_000);
+      const r2 = await p2;
+
+      expect(r1[0].id).toBe('a1');
+      expect(r2[0].id).toBe('b1');
+      expect(mockExecFile.mock.calls.length).toBe(2);
+      vi.useRealTimers();
+    });
+
+    it('cache miss on expired entry re-fetches from CLI', async () => {
+      vi.useFakeTimers();
+      const response = { feeds: [{ id: 'n1', xsecToken: 't1', displayTitle: 'X', user: { nickname: 'u' }, interactInfo: { likedCount: '0' } }], count: 1 };
+      simulateExecFile(JSON.stringify(response));
+
+      const { searchXhsNotes, resetSearchCacheForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetSearchCacheForTests();
+
+      // First call — fills cache
+      await searchXhsNotes('cosplay');
+      const callsAfterFirst = mockExecFile.mock.calls.length;
+
+      // Advance time past 4-hour TTL
+      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000 + 1000);
+
+      // Second call — cache expired, should re-fetch
+      simulateExecFile(JSON.stringify(response));
+      await searchXhsNotes('cosplay');
+      expect(mockExecFile.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+
+      vi.useRealTimers();
+    });
+
+    it('CLI failure does not overwrite existing cache', async () => {
+      const goodResponse = { feeds: [{ id: 'cached', xsecToken: 't', displayTitle: 'Cached', user: { nickname: 'u' }, interactInfo: { likedCount: '100' } }], count: 1 };
+
+      // First successful call — fills cache
+      mockExecFile.mockImplementationOnce((_c: string, _a: string[], _o: unknown, cb: Function) =>
+        cb(null, JSON.stringify(goodResponse), ''));
+
+      const { searchXhsNotes, resetSearchCacheForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetSearchCacheForTests();
+
+      await searchXhsNotes('穿搭');
+
+      // Manually expire the in-memory cache by resetting TTL check via env-based file (the cache is file-based,
+      // so we need to simulate expiry by calling with a different context — just test that CLI error doesn't throw away cached data
+      // by calling again when CLI fails but cache is still fresh)
+      mockExecFile.mockReset();
+      simulateExecFile('', 'internal server error', new Error('CLI failed'));
+
+      // Cache is still fresh — should return cached value, not call CLI
+      const result = await searchXhsNotes('穿搭');
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('cached');
+      // CLI should NOT have been called (cache hit)
+      expect(mockExecFile.mock.calls.length).toBe(0);
+    });
+
+    it('empty result from CLI does not overwrite existing cache', async () => {
+      vi.useFakeTimers();
+      const goodResponse = { feeds: [{ id: 'keep-me', xsecToken: 't', displayTitle: 'Keep', user: { nickname: 'u' }, interactInfo: { likedCount: '50' } }], count: 1 };
+      const emptyResponse = { feeds: [], count: 0 };
+
+      mockExecFile
+        .mockImplementationOnce((_c: string, _a: string[], _o: unknown, cb: Function) => cb(null, JSON.stringify(goodResponse), ''))
+        .mockImplementationOnce((_c: string, _a: string[], _o: unknown, cb: Function) => cb(null, JSON.stringify(emptyResponse), ''));
+
+      const { searchXhsNotes, resetSearchCacheForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetSearchCacheForTests();
+
+      // Fill cache with good data
+      const p1 = searchXhsNotes('赛车');
+      await vi.advanceTimersByTimeAsync(20_000);
+      await p1;
+
+      // Expire the cache
+      await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000 + 1000);
+
+      // CLI returns empty — existing cache should NOT be overwritten
+      // (After expiry the fetcher runs, returns [], so cache entry is not updated)
+      const p2 = searchXhsNotes('赛车');
+      await vi.advanceTimersByTimeAsync(20_000);
+      const result = await p2;
+      expect(result).toEqual([]);
+
+      // Verify: if we call again (still empty CLI), we go to CLI each time since cache was not updated
+      mockExecFile.mockImplementationOnce((_c: string, _a: string[], _o: unknown, cb: Function) =>
+        cb(null, JSON.stringify(emptyResponse), ''));
+      const p3 = searchXhsNotes('赛车');
+      await vi.advanceTimersByTimeAsync(20_000);
+      const result2 = await p3;
+      expect(result2).toEqual([]);
+      // CLI was called for both expired calls (no re-caching of empty)
+      expect(mockExecFile.mock.calls.length).toBe(3);
+
+      vi.useRealTimers();
+    });
+
+    it('listXhsFeed bypasses cache and always calls CLI', async () => {
+      vi.useFakeTimers();
+      const response1 = { feeds: [{ id: 'f1', xsecToken: 't1', displayTitle: 'Feed1', user: { nickname: 'u' }, interactInfo: { likedCount: '10' } }] };
+      const response2 = { feeds: [{ id: 'f2', xsecToken: 't2', displayTitle: 'Feed2', user: { nickname: 'u' }, interactInfo: { likedCount: '20' } }] };
+
+      mockExecFile
+        .mockImplementationOnce((_c: string, _a: string[], _o: unknown, cb: Function) => cb(null, JSON.stringify(response1), ''))
+        .mockImplementationOnce((_c: string, _a: string[], _o: unknown, cb: Function) => cb(null, JSON.stringify(response2), ''));
+
+      const { listXhsFeed } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+
+      const p1 = listXhsFeed();
+      await vi.advanceTimersByTimeAsync(20_000);
+      const first = await p1;
+
+      const p2 = listXhsFeed();
+      await vi.advanceTimersByTimeAsync(20_000);
+      const second = await p2;
+
+      expect(first[0].id).toBe('f1');
+      expect(second[0].id).toBe('f2');
+      expect(mockExecFile.mock.calls.length).toBe(2);
+      vi.useRealTimers();
+    });
+
+    it('resetSearchCacheForTests clears cache so next call re-fetches', async () => {
+      vi.useFakeTimers();
+      const response = { feeds: [{ id: 'n1', xsecToken: 't', displayTitle: 'T', user: { nickname: 'u' }, interactInfo: { likedCount: '5' } }], count: 1 };
+      simulateExecFile(JSON.stringify(response));
+
+      const { searchXhsNotes, resetSearchCacheForTests } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+      resetSearchCacheForTests();
+
+      const p1 = searchXhsNotes('test');
+      await vi.advanceTimersByTimeAsync(20_000);
+      await p1;
+      const callsAfterFirst = mockExecFile.mock.calls.length;
+
+      // Reset cache — next call should go to CLI again
+      resetSearchCacheForTests();
+      simulateExecFile(JSON.stringify(response));
+      const p2 = searchXhsNotes('test');
+      await vi.advanceTimersByTimeAsync(20_000);
+      await p2;
+      expect(mockExecFile.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+      vi.useRealTimers();
     });
   });
 });

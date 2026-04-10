@@ -26,6 +26,7 @@ const {
   loadCompetitorAnalysis,
   saveCompetitorAnalysis,
   MIN_POSTS_FOR_ANALYSIS,
+  computeContentDrivenFactor,
 } = await import('../scripts/ops/competitor-analyzer');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -476,5 +477,60 @@ describe('analyzeCompetitors — auto_cluster flag', () => {
 describe('constants', () => {
   it('MIN_POSTS_FOR_ANALYSIS is 5', () => {
     expect(MIN_POSTS_FOR_ANALYSIS).toBe(5);
+  });
+});
+
+// ─── computeContentDrivenFactor ─────────────────────────────────────────────
+
+describe('computeContentDrivenFactor', () => {
+  it('不足3条帖子返回 0', () => {
+    const posts = [
+      makePost({ post_id: 'p1', engagement: 100 }),
+      makePost({ post_id: 'p2', engagement: 200 }),
+    ];
+    expect(computeContentDrivenFactor(posts)).toBe(0);
+  });
+
+  it('均匀互动返回 0（CV=0 → factor=0）', () => {
+    const posts = [
+      makePost({ post_id: 'p1', engagement: 500 }),
+      makePost({ post_id: 'p2', engagement: 500 }),
+      makePost({ post_id: 'p3', engagement: 500 }),
+    ];
+    expect(computeContentDrivenFactor(posts)).toBe(0);
+  });
+
+  it('极端方差接近 1（内容驱动型）', () => {
+    const posts = [
+      makePost({ post_id: 'p1', engagement: 100000 }),
+      makePost({ post_id: 'p2', engagement: 10 }),
+      makePost({ post_id: 'p3', engagement: 10 }),
+      makePost({ post_id: 'p4', engagement: 10 }),
+    ];
+    const factor = computeContentDrivenFactor(posts);
+    expect(factor).toBeGreaterThan(0.8);
+    expect(factor).toBeLessThanOrEqual(1.0);
+  });
+
+  it('均值为0时返回 0', () => {
+    const posts = [
+      makePost({ post_id: 'p1', engagement: 0 }),
+      makePost({ post_id: 'p2', engagement: 0 }),
+      makePost({ post_id: 'p3', engagement: 0 }),
+    ];
+    expect(computeContentDrivenFactor(posts)).toBe(0);
+  });
+
+  it('正常变异返回 0 到 1 之间的值', () => {
+    const posts = [
+      makePost({ post_id: 'p1', engagement: 100 }),
+      makePost({ post_id: 'p2', engagement: 200 }),
+      makePost({ post_id: 'p3', engagement: 300 }),
+      makePost({ post_id: 'p4', engagement: 400 }),
+      makePost({ post_id: 'p5', engagement: 500 }),
+    ];
+    const factor = computeContentDrivenFactor(posts);
+    expect(factor).toBeGreaterThan(0);
+    expect(factor).toBeLessThan(1);
   });
 });

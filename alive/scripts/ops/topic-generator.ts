@@ -29,7 +29,7 @@ import { loadFormulaStore, queryFormulasByMode } from './formula-store';
 import { PATHS, readJSON } from '../utils/file-utils';
 import { CompetitorLog, CompetitorUpdate, ContentStrategy, ContentPatterns } from '../utils/types';
 import { now } from '../utils/time-utils';
-import { queryTrackInMemory, loadEntries, saveEntries } from './viral-kb-store';
+import { queryTrackInMemory, loadEntries, saveEntries, loadFormulas as loadViralFormulas } from './viral-kb-store';
 
 import { matchesTaxonomy } from './ops-taxonomy';
 
@@ -48,10 +48,15 @@ export function buildViralContext(entries: ViralEntry[], platform: string): stri
   const lines = entries.map((e, idx) => {
     const d = e.dissection;
     if (!d) return null;
-    return [
+    const parts = [
       `${idx + 1}. 钩子：${d.hook_type} | 情绪弧：${d.emotion_arc} | 互动：${d.interaction_design}`,
       `   一句话逻辑：${d.summary}`,
-    ].join('\n');
+    ];
+    // Append audience desire signals if available
+    if (d.audience_response?.desire_signals && d.audience_response.desire_signals.length > 0) {
+      parts.push(`   受众渴望：${d.audience_response.desire_signals.join('、')}`);
+    }
+    return parts.join('\n');
   }).filter(Boolean);
 
   return [
@@ -237,10 +242,80 @@ export function buildFormulaContext(
   return `【竞品爆款句式参考（可借鉴改编，保持V姐风格）】\n${lines.join('\n')}`;
 }
 
+// ─── Content-driven factor context builder ──────────────────────────────────
+
+/**
+ * Aggregate content-driven factors for all competitors matching a given
+ * identity mode, and return a one-liner for LLM prompt injection.
+ * Returns '' if no competitors have content_driven_factor data.
+ */
+export function buildContentDrivenContext(
+  analysisStore: CompetitorAnalysisStore,
+  profiles: readonly CompetitorProfile[] | undefined,
+  identityMode: IdentityMode,
+): string {
+  if (!profiles || profiles.length === 0) return '';
+
+  const factors: number[] = [];
+  for (const p of profiles) {
+    const accountKey = `${p.name}:${p.platform}`;
+    const analysis = analysisStore.analyses[accountKey];
+    if (analysis?.content_driven_factor !== undefined) {
+      // Match by identity mode via group/tag
+      const profileGroup = p.group ?? p.tag;
+      if (matchesTaxonomy(identityMode, profileGroup)) {
+        factors.push(analysis.content_driven_factor);
+      }
+    }
+  }
+
+  if (factors.length === 0) return '';
+
+  const avg = factors.reduce((s, f) => s + f, 0) / factors.length;
+  const rounded = Math.round(avg * 100) / 100;
+  const label = rounded >= 0.6 ? '高 — 好内容即使小号也能爆'
+    : rounded >= 0.3 ? '中 — 内容与账号权重各占一半'
+    : '低 — 账号权重决定流量，需先涨粉';
+
+  return `【赛道内容驱动指数】${rounded.toFixed(2)}（${label}）`;
+}
+
+// ─── Trigger words context builder ──────────────────────────────────────────
+
+/**
+ * Aggregate trigger_words from all UniversalFormulas in the viral KB.
+ * Optionally filter by platform.
+ * Returns a one-liner for LLM prompt injection, or '' if no trigger words.
+ */
+export function buildTriggerWordsContext(
+  basePath: string,
+  platform?: string,
+): string {
+  const formulas = loadViralFormulas(basePath);
+  if (formulas.length === 0) return '';
+
+  const filtered = platform
+    ? formulas.filter(f => f.platform === platform)
+    : formulas;
+
+  const allWords = new Set<string>();
+  for (const f of filtered) {
+    if (f.trigger_words) {
+      for (const w of f.trigger_words) {
+        allWords.add(w);
+      }
+    }
+  }
+
+  if (allWords.size === 0) return '';
+
+  return `【高频情绪触发词（来自爆款分析）】${[...allWords].join('、')}`;
+}
+
 // ─── Platform writing guidelines (inspired by content-writer skill) ──────────
 
 const XHS_GUIDELINES = `【小红书写作规范】
-- 标题：20字以内，必须含emoji开头或穿插，制造好奇心缺口（疑问/数字/反转）
+- 标题：11-20字，必须含emoji开头或穿插，制造好奇心缺口（疑问/数字/反转）
 - 正文：500字以内，每2-3句换行，段落间用emoji分隔，口语化但有信息密度
 - 节奏：开头3行定生死→痛点共鸣→干货/故事→总结金句→互动引导（点赞收藏暗示）
 - 标签：5-10个，前3个为精准长尾词，后面为热门大词，自然穿插正文关键词做SEO
@@ -252,7 +327,7 @@ const XHS_GUIDELINES = `【小红书写作规范】
 - 禁止硬广口吻，要像朋友分享不像销售推荐`;
 
 const DOUYIN_GUIDELINES = `【抖音脚本写作规范】
-- 钩子：前3秒决定生死，15字以内，用反问/冲突/悬念/数字冲击制造停留
+- 钩子：前3秒决定生死，11-20字，用反问/冲突/悬念/数字冲击制造停留
 - 脚本：200-500字，口语化、短句为主，每句≤15字，像跟朋友聊天不像念稿
 - 节奏：钩子→建立共鸣→核心内容（故事/干货/反转）→情绪高点→行动号召
 - 字幕：3-5个关键要点，每条≤10字，强化记忆点
@@ -286,8 +361,8 @@ ${guidelines}
 请严格按照以上写作规范，生成一条完整的 ${platform === 'xhs' ? '小红书图文' : '抖音视频脚本'} 内容草稿。
 
 ${platform === 'xhs' ? `输出格式 JSON：
-{"title":"...（20字以内，含emoji）","body":"...（正文500字以内，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"],"cover_description":"封面图画面描述（用于AI生图）"}` : `输出格式 JSON：
-{"opening_hook":"前3秒钩子（15字以内，反问/冲突/悬念）","script":"完整口播脚本（200-500字，短句口语化）","bgm_suggestion":"推荐BGM风格或歌名","key_captions":["字幕要点1（≤10字）","字幕要点2"],"cover_description":"封面图画面描述（用于AI生图）"}`}`;
+{"title":"...（11-20字，含emoji）","body":"...（正文500字以内，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"],"cover_description":"封面图画面描述（用于AI生图）"}` : `输出格式 JSON：
+{"opening_hook":"前3秒钩子（11-20字，反问/冲突/悬念）","script":"完整口播脚本（200-500字，短句口语化）","bgm_suggestion":"推荐BGM风格或歌名","key_captions":["字幕要点1（≤10字）","字幕要点2"],"cover_description":"封面图画面描述（用于AI生图）"}`}`;
   return extraContext ? `${base}\n${extraContext}` : base;
 }
 
@@ -302,10 +377,10 @@ export function buildRegeneratePrompt(
   contentPatterns?: string,
 ): string {
   const fieldConstraints: Record<string, string> = {
-    'xhs.title': '20字以内，必须含emoji，制造好奇心缺口（疑问/数字/反转）',
+    'xhs.title': '11-20字，必须含emoji，制造好奇心缺口（疑问/数字/反转）',
     'xhs.body': '500字以内，每2-3句换行，段落间用emoji分隔，口语化但有信息密度',
     'xhs.tags': '5-10个标签，前3个精准长尾词，后面热门大词',
-    'douyin.opening_hook': '前3秒文案，15字以内，用反问/冲突/悬念/数字冲击',
+    'douyin.opening_hook': '前3秒文案，11-20字，用反问/冲突/悬念/数字冲击',
     'douyin.script': '200-500字，口语化短句，每句≤15字，像聊天不像念稿',
     'douyin.bgm_suggestion': '匹配内容情绪的BGM，优先热门音频',
     'douyin.key_captions': '3-5个关键字幕，每条≤10字，强化记忆点',
@@ -548,6 +623,15 @@ export async function generateTopics(
     if (competitorCtx) contextParts.push(`【对标竞品参考】\n${competitorCtx}`);
     if (formulaContext) contextParts.push(formulaContext);
     if (viralContext) contextParts.push(viralContext);
+
+    // Inject content-driven factor context
+    const cdfContext = buildContentDrivenContext(analysisStore, ops.competitors, identityMode);
+    if (cdfContext) contextParts.push(cdfContext);
+
+    // Inject trigger words from viral KB formulas
+    const triggerWordsContext = buildTriggerWordsContext(basePath);
+    if (triggerWordsContext) contextParts.push(triggerWordsContext);
+
     if (patternsContext) contextParts.push(patternsContext);
     if (strategyContext) contextParts.push(strategyContext);
     if (tasteContext) contextParts.push(tasteContext);

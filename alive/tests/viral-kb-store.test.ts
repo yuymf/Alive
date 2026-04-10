@@ -14,6 +14,7 @@ import {
   addToQueue, dequeueItems,
   upsertEntry, checkFormulaPromotion,
   queryTrack, queryAll, queryFormulas, getStats,
+  extractTriggerWords,
 } from '../scripts/ops/viral-kb-store';
 import { ViralEntry, DissectQueueItem } from '../scripts/utils/types';
 
@@ -295,5 +296,71 @@ describe('queryTrack', () => {
   it('respects limit', () => {
     const result = queryTrack(sandboxDir, { limit: 1 });
     expect(result).toHaveLength(1);
+  });
+});
+
+// ─── extractTriggerWords ────────────────────────────────────────────────────
+
+describe('extractTriggerWords', () => {
+  it('提取出现 ≥2 次的情绪词，按频率降序', () => {
+    const titles = [
+      '震惊！这个方法居然有效',
+      '没想到结果这么震惊',
+      '居然还有这种操作',
+    ];
+    const result = extractTriggerWords(titles, 2);
+    expect(result).toContain('震惊');
+    expect(result).toContain('居然');
+    // 震惊 appears 2x, 居然 appears 2x
+    expect(result).toHaveLength(2);
+  });
+
+  it('频率不足 minFreq 的词不返回', () => {
+    const titles = [
+      '太绝了这个视频',
+      '另一个普通标题',
+    ];
+    const result = extractTriggerWords(titles, 2);
+    expect(result).toHaveLength(0);
+  });
+
+  it('空标题列表返回空数组', () => {
+    expect(extractTriggerWords([])).toEqual([]);
+  });
+});
+
+// ─── checkFormulaPromotion with trigger_words ───────────────────────────────
+
+describe('checkFormulaPromotion trigger_words 集成', () => {
+  it('promotion 时从源条目提取 trigger_words', () => {
+    // Create 3 entries with emotion words in titles
+    const makeUniversal = (id: string, title: string): ViralEntry => makeEntry({
+      id,
+      title,
+      dissection: {
+        hook_type: '反问式',
+        content_type: '情绪类',
+        identity_mode: null,
+        emotion_arc: '共鸣→爆发',
+        interaction_design: '投票',
+        visual_style: '动感',
+        cta_type: '关注',
+        summary: '情绪共鸣',
+      },
+      kb_tier: 'universal',
+    });
+
+    // Upsert entries first so they can be found by checkFormulaPromotion
+    upsertEntry(sandboxDir, makeUniversal('e1', '震惊！居然这么做'));
+    upsertEntry(sandboxDir, makeUniversal('e2', '震惊！没想到效果这么好'));
+    upsertEntry(sandboxDir, makeUniversal('e3', '震惊！这也太离谱了'));
+
+    checkFormulaPromotion(sandboxDir, makeUniversal('e1', '震惊！居然这么做'));
+    checkFormulaPromotion(sandboxDir, makeUniversal('e2', '震惊！没想到效果这么好'));
+    const result = checkFormulaPromotion(sandboxDir, makeUniversal('e3', '震惊！这也太离谱了'));
+
+    expect(result.promoted).toBe(true);
+    expect(result.formula?.trigger_words).toBeDefined();
+    expect(result.formula?.trigger_words).toContain('震惊');
   });
 });

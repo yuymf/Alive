@@ -153,4 +153,39 @@ describe('dissectBatch', () => {
     expect(entry.likes).toBe(15000);
     expect(entry.persona_id).toBe('persona-x');
   });
+
+  it('有评论时返回 audience_response', async () => {
+    const dissectionWithAudience = JSON.stringify({
+      hook_type: '反问式',
+      content_type: '种草类',
+      identity_mode: null,
+      emotion_arc: '好奇→满足',
+      interaction_design: '评论区讨论',
+      visual_style: '清新',
+      cta_type: '收藏',
+      summary: '种草引发讨论',
+      audience_response: {
+        top_keywords: ['好用', '推荐', '回购'],
+        emotional_triggers: ['心动', '焦虑解决'],
+        desire_signals: ['求链接', '想要同款', '教程在哪'],
+      },
+    });
+    const llm = createMockLLMClient([dissectionWithAudience]);
+    const item = makeQueueItem({
+      id: 'q-comments',
+      source_id: 'src-comments',
+      comment_texts: ['好用到哭', '求链接！', '回购第三次了'],
+    });
+    const results = await dissectBatch([item], llm, 'miss-v');
+    expect(results[0].dissection.audience_response).toBeDefined();
+    expect(results[0].dissection.audience_response!.desire_signals).toContain('求链接');
+    expect(results[0].dissection.audience_response!.top_keywords).toContain('好用');
+  });
+
+  it('无评论时不包含 audience_response', async () => {
+    const llm = createMockLLMClient([validDissectionJSON]);
+    const item = makeQueueItem(); // no comment_texts
+    const results = await dissectBatch([item], llm, 'miss-v');
+    expect(results[0].dissection.audience_response).toBeUndefined();
+  });
 });

@@ -24,6 +24,7 @@ export interface TrendLikeItem {
   shares: number;
   source_type: ViralSourceType;
   identity_mode?: string;
+  comment_texts?: string[];  // Top comments by likes (XHS only)
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -73,6 +74,9 @@ export function detectViral(
       shares: item.shares,
       queued_at: wallNow().toISOString(),
       ...(item.identity_mode ? { identity_mode: item.identity_mode } : {}),
+      ...(item.comment_texts && item.comment_texts.length > 0
+        ? { comment_texts: item.comment_texts }
+        : {}),
     };
 
     candidates.push(queueItem);

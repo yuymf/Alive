@@ -14,10 +14,103 @@
  * snake_case interfaces that inspiration-collector.ts expects.
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 
 const XHS_CLI_TIMEOUT = 75_000;  // 延长至 75s，减少因慢速响应触发的风控重试
+
+// ─── 搜索结果 TTL 缓存 ────────────────────────────────────────────────────────
+
+const CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 小时
+
+function resolveXhsCacheFile(): string {
+  const envOverride = process.env.XHS_CACHE_FILE_OVERRIDE;
+  if (envOverride) return envOverride;
+  const persona = process.env.ALIVE_PERSONA ?? 'default';
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  return path.join(home, '.openclaw', 'workspace', 'memory', persona, 'xhs-search-cache.json');
+}
+
+interface XhsCacheEntry {
+  fetched_at: string;
+  data: XhsNote[];
+}
+
+interface XhsCache {
+  version: number;
+  entries: Record<string, XhsCacheEntry>;
+}
+
+function loadXhsCache(): XhsCache {
+  const filePath = resolveXhsCacheFile();
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw) as XhsCache;
+    if (parsed && typeof parsed === 'object' && parsed.entries) return parsed;
+  } catch {
+    // Corrupt or missing — start fresh
+  }
+  return { version: 1, entries: {} };
+}
+
+function saveXhsCache(cache: XhsCache): void {
+  const filePath = resolveXhsCacheFile();
+  try {
+    const dir = path.dirname(filePath);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(cache, null, 2));
+  } catch (err) {
+    console.error('[xhs-cache] Failed to save cache:', err);
+  }
+}
+
+function pruneOldEntries(cache: XhsCache, ttlMs: number): XhsCache {
+  const now = Date.now();
+  const entries: Record<string, XhsCacheEntry> = {};
+  for (const [key, entry] of Object.entries(cache.entries)) {
+    if (now - new Date(entry.fetched_at).getTime() < ttlMs) {
+      entries[key] = entry;
+    }
+  }
+  return { ...cache, entries };
+}
+
+async function withCache(
+  key: string,
+  ttlMs: number,
+  fetcher: () => Promise<XhsNote[]>,
+): Promise<XhsNote[]> {
+  const cache = loadXhsCache();
+  const entry = cache.entries[key];
+
+  if (entry) {
+    const age = Date.now() - new Date(entry.fetched_at).getTime();
+    if (age < ttlMs) {
+      return entry.data;
+    }
+  }
+
+  const data = await fetcher();
+
+  if (data.length > 0) {
+    const pruned = pruneOldEntries(cache, ttlMs);
+    pruned.entries[key] = { fetched_at: new Date().toISOString(), data };
+    saveXhsCache(pruned);
+  }
+
+  return data;
+}
+
+/** 测试用：重置搜索缓存状态（删除缓存文件或清空内存中的 entries） */
+export function resetSearchCacheForTests(): void {
+  const filePath = resolveXhsCacheFile();
+  try {
+    fs.unlinkSync(filePath);
+  } catch {
+    // Ignore
+  }
+}
 
 /** 随机等待 minMs~maxMs 毫秒，模拟人类操作节奏。 */
 function jitter(minMs: number, maxMs: number): Promise<void> {
@@ -277,18 +370,24 @@ export async function listXhsFeed(): Promise<XhsNote[]> {
   return feeds.map(mapFeedToNote);
 }
 
-/** Keyword search. */
+/** Keyword search. Results are cached for 4 hours per (keyword, sortBy, publishTime) key. */
 export async function searchXhsNotes(keyword: string, options: XhsSearchOptions = {}): Promise<XhsNote[]> {
-  const args = ['--keyword', keyword];
-  if (options.sortBy) args.push('--sort-by', options.sortBy);
-  if (options.noteType) args.push('--note-type', options.noteType);
-  if (options.publishTime) args.push('--publish-time', options.publishTime);
-  if (options.searchScope) args.push('--search-scope', options.searchScope);
-  if (options.location) args.push('--location', options.location);
+  const sortBy = options.sortBy ?? '';
+  const publishTime = options.publishTime ?? '';
+  const cacheKey = `search:${keyword}:${sortBy}:${publishTime}`;
 
-  const result = await callXhsCli('search-feeds', args) as Record<string, unknown>;
-  const feeds = (result.feeds ?? []) as Array<Record<string, unknown>>;
-  return feeds.map(mapFeedToNote);
+  return withCache(cacheKey, CACHE_TTL_MS, async () => {
+    const args = ['--keyword', keyword];
+    if (options.sortBy) args.push('--sort-by', options.sortBy);
+    if (options.noteType) args.push('--note-type', options.noteType);
+    if (options.publishTime) args.push('--publish-time', options.publishTime);
+    if (options.searchScope) args.push('--search-scope', options.searchScope);
+    if (options.location) args.push('--location', options.location);
+
+    const result = await callXhsCli('search-feeds', args) as Record<string, unknown>;
+    const feeds = (result.feeds ?? []) as Array<Record<string, unknown>>;
+    return feeds.map(mapFeedToNote);
+  });
 }
 
 /** Full note detail with comments. */
@@ -297,43 +396,47 @@ export async function getXhsNoteDetail(noteId: string, xsecToken: string): Promi
   return mapDetailToNoteDetail(result as Record<string, unknown>);
 }
 
-/** Fetch a user's notes by XHS user ID (precise, no search fallback). */
+/** Fetch a user's notes by XHS user ID (precise, no search fallback). Results cached for 4 hours. */
 export async function getUserProfileNotes(
   userId: string, limit = 20
 ): Promise<XhsNote[]> {
-  const loginOk = await isXhsAvailable();
-  if (!loginOk) {
-    throw new Error('[xhs-bridge] Not logged in — skipping getUserProfileNotes');
-  }
+  return withCache(`userid:${userId}`, CACHE_TTL_MS, async () => {
+    const loginOk = await isXhsAvailable();
+    if (!loginOk) {
+      throw new Error('[xhs-bridge] Not logged in — skipping getUserProfileNotes');
+    }
 
-  await jitter(3000, 8000);
+    await jitter(3000, 8000);
 
-  const result = await callXhsCli('user-profile', [
-    '--user-id', userId, '--xsec-token', '',
-  ]) as Record<string, unknown>;
-  const notes = (result.feeds ?? []) as Array<Record<string, unknown>>;
-  return notes.slice(0, limit).map(mapFeedToNote);
+    const result = await callXhsCli('user-profile', [
+      '--user-id', userId, '--xsec-token', '',
+    ]) as Record<string, unknown>;
+    const notes = (result.feeds ?? []) as Array<Record<string, unknown>>;
+    return notes.slice(0, limit).map(mapFeedToNote);
+  });
 }
 
-/** Fetch a user's recent notes by account name. Falls back to search if CLI command unsupported. */
+/** Fetch a user's recent notes by account name. Falls back to search if CLI command unsupported. Results cached for 4 hours. */
 export async function getUserNotes(accountName: string, limit = 20): Promise<XhsNote[]> {
-  // ── 预检登录闸门：未登录直接抛出，不执行高频抓取操作 ──
-  const loginOk = await isXhsAvailable();
-  if (!loginOk) {
-    throw new Error('[xhs-bridge] Not logged in — skipping getUserNotes to avoid rate-limit trigger');
-  }
+  return withCache(`user:${accountName}`, CACHE_TTL_MS, async () => {
+    // ── 预检登录闸门：未登录直接抛出，不执行高频抓取操作 ──
+    const loginOk = await isXhsAvailable();
+    if (!loginOk) {
+      throw new Error('[xhs-bridge] Not logged in — skipping getUserNotes to avoid rate-limit trigger');
+    }
 
-  // ── 节流：抓取前随机等待 3~8s，模拟人类间歇节奏 ──
-  await jitter(3000, 8000);
+    // ── 节流：抓取前随机等待 3~8s，模拟人类间歇节奏 ──
+    await jitter(3000, 8000);
 
-  try {
-    const result = await callXhsCli('get-user-notes', ['--user', accountName, '--limit', String(limit)]);
-    const data = result as Record<string, unknown>;
-    const notes = (data.notes ?? []) as Array<Record<string, unknown>>;
-    return notes.map(mapFeedToNote);
-  } catch {
-    console.error(`[xhs-bridge] get-user-notes not supported, falling back to search for "${accountName}"`);
-    await jitter(3000, 6000);  // fallback 前再加一次抖动
-    return searchXhsNotes(accountName, { sortBy: '最新' });
-  }
+    try {
+      const result = await callXhsCli('get-user-notes', ['--user', accountName, '--limit', String(limit)]);
+      const data = result as Record<string, unknown>;
+      const notes = (data.notes ?? []) as Array<Record<string, unknown>>;
+      return notes.map(mapFeedToNote);
+    } catch {
+      console.error(`[xhs-bridge] get-user-notes not supported, falling back to search for "${accountName}"`);
+      await jitter(3000, 6000);  // fallback 前再加一次抖动
+      return searchXhsNotes(accountName, { sortBy: '最新' });
+    }
+  });
 }
