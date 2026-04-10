@@ -428,7 +428,7 @@ function buildStateResponse(memoryDir, filterDate) {
   const read = (filename, def) => readJsonSafe(path.join(memoryDir, filename), def);
 
   // Heartbeat log: keep all completed entries, strip voice_directive
-  const rawLog = read('heartbeat-log.json', null);
+  const rawLog = read(path.join('queues', 'heartbeat-log.json'), null);
   const allLogs = (rawLog && Array.isArray(rawLog.logs)) ? rawLog.logs : [];
   const completedLogs = allLogs.filter(l => l.status === 'completed');
   const heartbeatLog = deduplicateHeartbeat(completedLogs.map(({ voice_directive, ...rest }) => ({
@@ -446,7 +446,7 @@ function buildStateResponse(memoryDir, filterDate) {
     }
   }
 
-  const postHistory = (read('post-history.json', { posts: [] }).posts || []).map((post) => {
+  const postHistory = (read(path.join('queues', 'post-history.json'), { posts: [] }).posts || []).map((post) => {
     const timestamp = post.posted_at || post.timestamp || post.created_at || post.updated_at || null;
 
     function localToApiUrl(localPath) {
@@ -484,7 +484,7 @@ function buildStateResponse(memoryDir, filterDate) {
   const redditTrends = parseWorldMd(path.join(memoryDir, 'world.md'));
 
   // Travel data
-  const travelState = read('travel-state.json', null);
+  const travelState = read(path.join('state', 'travel-state.json'), null);
   const travelSpotsAll = read(path.join('inspiration-refs', 'travel-spots.json'), {});
   let travelSpots = [];
   if (travelState && travelState.current_city) {
@@ -498,13 +498,13 @@ function buildStateResponse(memoryDir, filterDate) {
 
   const result = {
     timestamp: new Date().toISOString(),
-    emotion: read('emotion-state.json', null),
-    intents: read('intent-pool.json', null),
-    vitality: read('vitality-state.json', null),
-    confidence: read('confidence-state.json', null),
-    flow: read('flow-state.json', null),
-    postImpulse: read('post-impulse.json', null),
-    schedule: read('schedule-today.json', null),
+    emotion: read(path.join('state', 'emotion-state.json'), null),
+    intents: read(path.join('queues', 'intent-pool.json'), null),
+    vitality: read(path.join('state', 'vitality-state.json'), null),
+    confidence: read(path.join('state', 'confidence-state.json'), null),
+    flow: read(path.join('state', 'flow-state.json'), null),
+    postImpulse: read(path.join('state', 'post-impulse.json'), null),
+    schedule: read(path.join('state', 'schedule-today.json'), null),
     heartbeatLog,
     activeSession,
     postHistory,

@@ -9,12 +9,12 @@ describe('file-utils path override', () => {
 
   it('PATHS uses default paths when no override set', () => {
     const home = process.env.HOME!;
-    expect(PATHS.emotionState).toBe(path.join(home, '.openclaw', 'workspace', 'memory', 'default', 'emotion-state.json'));
+    expect(PATHS.emotionState).toBe(path.join(home, '.openclaw', 'workspace', 'memory', 'default', 'state', 'emotion-state.json'));
   });
 
   it('PATHS uses overridden memory base after setBasePaths', () => {
     setBasePaths('/tmp/test-memory', '/tmp/test-skill');
-    expect(PATHS.emotionState).toBe('/tmp/test-memory/emotion-state.json');
+    expect(PATHS.emotionState).toBe('/tmp/test-memory/state/emotion-state.json');
     expect(PATHS.diary).toBe('/tmp/test-memory/diary.md');
   });
 
@@ -51,13 +51,13 @@ describe('file-utils path override', () => {
 
   it('PATHS.pendingEngagement returns path ending in pending-engagement.json', () => {
     setBasePaths('/tmp/test-memory', '/tmp/test-skill');
-    expect(PATHS.pendingEngagement).toBe('/tmp/test-memory/pending-engagement.json');
+    expect(PATHS.pendingEngagement).toBe('/tmp/test-memory/queues/pending-engagement.json');
     resetBasePaths();
   });
 
   it('PATHS.outboundHistory returns path ending in outbound-history.json', () => {
     setBasePaths('/tmp/test-memory', '/tmp/test-skill');
-    expect(PATHS.outboundHistory).toBe('/tmp/test-memory/outbound-history.json');
+    expect(PATHS.outboundHistory).toBe('/tmp/test-memory/queues/outbound-history.json');
     resetBasePaths();
   });
 
@@ -76,7 +76,7 @@ describe('persona-sensitive paths should use memory base (not skill base)', () =
 
   it('PATHS.personaConfig should point to memory directory, not skill directory', () => {
     setBasePaths('/tmp/test-memory', '/tmp/test-skill');
-    expect(PATHS.personaConfig).toBe('/tmp/test-memory/persona.yaml');
+    expect(PATHS.personaConfig).toBe('/tmp/test-memory/persona/persona.yaml');
   });
 
   it('PATHS.referencesDir should point to memory directory, not skill directory', () => {
@@ -89,7 +89,7 @@ describe('persona-sensitive paths should use memory base (not skill base)', () =
     const home = process.env.HOME!;
     const memBase = path.join(home, '.openclaw', 'workspace', 'memory', 'minase');
     expect(PATHS.cronSchedule).toBe(path.join(memBase, 'cron-schedule.json'));
-    expect(PATHS.personaConfig).toBe(path.join(memBase, 'persona.yaml'));
+    expect(PATHS.personaConfig).toBe(path.join(memBase, 'persona', 'persona.yaml'));
     expect(PATHS.referencesDir).toBe(path.join(memBase, 'assets', 'references'));
     // Reset persona name to avoid affecting other tests
     setPersonaName('default');

@@ -232,6 +232,6 @@ node bin/cli.js --uninstall --persona alive/personas/minase.yaml   # remove
 
 Located at `~/.openclaw/workspace/memory/<persona-id>/`:
 - `diary.md` — episodic diary (30-day rolling)
-- `emotion-state.json` — current 6D emotion state
-- `core-wisdom.json` — permanent life lessons
+- `state/emotion-state.json` — current 6D emotion state
+- `persona/core-wisdom.json` — permanent life lessons
 - `relations/` — per-user relationship files

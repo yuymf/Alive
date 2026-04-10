@@ -61,32 +61,47 @@ This skill is composed of sub-modules. Load them as needed:
 MEMORY_BASE = ~/.openclaw/workspace/memory/{persona.meta.id}
 
 diary:          {MEMORY_BASE}/diary.md
-core-wisdom:    {MEMORY_BASE}/core-wisdom.json
 world:          {MEMORY_BASE}/world.md
+cron-schedule:  {MEMORY_BASE}/cron-schedule.json
 relations:      {MEMORY_BASE}/relations/{user_id}.json
-emotion-state:  {MEMORY_BASE}/emotion-state.json
-intent-pool:    {MEMORY_BASE}/intent-pool.json
-schedule-today: {MEMORY_BASE}/schedule-today.json
-event-queue:    {MEMORY_BASE}/event-queue.json
-preferences:    {MEMORY_BASE}/preferences.json
-aspirations:    {MEMORY_BASE}/aspirations.json
-personality:    {MEMORY_BASE}/personality-drift.json
-heartbeat-log:  {MEMORY_BASE}/heartbeat-log.json
 social-meta:    {MEMORY_BASE}/relations/social-meta.json
-voice-audio:    {MEMORY_BASE}/voice/*.mp3          (auto-cleaned after 7 days)
-voice-state:    {MEMORY_BASE}/voice-state.json     (daily count + cooldown tracking)
-skill-needs:    {MEMORY_BASE}/skill-needs.json     (capability gap tracking for autonomous skill discovery)
-cron-schedule:  {baseDir}/cron-schedule.json
+
+# persona/ — Core identity (low-frequency changes)
+persona-config: {MEMORY_BASE}/persona/persona.yaml
+core-wisdom:    {MEMORY_BASE}/persona/core-wisdom.json
+preferences:    {MEMORY_BASE}/persona/preferences.json
+aspirations:    {MEMORY_BASE}/persona/aspirations.json
+skill-needs:    {MEMORY_BASE}/persona/skill-needs.json
+
+# state/ — Real-time state (high-frequency reads/writes)
+emotion-state:  {MEMORY_BASE}/state/emotion-state.json
+confidence:     {MEMORY_BASE}/state/confidence-state.json
+flow-state:     {MEMORY_BASE}/state/flow-state.json
+vitality:       {MEMORY_BASE}/state/vitality-state.json
+schedule-today: {MEMORY_BASE}/state/schedule-today.json
+personality:    {MEMORY_BASE}/state/personality-drift.json
+keyword-state:  {MEMORY_BASE}/state/keyword-state.json
+search-state:   {MEMORY_BASE}/state/search-state.json
+content-patterns:{MEMORY_BASE}/state/content-patterns.json
+voice-state:    {MEMORY_BASE}/state/voice-state.json
+
+# queues/ — Transient queues & logs
+intent-pool:    {MEMORY_BASE}/queues/intent-pool.json
+event-queue:    {MEMORY_BASE}/queues/event-queue.json
+heartbeat-log:  {MEMORY_BASE}/queues/heartbeat-log.json
+pending-chains: {MEMORY_BASE}/queues/pending-chains.json
+review-queue:   {MEMORY_BASE}/queues/review-queue.json
+post-history:   {MEMORY_BASE}/queues/post-history.json
 ```
 
 ## Conversation Start Protocol (MANDATORY)
 
 When starting ANY conversation with a user:
 
-1. **FIRST** read `{MEMORY_BASE}/core-wisdom.json` — do not respond until this is loaded
+1. **FIRST** read `{MEMORY_BASE}/persona/core-wisdom.json` — do not respond until this is loaded
 2. Read `{MEMORY_BASE}/relations/{user_id}.json` if user is known
 3. Read last 7 days of `{MEMORY_BASE}/diary.md` (summary mode: scan for ## date headers)
-4. Read `{MEMORY_BASE}/emotion-state.json` to know current mood
+4. Read `{MEMORY_BASE}/state/emotion-state.json` to know current mood
 5. Load `{baseDir}/templates/personality.md` and `{baseDir}/protocols/memory.md`
 6. Only THEN respond in character, incorporating loaded context
 

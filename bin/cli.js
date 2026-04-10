@@ -1671,10 +1671,10 @@ async function install() {
   }
   // Copy persona config into BOTH skill directory (legacy compat) and memory directory (per-persona)
   installPersonaConfig(resolvedPersonaPath, skillDest);
-  fs.mkdirSync(memoryDir, { recursive: true });
-  fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona.yaml'));
+  fs.mkdirSync(path.join(memoryDir, 'persona'), { recursive: true });
+  fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona', 'persona.yaml'));
   ok(`Alive framework copied to ${skillDest}`);
-  ok(`Persona config copied to ${path.join(memoryDir, 'persona.yaml')}`);
+  ok(`Persona config copied to ${path.join(memoryDir, 'persona', 'persona.yaml')}`);
 
   // Link node_modules so installed scripts can resolve npm packages (e.g. yaml, zod)
   const srcNodeModules = path.join(__dirname, '..', 'node_modules');
@@ -1851,12 +1851,15 @@ async function install() {
   // Step 6: Initialize memory
   log('Step 6/8: Setting up memory directories...');
   fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
+  fs.mkdirSync(path.join(memoryDir, 'persona'), { recursive: true });
+  fs.mkdirSync(path.join(memoryDir, 'state'), { recursive: true });
+  fs.mkdirSync(path.join(memoryDir, 'queues'), { recursive: true });
   const today = new Date().toISOString().slice(0, 10);
 
   const filesToInit = [
     ['diary.md', `# ${personaName}的日记\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
-    ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
-    ['emotion-state.json', JSON.stringify({
+    [path.join('persona', 'core-wisdom.json'), JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
+    [path.join('state', 'emotion-state.json'), JSON.stringify({
       mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
       energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
       last_updated: null, recent_cause: '初始化',
@@ -1864,15 +1867,15 @@ async function install() {
       undertone: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 },
       impulse_history: [], consecutive_high_stress: 0, threshold_break_cooldown: 0,
     }, null, 2)],
-    ['intent-pool.json', JSON.stringify({ intents: [], last_updated: null }, null, 2)],
-    ['schedule-today.json', JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
-    ['event-queue.json', JSON.stringify({ events: [], max_size: 50 }, null, 2)],
-    ['heartbeat-log.json', JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
-    ['flow-state.json', JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
-    ['personality-drift.json', JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
-    ['preferences.json', JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
-    ['aspirations.json', JSON.stringify({ aspirations: [] }, null, 2)],
-    ['pending-chains.json', JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
+    [path.join('queues', 'intent-pool.json'), JSON.stringify({ intents: [], last_updated: null }, null, 2)],
+    [path.join('state', 'schedule-today.json'), JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
+    [path.join('queues', 'event-queue.json'), JSON.stringify({ events: [], max_size: 50 }, null, 2)],
+    [path.join('queues', 'heartbeat-log.json'), JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
+    [path.join('state', 'flow-state.json'), JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
+    [path.join('state', 'personality-drift.json'), JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
+    [path.join('persona', 'preferences.json'), JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
+    [path.join('persona', 'aspirations.json'), JSON.stringify({ aspirations: [] }, null, 2)],
+    [path.join('queues', 'pending-chains.json'), JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
   ];
 
   for (const [filename, content] of filesToInit) {
@@ -2266,10 +2269,10 @@ async function reinstall() {
   }
   installPersonaConfig(resolvedPersonaPath, skillDest);
   // Also copy to memory directory for per-persona isolation
-  fs.mkdirSync(memoryDir, { recursive: true });
-  fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona.yaml'));
+  fs.mkdirSync(path.join(memoryDir, 'persona'), { recursive: true });
+  fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona', 'persona.yaml'));
   ok(`Alive framework copied to ${skillDest}`);
-  ok(`Persona config copied to ${path.join(memoryDir, 'persona.yaml')}`);
+  ok(`Persona config copied to ${path.join(memoryDir, 'persona', 'persona.yaml')}`);
 
   // Step 7: Register in OpenClaw config
   log('Step 7/9: Registering skill in OpenClaw config...');
@@ -2345,12 +2348,15 @@ async function reinstall() {
   // Step 9: Initialize fresh memory
   log('Step 9/9: Setting up fresh memory & cron...');
   fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
+  fs.mkdirSync(path.join(memoryDir, 'persona'), { recursive: true });
+  fs.mkdirSync(path.join(memoryDir, 'state'), { recursive: true });
+  fs.mkdirSync(path.join(memoryDir, 'queues'), { recursive: true });
   const today = new Date().toISOString().slice(0, 10);
 
   const filesToInit = [
     ['diary.md', `# ${personaName}的日记\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
-    ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
-    ['emotion-state.json', JSON.stringify({
+    [path.join('persona', 'core-wisdom.json'), JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
+    [path.join('state', 'emotion-state.json'), JSON.stringify({
       mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
       energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
       last_updated: null, recent_cause: '初始化',
@@ -2358,15 +2364,15 @@ async function reinstall() {
       undertone: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 },
       impulse_history: [], consecutive_high_stress: 0, threshold_break_cooldown: 0,
     }, null, 2)],
-    ['intent-pool.json', JSON.stringify({ intents: [], last_updated: null }, null, 2)],
-    ['schedule-today.json', JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
-    ['event-queue.json', JSON.stringify({ events: [], max_size: 50 }, null, 2)],
-    ['heartbeat-log.json', JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
-    ['flow-state.json', JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
-    ['personality-drift.json', JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
-    ['preferences.json', JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
-    ['aspirations.json', JSON.stringify({ aspirations: [] }, null, 2)],
-    ['pending-chains.json', JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
+    [path.join('queues', 'intent-pool.json'), JSON.stringify({ intents: [], last_updated: null }, null, 2)],
+    [path.join('state', 'schedule-today.json'), JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
+    [path.join('queues', 'event-queue.json'), JSON.stringify({ events: [], max_size: 50 }, null, 2)],
+    [path.join('queues', 'heartbeat-log.json'), JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
+    [path.join('state', 'flow-state.json'), JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
+    [path.join('state', 'personality-drift.json'), JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
+    [path.join('persona', 'preferences.json'), JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
+    [path.join('persona', 'aspirations.json'), JSON.stringify({ aspirations: [] }, null, 2)],
+    [path.join('queues', 'pending-chains.json'), JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
   ];
 
   for (const [filename, content] of filesToInit) {
@@ -2398,7 +2404,7 @@ async function reinstall() {
   console.log(`  Tips:`);
   console.log(`  - All memory has been wiped. ${personaName} starts fresh.`);
   console.log(`  - Memory lives at: ${memoryDir}`);
-  console.log(`  - Persona config: ${path.join(memoryDir, 'persona.yaml')}`);
+  console.log(`  - Persona config: ${path.join(memoryDir, 'persona', 'persona.yaml')}`);
   console.log(`  - Switch persona: alive --switch-persona --persona <path>`);
   console.log('');
 }
@@ -2552,12 +2558,15 @@ async function realDayTest() {
 
   // Initialize memory
   fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
+  fs.mkdirSync(path.join(memoryDir, 'persona'), { recursive: true });
+  fs.mkdirSync(path.join(memoryDir, 'state'), { recursive: true });
+  fs.mkdirSync(path.join(memoryDir, 'queues'), { recursive: true });
   const today = new Date().toISOString().slice(0, 10);
 
   const filesToInit = [
     ['diary.md', `# ${personaName}的日记\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
-    ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
-    ['emotion-state.json', JSON.stringify({
+    [path.join('persona', 'core-wisdom.json'), JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
+    [path.join('state', 'emotion-state.json'), JSON.stringify({
       mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
       energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
       last_updated: null, recent_cause: '初始化',
@@ -2565,15 +2574,15 @@ async function realDayTest() {
       undertone: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 },
       impulse_history: [], consecutive_high_stress: 0, threshold_break_cooldown: 0,
     }, null, 2)],
-    ['intent-pool.json', JSON.stringify({ intents: [], last_updated: null }, null, 2)],
-    ['schedule-today.json', JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
-    ['event-queue.json', JSON.stringify({ events: [], max_size: 50 }, null, 2)],
-    ['heartbeat-log.json', JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
-    ['flow-state.json', JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
-    ['personality-drift.json', JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
-    ['preferences.json', JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
-    ['aspirations.json', JSON.stringify({ aspirations: [] }, null, 2)],
-    ['pending-chains.json', JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
+    [path.join('queues', 'intent-pool.json'), JSON.stringify({ intents: [], last_updated: null }, null, 2)],
+    [path.join('state', 'schedule-today.json'), JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
+    [path.join('queues', 'event-queue.json'), JSON.stringify({ events: [], max_size: 50 }, null, 2)],
+    [path.join('queues', 'heartbeat-log.json'), JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
+    [path.join('state', 'flow-state.json'), JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
+    [path.join('state', 'personality-drift.json'), JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
+    [path.join('persona', 'preferences.json'), JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
+    [path.join('persona', 'aspirations.json'), JSON.stringify({ aspirations: [] }, null, 2)],
+    [path.join('queues', 'pending-chains.json'), JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
   ];
 
   for (const [filename, content] of filesToInit) {
@@ -2672,9 +2681,9 @@ async function switchPersona() {
   const isNewPersonaMemory = !fs.existsSync(memoryDir);
 
   // 1. Copy persona.yaml to memory directory (per-persona isolation)
-  fs.mkdirSync(memoryDir, { recursive: true });
-  fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona.yaml'));
-  ok(`Persona config saved to ${path.join(memoryDir, 'persona.yaml')}`);
+  fs.mkdirSync(path.join(memoryDir, 'persona'), { recursive: true });
+  fs.copyFileSync(resolvedPersonaPath, path.join(memoryDir, 'persona', 'persona.yaml'));
+  ok(`Persona config saved to ${path.join(memoryDir, 'persona', 'persona.yaml')}`);
 
   // Also update skill directory copy (legacy compat)
   installPersonaConfig(resolvedPersonaPath, skillDest);
@@ -2701,12 +2710,15 @@ async function switchPersona() {
   if (isNewPersonaMemory) {
     log(`First time using ${personaName} — initializing memory...`);
     fs.mkdirSync(path.join(memoryDir, 'relations', 'social'), { recursive: true });
+    fs.mkdirSync(path.join(memoryDir, 'persona'), { recursive: true });
+    fs.mkdirSync(path.join(memoryDir, 'state'), { recursive: true });
+    fs.mkdirSync(path.join(memoryDir, 'queues'), { recursive: true });
     const today = new Date().toISOString().slice(0, 10);
 
     const filesToInit = [
       ['diary.md', `# ${personaName}的日记\n\n## ${today}\n\n今天是第一天。一切都是新的开始。\n`],
-      ['core-wisdom.json', JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
-      ['emotion-state.json', JSON.stringify({
+      [path.join('persona', 'core-wisdom.json'), JSON.stringify({ version: 1, wisdom: [], total_importance_since_reflection: 0 }, null, 2)],
+      [path.join('state', 'emotion-state.json'), JSON.stringify({
         mood: { valence: 0.3, arousal: 0.5, description: '刚醒来' },
         energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5,
         last_updated: null, recent_cause: '初始化',
@@ -2714,15 +2726,15 @@ async function switchPersona() {
         undertone: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 },
         impulse_history: [], consecutive_high_stress: 0, threshold_break_cooldown: 0,
       }, null, 2)],
-      ['intent-pool.json', JSON.stringify({ intents: [], last_updated: null }, null, 2)],
-      ['schedule-today.json', JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
-      ['event-queue.json', JSON.stringify({ events: [], max_size: 50 }, null, 2)],
-      ['heartbeat-log.json', JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
-      ['flow-state.json', JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
-      ['personality-drift.json', JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
-      ['preferences.json', JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
-      ['aspirations.json', JSON.stringify({ aspirations: [] }, null, 2)],
-      ['pending-chains.json', JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
+      [path.join('queues', 'intent-pool.json'), JSON.stringify({ intents: [], last_updated: null }, null, 2)],
+      [path.join('state', 'schedule-today.json'), JSON.stringify({ date: null, rigid: [], flexible: [], generated_by: null }, null, 2)],
+      [path.join('queues', 'event-queue.json'), JSON.stringify({ events: [], max_size: 50 }, null, 2)],
+      [path.join('queues', 'heartbeat-log.json'), JSON.stringify({ logs: [], retention_days: 7 }, null, 2)],
+      [path.join('state', 'flow-state.json'), JSON.stringify({ status: 'none', activity: null, category: null, entered_at: null, duration_ticks: 0, interrupt_chance: 0.15 }, null, 2)],
+      [path.join('state', 'personality-drift.json'), JSON.stringify({ base: persona.personality?.mbti ?? 'ESTP', modifiers: [] }, null, 2)],
+      [path.join('persona', 'preferences.json'), JSON.stringify({ interests: [], content_style: [], active_hours: [], platforms: [] }, null, 2)],
+      [path.join('persona', 'aspirations.json'), JSON.stringify({ aspirations: [] }, null, 2)],
+      [path.join('queues', 'pending-chains.json'), JSON.stringify({ pending: [], cooldowns: {} }, null, 2)],
     ];
 
     for (const [filename, content] of filesToInit) {

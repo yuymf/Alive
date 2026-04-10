@@ -349,6 +349,9 @@ describe('buildCandidateContext', () => {
     expect(ctx).toContain('综合');
     // New format shows peak engagement
     expect(ctx).toContain('峰值');
+    // New format shows freshness and stability
+    expect(ctx).toContain('新鲜度');
+    expect(ctx).toContain('稳定性');
     // lowcount candidate should be filtered out (appearance_count < MIN_APPEARANCES_FOR_SUGGESTION)
     expect(ctx).not.toContain('lowcount');
   });
@@ -410,6 +413,7 @@ const MINIMAL_PERSONA: PersonaConfig = {
 };
 
 function writePersonaYaml(persona: PersonaConfig = MINIMAL_PERSONA) {
+  fs.mkdirSync(path.dirname(PATHS.personaConfig), { recursive: true });
   fs.writeFileSync(PATHS.personaConfig, YAML.stringify(persona, { indent: 2 }));
   clearPersonaCache();
 }

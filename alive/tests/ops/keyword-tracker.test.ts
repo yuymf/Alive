@@ -64,6 +64,7 @@ function writePersona(overrides: Partial<PersonaConfig> = {}) {
     },
     ...overrides,
   };
+  fs.mkdirSync(path.dirname(PATHS.personaConfig), { recursive: true });
   fs.writeFileSync(PATHS.personaConfig, YAML.stringify(persona));
   clearPersonaCache();
 }

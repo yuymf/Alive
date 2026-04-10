@@ -72,12 +72,24 @@ export function buildCompetitorContext(
     }
   }
 
-  // Limit number of profiles
+  // Limit number of profiles — prefer primary, then by freshness
   if (options?.maxProfiles && filteredProfiles.length > options.maxProfiles) {
-    // Prefer primary over secondary
-    const primary = filteredProfiles.filter(p => p.reference_type === 'primary');
-    const secondary = filteredProfiles.filter(p => p.reference_type !== 'primary');
-    filteredProfiles = [...primary, ...secondary].slice(0, options.maxProfiles);
+    // Sort: primary first, then by estimated_start_date (newer = first, unknown = last within same tier)
+    filteredProfiles.sort((a, b) => {
+      // Primary vs secondary
+      if (a.reference_type === 'primary' && b.reference_type !== 'primary') return -1;
+      if (a.reference_type !== 'primary' && b.reference_type === 'primary') return 1;
+      // Within same tier: newer start date first (unknown dates go last)
+      const aDate = a.estimated_start_date ? new Date(a.estimated_start_date).getTime() : 0;
+      const bDate = b.estimated_start_date ? new Date(b.estimated_start_date).getTime() : 0;
+      // If both have dates, sort descending (newer first)
+      if (aDate && bDate) return bDate - aDate;
+      // If only one has a date, it comes first
+      if (aDate && !bDate) return -1;
+      if (!aDate && bDate) return 1;
+      return 0;
+    });
+    filteredProfiles = filteredProfiles.slice(0, options.maxProfiles);
   }
 
   // Group profiles by group tag
@@ -98,7 +110,10 @@ export function buildCompetitorContext(
       const liveStr = liveData?.latest_post
         ? `最新：「${liveData.latest_post.topic}」互动${liveData.latest_post.engagement}`
         : '暂无实时数据';
-      return `  @${p.name}（${p.platform}）${p.followers ? `粉丝${p.followers}` : ''}
+      const startStr = p.estimated_start_date
+        ? `起号：${p.estimated_start_date.slice(0, 10)}`
+        : '';
+      return `  @${p.name}（${p.platform}）${p.followers ? `粉丝${p.followers}` : ''}${startStr ? ` | ${startStr}` : ''}
     人设：${p.tag_desc}
     内容比例：${mixStr}
     受众：${p.audience ?? '未知'}

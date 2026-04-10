@@ -11,7 +11,7 @@
 | {persona.schedule.sleep_hour}:00 | 睡前反思 (night) | 日终反思，更新记忆、情绪、偏好、梦想 |
 | {persona.schedule.sleep_hour+1}:00-{persona.schedule.wake_hour-1}:00 | 睡眠 | 无心跳，无活动 |
 
-每天约 {active_hours} 次心跳。睡眠时段收到的事件写入 `event-queue.json`，晨规划时消费。
+每天约 {active_hours} 次心跳。睡眠时段收到的事件写入 `queues/event-queue.json`，晨规划时消费。
 
 ## Cron 触发
 

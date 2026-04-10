@@ -291,9 +291,9 @@ async function cmdCandidates(topNStr?: string): Promise<string> {
 
   display.forEach((c, idx) => {
     const medal = MEDALS[idx] ?? `${idx + 1}.`;
-    const { track_overlap, burst_intensity, frequency, composite } = c.score_breakdown;
+    const { track_overlap, burst_intensity, frequency, account_freshness, data_stability, composite } = c.score_breakdown;
     lines.push(`${medal} @${c.name}（${c.platform}）  综合分 ${composite.toFixed(2)}`);
-    lines.push(`   赛道 ${track_overlap.toFixed(2)} · 爆发 ${burst_intensity.toFixed(2)} · 频率 ${frequency.toFixed(2)}`);
+    lines.push(`   赛道 ${track_overlap.toFixed(2)} · 爆发 ${burst_intensity.toFixed(2)} · 频率 ${frequency.toFixed(2)} · 新鲜度 ${account_freshness.toFixed(2)} · 稳定性 ${data_stability.toFixed(2)}`);
     if (c.topics.length > 0) {
       lines.push(`   话题: ${c.topics.slice(0, 3).join('、')}  |  峰值互动 ${c.peak_engagement}  |  出现 ${c.appearance_count} 次`);
     }

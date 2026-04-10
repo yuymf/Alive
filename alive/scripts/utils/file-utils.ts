@@ -39,73 +39,74 @@ export function resetBasePaths(): void {
 }
 
 export const PATHS = {
-  // === Core state ===
-  get emotionState() { return path.join(getMemoryBase(), 'emotion-state.json'); },
-  get intentPool() { return path.join(getMemoryBase(), 'intent-pool.json'); },
-  get scheduleToday() { return path.join(getMemoryBase(), 'schedule-today.json'); },
-  get eventQueue() { return path.join(getMemoryBase(), 'event-queue.json'); },
-  get preferences() { return path.join(getMemoryBase(), 'preferences.json'); },
-  get aspirations() { return path.join(getMemoryBase(), 'aspirations.json'); },
-  get personalityDrift() { return path.join(getMemoryBase(), 'personality-drift.json'); },
-  get heartbeatLog() { return path.join(getMemoryBase(), 'heartbeat-log.json'); },
-  get diary() { return path.join(getMemoryBase(), 'diary.md'); },
-  get coreWisdom() { return path.join(getMemoryBase(), 'core-wisdom.json'); },
-  get world() { return path.join(getMemoryBase(), 'world.md'); },
-  get vitalityState() { return path.join(getMemoryBase(), 'vitality-state.json'); },
-  get confidenceState() { return path.join(getMemoryBase(), 'confidence-state.json'); },
-  get flowState() { return path.join(getMemoryBase(), 'flow-state.json'); },
-  get pendingChains() { return path.join(getMemoryBase(), 'pending-chains.json'); },
+  // === Subdirectory helpers ===
+  get personaDir() { return path.join(getMemoryBase(), 'persona'); },
+  get stateDir() { return path.join(getMemoryBase(), 'state'); },
+  get queuesDir() { return path.join(getMemoryBase(), 'queues'); },
 
-  // === Social ===
+  // === persona/ — Core identity (low-frequency changes) ===
+  get personaConfig() { return path.join(getMemoryBase(), 'persona', 'persona.yaml'); },
+  get coreWisdom() { return path.join(getMemoryBase(), 'persona', 'core-wisdom.json'); },
+  get preferences() { return path.join(getMemoryBase(), 'persona', 'preferences.json'); },
+  get aspirations() { return path.join(getMemoryBase(), 'persona', 'aspirations.json'); },
+  get skillNeeds() { return path.join(getMemoryBase(), 'persona', 'skill-needs.json'); },
+
+  // === state/ — Real-time state (high-frequency reads/writes) ===
+  get emotionState() { return path.join(getMemoryBase(), 'state', 'emotion-state.json'); },
+  get confidenceState() { return path.join(getMemoryBase(), 'state', 'confidence-state.json'); },
+  get flowState() { return path.join(getMemoryBase(), 'state', 'flow-state.json'); },
+  get vitalityState() { return path.join(getMemoryBase(), 'state', 'vitality-state.json'); },
+  get inspirationState() { return path.join(getMemoryBase(), 'state', 'inspiration-state.json'); },
+  get keywordState() { return path.join(getMemoryBase(), 'state', 'keyword-state.json'); },
+  get searchState() { return path.join(getMemoryBase(), 'state', 'search-state.json'); },
+  get contentPatterns() { return path.join(getMemoryBase(), 'state', 'content-patterns.json'); },
+  get personalityDrift() { return path.join(getMemoryBase(), 'state', 'personality-drift.json'); },
+  get scheduleToday() { return path.join(getMemoryBase(), 'state', 'schedule-today.json'); },
+  get contentTaste() { return path.join(getMemoryBase(), 'state', 'content-taste.json'); },
+  get travelState() { return path.join(getMemoryBase(), 'state', 'travel-state.json'); },
+  get workImpulse() { return path.join(getMemoryBase(), 'state', 'work-impulse.json'); },
+  get contentStrategy() { return path.join(getMemoryBase(), 'state', 'content-strategy.json'); },
+
+  // === queues/ — Transient queues & logs ===
+  get intentPool() { return path.join(getMemoryBase(), 'queues', 'intent-pool.json'); },
+  get eventQueue() { return path.join(getMemoryBase(), 'queues', 'event-queue.json'); },
+  get heartbeatLog() { return path.join(getMemoryBase(), 'queues', 'heartbeat-log.json'); },
+  get pendingChains() { return path.join(getMemoryBase(), 'queues', 'pending-chains.json'); },
+  get reviewQueue() { return path.join(getMemoryBase(), 'queues', 'review-queue.json'); },
+  get postAnalysisLog() { return path.join(getMemoryBase(), 'queues', 'post-analysis-log.json'); },
+  get personaReportLog() { return path.join(getMemoryBase(), 'queues', 'persona-report-log.json'); },
+  get competitorLog() { return path.join(getMemoryBase(), 'queues', 'competitor-log.json'); },
+  get discoveryPool() { return path.join(getMemoryBase(), 'queues', 'discovery-pool.json'); },
+  get opsBriefLog() { return path.join(getMemoryBase(), 'queues', 'ops-brief-log.json'); },
+  get performanceLog() { return path.join(getMemoryBase(), 'queues', 'performance-log.json'); },
+  get analysisLog() { return path.join(getMemoryBase(), 'queues', 'analysis-log.json'); },
+  get trendHistory() { return path.join(getMemoryBase(), 'queues', 'trend-history.json'); },
+  get competitorPosts() { return path.join(getMemoryBase(), 'queues', 'competitor-posts.json'); },
+  get competitorAnalysis() { return path.join(getMemoryBase(), 'queues', 'competitor-analysis.json'); },
+  get candidateAccounts() { return path.join(getMemoryBase(), 'queues', 'candidate-accounts.json'); },
+  get postHistory() { return path.join(getMemoryBase(), 'queues', 'post-history.json'); },
+  get pendingEngagement() { return path.join(getMemoryBase(), 'queues', 'pending-engagement.json'); },
+  get outboundHistory() { return path.join(getMemoryBase(), 'queues', 'outbound-history.json'); },
+  get healthReport() { return path.join(getMemoryBase(), 'queues', 'health-report.json'); },
+
+  // === Social (unchanged) ===
   get socialMeta() { return path.join(getMemoryBase(), 'relations', 'social-meta.json'); },
   get socialDir() { return path.join(getMemoryBase(), 'relations', 'social'); },
 
-  // === Platform content (used by platform sub-skills) ===
-  get inspiration() { return path.join(getMemoryBase(), 'inspiration.json'); },
-  get postHistory() { return path.join(getMemoryBase(), 'post-history.json'); },
-  get photoRoll() { return path.join(getMemoryBase(), 'photo-roll'); },
-  get photoGallery() { return path.join(getMemoryBase(), 'photo-gallery.json'); },
-  get workImpulse() { return path.join(getMemoryBase(), 'work-impulse.json'); },
-  get inspirationRefs() { return path.join(getMemoryBase(), 'inspiration-refs'); },
-  get searchState() { return path.join(getMemoryBase(), 'search-state.json'); },
-  get travelState() { return path.join(getMemoryBase(), 'travel-state.json'); },
-  get pendingEngagement() { return path.join(getMemoryBase(), 'pending-engagement.json'); },
-  get outboundHistory() { return path.join(getMemoryBase(), 'outbound-history.json'); },
-
-  // === Skill discovery ===
-  get skillNeeds() { return path.join(getMemoryBase(), 'skill-needs.json'); },
-
-  // === Ops desk ===
-  get reviewQueue() { return path.join(getMemoryBase(), 'review-queue.json'); },
-  get competitorLog() { return path.join(getMemoryBase(), 'competitor-log.json'); },
-  get trendHistory() { return path.join(getMemoryBase(), 'trend-history.json'); },
-  get opsBriefLog() { return path.join(getMemoryBase(), 'ops-brief-log.json'); },
-  get performanceLog() { return path.join(getMemoryBase(), 'performance-log.json'); },
-  get contentStrategy() { return path.join(getMemoryBase(), 'content-strategy.json'); },
-  get contentPatterns() { return path.join(getMemoryBase(), 'content-patterns.json'); },
-  get analysisLog() { return path.join(getMemoryBase(), 'analysis-log.json'); },
-  get postAnalysisLog() { return path.join(getMemoryBase(), 'post-analysis-log.json'); },
-  get personaReportLog() { return path.join(getMemoryBase(), 'persona-report-log.json'); },
-  get competitorPosts() { return path.join(getMemoryBase(), 'competitor-posts.json'); },
-  get competitorAnalysis() { return path.join(getMemoryBase(), 'competitor-analysis.json'); },
+  // === Root-level files (remain at memory base) ===
+  get diary() { return path.join(getMemoryBase(), 'diary.md'); },
+  get world() { return path.join(getMemoryBase(), 'world.md'); },
+  get cronSchedule() { return path.join(getMemoryBase(), 'cron-schedule.json'); },
   get formulaStore() { return path.join(getMemoryBase(), 'formula-store.json'); },
   get tagVocabulary() { return path.join(getMemoryBase(), 'tag-vocabulary.json'); },
-  get competitorsDir() { return path.join(getMemoryBase(), 'competitors'); },
-  get hitBreakdownsDir() { return path.join(getMemoryBase(), 'hit-breakdowns'); },
   get positioningReport() { return path.join(getMemoryBase(), 'positioning-report.json'); },
   get positioningReportPrev() { return path.join(getMemoryBase(), 'positioning-report.prev.json'); },
-  get healthReport() { return path.join(getMemoryBase(), 'health-report.json'); },
-
-  // === Content browsing state (written by content-browse sub-skill) ===
-  get inspirationState() { return path.join(getMemoryBase(), 'inspiration-state.json'); },
-  get contentTaste() { return path.join(getMemoryBase(), 'content-taste.json'); },
-  get discoveryPool() { return path.join(getMemoryBase(), 'discovery-pool.json'); },
-  get candidateAccounts() { return path.join(getMemoryBase(), 'candidate-accounts.json'); },
-  get keywordState() { return path.join(getMemoryBase(), 'keyword-state.json'); },
-
-  // === Persona-specific infra (per-persona in memory dir) ===
-  get cronSchedule() { return path.join(getMemoryBase(), 'cron-schedule.json'); },
-  get personaConfig() { return path.join(getMemoryBase(), 'persona.yaml'); },
+  get photoGallery() { return path.join(getMemoryBase(), 'photo-gallery.json'); },
+  get inspiration() { return path.join(getMemoryBase(), 'inspiration.json'); },
+  get photoRoll() { return path.join(getMemoryBase(), 'photo-roll'); },
+  get inspirationRefs() { return path.join(getMemoryBase(), 'inspiration-refs'); },
+  get competitorsDir() { return path.join(getMemoryBase(), 'competitors'); },
+  get hitBreakdownsDir() { return path.join(getMemoryBase(), 'hit-breakdowns'); },
   get referencesDir() { return path.join(getMemoryBase(), 'assets', 'references'); },
 
   // === Shared skill infra (global, not per-persona) ===

@@ -65,6 +65,8 @@ export interface CandidateAccount {
     track_overlap: number;
     burst_intensity: number;
     frequency: number;
+    account_freshness: number;
+    data_stability: number;
     composite: number;
   };
   /** Topics they're associated with */
@@ -75,6 +77,8 @@ export interface CandidateAccount {
   last_seen: string;
   /** Status: pending = needs human review, approved = added to competitors, dismissed */
   status: CandidateStatus;
+  /** Content-driven factor (0=account-driven, 1=content-driven). Computed from CV of engagement data. */
+  content_driven_factor?: number;
 }
 
 export interface CandidateAccountsStore {
@@ -310,6 +314,11 @@ export function processInspirationForAccountDiscovery(identityKeys?: string[]): 
       existing.last_seen = dateStr;
       const newTopics = [...data.topics].filter(t => !existing.topics.includes(t));
       existing.topics = [...existing.topics, ...newTopics].slice(0, 10);
+      // Update content_driven_factor if we have enough engagement variance signals
+      if (existing.peak_engagement > 0 && existing.avg_engagement > 0) {
+        const cv = Math.abs(existing.peak_engagement - existing.avg_engagement) / existing.avg_engagement;
+        existing.content_driven_factor = Math.min(cv / 2.0, 1.0);
+      }
     } else {
       // Add new candidate
       store.candidates.push({
@@ -385,7 +394,10 @@ export function buildCandidateContext(identityKeys?: string[]): string {
   for (const c of ranked) {
     const composite = c.score_breakdown.composite.toFixed(2);
     const peak = c.peak_engagement;
+    const freshness = c.score_breakdown.account_freshness;
+    const stability = c.score_breakdown.data_stability;
     lines.push(`  @${c.name}（${c.platform}）综合 ${composite}  出现${c.appearance_count}次  ❤️均值${c.avg_engagement} / 峰值${peak}`);
+    lines.push(`    赛道${(c.score_breakdown.track_overlap * 100).toFixed(0)}% | 新鲜度${(freshness * 100).toFixed(0)}% | 稳定性${(stability * 100).toFixed(0)}%`);
     if (c.topics.length > 0) {
       lines.push(`    话题: ${c.topics.slice(0, 3).join('、')}`);
     }

@@ -1267,6 +1267,8 @@ export interface CompetitorProfile {
   readonly takeaways?: readonly string[];
   /** Anti-patterns to avoid from this competitor */
   readonly avoid?: readonly string[];
+  /** Estimated account start/creation date (ISO date string). Used to prefer recently-started competitors. */
+  readonly estimated_start_date?: string;
 }
 
 // ─── Competitor Memory Knowledge Base Types ─────────────────────────────────

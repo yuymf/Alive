@@ -1,7 +1,16 @@
 /**
  * candidate-scorer.ts
  * Pure-function composite scoring for candidate benchmark accounts.
- * Score = track_overlap × 0.45 + burst_intensity × 0.35 + frequency × 0.20
+ *
+ * Score = track_overlap × 0.30 + burst_intensity × 0.25 + frequency × 0.15
+ *       + account_freshness × 0.15 + data_stability × 0.15
+ *
+ * Dimensions:
+ *   track_overlap    (0.30) — 赛道重叠率: candidate topics match persona identity tracks
+ *   burst_intensity  (0.25) — 爆发强度: peak / avg engagement ratio (近期爆款)
+ *   frequency        (0.15) — 出现频率: how often the author appears in high-engagement content
+ *   account_freshness(0.15) — 起号新鲜度: recently-started accounts score higher (近两年起号)
+ *   data_stability   (0.15) — 数据稳定性: low CV = consistent engagement (数据稳定)
  */
 
 import type { CandidateAccount, CandidateAccountsStore } from './discovery-engine';
@@ -10,10 +19,12 @@ import type { CandidateStatus } from '../utils/types';
 
 export interface ScoredCandidate extends CandidateAccount {
   score_breakdown: {
-    track_overlap: number;    // 0–1  赛道重叠率
-    burst_intensity: number;  // 0–1  爆发强度
-    frequency: number;        // 0–1  出现频率
-    composite: number;        // 0–1  综合分
+    track_overlap: number;     // 0–1  赛道重叠率
+    burst_intensity: number;   // 0–1  爆发强度
+    frequency: number;         // 0–1  出现频率
+    account_freshness: number; // 0–1  起号新鲜度
+    data_stability: number;    // 0–1  数据稳定性
+    composite: number;         // 0–1  综合分
   };
 }
 
@@ -24,12 +35,15 @@ const IDENTITY_KEYWORDS_LOWER: Record<string, string[]> = Object.fromEntries(
 
 // ─── Weights ───────────────────────────────────────────────────────────────────
 
-const WEIGHT_TRACK_OVERLAP   = 0.45;
-const WEIGHT_BURST_INTENSITY = 0.35;
-const WEIGHT_FREQUENCY       = 0.20;
+const WEIGHT_TRACK_OVERLAP    = 0.30;
+const WEIGHT_BURST_INTENSITY  = 0.25;
+const WEIGHT_FREQUENCY        = 0.15;
+const WEIGHT_ACCOUNT_FRESHNESS = 0.15;
+const WEIGHT_DATA_STABILITY   = 0.15;
 
-const BURST_CAP_RATIO           = 5;  // peak/avg ratio that saturates burst score
-const FREQUENCY_SATURATION_COUNT = 5; // appearances needed to reach frequency = 1.0
+const BURST_CAP_RATIO           = 5;   // peak/avg ratio that saturates burst score
+const FREQUENCY_SATURATION_COUNT = 5;  // appearances needed to reach frequency = 1.0
+const FRESHNESS_WINDOW_DAYS     = 730; // 2 years — accounts started within this window get full freshness
 
 // ─── Sub-calculators (pure functions) ─────────────────────────────────────────
 
@@ -58,6 +72,44 @@ function calcFrequency(appearanceCount: number): number {
   return Math.min(appearanceCount / FREQUENCY_SATURATION_COUNT, 1);
 }
 
+/**
+ * Account freshness: recently-started accounts score higher.
+ * Uses first_seen as a proxy for when the account started being active.
+ * - Within FRESHNESS_WINDOW_DAYS (730 ≈ 2 years) → 1.0
+ * - Beyond that, linearly decays to 0 over another FRESHNESS_WINDOW_DAYS
+ * - Unknown/empty first_seen → neutral 0.5
+ */
+function calcAccountFreshness(firstSeen: string | undefined): number {
+  if (!firstSeen) return 0.5; // unknown — neutral score
+  try {
+    const firstSeenDate = new Date(firstSeen);
+    const nowMs = Date.now();
+    const daysSince = (nowMs - firstSeenDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSince <= FRESHNESS_WINDOW_DAYS) return 1.0;
+    // Linear decay from 1.0 → 0.0 over the next FRESHNESS_WINDOW_DAYS
+    const decay = Math.max(0, 1 - (daysSince - FRESHNESS_WINDOW_DAYS) / FRESHNESS_WINDOW_DAYS);
+    return decay;
+  } catch {
+    return 0.5;
+  }
+}
+
+/**
+ * Data stability: low engagement CV = consistent output quality.
+ * Inverse of content_driven_factor:
+ *   - content_driven_factor ≈ 0 → engagement is stable → stability = 1.0
+ *   - content_driven_factor ≈ 1 → engagement is volatile → stability = 0.0
+ * If content_driven_factor is not computed, use burst_intensity as inverse proxy.
+ */
+function calcDataStability(candidate: CandidateAccount): number {
+  if (candidate.content_driven_factor !== undefined) {
+    return 1 - candidate.content_driven_factor;
+  }
+  // Fallback: low burst = high stability
+  // burst_intensity ranges 0–1; invert it as a rough stability proxy
+  return 1 - calcBurstIntensity(candidate);
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -67,17 +119,21 @@ export function scoreCandidateAccount(
   candidate: CandidateAccount,
   identityKeys: string[],
 ): ScoredCandidate {
-  const track_overlap   = calcTrackOverlap(candidate.topics, identityKeys);
-  const burst_intensity = calcBurstIntensity(candidate);
-  const frequency       = calcFrequency(candidate.appearance_count);
+  const track_overlap    = calcTrackOverlap(candidate.topics, identityKeys);
+  const burst_intensity  = calcBurstIntensity(candidate);
+  const frequency        = calcFrequency(candidate.appearance_count);
+  const account_freshness = calcAccountFreshness(candidate.first_seen);
+  const data_stability   = calcDataStability(candidate);
   const composite =
-    track_overlap   * WEIGHT_TRACK_OVERLAP   +
-    burst_intensity * WEIGHT_BURST_INTENSITY +
-    frequency       * WEIGHT_FREQUENCY;
+    track_overlap     * WEIGHT_TRACK_OVERLAP     +
+    burst_intensity   * WEIGHT_BURST_INTENSITY   +
+    frequency         * WEIGHT_FREQUENCY         +
+    account_freshness * WEIGHT_ACCOUNT_FRESHNESS +
+    data_stability    * WEIGHT_DATA_STABILITY;
 
   return {
     ...candidate,
-    score_breakdown: { track_overlap, burst_intensity, frequency, composite },
+    score_breakdown: { track_overlap, burst_intensity, frequency, account_freshness, data_stability, composite },
   };
 }
 

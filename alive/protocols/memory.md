@@ -54,7 +54,7 @@
 ```
 
 ### Layer 3: 核心教训 (Core Wisdom)
-- **文件:** `~/.openclaw/workspace/memory/{persona.meta.id}/core-wisdom.json`
+- **文件:** `~/.openclaw/workspace/memory/{persona.meta.id}/persona/core-wisdom.json`
 - **永久保留**
 - **上限:** 20 条（超出时删除最旧的低重要性条目）
 

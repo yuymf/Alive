@@ -227,6 +227,64 @@ export function getRegisteredSkills(): SubSkillManifest[] {
   return manifests;
 }
 
+// === Memory key → subdirectory mapping ===
+// Sub-skills use memory.readJSON('key-name', fallback) — map keys to the correct subdirectory.
+// Keys not listed here fall back to the memory base root directory.
+const KEY_SUBDIR_MAP: Record<string, string> = {
+  // persona/
+  'core-wisdom': 'persona',
+  'preferences': 'persona',
+  'aspirations': 'persona',
+  'skill-needs': 'persona',
+  // state/
+  'emotion-state': 'state',
+  'confidence-state': 'state',
+  'flow-state': 'state',
+  'vitality-state': 'state',
+  'inspiration-state': 'state',
+  'keyword-state': 'state',
+  'search-state': 'state',
+  'content-patterns': 'state',
+  'personality-drift': 'state',
+  'schedule-today': 'state',
+  'content-taste': 'state',
+  'travel-state': 'state',
+  'work-impulse': 'state',
+  'content-strategy': 'state',
+  'post-impulse': 'state',
+  'viral-search-state': 'state',
+  'voice-state': 'state',
+  'outreach-state': 'state',
+  // queues/
+  'intent-pool': 'queues',
+  'event-queue': 'queues',
+  'heartbeat-log': 'queues',
+  'pending-chains': 'queues',
+  'review-queue': 'queues',
+  'post-analysis-log': 'queues',
+  'persona-report-log': 'queues',
+  'competitor-log': 'queues',
+  'discovery-pool': 'queues',
+  'ops-brief-log': 'queues',
+  'performance-log': 'queues',
+  'analysis-log': 'queues',
+  'trend-history': 'queues',
+  'competitor-posts': 'queues',
+  'competitor-analysis': 'queues',
+  'candidate-accounts': 'queues',
+  'post-history': 'queues',
+  'pending-engagement': 'queues',
+  'outbound-history': 'queues',
+  'health-report': 'queues',
+};
+
+/** Resolve the full path for a memory key (used by MemoryAccessor). */
+function resolveMemoryKeyPath(memBase: string, key: string): string {
+  const subdir = KEY_SUBDIR_MAP[key];
+  if (subdir) return path.join(memBase, subdir, `${key}.json`);
+  return path.join(memBase, `${key}.json`);
+}
+
 /**
  * Build a SubSkillContext for executing a sub-skill action.
  */
@@ -240,6 +298,7 @@ export function buildContext(
   skillConfig: Record<string, unknown> = {},
 ): SubSkillContext {
   // Build memory accessor
+  const memBase = path.dirname(PATHS.diary); // memory base = parent of diary.md
   const memory: MemoryAccessor = {
     readDiary(lastNDays = 7): string {
       const diary = readText(PATHS.diary);
@@ -251,12 +310,10 @@ export function buildContext(
       appendText(PATHS.diary, entry);
     },
     readJSON<T>(key: string, fallback: T): T {
-      const memBase = path.dirname(PATHS.diary);
-      return readJSON(path.join(memBase, `${key}.json`), fallback);
+      return readJSON(resolveMemoryKeyPath(memBase, key), fallback);
     },
     writeJSON<T>(key: string, data: T): void {
-      const memBase = path.dirname(PATHS.diary);
-      writeJSON(path.join(memBase, `${key}.json`), data);
+      writeJSON(resolveMemoryKeyPath(memBase, key), data);
     },
   };
 
