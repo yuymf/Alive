@@ -13,9 +13,17 @@ import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import { loadPersona, getContentSourcesConfig } from '../persona/persona-loader';
 import { loadDiscoveryPool, saveDiscoveryPool, scoreContent } from './discovery-engine';
+import { normalizeKeyword } from '../utils/text-utils';
+import { IDENTITY_TOPIC_KEYWORDS } from './ops-taxonomy';
+import { getIdentityKeys } from '../utils/types';
 import type { ContentProviderRegistry, ContentItem } from '../adapters/content-provider';
 import type { DiscoveryItem } from './discovery-engine';
 import type { CompetitorProfile } from '../utils/types';
+
+// Pre-computed lowercase keyword table for track relevance matching
+const IDENTITY_KEYWORDS_LOWER: Record<string, string[]> = Object.fromEntries(
+  Object.entries(IDENTITY_TOPIC_KEYWORDS).map(([k, v]) => [k, v.map(kw => kw.toLowerCase())]),
+);
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +72,40 @@ const MAX_DISCOVERY_ITEMS = 30;
 /** Minimum engagement to be considered discovery-worthy (lowered for search results) */
 const SEARCH_ENGAGEMENT_THRESHOLD = 100;
 
+// ─── Track Relevance ─────────────────────────────────────────────────────────
+
+/**
+ * Calculate how relevant a keyword is to the persona's identity tracks.
+ * Returns a score between 0 and 1:
+ * - 1.0 = matches at least one identity track
+ * - 0.0 = matches none
+ *
+ * Uses the IDENTITY_TOPIC_KEYWORDS table for substring matching.
+ */
+export function calcKeywordTrackRelevance(keyword: string, identityKeys: string[]): number {
+  if (identityKeys.length === 0) return 0.5; // No identity info — neutral
+  const lowerKw = keyword.toLowerCase();
+  for (const key of identityKeys) {
+    const keywords = IDENTITY_KEYWORDS_LOWER[key] ?? [];
+    if (keywords.some(kw => lowerKw.includes(kw) || kw.includes(lowerKw))) {
+      return 1.0;
+    }
+  }
+  return 0.0;
+}
+
+/**
+ * Load identity keys from persona config (safe — returns [] on failure).
+ */
+function loadIdentityKeysSafe(): string[] {
+  try {
+    const persona = loadPersona();
+    return getIdentityKeys(persona);
+  } catch {
+    return [];
+  }
+}
+
 // ─── I/O ────────────────────────────────────────────────────────────────────
 
 export function loadKeywordState(): KeywordState {
@@ -78,18 +120,36 @@ export function saveKeywordState(state: KeywordState): void {
 
 /**
  * Collect keywords from all sources:
- * 1. persona.content_sources.keywords (static)
- * 2. trending_topics from inspiration-state.json (dynamic)
- * 3. competitor topics from competitor-analysis.json (derived)
+ * 1. persona.content_sources.keywords (static — trusted, always kept)
+ * 2. trending_topics from inspiration-state.json (dynamic — filtered by track relevance)
+ * 3. competitor topics from competitor-analysis.json (derived — filtered by track relevance)
+ *
+ * Track relevance filtering: trending and competitor keywords that have zero overlap
+ * with the persona's identity tracks (IDENTITY_TOPIC_KEYWORDS) are dropped to prevent
+ * off-track searches (e.g., searching "量子计算" for an esports/singer/racer persona).
  */
 export function collectKeywords(): KeywordEntry[] {
   const timestamp = now().toISOString();
   const entries: KeywordEntry[] = [];
   const seen = new Set<string>();
+  const identityKeys = loadIdentityKeysSafe();
 
   const addKeyword = (keyword: string, source: KeywordEntry['source']) => {
-    const normalized = keyword.trim().toLowerCase();
+    const normalized = normalizeKeyword(keyword, {
+      // Only block English keywords from competitor source (takeaways are analytical sentences)
+      // Persona and trending sources may have valid English keywords
+      allowNonChinese: source !== 'competitor',
+      maxLength: 16,
+    });
     if (!normalized || seen.has(normalized)) return;
+
+    // Track relevance gate: skip trending/competitor keywords with zero track relevance
+    // Persona keywords are always trusted (manually configured by the user)
+    if (source !== 'persona' && identityKeys.length > 0) {
+      const relevance = calcKeywordTrackRelevance(normalized, identityKeys);
+      if (relevance === 0) return; // completely off-track — skip
+    }
+
     seen.add(normalized);
     entries.push({
       keyword: normalized,
@@ -126,15 +186,21 @@ export function collectKeywords(): KeywordEntry[] {
   }
 
   // Source 3: competitor topics from competitor-analysis.json
+  // Extract core noun phrases from takeaways instead of using full sentences
   try {
     const persona = loadPersona();
     const competitors: CompetitorProfile[] = [...(persona.ops?.competitors ?? [])];
     for (const comp of competitors) {
       for (const takeaway of comp.takeaways ?? []) {
-        // Extract meaningful keywords from takeaways (first 2-3 words or the whole phrase if short)
-        const cleaned = takeaway.replace(/^关联话题[：:]\s*/, '');
-        if (cleaned.length <= 20) {
-          addKeyword(cleaned, 'competitor');
+        // Takeaways are analytical sentences — extract shorter phrases
+        // Split on comma/和/与/及 to get individual concepts
+        const segments = takeaway
+          .replace(/^关联话题[：:]\s*/, '')
+          .split(/[，、和与及]/)
+          .map(s => s.trim())
+          .filter(s => s.length >= 2);
+        for (const seg of segments) {
+          addKeyword(seg, 'competitor');
         }
       }
     }
@@ -185,10 +251,13 @@ export function mergeKeywords(state: KeywordState, collected: KeywordEntry[]): K
 
 /**
  * Select keywords that are due for a search (cooldown expired, prioritized).
+ * Prioritization now includes track relevance: keywords matching the persona's
+ * identity tracks are preferred over off-track keywords.
  */
 export function selectKeywordsForSearch(state: KeywordState): string[] {
   const currentTime = now();
   const cooldownMs = SEARCH_COOLDOWN_HOURS * 60 * 60 * 1000;
+  const identityKeys = loadIdentityKeysSafe();
 
   const eligible = state.keywords.filter(k => {
     if (!k.last_searched) return true; // Never searched → eligible
@@ -196,12 +265,16 @@ export function selectKeywordsForSearch(state: KeywordState): string[] {
     return elapsed >= cooldownMs;
   });
 
-  // Prioritize: never-searched first, then highest velocity, then persona source
+  // Prioritize: never-searched first, then track relevance + persona source, then velocity
   const sourcePriority: Record<string, number> = { persona: 3, competitor: 2, trending: 1 };
   eligible.sort((a, b) => {
     // Never searched first
     if (!a.last_searched && b.last_searched) return -1;
     if (a.last_searched && !b.last_searched) return 1;
+    // Track relevance: on-track keywords before off-track ones
+    const aRelevance = calcKeywordTrackRelevance(a.keyword, identityKeys);
+    const bRelevance = calcKeywordTrackRelevance(b.keyword, identityKeys);
+    if (aRelevance !== bRelevance) return bRelevance - aRelevance;
     // Persona keywords first
     const sp = (sourcePriority[b.source] ?? 0) - (sourcePriority[a.source] ?? 0);
     if (sp !== 0) return sp;

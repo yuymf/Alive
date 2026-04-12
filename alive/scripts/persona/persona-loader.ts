@@ -248,6 +248,7 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
     .replace(/{persona\.meta\.tagline}/g, p.meta.tagline)
     .replace(/{persona\.meta\.occupation_detail}/g, p.meta.occupation_detail ?? '')
     .replace(/{persona\.meta\.reference_image}/g, p.meta.reference_image ?? '')
+    .replace(/{persona\.meta\.emoji}/g, p.meta.emoji ?? mbtiEmoji(p.personality.mbti))
     // Aliases
     .replace(/{persona\.name}/g, p.meta.name)
     .replace(/{persona\.name_reading}/g, p.meta.name_reading ?? p.meta.name)
@@ -421,6 +422,20 @@ export function getReferenceImageCount(): { existing: number; total: number; mis
     }
   }
   return { existing, total: REFERENCE_FILES.length, missing };
+}
+
+/**
+ * Derive a signature emoji from MBTI type.
+ * Used by {persona.meta.emoji} when meta.emoji is not explicitly set.
+ */
+function mbtiEmoji(mbti: string): string {
+  const map: Record<string, string> = {
+    ENTJ: '⚡', ENFJ: '🌟', INTJ: '🎯', INFJ: '🌙',
+    ENTP: '💡', INTP: '🔭', ENFP: '🌈', INFP: '🌸',
+    ESTJ: '🏆', ISTJ: '📐', ESFJ: '🤝', ISFJ: '🌿',
+    ESTP: '🔥', ISTP: '🛠', ESFP: '🎉', ISFP: '🎨',
+  };
+  return map[mbti?.toUpperCase()] ?? '✨';
 }
 
 /**

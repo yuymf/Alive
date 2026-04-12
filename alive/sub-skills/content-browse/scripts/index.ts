@@ -122,6 +122,7 @@ export const actions = {
       const intentPrompt = intentTemplate
         .replace('{persona_name}', persona.meta.name)
         .replace('{persona_traits}', (persona.personality.core_traits ?? []).join('、'))
+        .replace('{persona_identities}', Object.keys((persona as unknown as Record<string, unknown>).identities ?? {}).map(k => k.replace(/_/g, ' ')).join('、') || (persona.personality.core_traits ?? []).join('、'))
         .replace('{emotion_summary}', `${emotion.mood?.description ?? '平静'} (valence=${moodValence.toFixed(1)}, energy=${moodEnergy.toFixed(1)}, creativity=${moodCreativity.toFixed(1)})`)
         .replace('{action_context}', actionContext || '（没有特别想做的事，随便刷刷）')
         .replace('{recent_inspirations}', recentTitles)

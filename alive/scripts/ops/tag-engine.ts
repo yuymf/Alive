@@ -5,6 +5,7 @@
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { searchXhsNotes } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 import { searchDouyinVideos } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
+import { detectKeywordLanguage } from '../utils/text-utils';
 import type { TagEntry, TagVocabulary, TagSource } from '../utils/types';
 import type { OpsConfig, ViralEntry } from '../utils/types';
 import { now } from '../utils/time-utils';
@@ -29,7 +30,15 @@ const REVIVAL_SCORE = 15;
 export function extractHashtags(text: string, text2?: string): string[] {
   const combined = text2 !== undefined ? `${text} ${text2}` : text;
   const matches = combined.match(HASHTAG_REGEX) ?? [];
-  return [...new Set(matches)];
+  // Filter out non-Chinese tags (Japanese, pure English) that don't work well as search keywords
+  return [...new Set(matches)].filter(tag => {
+    const content = tag.slice(1); // Remove leading #
+    const lang = detectKeywordLanguage(content);
+    // Accept Chinese, mixed (like "AI绘画"), and short English tags (≤8 chars)
+    if (lang === 'zh' || lang === 'mixed') return true;
+    if (lang === 'en' && content.length <= 8) return true; // Short English tags are OK (e.g. #OOTD)
+    return false;
+  });
 }
 
 export function scoreForPlatform(platform: 'xhs' | 'douyin'): number {

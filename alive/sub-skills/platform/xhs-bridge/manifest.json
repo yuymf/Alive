@@ -2,7 +2,9 @@
   "name": "xhs-bridge",
   "display_name": "小红书桥接",
   "version": "0.1.0",
-  "description": "小红书平台 API 封装 — 搜索、信息流、笔记详情",
+  "description": "小红书平台 API 封装 — 搜索、信息流、笔记详情（只读）",
+  "write_policy": "blocked",
+  "write_policy_note": "AI 不得直接发布/互动。内容经 review-queue 推送给运营，运营手动发布后回传 URL，AI 仅记录 published 状态。",
   "intent_bindings": [],
   "config_schema": {
     "xhs_skills_dir": {

@@ -15,8 +15,11 @@ import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import { loadDiscoveryPool, saveDiscoveryPool, scoreContent } from './discovery-engine';
 import { collectKeywords } from './keyword-tracker';
+import { calcKeywordTrackRelevance } from './keyword-tracker';
 import { analyzePost, persistAnalysis } from './viral-analyzer';
 import { loadPersona } from '../persona/persona-loader';
+import { detectKeywordLanguage } from '../utils/text-utils';
+import { getIdentityKeys } from '../utils/types';
 import { searchXhsNotes } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 import { searchDouyinVideos } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 import type { XhsNote } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
@@ -284,12 +287,17 @@ export async function runViralSearch(
   }
 
   // Inject active tags from tag vocabulary (tag-engine.ts) as additional search keywords
+  // Filter out non-Chinese tags that don't work well for XHS/Douyin search
   const tagVocab = readJSON<TagVocabulary | null>(PATHS.tagVocabulary, null);
   if (tagVocab?.active?.length) {
     const tagKeywords = [...tagVocab.active]
       .sort((a, b) => b.score - a.score)
       .slice(0, 10)
-      .map(t => t.tag);
+      .map(t => t.tag.replace(/^#/, '')) // Strip # prefix for search
+      .filter(tag => {
+        const lang = detectKeywordLanguage(tag);
+        return lang === 'zh' || lang === 'mixed' || (lang === 'en' && tag.length <= 8);
+      });
     keywords.push(...tagKeywords);
   }
 
@@ -354,6 +362,8 @@ export async function runViralSearch(
 
 /**
  * Extract top velocity trend keywords from trend-history.json.
+ * Filters by persona track relevance: off-track keywords are deprioritized.
+ * Allows up to 1 "wildcard" slot for cross-track trending content.
  */
 export function extractTopTrendKeywords(limit: number = MAX_RADAR_KEYWORDS): string[] {
   try {
@@ -364,23 +374,58 @@ export function extractTopTrendKeywords(limit: number = MAX_RADAR_KEYWORDS): str
     const latest = historyArr[historyArr.length - 1];
     if (!latest.trends || latest.trends.length === 0) return [];
 
+    // Load identity keys for track filtering
+    let identityKeys: string[] = [];
+    try {
+      const persona = loadPersona();
+      identityKeys = getIdentityKeys(persona);
+    } catch {
+      // No persona — skip track filtering
+    }
+
     // Sort by velocity_score descending and take top N unique keywords
     const sorted = [...latest.trends]
       .filter(t => t.velocity_score > 0)
       .sort((a, b) => b.velocity_score - a.velocity_score);
 
     const seen = new Set<string>();
-    const keywords: string[] = [];
+    const onTrackKeywords: string[] = [];
+    const offTrackKeywords: string[] = [];
 
     for (const trend of sorted) {
       const kw = trend.keyword.trim().toLowerCase();
       if (!kw || seen.has(kw)) continue;
+      // Filter out non-Chinese trend keywords
+      const lang = detectKeywordLanguage(kw);
+      if (lang === 'ja') continue; // Skip Japanese
+      if (lang === 'en' && kw.length > 8) continue; // Skip long English keywords
       seen.add(kw);
-      keywords.push(trend.keyword.trim());  // Keep original casing for search
-      if (keywords.length >= limit) break;
+
+      const originalKw = trend.keyword.trim(); // Keep original casing for search
+
+      // Track relevance check
+      if (identityKeys.length > 0) {
+        const relevance = calcKeywordTrackRelevance(originalKw, identityKeys);
+        if (relevance > 0) {
+          onTrackKeywords.push(originalKw);
+        } else {
+          offTrackKeywords.push(originalKw);
+        }
+      } else {
+        // No identity info — treat all as on-track
+        onTrackKeywords.push(originalKw);
+      }
+
+      if (onTrackKeywords.length + Math.min(offTrackKeywords.length, 1) >= limit) break;
     }
 
-    return keywords;
+    // Compose result: all on-track keywords + up to 1 wildcard off-track keyword
+    const result = [...onTrackKeywords];
+    if (result.length < limit && offTrackKeywords.length > 0) {
+      result.push(offTrackKeywords[0]); // 1 wildcard slot for cross-track discovery
+    }
+
+    return result.slice(0, limit);
   } catch (err) {
     console.warn(`[radar] Failed to read trend-history: ${(err as Error).message}`);
     return [];

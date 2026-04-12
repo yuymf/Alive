@@ -12,6 +12,7 @@ import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now, getLocalDate } from '../utils/time-utils';
 import { TrendItem, TrendHistory, OpsConfig, PersonaConfig, TagVocabulary } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
+import { normalizeKeyword } from '../utils/text-utils';
 
 const isDebug = () => process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true';
 
@@ -173,6 +174,27 @@ interface DailyHotApiResponse {
 }
 
 /**
+ * Clean a raw trending title for use as a keyword.
+ * Strips noise, truncates long titles, removes non-Chinese content.
+ */
+function cleanTrendTitle(raw: string): string {
+  if (!raw) return '';
+  let cleaned = raw
+    // Remove common title suffix noise
+    .replace(/[！？?!…]+$/.source ? /[！？?!…]+$/ : /$/, '')
+    // Remove trailing punctuation
+    .replace(/[，。、：；\s]+$/, '')
+    // Remove common noise words at the end of hot search titles
+    .replace(/(引发热议|引热议|引关注|上热搜|登热搜|成热议|火爆|疯传|刷屏)$/, '')
+    .trim();
+
+  // Use normalizeKeyword for language/length filtering, but keep longer titles
+  // since they'll be further filtered by LLM relevance check
+  const normalized = normalizeKeyword(cleaned, { allowNonChinese: true, maxLength: 20 });
+  return normalized ?? '';
+}
+
+/**
  * Fetch hot topics from remote DailyHot API (async).
  * Supports: douyin, bilibili, weibo, toutiao, sina-news, etc.
  */
@@ -190,7 +212,7 @@ async function callDailyHotNews(platform: string, limit = 30): Promise<TrendItem
     if (parsed.code !== 200) return [];
     return parsed.data.map((item, idx) => ({
       platform,
-      keyword: item.title ?? '',
+      keyword: cleanTrendTitle(item.title ?? ''),
       current_volume: item.hot ?? 0,
       avg_7d: 0,
       velocity_score: 0,
@@ -238,7 +260,7 @@ async function callWeiboDirectApi(limit = 30): Promise<TrendItem[]> {
     if (parsed.ok !== 1 || !parsed.data?.realtime) return [];
     return parsed.data.realtime.slice(0, limit).map((item, idx) => ({
       platform: 'weibo',
-      keyword: item.word ?? '',
+      keyword: cleanTrendTitle(item.word ?? ''),
       current_volume: item.raw_hot ?? item.num ?? 0,
       avg_7d: 0,
       velocity_score: 0,
@@ -282,7 +304,7 @@ async function callBilibiliDirectApi(limit = 20): Promise<TrendItem[]> {
     if (parsed.code !== 0 || !parsed.data?.list) return [];
     return parsed.data.list.slice(0, limit).map((item, idx) => ({
       platform: 'bilibili',
-      keyword: item.title ?? '',
+      keyword: cleanTrendTitle(item.title ?? ''),
       current_volume: item.stat?.view ?? 0,
       avg_7d: 0,
       velocity_score: 0,
@@ -317,7 +339,7 @@ async function callDouyinDirectApi(limit = 30): Promise<TrendItem[]> {
     if (items.length === 0) return [];
     return items.slice(0, limit).map((item, idx) => ({
       platform: 'douyin',
-      keyword: item.title ?? '',
+      keyword: cleanTrendTitle(item.title ?? ''),
       current_volume: item.extra?.hot ?? 0,
       avg_7d: 0,
       velocity_score: 0,

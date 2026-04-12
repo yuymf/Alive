@@ -37,6 +37,7 @@ export interface PersonaConfig {
     tagline: string;
     occupation_detail?: string;
     reference_image?: string;  // Path to source reference image for generating multi-angle references
+    emoji?: string;            // Signature emoji (auto-derived from MBTI if not set)
   };
   personality: {
     mbti: string;

@@ -249,6 +249,40 @@ describe('extractTopTrendKeywords', () => {
     expect(keywords).toHaveLength(1);
     expect(keywords[0]).toBe('hot');
   });
+
+  it('prioritizes on-track keywords when persona has identities', () => {
+    // Write persona with esports/singer identities
+    writePersona({
+      identities: {
+        esports: { tagline: '电竞解说' },
+        singer: { tagline: '歌手' },
+      },
+    } as any);
+
+    const trendHistory: TrendHistory[] = [
+      {
+        date: '2025-01-01',
+        trends: [
+          { platform: 'douyin', keyword: '量子计算', current_volume: 500, avg_7d: 10, velocity_score: 50, rank: 1 },
+          { platform: 'weibo', keyword: '电竞直播', current_volume: 200, avg_7d: 10, velocity_score: 20, rank: 2 },
+          { platform: 'bilibili', keyword: '翻唱新歌', current_volume: 100, avg_7d: 10, velocity_score: 10, rank: 3 },
+          { platform: 'douyin', keyword: 'A股大跌', current_volume: 400, avg_7d: 10, velocity_score: 40, rank: 4 },
+        ],
+      },
+    ];
+    writeJSON(PATHS.trendHistory, trendHistory);
+
+    const keywords = extractTopTrendKeywords(3);
+    // On-track keywords should be included first: 电竞直播, 翻唱新歌
+    // Then 1 wildcard slot for off-track: 量子计算 (highest velocity off-track)
+    expect(keywords).toContain('电竞直播');
+    expect(keywords).toContain('翻唱新歌');
+    // Should have at most 1 off-track keyword
+    const offTrackCount = keywords.filter(
+      kw => !['电竞直播', '翻唱新歌'].includes(kw)
+    ).length;
+    expect(offTrackCount).toBeLessThanOrEqual(1);
+  });
 });
 
 describe('runViralSearch', () => {
@@ -581,13 +615,13 @@ describe('runAutoBreakdown', () => {
 // ─── Tag vocabulary injection ─────────────────────────────────────────────
 
 describe('runViralSearch — tag vocabulary injection', () => {
-  it('includes active tag strings in searched keywords when tag-vocabulary.json exists', async () => {
+  it('includes active tag strings (without # prefix) in searched keywords when tag-vocabulary.json exists', async () => {
     const vocab: TagVocabulary = {
       version: 1,
       last_updated: new Date().toISOString(),
       active: [
         {
-          tag: '#tag_vocab_keyword', platform: 'xhs', score: 80,
+          tag: '#暗黑系眼妆', platform: 'xhs', score: 80,
           sources: [{ type: 'competitor', account: 'a1', platform: 'xhs' }],
           first_seen: new Date().toISOString(), last_hit: new Date().toISOString(),
           hit_count: 3, peak_score: 80,
@@ -599,6 +633,7 @@ describe('runViralSearch — tag vocabulary injection', () => {
     mockSearchXhsNotes.mockResolvedValue([]);
     mockSearchDouyinVideos.mockReturnValue({ success: true, videos: [] });
     const result = await runViralSearch({ forceFresh: true });
-    expect(result.searched_keywords).toContain('#tag_vocab_keyword');
+    // Tag # prefix is stripped for search, Chinese tags are kept
+    expect(result.searched_keywords).toContain('暗黑系眼妆');
   });
 });

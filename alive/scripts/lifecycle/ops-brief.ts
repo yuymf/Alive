@@ -14,7 +14,7 @@ import { analyzeTrends, buildPersonaIdentities } from '../ops/trend-analyzer';
 import { trackCompetitors } from '../ops/competitor-tracker';
 import { generateTopics } from '../ops/topic-generator';
 import { sendDailyBrief } from '../ops/brief-generator';
-import { loadQueue, cleanupOldItems } from '../ops/review-queue';
+import { loadQueue, cleanupOldItems, PENDING_EXPIRE_HOURS, hoursSinceCreated } from '../ops/review-queue';
 import { generatePersonaReport } from '../ops/persona-advisor';
 import { getIdentityKeys } from '../utils/types';
 
@@ -59,7 +59,9 @@ async function main(): Promise<void> {
 
   const queue = await loadQueue();
   const pending = queue.items.filter(i => i.status === 'pending');
-  console.log(`[${wallNow().toISOString()}] ops-brief: after generateTopics, pending=${pending.length} items`);
+  // 只将 48h 内活跃的 pending items 传入 LLM 上下文，expired 内容不参与
+  const activePending = pending.filter(i => hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
+  console.log(`[${wallNow().toISOString()}] ops-brief: after generateTopics, pending=${pending.length} items (active=${activePending.length})`);
 
   // Generate persona alignment report for brief enrichment
   let personaReport = null;
@@ -71,13 +73,13 @@ async function main(): Promise<void> {
 
   const deliveryMode = ops.automation?.brief_delivery ?? 'wecom-target';
 
-  const sent = await sendDailyBrief(trends, competitors, pending, {
+  const sent = await sendDailyBrief(trends, competitors, activePending, {
     personaReport,
-    fullQueueItems: pending,
+    fullQueueItems: activePending,
     identityKeys,
   }, deliveryMode);
 
-  console.log(`[${wallNow().toISOString()}] ops-brief: brief sent=${sent} (mode=${deliveryMode}), ${pending.length} pending topics`);
+  console.log(`[${wallNow().toISOString()}] ops-brief: brief sent=${sent} (mode=${deliveryMode}), ${activePending.length} active pending topics`);
 }
 
 main().catch(err => {

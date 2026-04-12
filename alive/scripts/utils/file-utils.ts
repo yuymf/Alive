@@ -19,7 +19,20 @@ export function getPersonaName(): string {
 }
 
 function getMemoryBase(): string {
-  return _memoryBaseOverride ?? path.join(process.env.HOME!, '.openclaw', 'workspace', 'memory', _personaName);
+  if (_memoryBaseOverride) return _memoryBaseOverride;
+  // Multi-agent layout: non-main personas use ~/.openclaw/workspace-{persona}/memory/{persona}
+  // Main/default persona uses ~/.openclaw/workspace/memory/{persona}
+  const home = process.env.HOME!;
+  if (_personaName === 'main' || _personaName === 'default') {
+    return path.join(home, '.openclaw', 'workspace', 'memory', _personaName);
+  }
+  // Check if isolated agent workspace exists; fall back to legacy layout
+  const isolatedPath = path.join(home, '.openclaw', `workspace-${_personaName}`, 'memory', _personaName);
+  const legacyPath = path.join(home, '.openclaw', 'workspace', 'memory', _personaName);
+  if (fs.existsSync(isolatedPath)) return isolatedPath;
+  if (fs.existsSync(legacyPath)) return legacyPath;
+  // Default to isolated path for new installs
+  return isolatedPath;
 }
 
 function getSkillBase(): string {
@@ -115,7 +128,18 @@ export const PATHS = {
   get assetsDir() { return path.join(getSkillBase(), 'assets'); },
 
   // === Global runtime logs (shared across all personas) ===
-  get runtimeDir() { return _memoryBaseOverride ? path.join(_memoryBaseOverride, '..', '_runtime') : path.join(process.env.HOME!, '.openclaw', 'workspace', 'runtime'); },
+  get runtimeDir() {
+    if (_memoryBaseOverride) return path.join(_memoryBaseOverride, '..', '_runtime');
+    // Use the agent's workspace for runtime logs
+    const home = process.env.HOME!;
+    if (_personaName === 'main' || _personaName === 'default') {
+      return path.join(home, '.openclaw', 'workspace', 'runtime');
+    }
+    const isolatedRuntime = path.join(home, '.openclaw', `workspace-${_personaName}`, 'runtime');
+    const legacyRuntime = path.join(home, '.openclaw', 'workspace', 'runtime');
+    if (fs.existsSync(path.dirname(isolatedRuntime))) return isolatedRuntime;
+    return legacyRuntime;
+  },
   get llmCallLog() { return path.join(this.runtimeDir, 'llm-call-log.jsonl'); },
 
   // === Legacy fallback paths (skill directory — for migration compat) ===

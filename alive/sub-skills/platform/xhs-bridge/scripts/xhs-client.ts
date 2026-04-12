@@ -249,7 +249,24 @@ function resolveXhsDir(): string {
   return path.join(home, '.openclaw', 'skills', 'xiaohongshu-skills');
 }
 
+// ─── 写入命令黑名单 — AI 绝对不允许直接执行任何发布/互动操作 ─────────────
+// 所有内容必须走 review-queue → 运营确认 → 运营手动发布 → 回传 URL 记录。
+const XHS_WRITE_COMMANDS: ReadonlySet<string> = new Set([
+  'publish', 'publish-video', 'fill-publish', 'click-publish',
+  'save-draft', 'post-comment', 'like-feed', 'favorite-feed',
+  'follow-user', 'delete-note', 'unfollow-user', 'unlike-feed',
+]);
+
 async function callXhsCli(command: string, args: string[] = []): Promise<unknown> {
+  // 硬锁：写入命令绝对禁止，必须由运营手动操作
+  if (XHS_WRITE_COMMANDS.has(command)) {
+    throw new Error(
+      `[xhs-bridge] WRITE_BLOCKED: command "${command}" is blocked. ` +
+      `AI must NOT publish directly. Prepare content → push to review queue → ` +
+      `operator publishes manually → mark as published via "已发 <URL>".`
+    );
+  }
+
   // 全局速率限制：排队等待（令牌桶 + 最小间隔）
   await rateLimiter.acquire();
 

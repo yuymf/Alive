@@ -31,6 +31,7 @@ import { trackCompetitors } from '../ops/competitor-tracker';
 import { generateTopics } from '../ops/topic-generator';
 import { formatBriefCard, formatContentPackage, BriefEnrichment } from './brief-generator';
 import { loadQueue, cleanupOldItems } from './review-queue';
+import { PENDING_EXPIRE_HOURS, hoursSinceCreated } from './review-queue';
 import { generatePersonaReport, formatAlignmentCard } from './persona-advisor';
 import { analyzePost, formatAnalysisCard } from './viral-analyzer';
 import { handleReviewMessage } from './ops-review-handler';
@@ -81,6 +82,8 @@ async function cmdBrief(): Promise<string> {
 
   const queue = await loadQueue();
   const pending = queue.items.filter(i => i.status === 'pending');
+  // 只将 48h 内活跃的 pending items 传入 LLM 上下文，expired 内容不参与
+  const activePending = pending.filter(i => hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
 
   // Persona alignment report (best-effort)
   let personaReport = null;
@@ -90,7 +93,7 @@ async function cmdBrief(): Promise<string> {
     // skip
   }
 
-  const enrichment: BriefEnrichment = { personaReport, fullQueueItems: pending, identityKeys };
+  const enrichment: BriefEnrichment = { personaReport, fullQueueItems: activePending, identityKeys };
   const date = now().toISOString().slice(0, 10);
   return formatBriefCard(date, trends, competitors, pending, enrichment);
 }
@@ -387,8 +390,12 @@ async function main(): Promise<void> {
     // 只暴露已知的、用户可理解的错误信息
     if (/未启用|未登录|未找到|无效编号|暂无|未知命令|请提供/.test(msg)) {
       result = `⚠️ ${msg}`;
+    } else if (/timed? ?out|ETIMEDOUT|ECONNREFUSED|ECONNRESET|fetch failed|网络|network/i.test(msg)) {
+      // 超时/网络类错误：给出可操作提示
+      console.error(`[ops-command-handler] Timeout/Network error:`, err);
+      result = '⚠️ 请求超时或网络异常，请稍后重试';
     } else {
-      // 内部错误只写日志，不暴露技术细节给用户
+      // 其他内部错误只写日志，不暴露技术细节给用户
       console.error(`[ops-command-handler] Internal error:`, err);
       result = '⚠️ 命令执行遇到问题，请稍后重试';
     }

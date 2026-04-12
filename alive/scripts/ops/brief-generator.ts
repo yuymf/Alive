@@ -93,10 +93,10 @@ export function formatBriefCard(
   }
 
   // ─── Enrichment sections (new: 生图Prompt, 视频分镜, 人设建议) ────────────
-
-  const enrichItems = enrichment?.fullQueueItems
-    ?? allPending;
-  const firstPending = enrichItems.find(i => i.status === 'pending');
+  // 只使用 48h 内活跃的 pending items，expired 内容不参与 LLM 上下文
+  const enrichItems = (enrichment?.fullQueueItems ?? allPending)
+    .filter(i => i.status === 'pending' && hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
+  const firstPending = enrichItems[0] ?? null;
 
   // 🎨 今日生图 Prompt
   if (firstPending) {

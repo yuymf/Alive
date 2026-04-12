@@ -221,7 +221,7 @@ function fetchXhsAccount(account: string): CompetitorUpdate {
     const raw = execFileSync('uv', [
       'run', '--directory', xhsDir, 'python', xhsCli,
       'search-feeds', '--keyword', account,
-    ], { timeout: 30_000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    ], { timeout: 15_000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     // Output is JSON with a "feeds" array
     const parsed = JSON.parse(raw.trim()) as {
       feeds?: Array<{
@@ -263,7 +263,7 @@ function fetchXhsAccountByUserId(userId: string, displayName: string): Competito
     const raw = execFileSync('uv', [
       'run', '--directory', xhsDir, 'python', xhsCli,
       'user-profile', '--user-id', userId, '--xsec-token', '',
-    ], { timeout: 30_000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    ], { timeout: 15_000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
 
     const parsed = JSON.parse(raw.trim()) as {
       basicInfo?: { nickname?: string; redId?: string; desc?: string };
@@ -305,8 +305,9 @@ function fetchXhsAccountByUserId(userId: string, displayName: string): Competito
       fetched_at: wallNow().toISOString(),
     };
   } catch {
-    // Precise fetch failed — fallback to search by name
-    return fetchXhsAccount(displayName);
+    // Precise fetch failed — return failure marker instead of falling back
+    // to search-by-name (which would double the timeout)
+    return { account: displayName, platform: 'xhs', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
   }
 }
 
@@ -454,9 +455,22 @@ main();
   }
 }
 
+// ─── In-process daily cache ──────────────────────────────────────────────────
+// Avoids re-fetching competitor data within the same day (e.g. cron + /brief)
+
+let _cachedDay: string | null = null;
+let _cachedUpdates: CompetitorUpdate[] | null = null;
+
 // ─── Main export ─────────────────────────────────────────────────────────────
 
 export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
+  // Return cached data if we already fetched today
+  const today = getLocalDate(now());
+  if (_cachedDay === today && _cachedUpdates !== null) {
+    console.error(`[competitor-tracker] Using cached competitor data for ${today}`);
+    return _cachedUpdates;
+  }
+
   const accounts = resolveCompetitorAccounts(ops);
 
   // XHS accounts with url — precise fetch by user_id
@@ -507,7 +521,6 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
   const rawExisting = readJSON<Record<string, unknown>>(PATHS.competitorLog, {});
   const existingEntries: CompetitorUpdate[] =
     (rawExisting as any).entries ?? (rawExisting as any).competitors ?? [];
-  const today = getLocalDate(now());
   // Use getLocalDate on fetched_at to ensure consistent timezone comparison
   const withoutToday = existingEntries.filter(e => {
     const entryDate = getLocalDate(new Date(e.fetched_at));
@@ -518,5 +531,10 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
     last_updated: wallNow().toISOString(),
   };
   writeJSON(PATHS.competitorLog, log);
+
+  // Update in-process cache
+  _cachedDay = today;
+  _cachedUpdates = all;
+
   return all;
 }

@@ -3,6 +3,9 @@ import { formatBriefCard } from '../../scripts/ops/brief-generator';
 import { FilteredTrend } from '../../scripts/ops/trend-analyzer';
 import { CompetitorUpdate, QueueItem } from '../../scripts/utils/types';
 
+// Helper: create a recent timestamp for pending items so they pass the 48h active filter
+const recentTimestamp = new Date().toISOString();
+
 describe('formatBriefCard', () => {
   it('includes trending keywords', () => {
     const trends: FilteredTrend[] = [
@@ -23,7 +26,7 @@ describe('formatBriefCard', () => {
     const items: QueueItem[] = [
       {
         id: 'q1', status: 'pending', topic: '蹭#电竞', trend_hook: 'hook',
-        identity_mode: 'esports', created_at: '', updated_at: '',
+        identity_mode: 'esports', created_at: recentTimestamp, updated_at: '',
         content: { xhs: { title: 'T', body: '', tags: [], cover_images: [] },
                    douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] } },
         edit_history: [],
@@ -60,14 +63,14 @@ describe('formatBriefCard', () => {
     const items: QueueItem[] = [
       {
         id: 'q1', status: 'pending', topic: '蹭#电竞', trend_hook: 'hook',
-        identity_mode: 'esports', created_at: '', updated_at: '',
+        identity_mode: 'esports', created_at: recentTimestamp, updated_at: '',
         content: { xhs: { title: '', body: '', tags: [], cover_images: [] },
                    douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] } },
         edit_history: [],
       },
       {
         id: 'q2', status: 'published', topic: 'old post', trend_hook: 'hook',
-        identity_mode: 'daily', created_at: '', updated_at: '',
+        identity_mode: 'daily', created_at: recentTimestamp, updated_at: '',
         content: { xhs: { title: '', body: '', tags: [], cover_images: [] },
                    douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] } },
         edit_history: [],
@@ -75,5 +78,32 @@ describe('formatBriefCard', () => {
     ] as QueueItem[];
     const card = formatBriefCard('2026-03-30', [], [], items);
     expect(card).toContain('AI 今日推荐选题（1个）');
+  });
+
+  it('filters out expired items (>48h) from enrichment context', () => {
+    const oldTimestamp = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString(); // 72h ago
+    const items: QueueItem[] = [
+      {
+        id: 'q_stale', status: 'pending', topic: '过期选题', trend_hook: 'old hook',
+        identity_mode: 'daily', created_at: oldTimestamp, updated_at: '',
+        content: { xhs: { title: '旧标题', body: '', tags: [], cover_images: ['old-prompt'] },
+                   douyin: { script: '', bgm_suggestion: '', key_captions: ['旧字幕'], cover_images: [] } },
+        edit_history: [],
+      },
+      {
+        id: 'q_fresh', status: 'pending', topic: '新鲜选题', trend_hook: 'fresh hook',
+        identity_mode: 'daily', created_at: recentTimestamp, updated_at: '',
+        content: { xhs: { title: '新标题', body: '', tags: [], cover_images: ['new-prompt'] },
+                   douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] } },
+        edit_history: [],
+      },
+    ] as QueueItem[];
+    const card = formatBriefCard('2026-03-30', [], [], items);
+    // Fresh item should appear in enrichment (生图 Prompt)
+    expect(card).toContain('new-prompt');
+    // Stale item's image prompt should NOT appear
+    expect(card).not.toContain('old-prompt');
+    // Stale item should be counted in "旧选题" summary
+    expect(card).toContain('旧选题已超');
   });
 });

@@ -19,6 +19,7 @@ import {
   updateKeywordAfterSearch,
   runKeywordSearch,
   buildKeywordContext,
+  calcKeywordTrackRelevance,
   DEFAULT_KEYWORD_STATE,
   type KeywordEntry,
   type KeywordState,
@@ -160,6 +161,82 @@ describe('collectKeywords', () => {
     const aiAgentKws = keywords.filter(k => k.keyword === 'ai agent');
     expect(aiAgentKws).toHaveLength(1);
   });
+
+  it('filters out off-track trending keywords when persona has identities', () => {
+    writePersona({
+      identities: {
+        esports: { tagline: '电竞解说' },
+        singer: { tagline: '歌手' },
+      },
+      content_sources: {
+        platforms: ['reddit'],
+        keywords: ['电竞赛事'],
+        dailyhot_platforms: [],
+        reddit_subreddits: [],
+      },
+    } as any);
+    writeJSON(PATHS.inspirationState, {
+      trending_topics: ['量子计算', '电竞直播', 'A股大跌'],
+      feed_highlights: [],
+      domain_insights: [],
+      saved_inspirations: [],
+      last_refreshed_at: new Date().toISOString(),
+    });
+    const keywords = collectKeywords();
+    const trending = keywords.filter(k => k.source === 'trending');
+    // '电竞直播' should pass (matches esports track), '量子计算' and 'A股大跌' should be filtered
+    expect(trending.map(k => k.keyword)).toContain('电竞直播');
+    expect(trending.map(k => k.keyword)).not.toContain('量子计算');
+    expect(trending.map(k => k.keyword)).not.toContain('a股大跌');
+  });
+
+  it('keeps all trending keywords when persona has no identities', () => {
+    writePersona({
+      content_sources: {
+        platforms: ['reddit'],
+        keywords: ['general topic'],
+        dailyhot_platforms: [],
+        reddit_subreddits: [],
+      },
+    });
+    writeJSON(PATHS.inspirationState, {
+      trending_topics: ['量子计算', 'web3'],
+      feed_highlights: [],
+      domain_insights: [],
+      saved_inspirations: [],
+      last_refreshed_at: new Date().toISOString(),
+    });
+    const keywords = collectKeywords();
+    const trending = keywords.filter(k => k.source === 'trending');
+    // No identities → no filtering
+    expect(trending.map(k => k.keyword)).toContain('量子计算');
+    expect(trending.map(k => k.keyword)).toContain('web3');
+  });
+});
+
+describe('calcKeywordTrackRelevance', () => {
+  it('returns 1.0 when keyword matches an identity track', () => {
+    expect(calcKeywordTrackRelevance('电竞赛事直播', ['esports'])).toBe(1.0);
+    expect(calcKeywordTrackRelevance('翻唱新歌', ['singer'])).toBe(1.0);
+    expect(calcKeywordTrackRelevance('赛车漂移', ['racer'])).toBe(1.0);
+    expect(calcKeywordTrackRelevance('日常vlog', ['daily'])).toBe(1.0);
+  });
+
+  it('returns 0.0 when keyword matches no identity track', () => {
+    expect(calcKeywordTrackRelevance('量子计算', ['esports', 'singer'])).toBe(0.0);
+    expect(calcKeywordTrackRelevance('A股大跌', ['racer'])).toBe(0.0);
+  });
+
+  it('returns 0.5 when no identity keys provided', () => {
+    expect(calcKeywordTrackRelevance('anything', [])).toBe(0.5);
+  });
+
+  it('handles bidirectional substring matching', () => {
+    // Track keyword includes the search keyword
+    expect(calcKeywordTrackRelevance('fps', ['esports'])).toBe(1.0);
+    // Search keyword includes the track keyword
+    expect(calcKeywordTrackRelevance('电竞比赛直播解说', ['esports'])).toBe(1.0);
+  });
 });
 
 describe('mergeKeywords', () => {
@@ -255,7 +332,7 @@ describe('selectKeywordsForSearch', () => {
     expect(selected).toHaveLength(0); // Should be filtered out by cooldown
   });
 
-  it('limits to MAX_SEARCHES_PER_TICK (3)', () => {
+  it('limits to MAX_SEARCHES_PER_TICK (2)', () => {
     const state: KeywordState = {
       keywords: Array.from({ length: 10 }, (_, i) => ({
         keyword: `kw-${i}`,
@@ -270,7 +347,7 @@ describe('selectKeywordsForSearch', () => {
       total_searches: 0,
     };
     const selected = selectKeywordsForSearch(state);
-    expect(selected).toHaveLength(3);
+    expect(selected).toHaveLength(2);
   });
 });
 
