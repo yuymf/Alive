@@ -166,13 +166,13 @@ export const actions = {
       }
     }
 
-    // Dedup
+    // Dedup + sort by likes descending (high-engagement content first)
     const seenIds = new Set<string>();
     const allItems = [...feedItems, ...searchItems].filter(item => {
       if (seenIds.has(item.id)) return false;
       seenIds.add(item.id);
       return true;
-    });
+    }).sort((a, b) => b.likes - a.likes);
 
     if (allItems.length === 0) {
       return createResult(

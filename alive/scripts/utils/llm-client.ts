@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { PATHS } from './file-utils';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 
 // === Core Interface ===
 
@@ -68,6 +68,12 @@ export interface LLMClientExtended extends LLMClient {
 export interface LLMResult {
   content: string;
   finishReason: string;
+  /** Model name actually used (for logging). */
+  model?: string;
+  /** Input token count (nullable — not all backends report this). */
+  inputTokens?: number | null;
+  /** Output token count (nullable — not all backends report this). */
+  outputTokens?: number | null;
 }
 
 // === Real LLM Implementation (OpenAI-compatible API) ===
@@ -83,25 +89,82 @@ function isAbortError(err: unknown): boolean {
   return Boolean(err) && typeof err === 'object' && (err as { name?: string }).name === 'AbortError';
 }
 
+/** OpenClaw agent JSON response shape (partial). */
+interface OpenClawAgentResponse {
+  payloads?: Array<{ text: string | null; mediaUrl: string | null }>;
+  meta?: {
+    durationMs?: number;
+    agentMeta?: {
+      sessionId?: string;
+      provider?: string;
+      model?: string;
+      usage?: {
+        input?: number;
+        output?: number;
+        total?: number;
+      };
+    };
+  };
+  aborted?: boolean;
+}
+
 /**
- * Call LLM via OpenClaw's built-in Claude when no LLM_API_KEY is configured.
- * Uses `openclaw run --json "<prompt>"` CLI and returns stdout as the response.
- * Falls back for users who haven't configured a custom LLM key.
+ * Call LLM via OpenClaw's built-in agent when no LLM_API_KEY is configured.
+ * Uses `openclaw agent --agent <name> --local -m "..." --json` CLI.
+ *
+ * Design choices:
+ *  - Uses spawnSync with args array (no shell) to avoid shell injection.
+ *  - Parses JSON from stderr (openclaw writes --json output to stderr).
+ *  - Falls back to raw stdout+stderr if JSON parsing fails.
+ *  - Agent name configurable via OPENCLAW_AGENT env (default: "main").
+ *  - Timeout configurable via OPENCLAW_TIMEOUT_MS env (default: 120s).
  */
 function callLLMViaOpenClaw(prompt: string): LLMResult {
-  const escaped = prompt
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t')
-    .replace(/`/g, '\\`')
-    .replace(/\$/g, '\\$');
-  const output = execSync(`openclaw run --json "${escaped}"`, {
-    encoding: 'utf8',
-    timeout: 120_000,
-  });
-  return { content: String(output).trim(), finishReason: 'stop' };
+  const agentName = process.env.OPENCLAW_AGENT || 'main';
+  const timeoutMs = parseInt(process.env.OPENCLAW_TIMEOUT_MS || '120000', 10);
+
+  const result = spawnSync(
+    'openclaw',
+    ['agent', '--agent', agentName, '--local', '-m', prompt, '--json'],
+    { encoding: 'utf8', timeout: timeoutMs },
+  );
+
+  if (result.error) {
+    throw new Error(`openclaw agent failed: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `openclaw agent exited with code ${result.status}: ${(result.stderr || '').slice(0, 500)}`,
+    );
+  }
+
+  // openclaw writes --json output to stderr; stdout may be empty or contain progress info
+  const jsonOutput = (result.stderr || '').trim() || (result.stdout || '').trim();
+
+  // Parse JSON response
+  try {
+    const parsed: OpenClawAgentResponse = JSON.parse(jsonOutput);
+    const text = parsed?.payloads?.[0]?.text;
+    const provider = parsed?.meta?.agentMeta?.provider;
+    const modelName = parsed?.meta?.agentMeta?.model;
+    const modelStr = (provider && modelName) ? `${provider}/${modelName}` : 'openclaw';
+    const usage = parsed?.meta?.agentMeta?.usage;
+    if (typeof text === 'string') {
+      return {
+        content: text,
+        finishReason: parsed.aborted ? 'length' : 'stop',
+        model: modelStr,
+        inputTokens: usage?.input ?? null,
+        outputTokens: usage?.output ?? null,
+      };
+    }
+  } catch {
+    // JSON parse failed, fall through to raw output
+  }
+
+  // Fallback: return raw combined output
+  const rawOutput = ((result.stdout || '') + (result.stderr || '')).trim();
+  return { content: rawOutput, finishReason: 'stop', model: 'openclaw' };
 }
 
 function debugLog(label: string, content: string): void {
@@ -197,10 +260,10 @@ export async function callLLM(
       prompt,
       response: result.content,
       elapsed_ms: wallNow().getTime() - startMs,
-      input_tokens: null,
-      output_tokens: null,
-      finish_reason: 'stop',
-      model: 'openclaw-native',
+      input_tokens: result.inputTokens ?? null,
+      output_tokens: result.outputTokens ?? null,
+      finish_reason: result.finishReason,
+      model: result.model ?? 'openclaw',
       error_message: null,
     });
     return result;

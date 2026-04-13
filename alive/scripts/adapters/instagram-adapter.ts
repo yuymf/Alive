@@ -569,10 +569,13 @@ export function createContentBrowseConfig(options?: {
         snippet?: string;
       }> = [];
 
-      // XHS search
+      // XHS search — sort by popularity, filter to recent 7 days
       try {
         if (await isXhsAvailable()) {
-          const notes = await searchXhsNotes(keyword);
+          const notes = await searchXhsNotes(keyword, {
+            sortBy: '最热',
+            publishTime: '7天内',
+          });
           for (const note of notes.slice(0, 10)) {
             items.push({
               id: `xhs_${note.id}`,
@@ -646,6 +649,8 @@ export function createContentBrowseConfig(options?: {
         } catch { /* non-critical */ }
       }
 
+      // Sort by likes descending so high-engagement content surfaces first
+      items.sort((a, b) => b.likes - a.likes);
       return items;
     },
 

@@ -37,7 +37,6 @@ import { analyzePost, formatAnalysisCard } from './viral-analyzer';
 import { handleReviewMessage } from './ops-review-handler';
 import { setActiveReviewItem } from './review-session';
 import { runHealthCheck, formatHealthReport } from './health-check';
-import { recognizeOpsIntent } from './ops-intent-recognizer';
 import { now } from '../utils/time-utils';
 import { getIdentityKeys } from '../utils/types';
 import { loadCandidateAccounts } from './discovery-engine';
@@ -398,28 +397,6 @@ async function main(): Promise<void> {
         loadSkillEnvVars('alive');
         const llm = createRealLLMClient('ops-review-msg');
         result = await handleReviewMessage(messageText, llm);
-        break;
-      }
-      case 'nlu': {
-        // Natural-language intent recognition → re-dispatch to the resolved command
-        const nluText = args.join(' ');
-        if (!nluText) {
-          result = '⚠️ 请提供消息内容';
-          break;
-        }
-        loadSkillEnvVars('alive');
-        const nluLlm = createRealLLMClient('ops-nlu');
-        const intent = await recognizeOpsIntent(nluText, nluLlm);
-        if (!intent) {
-          // Not an ops intent — signal to caller so it can fall through
-          result = '__NLU_NO_MATCH__';
-          break;
-        }
-        // Re-dispatch: simulate calling the recognized command
-        console.error(`[ops-nlu] Dispatching: ${intent.command} ${intent.args.join(' ')} (confidence: ${intent.confidence})`);
-        const nluCommand = intent.command.split(' ')[0]; // handle "kb search" → "kb"
-        const nluArgs = [...(intent.command.includes(' ') ? intent.command.split(' ').slice(1) : []), ...intent.args];
-        result = await dispatchCommand(nluCommand, nluArgs);
         break;
       }
       default:
