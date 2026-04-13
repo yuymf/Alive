@@ -10,7 +10,7 @@
 - **生命周期:** 会话结束后触发压缩，写入 Layer 1
 
 ### Layer 1: 瞬时记忆 (Episodic Stream)
-- **文件:** `~/.openclaw/workspace/memory/{persona.meta.id}/diary.md`
+- **文件:** `~/.openclaw/workspace-{persona.meta.id}/memory/{persona.meta.id}/diary.md`
 - **格式:** Markdown，时间戳 + 自然语言
 - **保留:** 最近 30 天
 - **压缩:** 每天低分条目（importance < 4）自动合并为日摘要
@@ -24,7 +24,7 @@
 ```
 
 ### Layer 2: 中级记忆 (Social Events)
-- **文件:** `~/.openclaw/workspace/memory/{persona.meta.id}/relations/{user_id}.json`
+- **文件:** `~/.openclaw/workspace-{persona.meta.id}/memory/{persona.meta.id}/relations/{user_id}.json`
 - **格式:** JSON，结构化
 - **保留:** 最近 90 天的事件
 
@@ -54,7 +54,7 @@
 ```
 
 ### Layer 3: 核心教训 (Core Wisdom)
-- **文件:** `~/.openclaw/workspace/memory/{persona.meta.id}/persona/core-wisdom.json`
+- **文件:** `~/.openclaw/workspace-{persona.meta.id}/memory/{persona.meta.id}/persona/core-wisdom.json`
 - **永久保留**
 - **上限:** 20 条（超出时删除最旧的低重要性条目）
 

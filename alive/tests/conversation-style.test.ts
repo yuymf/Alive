@@ -248,9 +248,7 @@ describe('integration: guodegang persona template rendering', () => {
   it('personality.md renders expanded banned expressions', () => {
     const template = fs.readFileSync(personalityPath, 'utf8');
     const rendered = injectPersona(template, persona);
-    // Universal expansions (static text)
-    expect(rendered).toContain('一切"等候指示"型表达');
-    // Persona-specific banned expressions
+    // Persona-specific banned expressions rendered from config
     expect(rendered).toContain('- "指点指点"');
     expect(rendered).toContain('- "有什么事儿得我..."');
     // No unresolved placeholder

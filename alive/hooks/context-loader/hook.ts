@@ -6,6 +6,7 @@ import * as path from 'path';
 import { readJSON, readText, PATHS, setPersonaName } from '../../scripts/utils/file-utils';
 import type { EmotionState, WisdomStore, PersonaConfig } from '../../scripts/utils/types';
 import { hydrateEmotionState } from '../../scripts/utils/types';
+import { injectPersona } from '../../scripts/persona/persona-loader';
 
 export interface ContextLoaderResult {
   persona: PersonaConfig;
@@ -59,15 +60,17 @@ export async function loadContext(
     ? hydrateEmotionState(rawEmotion)
     : getDefaultEmotionState();
 
-  // 5. Templates
-  const personality = readText(
+  // 5. Templates (inject persona placeholders into personality.md)
+  const rawPersonality = readText(
     path.join(getTemplatesDir(), 'personality.md'),
     '# Personality\n(not loaded)',
   );
-  const memoryProtocol = readText(
+  const personality = injectPersona(rawPersonality, persona);
+  const rawMemoryProtocol = readText(
     path.join(getProtocolsDir(), 'memory.md'),
     '# Memory Protocol\n(not loaded)',
   );
+  const memoryProtocol = injectPersona(rawMemoryProtocol, persona);
 
   return {
     persona,

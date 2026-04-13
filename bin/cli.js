@@ -14,6 +14,156 @@ const WORKSPACE_DIR = path.join(OPENCLAW_DIR, 'workspace');
 const SOUL_FILE = path.join(WORKSPACE_DIR, 'SOUL.md');
 const CONFIG_FILE = path.join(OPENCLAW_DIR, 'openclaw.json');
 
+// ─── Multi-Agent Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Resolve workspace directory for a persona.
+ * Non-main personas get their own workspace at ~/.openclaw/workspace-{slug}/
+ * Main/default persona uses ~/.openclaw/workspace/
+ */
+function resolveAgentWorkspace(personaSlug) {
+  if (personaSlug === 'main' || personaSlug === 'default') {
+    return WORKSPACE_DIR;
+  }
+  return path.join(OPENCLAW_DIR, `workspace-${personaSlug}`);
+}
+
+/**
+ * Resolve SOUL.md path for a persona's workspace.
+ */
+function resolveAgentSoulFile(personaSlug) {
+  return path.join(resolveAgentWorkspace(personaSlug), 'SOUL.md');
+}
+
+/**
+ * Resolve memory directory for a persona within its agent workspace.
+ */
+function resolveAgentMemoryDir(personaSlug) {
+  return path.join(resolveAgentWorkspace(personaSlug), 'memory', personaSlug);
+}
+
+/**
+ * Check if an openclaw agent exists.
+ */
+function agentExists(agentId) {
+  if (!isOpenClawCLIAvailable()) return false;
+  try {
+    const raw = execFileSync('openclaw', ['agents', 'list', '--json'], {
+      timeout: 10000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const parsed = JSON.parse(raw);
+    const agents = Array.isArray(parsed) ? parsed : (parsed?.agents ?? []);
+    return agents.some(a => a.id === agentId || a.name === agentId);
+  } catch {
+    // Fallback: check if directory exists
+    return fs.existsSync(path.join(OPENCLAW_DIR, 'agents', agentId));
+  }
+}
+
+/**
+ * Create an isolated openclaw agent for a persona.
+ * Uses `openclaw agents add` with its own workspace directory.
+ * Also sets up channel routing bindings if persona has channel config.
+ */
+function ensureIsolatedAgent(personaSlug, persona, model) {
+  if (!isOpenClawCLIAvailable()) {
+    warn('OpenClaw CLI not available — skipping isolated agent creation');
+    return false;
+  }
+
+  // Skip if this is the default/main persona
+  if (personaSlug === 'main' || personaSlug === 'default') {
+    ok('Using main agent (default persona)');
+    return true;
+  }
+
+  const agentWorkspace = resolveAgentWorkspace(personaSlug);
+
+  if (agentExists(personaSlug)) {
+    ok(`Agent "${personaSlug}" already exists`);
+    return true;
+  }
+
+  // Create workspace directory upfront so openclaw agents add can use it
+  fs.mkdirSync(agentWorkspace, { recursive: true });
+
+  const args = [
+    'agents', 'add', personaSlug,
+    '--workspace', agentWorkspace,
+    '--non-interactive',
+  ];
+  if (model) {
+    args.push('--model', model);
+  }
+
+  try {
+    execFileSync('openclaw', args, { timeout: 15000, encoding: 'utf8', stdio: 'pipe' });
+    ok(`Created isolated agent: ${personaSlug} (workspace: ${agentWorkspace})`);
+  } catch (err) {
+    warn(`Failed to create isolated agent: ${err.message}`);
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Bind channel routing for an isolated agent.
+ * E.g., route wecom:miss-v → miss-v agent.
+ */
+function ensureAgentBinding(personaSlug, channel, accountId) {
+  if (!isOpenClawCLIAvailable()) return false;
+  if (personaSlug === 'main' || personaSlug === 'default') return true;
+
+  const bindSpec = accountId ? `${channel}:${accountId}` : channel;
+
+  try {
+    execFileSync('openclaw', ['agents', 'bind', '--agent', personaSlug, '--bind', bindSpec], {
+      timeout: 10000, encoding: 'utf8', stdio: 'pipe',
+    });
+    ok(`Bound ${bindSpec} → agent "${personaSlug}"`);
+    return true;
+  } catch (err) {
+    // May already be bound — check if it's a duplicate error
+    const msg = err.message || '';
+    if (msg.includes('already') || msg.includes('exists') || msg.includes('duplicate')) {
+      ok(`Binding ${bindSpec} → "${personaSlug}" already exists`);
+      return true;
+    }
+    warn(`Failed to bind ${bindSpec} → "${personaSlug}": ${msg}`);
+    return false;
+  }
+}
+
+/**
+ * Delete an isolated openclaw agent and optionally its workspace.
+ */
+function deleteIsolatedAgent(personaSlug) {
+  if (!isOpenClawCLIAvailable()) return false;
+  if (personaSlug === 'main' || personaSlug === 'default') return false;
+
+  try {
+    execFileSync('openclaw', ['agents', 'delete', personaSlug, '--yes'], {
+      timeout: 15000, encoding: 'utf8', stdio: 'pipe',
+    });
+    ok(`Deleted agent: ${personaSlug}`);
+    return true;
+  } catch (err) {
+    // Try without --yes flag (older openclaw versions)
+    try {
+      execFileSync('openclaw', ['agents', 'delete', personaSlug], {
+        timeout: 15000, encoding: 'utf8', stdio: 'pipe',
+        input: 'y\n',
+      });
+      ok(`Deleted agent: ${personaSlug}`);
+      return true;
+    } catch (err2) {
+      warn(`Failed to delete agent "${personaSlug}": ${err2.message}`);
+      return false;
+    }
+  }
+}
+
 const ALIVE_SRC = path.join(__dirname, '..', 'alive');
 const DIST_SRC = path.join(__dirname, '..', 'dist-alive');
 const E2E_REAL_DAY = path.join(__dirname, '..', 'e2e', 'e2e-real-day.ts');
@@ -588,14 +738,14 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
     const briefSession = 'isolated';
 
     specs.push(
-      { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 执行${personaName}运营简报。`, timeout: 180, noDeliver: briefNoDeliver, session: briefSession },
+      { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 请运行 npx alive:ops-brief${personaSlug ? ' --persona ' + personaSlug : ''}，生成今日运营简报（热点+选题+人设建议）。`, timeout: 180, noDeliver: briefNoDeliver, session: briefSession },
     );
 
     // Background ops jobs (always-on)
     const bgJobs = [
-      { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 执行${personaName}运营趋势收集。`, timeout: 120 },
-      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 执行${personaName}竞品帖子采集与分析。`, timeout: 300 },
-      { name: `${skillSlug}:${personaSlug}:ops-tags`, cron: '0 10,20 * * *', message: `[cron:ops-tags] 执行${personaName}Tag词表维护。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 请运行 npx alive:ops-trends${personaSlug ? ' --persona ' + personaSlug : ''}，从抖音/微博/B站/头条/百度采集热点数据，追踪竞品动态，更新爆款知识库。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 请运行 npx alive:ops-competitor-analysis${personaSlug ? ' --persona ' + personaSlug : ''}，采集并分析竞品账号最新帖子。`, timeout: 300 },
+      { name: `${skillSlug}:${personaSlug}:ops-tags`, cron: '0 10,20 * * *', message: `[cron:ops-tags] 请运行 npx alive:ops-tags${personaSlug ? ' --persona ' + personaSlug : ''}，维护Tag词表（热门词检测+过期词清理）。`, timeout: 120 },
     ];
     for (const job of bgJobs) {
       specs.push({ ...job, noDeliver: silentBg });
@@ -605,9 +755,9 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
     const strategyEnabled = persona.ops?.strategy_enabled === true;
     if (strategyEnabled) {
       const strategyJobs = [
-        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 执行${personaName}内容表现数据采集。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 执行${personaName}内容表现分析。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 执行${personaName}周度内容策略生成。`, timeout: 300 },
+        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 请运行 npx alive:ops-performance${personaSlug ? ' --persona ' + personaSlug : ''}，采集内容表现数据。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 请运行 npx alive:ops-analyze${personaSlug ? ' --persona ' + personaSlug : ''}，分析内容表现数据。`, timeout: 120 },
+        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 请运行 npx alive:ops-strategy${personaSlug ? ' --persona ' + personaSlug : ''}，生成周度内容策略。`, timeout: 300 },
       ];
       for (const job of strategyJobs) {
         specs.push({ ...job, noDeliver: silentBg });
@@ -620,7 +770,7 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
       specs.push({
         name: `${skillSlug}:${personaSlug}:ops-browse`,
         cron: browseInterval,
-        message: `[cron:ops-browse] 执行${personaName}内容浏览。`,
+        message: `[cron:ops-browse] 请运行 npx alive:ops-browse${personaSlug ? ' --persona ' + personaSlug : ''}，浏览内容平台发现灵感。`,
         timeout: 120,
         noDeliver: silentBg,
       });
@@ -634,7 +784,7 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
  * Reconcile cron jobs: remove all existing jobs for this persona prefix, then add desired specs.
  * This ensures idempotent registration — no duplicates.
  */
-function reconcileCronJobs({ specs, skillSlug, personaSlug }) {
+function reconcileCronJobs({ specs, skillSlug, personaSlug, agentId }) {
   const prefix = `${skillSlug}:${personaSlug}:`;
 
   // 1. List all existing jobs
@@ -670,12 +820,16 @@ function reconcileCronJobs({ specs, skillSlug, personaSlug }) {
       '--exact',
       '--json',
     ];
+    // Route cron jobs to the isolated agent (non-main personas)
+    if (agentId && agentId !== 'main' && agentId !== 'default') {
+      args.push('--agent', agentId);
+    }
     if (spec.noDeliver) {
       args.push('--no-deliver');
     }
     try {
       execFileSync('openclaw', args, { timeout: 10000, encoding: 'utf8' });
-      ok(`Registered cron: ${spec.name} (${spec.cron})${spec.noDeliver ? ' [no-deliver]' : ''}`);
+      ok(`Registered cron: ${spec.name} (${spec.cron})${spec.noDeliver ? ' [no-deliver]' : ''}${agentId ? ` [agent:${agentId}]` : ''}`);
     } catch (err) {
       warn(`Failed to register cron ${spec.name}: ${err.message}`);
     }
@@ -1343,12 +1497,122 @@ async function setupReferenceImages({ persona, personaYamlDir, skillDest, memory
 }
 
 /**
+ * Check if the content outside alive markers is just the openclaw-native blank template.
+ * Native templates contain placeholder prompts like "(pick something you like)" or
+ * empty fields — they have no real user data and can be safely replaced.
+ */
+function isNativeTemplate(content) {
+  if (!content) return true;
+  const stripped = content.trim();
+  if (!stripped) return true;
+  // OpenClaw native templates have characteristic empty field patterns
+  return stripped.includes('_(pick something') ||
+         stripped.includes('_(optional)_') ||
+         (stripped.includes('- **Name:**') && !stripped.match(/- \*\*Name:\*\*\s+\S/));
+}
+
+/**
+ * Write (or replace) alive-injected sections in workspace files (IDENTITY.md, USER.md).
+ * Uses marker comments (<!-- alive-identity-start/end -->, <!-- alive-user-start/end -->)
+ * to identify alive-managed content.
+ * When alive markers exist, the entire file is replaced with the new alive content
+ * (since alive's template supersedes the openclaw-native blank template and includes
+ * all the same fields pre-filled).
+ * If the file does not exist, it is created with the alive section.
+ */
+function writeWorkspaceFiles(persona, workspaceDir) {
+  const skillSlug = 'alive';
+  const personaName = persona.meta.name;
+
+  // --- IDENTITY.md ---
+  const identityTemplatePath = path.join(TEMPLATES_DIR, 'identity.md');
+  if (fs.existsSync(identityTemplatePath)) {
+    const identityMarker = `<!-- ${skillSlug}-identity-start -->`;
+    const identityMarkerEnd = `<!-- ${skillSlug}-identity-end -->`;
+    let identityTemplate = fs.readFileSync(identityTemplatePath, 'utf8');
+    identityTemplate = identityTemplate.replace(/^---[\s\S]*?---\n*/, '');
+    identityTemplate = injectPersonaTemplate(identityTemplate, persona);
+    const identityContent = [identityMarker, identityTemplate.trim(), identityMarkerEnd, ''].join('\n');
+
+    const identityFilePath = path.join(workspaceDir, 'IDENTITY.md');
+    if (!fs.existsSync(identityFilePath)) {
+      fs.writeFileSync(identityFilePath, identityContent);
+      ok(`Created ${identityFilePath} with ${personaName} identity`);
+    } else {
+      let content = fs.readFileSync(identityFilePath, 'utf8');
+      if (content.includes(identityMarker)) {
+        // Alive markers exist — check if there's content outside the markers
+        const escapedM = identityMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedME = identityMarkerEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const stripped = content.replace(new RegExp(`${escapedM}[\\s\\S]*?${escapedME}`), '').trim();
+        // If the only content outside markers is openclaw-native blank template, replace entire file
+        // (otherwise preserve user edits outside markers)
+        if (!stripped || isNativeTemplate(stripped)) {
+          fs.writeFileSync(identityFilePath, identityContent);
+        } else {
+          // User has added custom content outside markers — replace only the marked section
+          content = content.replace(new RegExp(`${escapedM}[\\s\\S]*?${escapedME}`), identityContent.trimEnd());
+          fs.writeFileSync(identityFilePath, content);
+        }
+      } else {
+        // No alive markers — replace entire file (alive supersedes openclaw-native blank template)
+        fs.writeFileSync(identityFilePath, identityContent);
+      }
+      ok(`IDENTITY.md updated with ${personaName} identity`);
+    }
+  } else {
+    warn(`identity.md template not found at ${identityTemplatePath} — skipping IDENTITY.md`);
+  }
+
+  // --- USER.md ---
+  const userTemplatePath = path.join(TEMPLATES_DIR, 'user.md');
+  if (fs.existsSync(userTemplatePath)) {
+    const userMarker = `<!-- ${skillSlug}-user-start -->`;
+    const userMarkerEnd = `<!-- ${skillSlug}-user-end -->`;
+    let userTemplate = fs.readFileSync(userTemplatePath, 'utf8');
+    userTemplate = userTemplate.replace(/^---[\s\S]*?---\n*/, '');
+    userTemplate = injectPersonaTemplate(userTemplate, persona);
+    const userContent = [userMarker, userTemplate.trim(), userMarkerEnd, ''].join('\n');
+
+    const userFilePath = path.join(workspaceDir, 'USER.md');
+    if (!fs.existsSync(userFilePath)) {
+      fs.writeFileSync(userFilePath, userContent);
+      ok(`Created ${userFilePath} with persona defaults`);
+    } else {
+      let content = fs.readFileSync(userFilePath, 'utf8');
+      if (content.includes(userMarker)) {
+        const escapedM = userMarker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedME = userMarkerEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const stripped = content.replace(new RegExp(`${escapedM}[\\s\\S]*?${escapedME}`), '').trim();
+        if (!stripped || isNativeTemplate(stripped)) {
+          fs.writeFileSync(userFilePath, userContent);
+        } else {
+          content = content.replace(new RegExp(`${escapedM}[\\s\\S]*?${escapedME}`), userContent.trimEnd());
+          fs.writeFileSync(userFilePath, content);
+        }
+      } else {
+        // No alive markers — replace entire file
+        fs.writeFileSync(userFilePath, userContent);
+      }
+      ok(`USER.md updated with persona defaults`);
+    }
+  } else {
+    warn(`user.md template not found at ${userTemplatePath} — skipping USER.md`);
+  }
+}
+
+/**
  * Write (or replace) the alive soul section in SOUL.md.
  * Reads templates/soul-injection.md, injects persona fields, writes to SOUL.md.
+ *
+ * When the file only contains OpenClaw native template content (no user edits),
+ * the entire file is replaced — the native "be the assistant" template conflicts
+ * with alive's "you are not an AI assistant" directive.
+ * When user edits exist outside the alive markers, only the marked section is updated.
  */
-function writeSoulSection(persona) {
+function writeSoulSection(persona, soulFilePath) {
   const skillSlug = 'alive';
-  const personaId = (persona.meta.id || (persona.meta.name_reading || persona.meta.name)).toLowerCase().replace(/\s+/g, '-');
+  const personaId = (persona.meta.id || (persona.meta.name_reading || persona.meta.name)).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
   const marker = `<!-- ${skillSlug}-soul-start -->`;
   const markerEnd = `<!-- ${skillSlug}-soul-end -->`;
   const personaName = persona.meta.name;
@@ -1368,31 +1632,63 @@ function writeSoulSection(persona) {
   template = injectPersonaTemplate(template, persona);
 
   const section = [
-    '',
     marker,
     template.trim(),
     markerEnd,
     '',
   ].join('\n');
 
-  if (!fs.existsSync(SOUL_FILE)) {
-    warn('SOUL.md not found — skipping soul injection');
+  // Use the provided soulFilePath, or fall back to global SOUL_FILE
+  const targetSoulFile = soulFilePath || SOUL_FILE;
+
+  if (!fs.existsSync(targetSoulFile)) {
+    // Create SOUL.md with only the alive section
+    const soulDir = path.dirname(targetSoulFile);
+    fs.mkdirSync(soulDir, { recursive: true });
+    fs.writeFileSync(targetSoulFile, section);
+    ok(`Created ${targetSoulFile} with ${personaName} identity`);
     return;
   }
 
-  let soul = fs.readFileSync(SOUL_FILE, 'utf8');
+  let soul = fs.readFileSync(targetSoulFile, 'utf8');
 
-  // Remove old section if present (safe regex escape)
   if (soul.includes(marker)) {
+    // Alive markers already exist — check if content outside markers is native template
     const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const escapedMarkerEnd = markerEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    soul = soul.replace(new RegExp(`\n*${escapedMarker}[\\s\\S]*?${escapedMarkerEnd}\n*`), '\n');
+    const stripped = soul.replace(new RegExp(`${escapedMarker}[\\s\\S]*?${escapedMarkerEnd}`), '').trim();
+    if (!stripped || isNativeSoulTemplate(stripped)) {
+      // Native template or empty — replace entire file
+      fs.writeFileSync(targetSoulFile, section);
+    } else {
+      // User has custom content outside markers — replace only the marked section
+      soul = soul.replace(new RegExp(`${escapedMarker}[\\s\\S]*?${escapedMarkerEnd}`), section.trimEnd());
+      fs.writeFileSync(targetSoulFile, soul);
+    }
+  } else if (isNativeSoulTemplate(soul)) {
+    // No alive markers but file is native template — replace entire file
+    fs.writeFileSync(targetSoulFile, section);
+  } else {
+    // No alive markers and user has custom content — append alive section
+    soul = soul.trimEnd() + '\n' + section;
+    fs.writeFileSync(targetSoulFile, soul);
   }
+  ok(`SOUL.md updated with ${personaName} identity (${personaId}) at ${targetSoulFile}`);
+}
 
-  // Append new section
-  soul = soul.trimEnd() + '\n' + section;
-  fs.writeFileSync(SOUL_FILE, soul);
-  ok(`SOUL.md updated with ${personaName} identity (${personaId}) from soul-injection.md`);
+/**
+ * Check if SOUL.md content is the OpenClaw native template (no meaningful user edits).
+ * The native template has characteristic phrases that conflict with alive's directives.
+ */
+function isNativeSoulTemplate(content) {
+  if (!content) return true;
+  const stripped = content.trim();
+  if (!stripped) return true;
+  // OpenClaw native SOUL.md characteristic phrases
+  return (stripped.includes("You're not a chatbot") ||
+          stripped.includes("Be the assistant") ||
+          stripped.includes("Be genuinely helpful")) &&
+         !stripped.includes('Digital Life');
 }
 
 /**
@@ -1433,31 +1729,90 @@ function injectPersonaTemplate(template, p) {
   // session greeting examples
   const sessionGreetingExamples = (p.voice?.session_greeting_examples || '').trim();
 
+  // composite blocks (conditional content that collapses gracefully when empty)
+  const descriptionBlock = buildDescriptionBlockCLI(p);
+  const intimacyBlock = buildIntimacyBlockCLI(p, behaviorsTable);
+  const timeAwarenessBlock = buildTimeAwarenessBlockCLI(p);
+
   return template
     .replace(/{persona\.meta\.name}/g, p.meta.name || '')
     .replace(/{persona\.meta\.name_reading}/g, p.meta.name_reading || p.meta.name || '')
     .replace(/{persona\.meta\.age}/g, String(p.meta.age ?? ''))
     .replace(/{persona\.meta\.tagline}/g, p.meta.tagline || '')
     .replace(/{persona\.meta\.id}/g, personaId)
+    .replace(/{persona\.meta\.emoji}/g, p.meta.emoji || mbtiEmojiCLI(p.personality?.mbti))
+    .replace(/{persona\.meta\.reference_image}/g, p.meta?.reference_image || '(待配置)')
+    .replace(/{persona\.meta\.occupation_detail}/g, p.meta?.occupation_detail || '')
+    .replace(/{persona\.personality\.core_traits\[0\]}/g, (p.personality?.core_traits || [])[0] || '')
     .replace(/{persona\.personality\.core_traits}/g, (p.personality?.core_traits || []).join('、'))
     .replace(/{persona\.personality\.quirks}/g, (p.personality?.quirks || []).join('、'))
     .replace(/{persona\.personality\.values}/g, (p.personality?.values || []).join('、'))
     .replace(/{persona\.personality\.mbti}/g, p.personality?.mbti || '')
     .replace(/{persona\.personality\.description}/g, (p.personality?.description || '').trim())
+    .replace(/{persona\.personality\.trait_descriptions}/g, (p.personality?.trait_descriptions || '').trim())
+    .replace(/{persona\.personality\.mbti_description}/g, (p.personality?.mbti_description || '').trim())
+    .replace(/{persona\.personality\.domain_knowledge}/g, (p.personality?.domain_knowledge || '').trim())
+    .replace(/{persona\.personality\.interests_description}/g, (p.personality?.interests_description || '').trim())
     .replace(/{persona\.intimacy\.levels}/g, String(p.intimacy?.levels ?? 5))
     .replace(/{persona\.intimacy\.behaviors_table}/g, behaviorsTable)
     .replace(/{persona\.schedule\.wake_hour}/g, String(p.schedule?.wake_hour ?? 8))
     .replace(/{persona\.schedule\.sleep_hour}/g, String(p.schedule?.sleep_hour ?? 23))
+    .replace(/{persona\.schedule\.timezone}/g, p.schedule?.timezone || 'Asia/Shanghai')
     .replace(/{persona\.schedule\.time_descriptions}/g, (p.schedule?.time_descriptions || '').trim())
+    .replace(/{persona\.schedule\.time_state_description}/g, (p.schedule?.time_state_description || '').trim())
+    .replace(/{persona\.voice\.style}/g, p.voice?.style || '')
     .replace(/{persona\.voice\.style_description}/g, p.voice?.style_description || p.voice?.style || '')
     .replace(/{persona\.voice\.language_description}/g, p.voice?.language_description || `${p.voice?.language || 'zh-CN'} 为主`)
     .replace(/{persona\.voice\.mixed_languages_table}/g, mixedLanguagesTable)
+    .replace(/{persona\.voice\.expression_features}/g, (p.voice?.expression_features || '').trim())
     .replace(/{persona\.voice\.sample_lines_formatted}/g, sampleLinesFormatted)
     .replace(/{persona\.conversation_style\.description}/g, convDescription)
     .replace(/{persona\.conversation_style\.mode}/g, convStyle.mode)
     .replace(/{persona\.voice\.banned_expressions_formatted}/g, bannedExpressionsFormatted)
     .replace(/{persona\.voice\.conversation_examples_formatted}/g, convExamplesFormatted)
-    .replace(/{persona\.voice\.session_greeting_examples}/g, sessionGreetingExamples);
+    .replace(/{persona\.voice\.session_greeting_examples}/g, sessionGreetingExamples)
+    // composite blocks
+    .replace(/{persona\.personality\.description_block}/g, descriptionBlock)
+    .replace(/{persona\.intimacy\.intimacy_block}/g, intimacyBlock)
+    .replace(/{persona\.schedule\.time_awareness_block}/g, timeAwarenessBlock);
+}
+
+function mbtiEmojiCLI(mbti) {
+  const map = {
+    ENTJ: '⚡', ENFJ: '🌟', INTJ: '🎯', INFJ: '🌙',
+    ENTP: '💡', INTP: '🔭', ENFP: '🌈', INFP: '🌸',
+    ESTJ: '🏆', ISTJ: '📐', ESFJ: '🤝', ISFJ: '🌿',
+    ESTP: '🔥', ISTP: '🛠', ESFP: '🎉', ISFP: '🎨',
+  };
+  return map[(mbti || '').toUpperCase()] || '✨';
+}
+
+function buildDescriptionBlockCLI(p) {
+  const desc = (p.personality?.description || '').trim();
+  if (desc) return desc;
+  const traits = p.personality?.core_traits || [];
+  if (traits.length > 0) {
+    return `${p.meta.name}的性格可以用这些词概括：${traits.join('、')}。`;
+  }
+  return `${p.meta.name}有着自己独特的性格。`;
+}
+
+function buildIntimacyBlockCLI(p, behaviorsTable) {
+  const levels = p.intimacy?.levels ?? 5;
+  if (behaviorsTable) {
+    return `Intimacy ranges from 1 to ${levels}:\n\n${behaviorsTable}`;
+  }
+  return `Intimacy ranges from 1 to ${levels}. Higher levels unlock warmer, more personal interactions.`;
+}
+
+function buildTimeAwarenessBlockCLI(p) {
+  const timeDescriptions = (p.schedule?.time_descriptions || '').trim();
+  if (timeDescriptions) {
+    return `Your behavior shifts with time of day (see IDENTITY.md for schedule):\n${timeDescriptions}`;
+  }
+  const wake = p.schedule?.wake_hour ?? 8;
+  const sleep = p.schedule?.sleep_hour ?? 23;
+  return `Your behavior shifts with time of day (see IDENTITY.md for schedule). You typically wake around ${wake}:00 and sleep around ${sleep}:00.`;
 }
 
 function generateBehaviorsTableCLI(p) {
@@ -1639,7 +1994,9 @@ async function install() {
   preflightCheck({ opsEnabled });
 
   const skillDest = path.join(SKILLS_DIR, skillSlug);
-  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+  const agentWorkspace = resolveAgentWorkspace(personaSlug);
+  const memoryDir = resolveAgentMemoryDir(personaSlug);
+  const agentSoulFile = resolveAgentSoulFile(personaSlug);
 
   // Step 2: Build TypeScript → dist-alive (ensures JS is up-to-date)
   log('Step 2/8: Building TypeScript...');
@@ -1898,30 +2255,59 @@ async function install() {
     setupPlatformBridgeSkills(/* nonInteractive= */ true);
   }
 
-  // Step 8: Register cron (if OpenClaw CLI available)
-  log(`Step ${persona.ops && persona.ops.enabled ? '8/8' : '7/7'}: Registering heartbeat cron jobs...`);
+  // Step 8a: Create isolated agent (non-main personas get their own workspace)
+  log('Step 8a: Setting up isolated agent...');
+  const resolvedModel = (llmApiKey || existingEnv.LLM_API_KEY)
+    ? `${existingEnv.LLM_API_BASE ? 'venus' : 'openrouter'}/${llmModel || existingEnv.LLM_MODEL || 'glm-5'}`
+    : null;
+  const agentCreated = ensureIsolatedAgent(personaSlug, persona, resolvedModel);
+  if (agentCreated && personaSlug !== 'main' && personaSlug !== 'default') {
+    // Auto-bind channel routing based on persona's channel config in openclaw.json
+    if (fs.existsSync(CONFIG_FILE)) {
+      try {
+        const latestConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+        const channels = latestConfig.channels || {};
+        for (const [channelName, channelConf] of Object.entries(channels)) {
+          if (!channelConf || !channelConf.accounts) continue;
+          for (const [accountKey, accountConf] of Object.entries(channelConf.accounts)) {
+            // Bind if account key matches persona slug (e.g., wecom.accounts.miss-v → miss-v)
+            if (accountKey === personaSlug) {
+              ensureAgentBinding(personaSlug, channelName, accountKey);
+            }
+          }
+        }
+      } catch { /* best effort */ }
+    }
+  }
+
+  // Step 8b: Register cron (if OpenClaw CLI available)
+  log('Step 8b: Registering heartbeat cron jobs...');
   if (isOpenClawCLIAvailable()) {
     const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
-    reconcileCronJobs({ specs, skillSlug, personaSlug });
+    reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentCreated ? personaSlug : null });
   } else {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
 
-  // Step 8: Install alive-admin plugin
-  log('Step 8: Installing alive-admin plugin...');
+  // Step 8c: Install alive-admin plugin
+  log('Step 8c: Installing alive-admin plugin...');
   if (isOpenClawCLIAvailable()) {
     installAliveAdminPlugin(path.join(skillDest, 'plugin'));
   }
 
-  // Write persona identity to SOUL.md
-  writeSoulSection(persona);
+  // Write persona identity to SOUL.md (in the agent's own workspace)
+  writeSoulSection(persona, agentSoulFile);
+
+  // Write persona identity to IDENTITY.md and USER.md
+  writeWorkspaceFiles(persona, agentWorkspace);
 
   log('Installation complete!\n');
   console.log(`  ${personaName} is ready. Start OpenClaw to begin.\n`);
   console.log(`  Tips:`);
   console.log(`  - Just chat naturally. ${personaName} will remember you.`);
+  console.log(`  - Agent workspace: ${agentWorkspace}`);
   console.log(`  - Memory lives at: ${memoryDir}`);
-  console.log(`  - Persona config: ${path.join(memoryDir, 'persona.yaml')}`);
+  console.log(`  - Persona config: ${path.join(memoryDir, 'persona', 'persona.yaml')}`);
   console.log(`  - Switch persona: alive --switch-persona --persona <path>`);
   console.log('');
 }
@@ -1962,7 +2348,9 @@ async function uninstall() {
   }
 
   const skillDest = path.join(SKILLS_DIR, skillSlug);
-  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+  const agentWorkspace = resolveAgentWorkspace(personaSlug);
+  const memoryDir = resolveAgentMemoryDir(personaSlug);
+  const agentSoulFile = resolveAgentSoulFile(personaSlug);
 
   log('Removing skill files...');
   removeDirSafe(skillDest, 'Skill directory');
@@ -2010,14 +2398,67 @@ async function uninstall() {
   }
 
   log('Cleaning SOUL.md...');
-  if (fs.existsSync(SOUL_FILE)) {
+  // Clean SOUL.md in agent's workspace
+  if (fs.existsSync(agentSoulFile)) {
+    let soul = fs.readFileSync(agentSoulFile, 'utf8');
+    const marker = `<!-- ${skillSlug}-soul-start -->`;
+    const markerEnd = `<!-- ${skillSlug}-soul-end -->`;
+    if (soul.includes(marker)) {
+      const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedMarkerEnd = markerEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      soul = soul.replace(new RegExp(`\n*${escapedMarker}[\\s\\S]*?${escapedMarkerEnd}\n*`), '\n');
+      const remaining = soul.trim();
+      if (!remaining || isNativeSoulTemplate(remaining)) {
+        // File is now empty or only had native template — delete it
+        fs.unlinkSync(agentSoulFile);
+        ok(`Removed ${agentSoulFile} (was only alive content)`);
+      } else {
+        fs.writeFileSync(agentSoulFile, soul);
+        ok(`Removed ${skillSlug} persona from ${agentSoulFile}`);
+      }
+    }
+  }
+  // Also clean legacy SOUL.md in main workspace (migration compat)
+  if (fs.existsSync(SOUL_FILE) && agentSoulFile !== SOUL_FILE) {
     let soul = fs.readFileSync(SOUL_FILE, 'utf8');
     const marker = `<!-- ${skillSlug}-soul-start -->`;
     const markerEnd = `<!-- ${skillSlug}-soul-end -->`;
     if (soul.includes(marker)) {
-      soul = soul.replace(new RegExp(`\n*${marker}[\\s\\S]*?${markerEnd}\n*`), '\n');
-      fs.writeFileSync(SOUL_FILE, soul);
-      ok(`Removed ${skillSlug} persona from SOUL.md`);
+      const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const escapedMarkerEnd = markerEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      soul = soul.replace(new RegExp(`\n*${escapedMarker}[\\s\\S]*?${escapedMarkerEnd}\n*`), '\n');
+      const remaining = soul.trim();
+      if (!remaining || isNativeSoulTemplate(remaining)) {
+        fs.unlinkSync(SOUL_FILE);
+        ok(`Removed legacy SOUL.md (was only alive content)`);
+      } else {
+        fs.writeFileSync(SOUL_FILE, soul);
+        ok(`Removed ${skillSlug} persona from legacy SOUL.md`);
+      }
+    }
+  }
+
+  // Clean alive-injected sections from IDENTITY.md and USER.md
+  log('Cleaning IDENTITY.md and USER.md...');
+  for (const [fileName, markerMid] of [['IDENTITY.md', 'identity'], ['USER.md', 'user']]) {
+    const filePath = path.join(agentWorkspace, fileName);
+    if (fs.existsSync(filePath)) {
+      let content = fs.readFileSync(filePath, 'utf8');
+      const marker = `<!-- ${skillSlug}-${markerMid}-start -->`;
+      const markerEnd = `<!-- ${skillSlug}-${markerMid}-end -->`;
+      if (content.includes(marker)) {
+        const escapedMarker = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escapedMarkerEnd = markerEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        content = content.replace(new RegExp(`\n*${escapedMarker}[\\s\\S]*?${escapedMarkerEnd}\n*`), '\n');
+        const remaining = content.trim();
+        if (!remaining || isNativeTemplate(remaining)) {
+          fs.unlinkSync(filePath);
+          ok(`Removed ${filePath} (was only alive content)`);
+        } else {
+          fs.writeFileSync(filePath, content);
+          ok(`Removed ${skillSlug} section from ${filePath}`);
+        }
+      }
     }
   }
 
@@ -2026,8 +2467,23 @@ async function uninstall() {
 
   if (keepMemory.trim().toLowerCase() === 'n') {
     removeDirSafe(memoryDir, 'Memory data');
+    // If the entire agent workspace is now empty (no other personas), remove it too
+    if (agentWorkspace !== WORKSPACE_DIR) {
+      try {
+        const remaining = fs.readdirSync(agentWorkspace).filter(f => !f.startsWith('.'));
+        if (remaining.length === 0 || (remaining.length === 1 && remaining[0] === 'memory')) {
+          removeDirSafe(agentWorkspace, 'Agent workspace');
+        }
+      } catch { /* ignore */ }
+    }
   } else {
     ok(`Memory preserved at ${memoryDir}`);
+  }
+
+  // Delete the isolated agent from openclaw
+  log('Removing isolated agent...');
+  if (isOpenClawCLIAvailable()) {
+    deleteIsolatedAgent(personaSlug);
   }
 
   log('Uninstall complete!\n');
@@ -2075,6 +2531,7 @@ async function update() {
     process.exit(1);
   }
 
+  const personaSlug = (persona.meta.id || personaName).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
   const skillSlug = 'alive';
   const skillDest = path.join(SKILLS_DIR, skillSlug);
 
@@ -2118,7 +2575,10 @@ async function update() {
   ok(`Framework files updated at ${skillDest}`);
 
   // Refresh SOUL.md with latest soul-injection.md template
-  writeSoulSection(persona);
+  writeSoulSection(persona, resolveAgentSoulFile(personaSlug));
+
+  // Refresh IDENTITY.md and USER.md with latest templates
+  writeWorkspaceFiles(persona, resolveAgentWorkspace(personaSlug));
 
   log('Update complete!\n');
   console.log(`  ${personaName} code updated. Memory, config, and cron jobs are untouched.\n`);
@@ -2175,7 +2635,7 @@ async function reinstall() {
   }
 
   const skillDest = path.join(SKILLS_DIR, skillSlug);
-  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+  const memoryDir = resolveAgentMemoryDir(personaSlug);
 
   // Confirm
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -2384,7 +2844,7 @@ async function reinstall() {
   // Register cron
   if (isOpenClawCLIAvailable()) {
     const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
-    reconcileCronJobs({ specs, skillSlug, personaSlug });
+    reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentExists(personaSlug) ? personaSlug : null });
   } else {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
@@ -2397,7 +2857,10 @@ async function reinstall() {
   rl.close();
 
   // Write persona identity to SOUL.md
-  writeSoulSection(persona);
+  writeSoulSection(persona, resolveAgentSoulFile(personaSlug));
+
+  // Write persona identity to IDENTITY.md and USER.md
+  writeWorkspaceFiles(persona, resolveAgentWorkspace(personaSlug));
 
   log('Reinstall complete!\n');
   console.log(`  ${personaName} has been fully reset and reinstalled.\n`);
@@ -2451,7 +2914,7 @@ async function realDayTest() {
   ok(`Persona: ${personaName} (persona: ${personaSlug}, skill: ${skillSlug})`);
 
   const skillDest = path.join(SKILLS_DIR, skillSlug);
-  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+  const memoryDir = resolveAgentMemoryDir(personaSlug);
 
   // Step 2: Check if existing config has env keys — preserve them
   log('Step 2/5: Loading existing API keys from openclaw.json...');
@@ -2594,13 +3057,16 @@ async function realDayTest() {
   // Register cron (optional)
   if (isOpenClawCLIAvailable()) {
     const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
-    reconcileCronJobs({ specs, skillSlug, personaSlug });
+    reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentExists(personaSlug) ? personaSlug : null });
   }
 
   ok('Fresh install complete');
 
   // Write persona identity to SOUL.md
-  writeSoulSection(persona);
+  writeSoulSection(persona, resolveAgentSoulFile(personaSlug));
+
+  // Write persona identity to IDENTITY.md and USER.md
+  writeWorkspaceFiles(persona, resolveAgentWorkspace(personaSlug));
 
   // Step 5: Run real-day test
   log('Step 5/5: Launching real-day E2E test...');
@@ -2673,7 +3139,8 @@ async function switchPersona() {
   }
 
   const personaSlug = (persona.meta.id || personaName).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
-  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+  const memoryDir = resolveAgentMemoryDir(personaSlug);
+  const agentSoulFile = resolveAgentSoulFile(personaSlug);
 
   log(`Switching to persona: ${personaName} (${personaSlug})...`);
 
@@ -2774,7 +3241,7 @@ async function switchPersona() {
   log('Registering cron for new persona...');
   if (isOpenClawCLIAvailable()) {
     const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
-    reconcileCronJobs({ specs, skillSlug, personaSlug });
+    reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentExists(personaSlug) ? personaSlug : null });
   } else {
     warn('OpenClaw CLI not found — skipping cron registration.');
   }
@@ -2785,7 +3252,10 @@ async function switchPersona() {
   }
 
   // 6. Update SOUL.md
-  writeSoulSection(persona);
+  writeSoulSection(persona, resolveAgentSoulFile(personaSlug));
+
+  // Update IDENTITY.md and USER.md
+  writeWorkspaceFiles(persona, resolveAgentWorkspace(personaSlug));
 
   log('Switch complete!\n');
   console.log(`  Active persona: ${personaName} (${personaSlug})`);
@@ -2839,7 +3309,7 @@ async function setupReferencesCommand() {
   ok(`Persona: ${personaName}`);
 
   const personaSlug = (persona.meta.id || personaName).toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
-  const memoryDir = path.join(WORKSPACE_DIR, 'memory', personaSlug);
+  const memoryDir = resolveAgentMemoryDir(personaSlug);
 
   // Load existing env for API keys
   let existingEnv = {};

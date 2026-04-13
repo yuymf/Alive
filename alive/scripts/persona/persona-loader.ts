@@ -318,7 +318,51 @@ export function injectPersona(template: string, persona?: PersonaConfig): string
     .replace(/{persona\.conversation_style\.mode}/g, convStyle.mode)
     .replace(/{persona\.voice\.banned_expressions_formatted}/g, bannedExpressionsFormatted)
     .replace(/{persona\.voice\.conversation_examples_formatted}/g, convExamplesFormatted)
-    .replace(/{persona\.voice\.session_greeting_examples}/g, (p.voice?.session_greeting_examples ?? '').trim());
+    .replace(/{persona\.voice\.session_greeting_examples}/g, (p.voice?.session_greeting_examples ?? '').trim())
+    // === composite blocks (conditional content that collapses gracefully when empty) ===
+    .replace(/{persona\.personality\.description_block}/g, buildDescriptionBlock(p))
+    .replace(/{persona\.intimacy\.intimacy_block}/g, buildIntimacyBlock(p))
+    .replace(/{persona\.schedule\.time_awareness_block}/g, buildTimeAwarenessBlock(p));
+}
+
+/**
+ * Build a personality description block that falls back to core_traits when description is empty.
+ */
+function buildDescriptionBlock(p: PersonaConfig): string {
+  const desc = (p.personality.description ?? '').trim();
+  if (desc) return desc;
+  // Fallback: generate from core_traits
+  const traits = p.personality.core_traits;
+  if (traits.length > 0) {
+    return `${p.meta.name}的性格可以用这些词概括：${traits.join('、')}。`;
+  }
+  return `${p.meta.name}有着自己独特的性格。`;
+}
+
+/**
+ * Build an intimacy block that shows levels + behaviors table, or a minimal default.
+ */
+function buildIntimacyBlock(p: PersonaConfig): string {
+  const levels = p.intimacy?.levels ?? 5;
+  const behaviorsTable = generateBehaviorsTable(p);
+  if (behaviorsTable) {
+    return `Intimacy ranges from 1 to ${levels}:\n\n${behaviorsTable}`;
+  }
+  return `Intimacy ranges from 1 to ${levels}. Higher levels unlock warmer, more personal interactions.`;
+}
+
+/**
+ * Build a time awareness block that includes time_descriptions if available,
+ * or falls back to a schedule-based hint.
+ */
+function buildTimeAwarenessBlock(p: PersonaConfig): string {
+  const timeDescriptions = (p.schedule?.time_descriptions ?? '').trim();
+  if (timeDescriptions) {
+    return `Your behavior shifts with time of day (see IDENTITY.md for schedule):\n${timeDescriptions}`;
+  }
+  const wake = p.schedule?.wake_hour ?? 8;
+  const sleep = p.schedule?.sleep_hour ?? 23;
+  return `Your behavior shifts with time of day (see IDENTITY.md for schedule). You typically wake around ${wake}:00 and sleep around ${sleep}:00.`;
 }
 
 /**
