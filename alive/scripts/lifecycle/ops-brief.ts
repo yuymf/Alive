@@ -17,6 +17,9 @@ import { sendDailyBrief } from '../ops/brief-generator';
 import { loadQueue, cleanupOldItems, PENDING_EXPIRE_HOURS, hoursSinceCreated } from '../ops/review-queue';
 import { generatePersonaReport } from '../ops/persona-advisor';
 import { getIdentityKeys } from '../utils/types';
+import { getStats, queryAll, loadFormulas } from '../ops/viral-kb-store';
+import { PATHS } from '../utils/file-utils';
+import * as path from 'path';
 
 async function main(): Promise<void> {
   // Load environment variables from openclaw.json (needed for isolated cron sessions)
@@ -73,10 +76,28 @@ async function main(): Promise<void> {
 
   const deliveryMode = ops.automation?.brief_delivery ?? 'wecom-target';
 
+  // Viral KB enrichment (best-effort)
+  let viralKbStats = null;
+  let viralKbTopEntries: import('../utils/types').ViralEntry[] = [];
+  let viralKbFormulas: import('../utils/types').UniversalFormula[] = [];
+  try {
+    const basePath = path.dirname(PATHS.emotionState);
+    viralKbStats = getStats(basePath);
+    if (viralKbStats.total > 0) {
+      viralKbTopEntries = queryAll(basePath, { sort: 'likes', limit: 3 });
+      viralKbFormulas = loadFormulas(basePath);
+    }
+  } catch {
+    // viral-kb not available, skip
+  }
+
   const sent = await sendDailyBrief(trends, competitors, activePending, {
     personaReport,
     fullQueueItems: activePending,
     identityKeys,
+    viralKbStats,
+    viralKbTopEntries,
+    viralKbFormulas,
   }, deliveryMode);
 
   console.log(`[${wallNow().toISOString()}] ops-brief: brief sent=${sent} (mode=${deliveryMode}), ${activePending.length} active pending topics`);

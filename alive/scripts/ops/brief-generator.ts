@@ -13,6 +13,8 @@ import { formatAlignmentBriefSection } from './persona-advisor';
 import { buildCandidateContext } from './discovery-engine';
 import { PENDING_EXPIRE_HOURS, hoursSinceCreated } from './review-queue';
 import type { HealthReport } from './health-check';
+import type { KBStats } from './viral-kb-store';
+import type { UniversalFormula, ViralEntry } from '../utils/types';
 
 // ─── Brief Enrichment (optional, backward-compatible) ────────────────────────
 
@@ -27,6 +29,12 @@ export interface BriefEnrichment {
   healthReport?: HealthReport | null;
   /** Identity mode keys for candidate track-overlap scoring */
   identityKeys?: string[];
+  /** Viral KB stats for 📚爆款知识库 section */
+  viralKbStats?: KBStats | null;
+  /** Top viral entries for brief display (sorted by likes desc) */
+  viralKbTopEntries?: readonly ViralEntry[];
+  /** Recently promoted universal formulas */
+  viralKbFormulas?: readonly UniversalFormula[];
 }
 
 // ─── Pure formatting (exported for testing) ──────────────────────────────────
@@ -167,6 +175,50 @@ export function formatBriefCard(
     }
   } catch {
     // performance-log not available, skip
+  }
+
+  // ─── 📚 爆款知识库 ──────────────────────────────────────────────────────
+  try {
+    const kbStats = enrichment?.viralKbStats;
+    if (kbStats && kbStats.total > 0) {
+      const kbLines: string[] = ['━━ 📚 爆款知识库 ━━'];
+      // Stats line
+      const parts = [`总条目 ${kbStats.total}`];
+      if (kbStats.formula_count > 0) parts.push(`通用公式 ${kbStats.formula_count}`);
+      if (kbStats.queue_length > 0) parts.push(`待拆解 ${kbStats.queue_length}`);
+      kbLines.push(`  📊 ${parts.join(' · ')}`);
+
+      // Recently promoted formulas
+      const formulas = enrichment?.viralKbFormulas;
+      if (formulas && formulas.length > 0) {
+        const promotedFormulas = formulas.filter(f => f.injected_to_templates);
+        if (promotedFormulas.length > 0) {
+          const formulaDescs = promotedFormulas.slice(0, 2).map(
+            f => `[${f.content_type}+${f.hook_type}] ${f.platform} (${f.occurrence_count}x↑)`,
+          );
+          kbLines.push(`  🔮 通用公式: ${formulaDescs.join(' | ')}`);
+        }
+      }
+
+      // Top entries
+      const topEntries = enrichment?.viralKbTopEntries;
+      if (topEntries && topEntries.length > 0) {
+        const topDescs = topEntries.slice(0, 3).map(e => {
+          const likesK = e.likes >= 10000
+            ? `${(e.likes / 10000).toFixed(1)}w`
+            : e.likes >= 1000
+              ? `${(e.likes / 1000).toFixed(1)}k`
+              : `${e.likes}`;
+          return `「${e.title.length > 15 ? e.title.slice(0, 15) + '…' : e.title}」❤️${likesK}`;
+        });
+        kbLines.push(`  🔥 近期 Top: ${topDescs.join(' | ')}`);
+      }
+
+      lines.push(kbLines.join('\n'));
+      lines.push('');
+    }
+  } catch {
+    // viral-kb not available, skip silently
   }
 
   // 🔍 候选对标（from discovery-engine account discovery）

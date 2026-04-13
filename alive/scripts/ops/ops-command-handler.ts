@@ -37,10 +37,14 @@ import { analyzePost, formatAnalysisCard } from './viral-analyzer';
 import { handleReviewMessage } from './ops-review-handler';
 import { setActiveReviewItem } from './review-session';
 import { runHealthCheck, formatHealthReport } from './health-check';
+import { recognizeOpsIntent } from './ops-intent-recognizer';
 import { now } from '../utils/time-utils';
 import { getIdentityKeys } from '../utils/types';
 import { loadCandidateAccounts } from './discovery-engine';
 import { rankCandidates } from './candidate-scorer';
+import { getStats, queryAll, loadFormulas } from './viral-kb-store';
+import { PATHS } from '../utils/file-utils';
+import * as path from 'path';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -94,6 +98,19 @@ async function cmdBrief(): Promise<string> {
   }
 
   const enrichment: BriefEnrichment = { personaReport, fullQueueItems: activePending, identityKeys };
+
+  // Viral KB enrichment (best-effort)
+  try {
+    const basePath = path.dirname(PATHS.emotionState);
+    const kbStats = getStats(basePath);
+    if (kbStats.total > 0) {
+      enrichment.viralKbStats = kbStats;
+      enrichment.viralKbTopEntries = queryAll(basePath, { sort: 'likes', limit: 3 });
+      enrichment.viralKbFormulas = loadFormulas(basePath);
+    }
+  } catch {
+    // viral-kb not available, skip
+  }
   const date = now().toISOString().slice(0, 10);
   return formatBriefCard(date, trends, competitors, pending, enrichment);
 }
@@ -328,6 +345,39 @@ function cmdHelp(): string {
 
 // ─── CLI Dispatcher ───────────────────────────────────────────────────────────
 
+/**
+ * Dispatch a resolved command + args to the appropriate handler.
+ * Used both by main() CLI entry and by the NLU re-dispatch path.
+ */
+async function dispatchCommand(command: string, args: string[]): Promise<string> {
+  switch (command.toLowerCase()) {
+    case 'brief':
+      return await cmdBrief();
+    case 'trends':
+      return await cmdTrends();
+    case 'idea':
+      return await cmdIdea(args.join(' ') || undefined);
+    case 'post':
+      return await cmdPost(args[0]);
+    case 'analyze':
+      return await cmdAnalyze(args[0]);
+    case 'advice':
+      return await cmdAdvice();
+    case 'status':
+      return await cmdStatus();
+    case 'candidates':
+      return await cmdCandidates(args[0]);
+    case 'health': {
+      const report = await runHealthCheck();
+      return formatHealthReport(report);
+    }
+    case 'help':
+      return cmdHelp();
+    default:
+      return `⚠️ 未知命令: ${command}\n\n${cmdHelp()}`;
+  }
+}
+
 async function main(): Promise<void> {
   const [command, ...args] = process.argv.slice(2);
 
@@ -338,35 +388,6 @@ async function main(): Promise<void> {
   let result: string;
   try {
     switch (command.toLowerCase()) {
-      case 'brief':
-        result = await cmdBrief();
-        break;
-      case 'trends':
-        result = await cmdTrends();
-        break;
-      case 'idea':
-        result = await cmdIdea(args.join(' ') || undefined);
-        break;
-      case 'post':
-        result = await cmdPost(args[0]);
-        break;
-      case 'analyze':
-        result = await cmdAnalyze(args[0]);
-        break;
-      case 'advice':
-        result = await cmdAdvice();
-        break;
-      case 'status':
-        result = await cmdStatus();
-        break;
-      case 'candidates':
-        result = await cmdCandidates(args[0]);
-        break;
-      case 'health': {
-        const report = await runHealthCheck();
-        result = formatHealthReport(report);
-        break;
-      }
       case 'message': {
         // Free-text review message handler
         const messageText = args.join(' ');
@@ -379,11 +400,31 @@ async function main(): Promise<void> {
         result = await handleReviewMessage(messageText, llm);
         break;
       }
-      case 'help':
-        result = cmdHelp();
+      case 'nlu': {
+        // Natural-language intent recognition → re-dispatch to the resolved command
+        const nluText = args.join(' ');
+        if (!nluText) {
+          result = '⚠️ 请提供消息内容';
+          break;
+        }
+        loadSkillEnvVars('alive');
+        const nluLlm = createRealLLMClient('ops-nlu');
+        const intent = await recognizeOpsIntent(nluText, nluLlm);
+        if (!intent) {
+          // Not an ops intent — signal to caller so it can fall through
+          result = '__NLU_NO_MATCH__';
+          break;
+        }
+        // Re-dispatch: simulate calling the recognized command
+        console.error(`[ops-nlu] Dispatching: ${intent.command} ${intent.args.join(' ')} (confidence: ${intent.confidence})`);
+        const nluCommand = intent.command.split(' ')[0]; // handle "kb search" → "kb"
+        const nluArgs = [...(intent.command.includes(' ') ? intent.command.split(' ').slice(1) : []), ...intent.args];
+        result = await dispatchCommand(nluCommand, nluArgs);
         break;
+      }
       default:
-        result = `⚠️ 未知命令: ${command}\n\n${cmdHelp()}`;
+        // All standard commands go through dispatchCommand
+        result = await dispatchCommand(command, args);
     }
   } catch (err) {
     const msg = (err as Error).message ?? '';

@@ -18,6 +18,7 @@ import { CompetitorLog } from '../utils/types';
 import { detectViral, TrendLikeItem } from '../ops/viral-detector';
 import { addManyToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
 import { dissectBatch } from '../ops/content-dissector';
+import { sendToWechatWork } from '../ops/brief-generator';
 import * as path from 'path';
 
 async function main(): Promise<void> {
@@ -111,6 +112,20 @@ async function main(): Promise<void> {
         const result = checkFormulaPromotion(basePath, entry, PATHS.personaConfig);
         if (result.promoted && result.formula) {
           console.log(`[${wallNow().toISOString()}] [viral-kb] formula promoted: ${result.formula.content_type} + ${result.formula.hook_type} (${result.formula.platform})`);
+          // Push WeChat Work notification on formula promotion
+          try {
+            const f = result.formula;
+            const msg = [
+              '🔮 新通用公式升级！',
+              `  类型: ${f.content_type} + ${f.hook_type}`,
+              `  平台: ${f.platform}`,
+              `  累计出现: ${f.occurrence_count} 次`,
+              `  公式: ${f.formula_summary}`,
+            ].join('\n');
+            sendToWechatWork(msg);
+          } catch {
+            // notification failure is non-fatal
+          }
         }
       }
       console.log(`[${wallNow().toISOString()}] [viral-kb] ${entries.length} entries dissected`);
