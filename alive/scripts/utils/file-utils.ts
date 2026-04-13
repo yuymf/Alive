@@ -94,6 +94,7 @@ export const PATHS = {
   get performanceLog() { return path.join(getMemoryBase(), 'queues', 'performance-log.json'); },
   get analysisLog() { return path.join(getMemoryBase(), 'queues', 'analysis-log.json'); },
   get trendHistory() { return path.join(getMemoryBase(), 'queues', 'trend-history.json'); },
+  get trendsCache() { return path.join(getMemoryBase(), 'queues', 'trends-cache.json'); },
   get competitorPosts() { return path.join(getMemoryBase(), 'queues', 'competitor-posts.json'); },
   get competitorAnalysis() { return path.join(getMemoryBase(), 'queues', 'competitor-analysis.json'); },
   get candidateAccounts() { return path.join(getMemoryBase(), 'queues', 'candidate-accounts.json'); },

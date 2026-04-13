@@ -455,20 +455,44 @@ main();
   }
 }
 
-// ─── In-process daily cache ──────────────────────────────────────────────────
-// Avoids re-fetching competitor data within the same day (e.g. cron + /brief)
+// ─── TTL-based file cache ──────────────────────────────────────────────────
+// Replaces the old in-process daily cache which was useless under cron
+// (each cron invocation is a new process, so _cachedDay was always null).
+// Now reads competitor-log.json's last_updated for TTL check — works cross-process.
 
+const COMPETITOR_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+/** In-process cache (still useful for same-process repeated calls, e.g. cron + /brief) */
 let _cachedDay: string | null = null;
 let _cachedUpdates: CompetitorUpdate[] | null = null;
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
 export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
-  // Return cached data if we already fetched today
   const today = getLocalDate(now());
+
+  // 1) In-process cache hit (same day, same process)
   if (_cachedDay === today && _cachedUpdates !== null) {
-    console.error(`[competitor-tracker] Using cached competitor data for ${today}`);
+    console.error(`[competitor-tracker] Using in-process cached data for ${today}`);
     return _cachedUpdates;
+  }
+
+  // 2) File-level TTL cache hit (cross-process, e.g. cron spawns new process)
+  const existing = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
+  if (existing.last_updated && existing.entries.length > 0) {
+    const age = now().getTime() - new Date(existing.last_updated).getTime();
+    if (age < COMPETITOR_CACHE_TTL_MS) {
+      const freshEntries = existing.entries.filter(e => {
+        const entryDate = getLocalDate(new Date(e.fetched_at));
+        return entryDate === today;
+      });
+      if (freshEntries.length > 0) {
+        console.error(`[competitor-tracker] Using file-level cached data (age: ${Math.round(age / 60_000)}min, ${freshEntries.length} entries for today)`);
+        _cachedDay = today;
+        _cachedUpdates = freshEntries;
+        return freshEntries;
+      }
+    }
   }
 
   const accounts = resolveCompetitorAccounts(ops);
