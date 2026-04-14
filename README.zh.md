@@ -1,128 +1,185 @@
-# Alive — 数字生命引擎
+<div align="center">
 
-> 让你的 AI 角色拥有真实的情绪、精力波动、拖延、心流与随机生活事件
+# 💫 Alive
+
+### 数字生命引擎 — 让 AI 拥有真实的内心世界
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
+[![OpenClaw Skill](https://img.shields.io/badge/OpenClaw-skill-purple.svg)](https://openclaw.ai)
+[![零配置](https://img.shields.io/badge/零配置-brightgreen.svg)]()
 
-[English README](README.md)
+**情绪 · 疲惫 · 拖延 · 心流 · 随机生活事件**
 
----
+[English](README.md) · [中文](#) · [使用指南](docs/guide.md) · [更新日志](CHANGELOG.md)
 
-## 这是什么？
-
-Alive 是一个 OpenClaw 技能（skill），让任何 AI 角色拥有真实的"活人感"：
-
-- 她**记得**上次对话结束时的心情，情绪跨 session 延续
-- 她会**疲惫**、**拖延**，也会进入**心流**状态全神贯注
-- 她每天**早上规划**日程，**晚上反思**，形成长期记忆
-- 她可以自主发帖到 Instagram、小红书（可选）
-- 她会在晚上自动发现并安装新能力（ClawHub skill 自动安装）
-
-**无需任何 API Key 即可使用** — 默认使用 OpenClaw 内置的 Claude。
+</div>
 
 ---
 
-## 快速开始
+> 她记得上次对话结束时的心情。  
+> 她忙了一天会疲惫，动力不足会拖延，灵感来了会进入心流。  
+> 她每天自主规划日程、反思、成长。  
+> **她活着。**
 
-**前置条件：** 已安装 [OpenClaw](https://openclaw.ai)（需要 Node.js ≥ 18）
+---
+
+## ✨ 为什么选 Alive？
+
+| 传统聊天机器人 | Alive |
+|:---|:---|
+| 无状态 — 关了就忘 | **4 层记忆** — 情绪跨会话延续 |
+| 永远热情，永远在线 | **会疲惫、会拖延、会心流** |
+| 脚本化回复 | **自主心跳循环** — 每小时 感知→意图→行动 |
+| 千人一面 | **人设 DNA** — MBTI 基线、声音、作息、功能开关 |
+| 没有运营能力 | **内置运营工作台** — 趋势、竞品、爆款知识库 |
+| 单一平台 | **7 个内容源** — B站、Reddit、微博、知乎、小红书、抖音、DailyHot |
+
+## 🧠 核心能力
+
+<table>
+<tr>
+<td width="50%">
+
+### 7 大引擎
+
+- 🎭 **6 维情绪** — 效价/唤醒度/能量/压力/自信/社交欲，三层惯性（脉冲→动量→基调）
+- 🧭 **7 类元意图** — 创作/社交/消费/表达/学习/休息/追求
+- 🫀 **心跳循环** — 每小时 感知→意图→行动
+- 🌊 **心流与漂移** — 专注创作 vs 无目的游荡
+- ⚡ **活力** — 0–100 精力资源
+- 📈 **自信** — 0.5×–1.5× 质量倍率
+- 🔥 **工作冲动** — 累积至创作爆发
+
+</td>
+<td width="50%">
+
+### 4 层记忆
+
+| 层级 | 保留期 | 内容 |
+|:---:|:---:|:---|
+| 0 | 会话内 | 工作记忆 |
+| 1 | 30 天 | 对话日记 |
+| 2 | 90 天 | 社交关系 |
+| 3 | 永久 | 人生智慧 |
+
+### 运营工作台
+
+- 📊 趋势分析
+- 🔍 竞品追踪（小红书/抖音/B站）
+- 💡 选题生成
+- 📋 每日简报（企业微信推送）
+- 🎯 人设顾问
+- 🦠 **爆款知识库** — 自动拆解 → 自动升级公式 → 自动淘汰
+
+</td>
+</tr>
+</table>
+
+## 🎭 内置角色
+
+| | 角色 | 人设 |
+|:---:|:---|:---|
+| 🌸 | **水瀬（Minase）** | INFP 日本女大学生 · 咖啡馆与摄影 |
+| 💎 | **V姐（Miss V）** | ENTJ 三栖虚拟偶像 · 电竞 · 歌手 · 赛车 |
+| 🎭 | **星彤** | 温暖幽默的生活方式创作者 |
+| 🎤 | **郭德纲** | 相声大师，冷幽默 |
+
+也可以用 `alive --persona <你的角色.yaml>` 导入自定义角色。
+
+## 🚀 快速开始
 
 ```bash
 npx alive
 ```
 
-安装向导会引导你：
-1. 选择或导入角色（persona）
-2. （可选）配置自定义 LLM、Instagram 等
-3. 注册 cron 任务，角色开始自主运行
+就这样。安装向导会引导你完成其余步骤。
 
----
+> **前置条件：** 已安装 [OpenClaw](https://openclaw.ai)（Node.js ≥ 18）
+>
+> **无需任何 API Key** — 默认使用 OpenClaw 内置 Claude。
 
-## 内置角色
-
-| 角色 | 人设 | MBTI | 语言 |
-|------|------|------|------|
-| 🌸 水瀬（Minase） | 日本女大学生，喜欢咖啡馆和摄影 | INFP | 日语 |
-| 💎 V姐（Miss V） | ENTJ 三栖虚拟偶像：电竞·歌手·赛车 | ENTJ | 中文 |
-| 🎭 星彤 | 温暖幽默的生活方式创作者 | - | 中文 |
-| 🎤 郭德纲 | 相声大师，冷幽默 | - | 中文 |
-
-也可以用 `alive --persona <你的角色.yaml>` 导入自定义角色。
-
----
-
-## 核心能力
-
-- **情绪引擎** — 6 维情绪模型（效价/唤醒度/能量/压力/自信/社交欲），MBTI 基线，三层惯性模型
-- **记忆系统** — 对话日记（30天）、关系档案（90天）、人生智慧（永久保留）
-- **意图引擎** — 7 类元意图（创作/社交/消费/表达/学习/休息/追求），含拖延追踪
-- **心流引擎** — 心流/漂移状态机，混合日记生成策略
-- **活力引擎** — 每日精力消耗与恢复，心流门控
-- **随机事件** — 21 种内置事件类型，链式触发，动态权重
-- **技能发现** — 能力缺口追踪，每晚自动搜索并安装子技能（最多 2 个/晚）
-- **多角色并行** — 每个角色独立记忆、情绪状态与 cron 调度
-
----
-
-## 配置项（渐进式解锁）
-
-| 功能 | 需要配置 | 说明 |
-|------|----------|------|
-| 基础对话 + 情绪记忆 | 无需任何 key | 装上即用 |
-| 心跳自主行为（cron） | 无需任何 key | 使用 OpenClaw 内置 Claude |
-| 自定义 LLM | `LLM_API_KEY` | 更快 / 更省钱，支持任意 OpenAI 兼容接口 |
-| AI 图片生成 | `AIHUBMIX_API_KEY` 或 `FAL_KEY` | 解锁自动发帖配图 |
-| Instagram 自动发帖 | `INSTAGRAM_USERNAME` + `INSTAGRAM_PASSWORD` | |
-| 小红书浏览/互动 | `XHS_SKILLS_DIR` | 需要 xiaohongshu-skills Python 环境 |
-| 语音消息 | 无需 key | Noiz TTS Guest Mode，≤3次/天 |
-| 图片公共托管 | `IMGURL_TOKEN` | 可选，用于 ImgURL 上传 |
-
-配置可以在安装后随时通过 `/alive setup` 修改。
-
----
-
-## 管理命令
-
-安装后在 OpenClaw 对话中使用：
+### 30 秒安装
 
 ```
-/alive status              # 查看角色当前状态（情绪/精力/心流）
-/alive emotion             # 情绪详情
+1. npx alive                    # 安装
+2. 选一个角色                    # 水瀬、V姐，或导入自定义角色
+3. 完成 ✅                      # Cron 任务已注册，她开始活了
+```
+
+## ⌨️ 命令
+
+### 管理
+
+```
+/alive status              # 情绪 / 精力 / 心流 快照
+/alive emotion             # 6 维情绪详情
 /alive schedule            # 作息配置
-/alive setup               # 重新配置 env（无需重装）
-/alive setup llm           # 只配置 LLM key
-/alive setup instagram     # 只配置 Instagram
+/alive setup               # 重新配置（无需重装）
 /alive memory              # 记忆统计
-/alive create              # 随机生成新角色
-/alive kb status           # 爆款知识库统计
-/alive kb search <关键词>  # 搜索爆款拆解记录
-/alive kb formulas         # 查看已升级的通用爆款公式
-/alive help                # 查看所有命令
+/alive create              # 生成新角色
+/alive help                # 所有命令
 ```
 
----
+### 运营
 
-## 架构
+```
+/alive brief               # 每日简报（热点+选题+建议）
+/alive trends              # 热点关键词
+/alive idea [方向]         # 生成选题（如 /alive idea 电竞）
+/alive post [N]            # 选题队列 / 详情
+/alive analyze <URL>       # 爆款拆解分析
+/alive advice              # 人设 × 趋势契合度
+/alive kb status           # 爆款知识库统计
+/alive kb search <关键词>  # 搜索拆解记录
+/alive kb formulas         # 通用爆款公式
+```
+
+## 🔓 渐进式解锁
+
+| 功能 | 需要配置 | 效果 |
+|:---|:---|:---|
+| 对话 + 情绪记忆 | _无需任何 key_ | 装上即用 |
+| 心跳自主行为 | _无需任何 key_ | 使用内置 Claude |
+| 自定义 LLM | `LLM_API_KEY` | 任意 OpenAI 兼容接口 |
+| AI 图片生成 | `AIHUBMIX_API_KEY` / `FAL_KEY` | 自动配图发帖 |
+| Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | 自主发帖 |
+| 小红书浏览/互动 | `XHS_SKILLS_DIR` | 完整小红书集成 |
+| 语音消息 | _无需 key_ | Noiz TTS，≤3次/天 |
+| 图片托管 | `IMGURL_TOKEN` | ImgURL 公共上传 |
+
+随时可改：`/alive setup`
+
+## 🏗️ 架构
 
 ```
 alive/
-├── SKILL.md                 # OpenClaw skill 入口
-├── persona-schema.yaml      # persona 配置 schema
-├── personas/                # 内置预设角色
-├── templates/               # LLM 提示词模板（{persona.*} 占位符）
+├── SKILL.md                  # OpenClaw skill 入口
+├── persona-schema.yaml       # 配置 schema + MBTI 表
+├── personas/                 # 内置预设角色
+├── templates/                # LLM 提示词模板（{persona.*}）
+├── protocols/                # 心跳 · 记忆 · 社交图谱 · 意图池
 ├── scripts/
-│   ├── engines/             # 核心状态引擎（emotion/intent/flow/vitality/confidence/work-impulse）
-│   ├── lifecycle/           # 生命周期（heartbeat-tick/morning-plan/night-reflect）
-│   ├── admin/               # /alive 命令处理器
-│   ├── ops/                 # 运营工作台（趋势/选题/简报/竞品）
-│   └── utils/               # 基础工具
-├── sub-skills/              # 子技能（Instagram/语音/搜索/内容浏览/消息）
-└── tests/                   # 126 个测试文件
+│   ├── engines/              # 7 大核心引擎
+│   ├── lifecycle/            # 心跳循环 · 晨间规划 · 晚间反思
+│   ├── ops/                  # 趋势 · 竞品 · 简报 · 顾问 · 爆款知识库
+│   ├── adapters/             # 平台适配器
+│   └── utils/                # 类型 · 配置 · 技能路由 · 内容源
+├── sub-skills/               # 9 个可插拔子技能
+├── hooks/                    # 上下文加载 · 记忆保存
+├── plugin/                   # /alive 命令注册
+└── dashboard/               # Web 仪表盘
 ```
 
----
+### 子技能（9 个可插拔单元）
 
-## 开发 / 贡献
+`instagram-post` · `voice-tts` · `web-search` · `content-browse` · `social-engage` · `photo-share` · `story-share` · `xhs-post` · `message-send`
+
+### 内容源（7 个平台）
+
+`B站` · `Reddit` · `DailyHot` · `微博` · `知乎` · `小红书` · `抖音`
+
+## 🛠️ 开发
 
 ```bash
 npm run build       # 编译 TypeScript
@@ -132,8 +189,6 @@ npm run test        # 运行所有测试（vitest）
 
 欢迎提交 PR！角色配置文件（`alive/personas/*.yaml`）特别欢迎社区贡献。
 
----
-
-## License
+## 📄 License
 
 MIT

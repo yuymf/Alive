@@ -162,22 +162,55 @@ export function formatAlignmentCard(report: PersonaAlignmentReport): string {
 }
 
 /**
- * Format brief section for daily brief embedding (compact version).
+ * Format brief section for daily brief embedding (enriched version).
+ * Shows: best identity + reasoning, topic directions with hook/reasoning, warnings.
  */
 export function formatAlignmentBriefSection(report: PersonaAlignmentReport): string {
+  const lines: string[] = ['━━ 💡人设建议 ━━'];
+
+  // Best matching identity with reasoning
   const topIdentity = report.identity_analysis.length > 0
     ? report.identity_analysis.reduce((a, b) => a.fit_score > b.fit_score ? a : b)
     : null;
 
-  const topLine = topIdentity
-    ? `今日最佳匹配身份：${topIdentity.identity}（${topIdentity.fit_score}/10）`
-    : `综合契合度：${report.alignment_score}/10`;
+  if (topIdentity) {
+    lines.push(`🏆 今日最佳：${topIdentity.identity} ${topIdentity.fit_score}/10`);
+    if (topIdentity.reasoning) {
+      lines.push(`   理由：${topIdentity.reasoning}`);
+    }
+  } else {
+    lines.push(`综合契合度：${report.alignment_score}/10`);
+  }
+  lines.push('');
 
-  const suggestions = report.topic_suggestions
-    .map((ts, idx) => `${idx + 1}. ${ts.direction}（${ts.identity_mode}）`)
-    .join(' ');
+  // Topic suggestions with hook and reasoning
+  if (report.topic_suggestions.length > 0) {
+    lines.push('推荐方向：');
+    const numEmojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'];
+    report.topic_suggestions.forEach((ts, idx) => {
+      const numIcon = idx < numEmojis.length ? numEmojis[idx] : `${idx + 1}.`;
+      lines.push(`${numIcon} ${ts.direction}`);
+      lines.push(`   🎭 ${ts.identity_mode}`);
+      if (ts.hook) {
+        lines.push(`   🪝 钩子：${ts.hook}`);
+      }
+      if (ts.reasoning) {
+        lines.push(`   💡 理由：${ts.reasoning}`);
+      }
+    });
+  }
 
-  return `━━ 💡人设建议 ━━\n${topLine}\n推荐方向：${suggestions}`;
+  // Warnings
+  if (report.warnings.length > 0) {
+    lines.push('');
+    for (const w of report.warnings) {
+      lines.push(`⚠️ ${w}`);
+    }
+  }
+
+  lines.push('🎯 /persona 完整报告');
+
+  return lines.join('\n');
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────

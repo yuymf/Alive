@@ -51,11 +51,28 @@ export async function main(): Promise<void> {
     return;
   }
 
-  // Only run when heartbeat is disabled (cron-only mode)
-  const enableHeartbeat = ops.automation?.enable_heartbeat_cron !== false;
-  if (enableHeartbeat) {
-    console.log(`[${wallNow().toISOString()}] ops-browse: heartbeat is enabled, skipping (use heartbeat-tick instead)`);
-    return;
+  // Determine if we should run:
+  // 1. If browse_schedule is set → run at scheduled times only (check current time matches)
+  // 2. If browse_schedule is NOT set → only run when heartbeat is disabled (legacy cron-only mode)
+  const browseSchedule = ops.browse_schedule;
+  if (browseSchedule && browseSchedule.length > 0) {
+    const nowHour = wallNow().getHours();
+    const nowMinute = wallNow().getMinutes();
+    const matchesSchedule = browseSchedule.some(slot => {
+      const [h, m] = slot.split(':').map(Number);
+      return h === nowHour && m === nowMinute;
+    });
+    if (!matchesSchedule) {
+      return; // silently skip — not a scheduled time
+    }
+    console.log(`[${wallNow().toISOString()}] ops-browse: scheduled browse at ${nowHour}:${String(nowMinute).padStart(2, '0')}`);
+  } else {
+    // Legacy mode: only run when heartbeat is disabled
+    const enableHeartbeat = ops.automation?.enable_heartbeat_cron !== false;
+    if (enableHeartbeat) {
+      console.log(`[${wallNow().toISOString()}] ops-browse: heartbeat is enabled and no browse_schedule, skipping (use heartbeat-tick instead)`);
+      return;
+    }
   }
 
   setPersonaName(persona.meta.id ?? 'default');

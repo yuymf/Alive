@@ -532,11 +532,11 @@ export async function regularTick(
     // 5d. Apply dynamic resistance
     intentPool = applyResistanceToPool(
       intentPool, vitality.vitality, confidence.confidence,
-      false, null, rigidNow,
+      false, null, rigidNow, persona.ops?.browse_schedule,
     );
 
     // 5e. Check impulse breakthrough
-    const breakthrough = checkImpulseBreakthrough(intentPool, vitality.vitality, false);
+    const breakthrough = checkImpulseBreakthrough(intentPool, vitality.vitality, false, persona.ops?.browse_schedule);
     if (breakthrough) {
       console.log(`Impulse breakthrough: ${breakthrough.description}`);
     }

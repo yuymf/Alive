@@ -49,6 +49,8 @@ export interface InspirationState {
   trending_topics: string[];
   domain_insights: string[];
   saved_inspirations: InspirationSummary['saved_inspirations'];
+  /** IDs of recently browsed items, used for dedup across sessions */
+  last_browsed_ids: string[];
 }
 
 const DEFAULT_INSPIRATION_STATE: InspirationState = {
@@ -57,6 +59,7 @@ const DEFAULT_INSPIRATION_STATE: InspirationState = {
   trending_topics: [],
   domain_insights: [],
   saved_inspirations: [],
+  last_browsed_ids: [],
 };
 
 // ── Template Loader ──────────────────────────────────────────────
@@ -144,6 +147,10 @@ export const actions = {
     const feedItems: FeedItem[] = [];
     const searchItems: FeedItem[] = [];
 
+    // Load recently browsed IDs for dedup
+    const recentState = memory.readJSON<InspirationState>('inspiration-state', DEFAULT_INSPIRATION_STATE);
+    const recentlyBrowsedIds = new Set(recentState.last_browsed_ids ?? []);
+
     // 1. Fetch feed
     if (getFeedItems) {
       try {
@@ -154,9 +161,9 @@ export const actions = {
       }
     }
 
-    // 2. Search by LLM-generated keywords
+    // 2. Search by LLM-generated keywords (reduced from 3 to 2 for ops efficiency)
     if (searchContent) {
-      for (const keyword of searchKeywords.slice(0, 3)) {
+      for (const keyword of searchKeywords.slice(0, 2)) {
         try {
           const items = await searchContent(keyword);
           searchItems.push(...items);
@@ -167,10 +174,12 @@ export const actions = {
     }
 
     // Dedup + sort by likes descending (high-engagement content first)
+    // Also filter out recently browsed items
     const seenIds = new Set<string>();
     const allItems = [...feedItems, ...searchItems].filter(item => {
       if (seenIds.has(item.id)) return false;
       seenIds.add(item.id);
+      if (recentlyBrowsedIds.has(item.id)) return false;
       return true;
     }).sort((a, b) => b.likes - a.likes);
 
@@ -232,12 +241,16 @@ export const actions = {
       ...newInspos,
     ].slice(-20);
 
+    // Update browsed IDs for dedup: keep last 100
+    const updatedBrowsedIds = [...(currentState.last_browsed_ids ?? []), ...allItems.map(i => i.id)].slice(-100);
+
     memory.writeJSON<InspirationState>('inspiration-state', {
       last_refreshed_at: new Date().toISOString(),
       feed_highlights: summary.feed_highlights ?? [],
       trending_topics: summary.trending_topics ?? [],
       domain_insights: summary.domain_insights ?? [],
       saved_inspirations: mergedInspos,
+      last_browsed_ids: updatedBrowsedIds,
     });
 
     // 5. Diary entry

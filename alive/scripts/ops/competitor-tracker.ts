@@ -16,8 +16,10 @@ import { matchesTaxonomy } from './ops-taxonomy';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const NO_POSTS_FOUND_DAYS = 99;
-const FETCH_FAILED_DAYS = -1;
+export const NO_POSTS_FOUND_DAYS = 99;
+export const FETCH_FAILED_DAYS = -1;
+/** Sentinal value: postedAt unknown (XHS feeds lack createdAt) — must not be treated as "0 days" */
+export const UNKNOWN_POST_AGE_DAYS = -2;
 const MAX_COMPETITOR_LOG_ENTRIES = 200;
 
 // ─── Pure functions (exported for testing) ───────────────────────────────────
@@ -25,8 +27,11 @@ const MAX_COMPETITOR_LOG_ENTRIES = 200;
 export function buildCompetitorSummary(updates: CompetitorUpdate[]): string {
   if (updates.length === 0) return '无竞品数据';
   return updates.map(u => {
-    if (!u.latest_post) return `@${u.account}  ${u.days_since_last_post}天未更新`;
+    if (!u.latest_post) return `@${u.account}  ${u.days_since_last_post === FETCH_FAILED_DAYS ? '拉取失败' : `${u.days_since_last_post}天未更新`}`;
     const { topic, engagement } = u.latest_post;
+    if (u.days_since_last_post === UNKNOWN_POST_AGE_DAYS) {
+      return `@${u.account}  发布「${topic}」互动${engagement}（发布时间未知）`;
+    }
     return `@${u.account}  今日发布「${topic}」互动${engagement}`;
   }).join('\n');
 }
@@ -221,13 +226,17 @@ function fetchXhsAccount(account: string): CompetitorUpdate {
     const raw = execFileSync('uv', [
       'run', '--directory', xhsDir, 'python', xhsCli,
       'search-feeds', '--keyword', account,
+      '--sort-by', '最新',  // sort by newest to get the actual latest post
     ], { timeout: 15_000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     // Output is JSON with a "feeds" array
+    // NOTE: XHS SDK Feed.to_dict() does NOT include createdAt — we must handle its absence
     const parsed = JSON.parse(raw.trim()) as {
       feeds?: Array<{
         displayTitle?: string;
         interactInfo?: { likedCount?: string };
         createdAt?: string;
+        id?: string;
+        user?: { userId?: string; nickname?: string };
       }>;
     };
     const results = parsed.feeds ?? [];
@@ -235,14 +244,17 @@ function fetchXhsAccount(account: string): CompetitorUpdate {
       return { account, platform: 'xhs', latest_post: null, days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: wallNow().toISOString() };
     }
     const latest = results[0];
-    const postedAt = latest.createdAt ? new Date(latest.createdAt) : now();
-    const daysSince = Math.floor((now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24));
+    // XHS search-feeds API does not return createdAt — never fall back to now()
+    const postedAt = latest.createdAt ? new Date(latest.createdAt) : null;
+    const daysSince = postedAt
+      ? Math.floor((now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24))
+      : UNKNOWN_POST_AGE_DAYS;
     const likes = parseInt(latest.interactInfo?.likedCount ?? '0', 10) || 0;
     return {
       account,
       platform: 'xhs',
       latest_post: {
-        time: postedAt.toISOString(),
+        time: postedAt?.toISOString() ?? wallNow().toISOString(),
         content_type: '图文',
         topic: latest.displayTitle ?? '未知',
         engagement: likes,
@@ -272,6 +284,8 @@ function fetchXhsAccountByUserId(userId: string, displayName: string): Competito
         displayTitle?: string;
         interactInfo?: { likedCount?: string };
         createdAt?: string;
+        id?: string;
+        user?: { userId?: string; nickname?: string };
       }>;
     };
 
@@ -285,17 +299,18 @@ function fetchXhsAccountByUserId(userId: string, displayName: string): Competito
     }
 
     const latest = results[0];
-    const postedAt = latest.createdAt ? new Date(latest.createdAt) : now();
-    const daysSince = Math.floor(
-      (now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24)
-    );
+    // XHS user-profile feeds also lack createdAt — never fall back to now()
+    const postedAt = latest.createdAt ? new Date(latest.createdAt) : null;
+    const daysSince = postedAt
+      ? Math.floor((now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24))
+      : UNKNOWN_POST_AGE_DAYS;
     const likes = parseInt(latest.interactInfo?.likedCount ?? '0', 10) || 0;
 
     return {
       account: displayName,
       platform: 'xhs',
       latest_post: {
-        time: postedAt.toISOString(),
+        time: postedAt?.toISOString() ?? wallNow().toISOString(),
         content_type: '图文',
         topic: latest.displayTitle ?? '未知',
         engagement: likes,
@@ -550,8 +565,26 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
     const entryDate = getLocalDate(new Date(e.fetched_at));
     return entryDate !== today;
   });
+
+  // Dedup today's entries: for the same account+platform, only keep the latest fetch
+  // (replaces older entries instead of appending duplicates)
+  const todayExisting = existingEntries.filter(e => {
+    const entryDate = getLocalDate(new Date(e.fetched_at));
+    return entryDate === today;
+  });
+  const merged = new Map<string, CompetitorUpdate>();
+  // First, populate with today's existing entries
+  for (const e of todayExisting) {
+    merged.set(`${e.account}|${e.platform}`, e);
+  }
+  // Then, overwrite with fresh data (keeps the most recent fetch)
+  for (const e of all) {
+    merged.set(`${e.account}|${e.platform}`, e);
+  }
+  const todayEntries = [...merged.values()];
+
   const log: CompetitorLog = {
-    entries: [...withoutToday, ...all].slice(-MAX_COMPETITOR_LOG_ENTRIES), // keep last 200 entries
+    entries: [...withoutToday, ...todayEntries].slice(-MAX_COMPETITOR_LOG_ENTRIES), // keep last 200 entries
     last_updated: wallNow().toISOString(),
   };
   writeJSON(PATHS.competitorLog, log);

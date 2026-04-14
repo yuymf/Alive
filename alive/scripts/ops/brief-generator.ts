@@ -12,9 +12,34 @@ import { FilteredTrend } from './trend-analyzer';
 import { formatAlignmentBriefSection } from './persona-advisor';
 import { buildCandidateContext } from './discovery-engine';
 import { PENDING_EXPIRE_HOURS, hoursSinceCreated } from './review-queue';
+import { UNKNOWN_POST_AGE_DAYS, FETCH_FAILED_DAYS } from './competitor-tracker';
 import type { HealthReport } from './health-check';
 import type { KBStats } from './viral-kb-store';
 import type { UniversalFormula, ViralEntry } from '../utils/types';
+
+// ─── Brief helpers ───────────────────────────────────────────────────────────
+
+/** Format engagement number to human-readable form (e.g. 22268 → "2.2w") */
+function fmtEngagement(n: number): string {
+  if (n >= 10000) return `${(n / 10000).toFixed(1)}w`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return `${n}`;
+}
+
+/** Convert ISO timestamp to relative time string (e.g. "3小时前", "昨天", "3天前") */
+function relativeTime(isoTime: string | undefined): string {
+  if (!isoTime) return '时间未知';
+  const d = new Date(isoTime);
+  if (isNaN(d.getTime())) return '时间未知';
+  const diffMs = Date.now() - d.getTime();
+  const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffH < 1) return '刚刚';
+  if (diffH < 24) return `${diffH}小时前`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD === 1) return '昨天';
+  if (diffD <= 7) return `${diffD}天前`;
+  return `${diffD}天前`;
+}
 
 // ─── Brief Enrichment (optional, backward-compatible) ────────────────────────
 
@@ -55,26 +80,71 @@ export function formatBriefCard(
       const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
       lines.push(`${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x`);
     }
+    lines.push('🔥 /trends 查看更多趋势');
+    lines.push('');
+  } else {
+    lines.push('━━ 平台正在助推 ━━');
+    lines.push('📭 今日暂无捕获到强趋势信号');
+    lines.push('🔥 /trends 手动刷新');
     lines.push('');
   }
 
-  // Competitors
+  // Competitors — grouped by activity level
   if (competitors.length > 0) {
-    lines.push('━━ 竞品动态 ━━');
+    const STALE_THRESHOLD_DAYS = 7;
+    // Classify competitors into three tiers
+    const active: CompetitorUpdate[] = [];
+    const stale: CompetitorUpdate[] = [];
+    const inactive: CompetitorUpdate[] = [];
     for (const c of competitors) {
-      if (!c.latest_post) {
-        lines.push(`@${c.account}  ${c.days_since_last_post}天未更新`);
-      } else {
-        const { topic, engagement } = c.latest_post;
-        const analysisKey = `${c.account}:${c.platform}`;
-        const analysis = enrichment?.competitorAnalysis?.analyses?.[analysisKey];
-        if (analysis?.key_insight) {
-          lines.push(`@${c.account}  核心洞察：${analysis.key_insight} | 最新「${topic}」互动${engagement}`);
+      if (c.latest_post && c.days_since_last_post !== FETCH_FAILED_DAYS) {
+        if (c.days_since_last_post >= 0 && c.days_since_last_post <= STALE_THRESHOLD_DAYS) {
+          active.push(c);
+        } else if (c.days_since_last_post === UNKNOWN_POST_AGE_DAYS) {
+          // Unknown time but has content → treat as active
+          active.push(c);
         } else {
-          lines.push(`@${c.account}  今日「${topic}」互动${engagement}`);
+          stale.push(c);
         }
+      } else if (c.days_since_last_post === FETCH_FAILED_DAYS) {
+        inactive.push(c); // fetch failed
+      } else {
+        inactive.push(c); // no posts found or very old
       }
     }
+
+    lines.push('━━ 竞品动态 ━━');
+
+    // Active competitors: detailed display
+    for (const c of active) {
+      const { topic, engagement } = c.latest_post!;
+      const timeStr = c.days_since_last_post === UNKNOWN_POST_AGE_DAYS
+        ? '' : ` ${relativeTime(c.latest_post!.time)}`;
+      const engStr = fmtEngagement(engagement);
+      const analysisKey = `${c.account}:${c.platform}`;
+      const analysis = enrichment?.competitorAnalysis?.analyses?.[analysisKey];
+      const topicTruncated = topic.length > 18 ? topic.slice(0, 18) + '…' : topic;
+      lines.push(`@${c.account}${timeStr}「${topicTruncated}」互动${engStr}`);
+      if (analysis?.key_insight) {
+        lines.push(`  💡 核心洞察：${analysis.key_insight}`);
+      }
+    }
+
+    // Stale competitors: one-line each
+    for (const c of stale) {
+      const { topic, engagement } = c.latest_post!;
+      lines.push(`@${c.account}  ${c.days_since_last_post}天前「${topic.length > 12 ? topic.slice(0, 12) + '…' : topic}」互动${fmtEngagement(engagement)}`);
+    }
+
+    // Inactive competitors: collapsed into one line
+    if (inactive.length > 0) {
+      const names = inactive.map(c => c.account).join('、');
+      const hasFetchFailed = inactive.some(c => c.days_since_last_post === FETCH_FAILED_DAYS);
+      const suffix = hasFetchFailed ? '（含拉取失败）' : '';
+      lines.push(`💤 ${inactive.length}个账号超过${STALE_THRESHOLD_DAYS}天未更新${suffix}（${names}）`);
+    }
+
+    lines.push('💬 /comp [账号] 详细分析 · /comp all 完整列表');
     lines.push('');
   }
 
@@ -90,6 +160,7 @@ export function formatBriefCard(
       lines.push(`${idx + 1}️⃣  ${item.topic}`);
       lines.push(`   ${item.trend_hook}`);
     });
+    lines.push('📋 回复 1~N 选择 · /idea [方向] 手动出题');
     lines.push('');
   }
 
@@ -118,17 +189,37 @@ export function formatBriefCard(
     }
   }
 
-  // 🎬 今日视频分镜
+  // 🎬 今日视频分镜 (structured: topic + identity + scene labels + script excerpt)
   if (firstPending) {
     const douyin = firstPending.content?.douyin;
-    if (douyin && (douyin.key_captions.length > 0 || douyin.bgm_suggestion)) {
+    if (douyin && (douyin.key_captions.length > 0 || douyin.bgm_suggestion || douyin.script)) {
       lines.push('━━ 🎬 今日视频分镜 ━━');
+      // Associate with the topic
+      lines.push(`📌 选题：${firstPending.topic}`);
+      if (firstPending.identity_mode) {
+        lines.push(`🎭 身份：${firstPending.identity_mode}`);
+      }
+      lines.push('');
+      // Structured scene labels for key captions
       if (douyin.key_captions.length > 0) {
-        douyin.key_captions.forEach((cap, idx) => lines.push(`  ${idx + 1}. ${cap}`));
+        const sceneLabels = ['开场', '铺垫', '高潮', '收尾', '彩蛋', '转场'];
+        douyin.key_captions.forEach((cap, idx) => {
+          const label = idx < sceneLabels.length ? sceneLabels[idx] : `P${idx + 1}`;
+          lines.push(`${idx + 1}. [${label}] ${cap}`);
+        });
+        lines.push('');
       }
       if (douyin.bgm_suggestion) {
-        lines.push(`  🎵 BGM: ${douyin.bgm_suggestion}`);
+        lines.push(`🎵 BGM: ${douyin.bgm_suggestion}`);
       }
+      // Script excerpt (first 80 chars)
+      if (douyin.script && douyin.script.length > 0) {
+        const excerpt = douyin.script.length > 80
+          ? douyin.script.slice(0, 80) + '…'
+          : douyin.script;
+        lines.push(`📝 脚本摘要：${excerpt}`);
+      }
+      lines.push('🎬 /video 完整脚本 · /edit 分镜 调整');
       lines.push('');
     }
   }
@@ -186,34 +277,59 @@ export function formatBriefCard(
       const parts = [`总条目 ${kbStats.total}`];
       if (kbStats.formula_count > 0) parts.push(`通用公式 ${kbStats.formula_count}`);
       if (kbStats.queue_length > 0) parts.push(`待拆解 ${kbStats.queue_length}`);
-      kbLines.push(`  📊 ${parts.join(' · ')}`);
+      kbLines.push(`📊 ${parts.join(' · ')}`);
+      kbLines.push('');
 
-      // Recently promoted formulas
-      const formulas = enrichment?.viralKbFormulas;
-      if (formulas && formulas.length > 0) {
-        const promotedFormulas = formulas.filter(f => f.injected_to_templates);
-        if (promotedFormulas.length > 0) {
-          const formulaDescs = promotedFormulas.slice(0, 2).map(
-            f => `[${f.content_type}+${f.hook_type}] ${f.platform} (${f.occurrence_count}x↑)`,
-          );
-          kbLines.push(`  🔮 通用公式: ${formulaDescs.join(' | ')}`);
-        }
-      }
-
-      // Top entries
+      // Top entries with dissection details
       const topEntries = enrichment?.viralKbTopEntries;
       if (topEntries && topEntries.length > 0) {
-        const topDescs = topEntries.slice(0, 3).map(e => {
-          const likesK = e.likes >= 10000
+        kbLines.push('🔥 近期爆款经验：');
+        for (const [idx, e] of topEntries.slice(0, 3).entries()) {
+          const likesStr = e.likes >= 10000
             ? `${(e.likes / 10000).toFixed(1)}w`
             : e.likes >= 1000
               ? `${(e.likes / 1000).toFixed(1)}k`
               : `${e.likes}`;
-          return `「${e.title.length > 15 ? e.title.slice(0, 15) + '…' : e.title}」❤️${likesK}`;
-        });
-        kbLines.push(`  🔥 近期 Top: ${topDescs.join(' | ')}`);
+          const titleStr = e.title.length > 20 ? e.title.slice(0, 20) + '…' : e.title;
+          kbLines.push(`${idx + 1}. 「${titleStr}」❤️${likesStr}`);
+
+          // Show dissection details if available
+          if (e.dissection_status === 'done' && e.dissection) {
+            const hookType = e.dissection.hook_type;
+            const emotionArc = e.dissection.emotion_arc;
+            kbLines.push(`   🎯 钩子：${hookType}  📈 情绪：${emotionArc}`);
+            if (e.dissection.summary) {
+              const summaryShort = e.dissection.summary.length > 30
+                ? e.dissection.summary.slice(0, 30) + '…'
+                : e.dissection.summary;
+              kbLines.push(`   💡 可复用：${summaryShort}`);
+            }
+          }
+        }
+        kbLines.push('');
       }
 
+      // Recently promoted formulas with trigger words
+      const formulas = enrichment?.viralKbFormulas;
+      if (formulas && formulas.length > 0) {
+        const promotedFormulas = formulas.filter(f => f.injected_to_templates);
+        if (promotedFormulas.length > 0) {
+          for (const f of promotedFormulas.slice(0, 2)) {
+            kbLines.push(`🔮 通用公式: [${f.content_type}+${f.hook_type}] × ${f.platform} (${f.occurrence_count}x↑)`);
+            if (f.trigger_words && f.trigger_words.length > 0) {
+              kbLines.push(`   触发词：${f.trigger_words.join('、')}`);
+            }
+            if (f.formula_summary) {
+              const fmtSummary = f.formula_summary.length > 40
+                ? f.formula_summary.slice(0, 40) + '…'
+                : f.formula_summary;
+              kbLines.push(`   公式：${fmtSummary}`);
+            }
+          }
+        }
+      }
+
+      kbLines.push('📖 /kb [关键词] 搜索 · /formula 公式详解');
       lines.push(kbLines.join('\n'));
       lines.push('');
     }
@@ -276,14 +392,13 @@ export function formatBriefCard(
     // health report not available, skip
   }
 
-  // ─── Actions ────────────────────────────────────────────────────────────────
+  // ─── Actions (simplified — detailed commands are in each section above) ──────
 
+  lines.push('━━ 快捷操作 ━━');
   if (activePending.length > 0) {
-    lines.push('━━ 操作 ━━');
-    lines.push('回复 1~N 选择 · /post 查看详情 · 跳过 今天不发');
+    lines.push('回复 1~N 选择选题 · /post 查看详情 · 跳过 今天不发');
   } else {
-    lines.push('━━ 操作 ━━');
-    lines.push('/idea [方向] 手动出选题 · /trends 查最新热点');
+    lines.push('/idea [方向] 手动出选题 · /brief 刷新简报');
   }
 
   return lines.join('\n');

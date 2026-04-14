@@ -47,7 +47,7 @@ describe('formatBriefCard', () => {
     expect(card).toContain('@testAccount');
   });
 
-  it('shows days since last post for inactive competitor', () => {
+  it('shows inactive competitor in collapsed group', () => {
     const trends: FilteredTrend[] = [];
     const competitors: CompetitorUpdate[] = [
       { account: '@inactive', platform: 'xhs',
@@ -56,7 +56,8 @@ describe('formatBriefCard', () => {
     ];
     const card = formatBriefCard('2026-03-30', trends, competitors, []);
     expect(card).toContain('@inactive');
-    expect(card).toContain('3天未更新');
+    // New behavior: inactive competitors are collapsed into a summary line
+    expect(card).toContain('未更新');
   });
 
   it('excludes non-pending items from the count', () => {

@@ -121,28 +121,40 @@ export function computeDynamicResistance(
   intent: Intent, vitality: number, confidence: number,
   inFlow: boolean, flowCategory: MetaIntent | null,
   rigidSchedule: { allowed_actions: string[] } | null,
+  browseSchedule?: readonly string[],
 ): number {
   let resistance = BASE_RESISTANCE[intent.category] ?? 0;
   if (vitality < 30 && HIGH_ENERGY_CATEGORIES.has(intent.category)) resistance *= 1.5;
   if (inFlow && intent.category !== flowCategory) resistance += 3.0;
   if (rigidSchedule && !rigidSchedule.allowed_actions.some(a => a.includes(intent.category as string))) resistance += 5.0;
   if (intent.category === 'produce' && confidence < 0.8) resistance += 2.0;
+  // Ops persona with browse_schedule: raise consume resistance since scheduled browsing replaces random consume
+  if (intent.category === 'consume' && browseSchedule && browseSchedule.length > 0) {
+    resistance += 3.0;
+  }
   return resistance;
 }
 
-export function applyResistanceToPool(pool: IntentPool, vitality: number, confidence: number, inFlow: boolean, flowCategory: MetaIntent | null, rigidSchedule: { allowed_actions: string[] } | null): IntentPool {
+export function applyResistanceToPool(pool: IntentPool, vitality: number, confidence: number, inFlow: boolean, flowCategory: MetaIntent | null, rigidSchedule: { allowed_actions: string[] } | null, browseSchedule?: readonly string[]): IntentPool {
   return { ...pool, intents: pool.intents.map(intent => {
     if (intent.satisfied_at !== null) return intent;
-    const newR = computeDynamicResistance(intent, vitality, confidence, inFlow, flowCategory, rigidSchedule);
+    const newR = computeDynamicResistance(intent, vitality, confidence, inFlow, flowCategory, rigidSchedule, browseSchedule);
     return newR !== intent.resistance ? { ...intent, resistance: newR } : intent;
   })};
 }
 
-export function checkImpulseBreakthrough(pool: IntentPool, vitality: number, inFlow: boolean): Intent | null {
+export function checkImpulseBreakthrough(pool: IntentPool, vitality: number, inFlow: boolean, browseSchedule?: readonly string[]): Intent | null {
   const unsatisfied = pool.intents.filter(i => i.satisfied_at === null);
   const eventBreak = unsatisfied.find(i => i.intensity > 8.0 && i.source === 'event');
   if (eventBreak) return eventBreak;
-  if (!inFlow && vitality < 50) { const browsing = unsatisfied.find(i => i.category === 'consume'); if (browsing) return browsing; }
+  // Skip consume impulse breakthrough for ops personas with browse_schedule
+  // (scheduled browsing handles this instead of random low-energy browsing)
+  if (!inFlow && vitality < 50) {
+    if (!(browseSchedule && browseSchedule.length > 0)) {
+      const browsing = unsatisfied.find(i => i.category === 'consume');
+      if (browsing) return browsing;
+    }
+  }
   if (vitality < 15) { const rest = unsatisfied.find(i => i.category === 'rest'); if (rest) return rest; }
   return null;
 }

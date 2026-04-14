@@ -469,10 +469,13 @@ export function createContentBrowseConfig(options?: {
   webSearch?: (query: string, limit?: number) => Promise<Array<{ title: string; url: string; snippet: string }>>;
   registry?: ContentProviderRegistry;
   contentSources?: ContentSourcesConfig;
+  /** Max search results per platform per keyword (default: 5, was 10) */
+  maxSearchResults?: number;
 }) {
   const registry = options?.registry;
   const contentSources = options?.contentSources;
   const platformFilter = contentSources?.platforms;
+  const maxSearchResults = options?.maxSearchResults ?? 5;
   // Only call Instagram APIs if 'instagram' is explicitly in the platform filter, or no filter is set
   const igEnabled = !platformFilter || platformFilter.includes('instagram');
 
@@ -526,29 +529,47 @@ export function createContentBrowseConfig(options?: {
       }
 
       // Registry providers (multi-platform bridge)
+      // Skip if trend-analyzer already fetched hot lists within the last 4 hours
+      // (avoids redundant DailyHot API calls when ops-trends already ran)
       if (registry) {
+        let skipRegistryFeed = false;
         try {
-          const registryItems = await registry.getAggregatedFeed({
-            platforms: platformFilter,
-            keywords: contentSources?.keywords,
-            limit: 10,
-          });
-          for (const item of registryItems) {
-            // Skip if already present (dedup by id)
-            if (!items.some(existing => existing.id === item.id)) {
-              items.push({
-                id: item.id,
-                title: item.title,
-                likes: item.likes ?? 0,
-                user: item.user,
-                tags: item.tags,
-                source: item.source,
-                url: item.url,
-                snippet: item.snippet,
-              });
+          const { readJSON } = await import('../utils/file-utils');
+          const { PATHS } = await import('../utils/file-utils');
+          const trendsCache = readJSON<{ computed_at?: string }>(PATHS.trendsCache, {});
+          if (trendsCache.computed_at) {
+            const cacheAge = Date.now() - new Date(trendsCache.computed_at).getTime();
+            if (cacheAge < 4 * 60 * 60 * 1000) { // 4 hours
+              skipRegistryFeed = true;
+              console.log(`[content-browse] Skipping Registry feed — trend-analyzer cache is fresh (${Math.round(cacheAge / 60_000)}min old)`);
             }
           }
-        } catch { /* non-critical — registry failure does not block built-in sources */ }
+        } catch { /* non-critical — if cache check fails, proceed with registry */ }
+
+        if (!skipRegistryFeed) {
+          try {
+            const registryItems = await registry.getAggregatedFeed({
+              platforms: platformFilter,
+              keywords: contentSources?.keywords,
+              limit: maxSearchResults,
+            });
+            for (const item of registryItems) {
+              // Skip if already present (dedup by id)
+              if (!items.some(existing => existing.id === item.id)) {
+                items.push({
+                  id: item.id,
+                  title: item.title,
+                  likes: item.likes ?? 0,
+                  user: item.user,
+                  tags: item.tags,
+                  source: item.source,
+                  url: item.url,
+                  snippet: item.snippet,
+                });
+              }
+            }
+          } catch { /* non-critical — registry failure does not block built-in sources */ }
+        }
       }
 
       return items;
@@ -576,7 +597,7 @@ export function createContentBrowseConfig(options?: {
             sortBy: '最热',
             publishTime: '7天内',
           });
-          for (const note of notes.slice(0, 10)) {
+          for (const note of notes.slice(0, maxSearchResults)) {
             items.push({
               id: `xhs_${note.id}`,
               title: note.title,
@@ -592,7 +613,7 @@ export function createContentBrowseConfig(options?: {
       // IG hashtag search — only if instagram is in the platform filter (or no filter set)
       if (igEnabled) {
         try {
-          const result = await hashtagTop(keyword, 10);
+          const result = await hashtagTop(keyword, maxSearchResults);
           for (const post of result.posts) {
             items.push({
               id: `ig_${post.pk}`,
@@ -609,9 +630,9 @@ export function createContentBrowseConfig(options?: {
       try {
         const douyinLogin = checkDouyinLogin();
         if (douyinLogin.success && douyinLogin.logged_in) {
-          const douyinResult = searchDouyinVideos(keyword, 10);
+          const douyinResult = searchDouyinVideos(keyword, maxSearchResults);
           if (douyinResult.success && douyinResult.videos) {
-            for (const video of douyinResult.videos.slice(0, 10)) {
+            for (const video of douyinResult.videos.slice(0, maxSearchResults)) {
               items.push({
                 id: `douyin_${video.aweme_id}`,
                 title: video.desc,
@@ -630,7 +651,7 @@ export function createContentBrowseConfig(options?: {
         try {
           const registryItems = await registry.search(keyword, {
             platforms: platformFilter,
-            limit: 10,
+            limit: maxSearchResults,
           });
           for (const item of registryItems) {
             if (!items.some(existing => existing.id === item.id)) {

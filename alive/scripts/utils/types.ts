@@ -1375,6 +1375,10 @@ export interface OpsConfig {
   kb_dissect_batch?: number;
   /** Content sources to browse in ops-browse mode */
   browse_sources?: ReadonlyArray<{ platform: string; count: number }>;
+  /** Fixed browse schedule for ops personas (overrides heartbeat-driven consume intent).
+   *  When set, content-browse only runs at these times instead of randomly via intent engine.
+   *  Format: "HH:MM" in persona's local timezone. */
+  browse_schedule?: readonly string[];
   /** Automation delivery config — controls which cron jobs exist and how they deliver */
   automation?: {
     /** How daily brief is delivered: 'session' = send to current session, 'wecom-target' = use WECOM_TARGET_ID direct send */
