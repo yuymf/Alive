@@ -13,6 +13,8 @@ import { now, getLocalDate } from '../utils/time-utils';
 import { TrendItem, TrendHistory, OpsConfig, PersonaConfig, TagVocabulary } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
 import { normalizeKeyword } from '../utils/text-utils';
+import { loadDiscoveryPool } from './discovery-engine';
+import type { DiscoveryItem } from './discovery-engine';
 
 const isDebug = () => process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true';
 
@@ -146,7 +148,56 @@ export function injectTagVocabularyItems(): TrendItem[] {
       avg_7d: 0,
       velocity_score: t.score / 100,
       rank: 999,
+      _source: 'tag_engine' as const,
     }));
+}
+
+/**
+ * Convert high-engagement discovery-pool items into TrendItem signals.
+ * These represent real engagement data (from search results / recommendation feed),
+ * NOT hot-list rankings that may contain fake traffic.
+ *
+ * Scoring: discovery items get a 1.5x velocity boost to prioritize verified engagement.
+ */
+export function injectDiscoveryPoolTrends(): TrendItem[] {
+  const pool = loadDiscoveryPool();
+  if (!pool.items || pool.items.length === 0) return [];
+
+  // Only inject items with meaningful engagement
+  const qualified = pool.items
+    .filter((item: DiscoveryItem) => item.engagement > 0 && item.score > 0)
+    .sort((a: DiscoveryItem, b: DiscoveryItem) => b.score - a.score)
+    .slice(0, 8);
+
+  return qualified.map((item: DiscoveryItem) => ({
+    platform: item.source as TrendItem['platform'],
+    keyword: item.topic || item.title,
+    current_volume: item.engagement,
+    avg_7d: 0,
+    // Discovery pool items get boosted velocity since they represent verified engagement
+    velocity_score: Math.max(1.5, item.score / 50),
+    rank: 998,
+    _source: 'discovery_pool' as const,
+  }));
+}
+
+/**
+ * Apply authentic engagement scoring: items from tag-engine/discovery get 1.0x weight,
+ * while items from hot-lists get 0.6x weight (may contain fake traffic).
+ */
+export function applyAuthenticEngagementWeight(items: TrendItem[]): TrendItem[] {
+  return items.map(item => {
+    const source = (item as TrendItem & { _source?: string })._source;
+    if (source === 'tag_engine' || source === 'discovery_pool') {
+      // Real engagement data — full weight
+      return item;
+    }
+    // Hot-list data — apply 0.6x velocity damping
+    return {
+      ...item,
+      velocity_score: item.velocity_score * 0.6,
+    };
+  });
 }
 
 // ─── Remote DailyHot API (https://dailyhot-rho-nine.vercel.app) ──────────────
@@ -480,11 +531,18 @@ export async function analyzeTrends(
   // 3. Persist today's data for future velocity calculations
   persistTodayTrends(withVelocity);
 
-  // Inject tag vocabulary signals before threshold filter
+  // Inject AUTHENTIC engagement signals BEFORE hot-list data (tag-engine + discovery-pool)
+  // These represent real user engagement, not potentially-inflated hot-list rankings
   const tagItems = injectTagVocabularyItems();
-  if (tagItems.length > 0) {
-    withVelocity = [...withVelocity, ...tagItems];
+  const discoveryItems = injectDiscoveryPoolTrends();
+  if (isDebug()) {
+    console.log(`[trend-analyzer] DEBUG: Injecting ${tagItems.length} tag-engine signals, ${discoveryItems.length} discovery-pool signals`);
   }
+
+  // Combine: authentic signals first, then hot-list data
+  // Then apply engagement weighting (hot-list gets 0.6x velocity damping)
+  const combined = [...tagItems, ...discoveryItems, ...withVelocity];
+  withVelocity = applyAuthenticEngagementWeight(combined);
 
   // 4. Filter by threshold — cold-start bypass: if all have no history, skip threshold
   const hasHistory = withVelocity.some(i => i.avg_7d > 0);

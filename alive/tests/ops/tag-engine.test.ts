@@ -189,7 +189,7 @@ describe('runColdStart', () => {
     mockSearchDouyinVideos.mockReturnValue({
       success: true,
       videos: [
-        { aweme_id: '1', desc: '#抖音赛车 精彩比赛', digg_count: 6000, author: 'u1' },
+        { aweme_id: '1', desc: '#抖音赛车 精彩比赛', create_time: 0, is_top: false, digg_count: 6000, author: 'u1' },
       ],
     });
     const ops = {
@@ -261,7 +261,7 @@ describe('refreshActiveTags', () => {
     mockSearchDouyinVideos.mockReturnValue({
       success: true,
       videos: [
-        { aweme_id: '1', desc: '#电竞 #抖音新tag', digg_count: 6000, author: 'u1' },
+        { aweme_id: '1', desc: '#电竞 #抖音新tag', create_time: 0, is_top: false, digg_count: 6000, author: 'u1' },
       ],
     });
 

@@ -161,8 +161,8 @@ describe('searchDouyinViral', () => {
     mockSearchDouyinVideos.mockReturnValue({
       success: true,
       videos: [
-        { aweme_id: '1', desc: 'Low', create_time: 0, author: 'a1', digg_count: 100 },
-        { aweme_id: '2', desc: 'High', create_time: 0, author: 'a2', digg_count: 8000 },
+        { aweme_id: '1', desc: 'Low', create_time: 0, is_top: false, author: 'a1', digg_count: 100 },
+        { aweme_id: '2', desc: 'High', create_time: 0, is_top: false, author: 'a2', digg_count: 8000 },
       ],
     });
 
@@ -295,7 +295,7 @@ describe('runViralSearch', () => {
     mockSearchDouyinVideos.mockReturnValue({
       success: true,
       videos: [
-        { aweme_id: '1', desc: 'Douyin Hit', create_time: 0, author: 'creator2', digg_count: 7000 },
+        { aweme_id: '1', desc: 'Douyin Hit', create_time: 0, is_top: false, author: 'creator2', digg_count: 7000 },
       ],
     });
 

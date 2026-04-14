@@ -8,7 +8,6 @@
  * and competitor benchmarks into LLM prompts for better-targeted content.
  */
 
-import { execFileSync } from 'child_process';
 import * as path from 'path';
 import {
   OpsConfig, ContentTemplate, CompetitorProfile, IdentityMode,
@@ -441,22 +440,26 @@ export async function regenerateContent(
   return updateItemContent(item.id, newContent, { instruction, field });
 }
 
-// ─── ClawHub skill calls ──────────────────────────────────────────────────────
-interface TiktokGrowthResult {
-  hooks?: string[];
-  ideas?: Array<{ title: string; format: string }>;
-}
+// ─── Hook generation (replaced deprecated openclaw CLI call) ─────────────────
 
-function callTiktokGrowth(niche: string, count: number): string[] {
+/**
+ * Generate hook formulas for a given niche using LLM.
+ * Previously called `openclaw skills run tiktok-growth` which has been deprecated.
+ * Now generates hooks inline via the LLM client passed to generateTopics().
+ */
+async function generateHooksViaLLM(
+  niche: string,
+  count: number,
+  llm: LLMClient,
+): Promise<string[]> {
   try {
-    const raw = execFileSync('openclaw', [
-      'skills', 'run', 'tiktok-growth',
-      '--args', JSON.stringify({ niche, count, action: 'generate_hooks' }),
-    ], { timeout: 30_000, encoding: 'utf8' });
-    const result = JSON.parse(raw) as TiktokGrowthResult;
+    const prompt = `你是短视频钩子公式专家。为「${niche}」赛道生成${count}个高转化的开头钩子公式。
+要求：每个钩子11-20字，使用反问/冲突/悬念/数字冲击手法。
+直接输出JSON：{"hooks":["钩子1","钩子2",...]}`;
+    const result = await llm.callJSON<{ hooks?: string[] }>(prompt, 500);
     return result.hooks ?? [];
   } catch (err) {
-    console.error('[topic-generator] tiktok-growth call failed:', err);
+    console.error('[topic-generator] hook generation via LLM failed:', err);
     return [];
   }
 }
@@ -464,16 +467,27 @@ function callTiktokGrowth(niche: string, count: number): string[] {
 interface XhsDraft { title: string; body: string; tags: string[]; cover_description: string }
 interface DouyinDraft { opening_hook: string; script: string; bgm_suggestion: string; key_captions: string[]; cover_description: string }
 
-// ─── Image generation ────────────────────────────────────────────────────────
+// ─── Image generation (replaced deprecated openclaw CLI call) ────────────────
 
-function callGenerateImage(description: string, stylePrompt: string): string[] {
+/**
+ * Generate cover images via the generate-image sub-skill (in-process import).
+ * Previously called `openclaw skills run generate-image` which has been deprecated.
+ * Now uses direct import like instagram-adapter.ts does.
+ */
+async function callGenerateImageInProcess(
+  description: string,
+  stylePrompt: string,
+): Promise<string[]> {
   try {
-    const raw = execFileSync('openclaw', [
-      'skills', 'run', 'generate-image',
-      '--args', JSON.stringify({ prompt: `${stylePrompt}, ${description}`, count: 3 }),
-    ], { timeout: 60_000, encoding: 'utf8' });
-    const result = JSON.parse(raw) as { images?: string[] };
-    return result.images ?? [];
+    const { generateImage } = await import(
+      '../../sub-skills/platform/generate-image/scripts/provider'
+    );
+    const result = await generateImage({
+      prompt: `${stylePrompt}, ${description}`,
+      referenceImages: [],
+      style: 'daily',
+    });
+    return result.localPath ? [result.localPath] : [];
   } catch (err) {
     console.error('[topic-generator] generate-image call failed:', err);
     return [];
@@ -650,8 +664,8 @@ export async function generateTopics(
     }
 
     try {
-      // Enrich douyin script with tiktok-growth hooks
-      const hooks = callTiktokGrowth(identityMode, 3);
+      // Enrich douyin script with LLM-generated hooks (replaced deprecated tiktok-growth skill)
+      const hooks = await generateHooksViaLLM(identityMode, 3, llm);
       const hookContext = hooks.length > 0 ? `参考钩子公式：${hooks.slice(0, 2).join(' / ')}` : '';
       const douyinContext = [...contextParts, hookContext].filter(Boolean).join('\n\n');
       douyinDraft = await llm.callJSON<DouyinDraft>(
@@ -661,9 +675,9 @@ export async function generateTopics(
       console.error(`[topic-generator] Douyin draft failed for "${trend.keyword}":`, err);
     }
 
-    // Generate cover images
+    // Generate cover images (via in-process sub-skill import)
     const coverDescription = xhsDraft.cover_description || douyinDraft.cover_description || trend.keyword;
-    const coverImages = callGenerateImage(coverDescription, imageStylePrompt);
+    const coverImages = await callGenerateImageInProcess(coverDescription, imageStylePrompt);
 
     // Build template spec for review queue
     const templateSpec: QueueItemTemplateSpec | undefined = template

@@ -16,6 +16,109 @@ metadata:
 
 # Alive — Digital Life Engine
 
+## ⛔ STOP — Command Routing Gate (READ THIS FIRST)
+
+**Before you do ANYTHING else — before loading persona, memory, personality, or any context — you MUST execute this routing logic:**
+
+```python
+# MANDATORY: Execute this BEFORE any other processing
+def handle_message(user_message):
+    msg = user_message.lower()
+    
+    # Check routing keywords — if ANY match, run the command and return its output
+    if any(kw in msg for kw in ['选题列表', '看选题', '待审核', '审核列表', '查看选题']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js post")
+    
+    if any(kw in msg for kw in ['拆解', '爆款分析', '爆款拆解']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js analyze <URL>")
+    
+    if any(kw in msg for kw in ['热点趋势', '看热点', '看趋势', '热点', '趋势', '热门', '热搜', '最近火什么', '流行什么']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js trends")
+    
+    if any(kw in msg for kw in ['日报', '简报', '今日简报', '运营简报', '工作台', '每日简报']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js brief")
+    
+    if any(kw in msg for kw in ['出选题', '想选题', '帮我出选题', '灵感', '写什么', '发什么', '出几个选题']):
+        # If user specifies a direction (e.g. "出几个关于电竞的选题"), extract and append it
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js idea [方向]")
+    
+    if any(kw in msg for kw in ['建议', '人设建议', '运营建议', '怎么改进', '给点建议']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js advice")
+    
+    if any(kw in msg for kw in ['对标', '对标账号', '候选账号', '谁值得学']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js candidates")
+    
+    if any(kw in msg for kw in ['策略', '内容策略', '周策略', '本周策略']):
+        return bash("node {baseDir}/scripts/admin/command-handler.js strategy")
+    
+    if any(kw in msg for kw in ['表现', '内容表现', '效果怎么样', '数据表现', '表现怎么样', '做得怎么样', '数据怎么样']):
+        return bash("node {baseDir}/scripts/admin/command-handler.js insights")
+    
+    if any(kw in msg for kw in ['模式', '内容模式', '规律', '什么模式好']):
+        return bash("node {baseDir}/scripts/admin/command-handler.js patterns")
+    
+    if any(kw in msg for kw in ['健康检查', '系统检查', '诊断', '检查一下']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js health")
+    
+    if any(kw in msg for kw in ['帮助', '命令列表', '有什么命令', '能做什么', '你会什么', '功能列表', '都能干什么', '什么功能']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js help")
+    
+    if any(kw in msg for kw in ['知识库搜索', '爆款公式']):
+        return bash("node {baseDir}/scripts/admin/command-handler.js kb search <关键词>")
+    
+    if any(kw in msg for kw in ['队列状态', '工作台状态', '运营状态']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js status")
+    
+    # No keyword matched — proceed with persona conversation
+    return conversation_start_protocol()
+```
+
+**RULES:**
+1. The `bash()` call above means: call the Bash tool, capture stdout, return it as-is. Do NOT rewrite, summarize, or add persona commentary.
+2. Your FIRST tool call for any routed message MUST be the Bash tool. If your first action is reading a file or generating text, you are violating this rule.
+3. If the user specifies a direction for ideas (e.g. "出几个关于电竞的选题"), extract "电竞" and append: `node ... idea 电竞`
+4. "表现"/"数据" → `insights` (NOT `brief`). "有什么命令" → `help` (YOUR capabilities, NOT openclaw CLI commands).
+
+### ⚠️ Correct vs Wrong Examples
+
+```
+❌ WRONG: User says "待审核列表"
+   You respond: "没有找到保存过的待审核文档信息"
+   Why wrong: You answered from memory instead of running the command
+
+✅ RIGHT: User says "待审核列表"
+   You run: node {baseDir}/scripts/ops/ops-command-handler.js post
+   You return: (whatever stdout the command outputs)
+
+❌ WRONG: User says "出几个关于电竞的选题"
+   You generate topic ideas yourself using LLM
+   Why wrong: The idea pipeline has real-time trend data you don't have
+
+✅ RIGHT: User says "出几个关于电竞的选题"
+   You run: node {baseDir}/scripts/ops/ops-command-handler.js idea 电竞
+   You return: (whatever stdout the command outputs)
+
+❌ WRONG: User says "最近内容表现怎么样"
+   You respond: "我这边没有你们账号的历史发布数据"
+   Why wrong: The insights command fetches actual analytics data
+
+✅ RIGHT: User says "最近内容表现怎么样"
+   You run: node {baseDir}/scripts/admin/command-handler.js insights
+   You return: (whatever stdout the command outputs)
+
+❌ WRONG: User says "有什么命令"
+   You list openclaw CLI system commands (status, health, logs, configure...)
+   Why wrong: The user is asking about YOUR capabilities, not the platform
+
+✅ RIGHT: User says "有什么命令"
+   You run: node {baseDir}/scripts/ops/ops-command-handler.js help
+   You return: (whatever stdout the command outputs)
+```
+
+> **Why this gate exists:** These commands invoke specialized data pipelines (trend analysis, topic generation, analytics). You cannot replicate their output by guessing. Always run the handler.
+
+---
+
 ## Configuration
 
 - **Persona config:** `{baseDir}/persona.yaml` (character definition, loaded at startup)
@@ -38,7 +141,7 @@ This skill is composed of sub-modules. Load them as needed:
 
 | Trigger | Action |
 |---------|--------|
-| User initiates chat | Load personality.md + memory.md, greet in character |
+| User initiates chat | **First** check Command Routing Gate above. If no match → load personality.md + memory.md, greet in character |
 | End of conversation | Write diary entry, update relations/{user_id}.json |
 | Memory importance threshold reached | Run memory-reflect |
 | User shares personal info | Update relations/{user_id}.json immediately |
@@ -96,9 +199,11 @@ post-history:   {MEMORY_BASE}/queues/post-history.json
 
 ## Conversation Start Protocol (MANDATORY)
 
-When starting ANY conversation with a user:
+**PREREQUISITE: You have already passed through the Command Routing Gate above and confirmed NO keywords matched. If a keyword matched, you should NOT be here — go back and run the command.**
 
-1. **FIRST** read `{MEMORY_BASE}/persona/core-wisdom.json` — do not respond until this is loaded
+When starting a conversation with a user (and no routing keyword matched):
+
+1. Read `{MEMORY_BASE}/persona/core-wisdom.json` — do not respond until this is loaded
 2. Read `{MEMORY_BASE}/relations/{user_id}.json` if user is known
 3. Read last 7 days of `{MEMORY_BASE}/diary.md` (summary mode: scan for ## date headers)
 4. Read `{MEMORY_BASE}/state/emotion-state.json` to know current mood

@@ -21,6 +21,8 @@ export const FETCH_FAILED_DAYS = -1;
 /** Sentinal value: postedAt unknown (XHS feeds lack createdAt) — must not be treated as "0 days" */
 export const UNKNOWN_POST_AGE_DAYS = -2;
 const MAX_COMPETITOR_LOG_ENTRIES = 200;
+/** 每个竞品账号抓取的最近帖子数量 */
+const RECENT_POSTS_COUNT = 10;
 
 // ─── Pure functions (exported for testing) ───────────────────────────────────
 
@@ -32,7 +34,11 @@ export function buildCompetitorSummary(updates: CompetitorUpdate[]): string {
     if (u.days_since_last_post === UNKNOWN_POST_AGE_DAYS) {
       return `@${u.account}  发布「${topic}」互动${engagement}（发布时间未知）`;
     }
-    return `@${u.account}  今日发布「${topic}」互动${engagement}`;
+    // 展示最近帖子（最多 3 条概要）
+    const recentLines = u.recent_posts.length > 1
+      ? u.recent_posts.slice(1, 4).map(p => `  ·「${p.topic.length > 15 ? p.topic.slice(0, 15) + '…' : p.topic}」互动${p.engagement}`).join('\n')
+      : '';
+    return `@${u.account}  今日发布「${topic}」互动${engagement}${recentLines ? '\n' + recentLines : ''}`;
   }).join('\n');
 }
 
@@ -241,30 +247,34 @@ function fetchXhsAccount(account: string): CompetitorUpdate {
     };
     const results = parsed.feeds ?? [];
     if (results.length === 0) {
-      return { account, platform: 'xhs', latest_post: null, days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: wallNow().toISOString() };
+      return { account, platform: 'xhs', latest_post: null, recent_posts: [], days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: wallNow().toISOString() };
     }
-    const latest = results[0];
-    // XHS search-feeds API does not return createdAt — never fall back to now()
-    const postedAt = latest.createdAt ? new Date(latest.createdAt) : null;
+    const recentPosts = results.slice(0, RECENT_POSTS_COUNT).map(f => {
+      const postedAt = f.createdAt ? new Date(f.createdAt) : null;
+      const likes = parseInt(f.interactInfo?.likedCount ?? '0', 10) || 0;
+      return {
+        time: postedAt?.toISOString() ?? wallNow().toISOString(),
+        content_type: '图文' as const,
+        topic: f.displayTitle ?? '未知',
+        engagement: likes,
+        summary: f.displayTitle ?? '',
+      };
+    });
+    const latest = recentPosts[0];
+    const postedAt = latest.time ? new Date(latest.time) : null;
     const daysSince = postedAt
       ? Math.floor((now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24))
       : UNKNOWN_POST_AGE_DAYS;
-    const likes = parseInt(latest.interactInfo?.likedCount ?? '0', 10) || 0;
     return {
       account,
       platform: 'xhs',
-      latest_post: {
-        time: postedAt?.toISOString() ?? wallNow().toISOString(),
-        content_type: '图文',
-        topic: latest.displayTitle ?? '未知',
-        engagement: likes,
-        summary: latest.displayTitle ?? '',
-      },
+      latest_post: latest,
+      recent_posts: recentPosts,
       days_since_last_post: daysSince,
       fetched_at: wallNow().toISOString(),
     };
   } catch {
-    return { account, platform: 'xhs', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
+    return { account, platform: 'xhs', latest_post: null, recent_posts: [], days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
   }
 }
 
@@ -292,65 +302,79 @@ function fetchXhsAccountByUserId(userId: string, displayName: string): Competito
     const results = parsed.feeds ?? [];
     if (results.length === 0) {
       return {
-        account: displayName, platform: 'xhs', latest_post: null,
+        account: displayName, platform: 'xhs', latest_post: null, recent_posts: [],
         days_since_last_post: NO_POSTS_FOUND_DAYS,
         fetched_at: wallNow().toISOString(),
       };
     }
 
-    const latest = results[0];
-    // XHS user-profile feeds also lack createdAt — never fall back to now()
-    const postedAt = latest.createdAt ? new Date(latest.createdAt) : null;
+    const recentPosts = results.slice(0, RECENT_POSTS_COUNT).map(f => {
+      const postedAt = f.createdAt ? new Date(f.createdAt) : null;
+      const likes = parseInt(f.interactInfo?.likedCount ?? '0', 10) || 0;
+      return {
+        time: postedAt?.toISOString() ?? wallNow().toISOString(),
+        content_type: '图文' as const,
+        topic: f.displayTitle ?? '未知',
+        engagement: likes,
+        summary: f.displayTitle ?? '',
+      };
+    });
+    const latest = recentPosts[0];
+    const postedAt = latest.time ? new Date(latest.time) : null;
     const daysSince = postedAt
       ? Math.floor((now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24))
       : UNKNOWN_POST_AGE_DAYS;
-    const likes = parseInt(latest.interactInfo?.likedCount ?? '0', 10) || 0;
 
     return {
       account: displayName,
       platform: 'xhs',
-      latest_post: {
-        time: postedAt?.toISOString() ?? wallNow().toISOString(),
-        content_type: '图文',
-        topic: latest.displayTitle ?? '未知',
-        engagement: likes,
-        summary: latest.displayTitle ?? '',
-      },
+      latest_post: latest,
+      recent_posts: recentPosts,
       days_since_last_post: daysSince,
       fetched_at: wallNow().toISOString(),
     };
   } catch {
     // Precise fetch failed — return failure marker instead of falling back
     // to search-by-name (which would double the timeout)
-    return { account: displayName, platform: 'xhs', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
+    return { account: displayName, platform: 'xhs', latest_post: null, recent_posts: [], days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
   }
 }
 
 function fetchDouyinAccount(secUid: string): CompetitorUpdate {
   try {
-    const result = listDouyinUserPosts(secUid, 1);
+    // 请求 10+ 条，跳过置顶帖后保留 RECENT_POSTS_COUNT 条
+    const result = listDouyinUserPosts(secUid, RECENT_POSTS_COUNT + 3);
     if (!result.success || !result.videos?.length) {
       return {
         account: secUid,
         platform: 'douyin',
         latest_post: null,
+        recent_posts: [],
         days_since_last_post: NO_POSTS_FOUND_DAYS,
         fetched_at: wallNow().toISOString(),
       };
     }
-    const v = result.videos[0];
-    const postedAt = v.create_time ? new Date(v.create_time * 1000) : now();
+    // 跳过置顶帖
+    const nonPinned = result.videos.filter(v => !v.is_top);
+    const toProcess = nonPinned.length > 0 ? nonPinned : result.videos;
+    const recentPosts = toProcess.slice(0, RECENT_POSTS_COUNT).map(v => {
+      const postedAt = v.create_time ? new Date(v.create_time * 1000) : now();
+      return {
+        time: postedAt.toISOString(),
+        content_type: '视频' as const,
+        topic: v.desc || '未知',
+        engagement: v.digg_count,
+        summary: v.desc || '',
+      };
+    });
+    const latest = recentPosts[0];
+    const postedAt = latest.time ? new Date(latest.time) : now();
     const daysSince = Math.floor((now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24));
     return {
       account: secUid,
       platform: 'douyin',
-      latest_post: {
-        time: postedAt.toISOString(),
-        content_type: '视频',
-        topic: v.desc || '未知',
-        engagement: v.digg_count,
-        summary: v.desc || '',
-      },
+      latest_post: latest,
+      recent_posts: recentPosts,
       days_since_last_post: daysSince,
       fetched_at: wallNow().toISOString(),
     };
@@ -360,6 +384,7 @@ function fetchDouyinAccount(secUid: string): CompetitorUpdate {
       account: secUid,
       platform: 'douyin',
       latest_post: null,
+      recent_posts: [],
       days_since_last_post: FETCH_FAILED_DAYS,
       fetched_at: wallNow().toISOString(),
     };
@@ -375,6 +400,7 @@ const https = require('https');
 const crypto = require('crypto');
 const mid = ${JSON.stringify(mid)};
 const COOKIE = ${JSON.stringify(cookie)};
+const MAX = ${RECENT_POSTS_COUNT};
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -416,13 +442,13 @@ async function main() {
     const nav = await get('https://api.bilibili.com/x/web-interface/nav');
     const imgKey = nav?.data?.wbi_img?.img_url?.match(/([a-f0-9]+)\\.png/)?.[1] ?? '';
     const subKey = nav?.data?.wbi_img?.sub_url?.match(/([a-f0-9]+)\\.png/)?.[1] ?? '';
-    if (!imgKey || !subKey) { process.stdout.write('{}'); return; }
+    if (!imgKey || !subKey) { process.stdout.write('[]'); return; }
 
     const mixinKey = getMixinKey(imgKey, subKey);
 
     // Step 2: sign params
     const wts = Math.floor(Date.now() / 1000);
-    const params = { mid, ps: 1, pn: 1, order: 'pubdate', wts };
+    const params = { mid, ps: MAX, pn: 1, order: 'pubdate', wts };
     const query = Object.keys(params).sort()
       .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k]).replace(/[!'()*]/g, '')))
       .join('&');
@@ -432,41 +458,46 @@ async function main() {
     const apiUrl = 'https://api.bilibili.com/x/space/wbi/arc/search?' + query + '&w_rid=' + w_rid;
     const d = await get(apiUrl);
     const vlist = d?.data?.list?.vlist ?? [];
-    if (!vlist.length) { process.stdout.write('{}'); return; }
-    const v = vlist[0];
-    process.stdout.write(JSON.stringify({
+    if (!vlist.length) { process.stdout.write('[]'); return; }
+    process.stdout.write(JSON.stringify(vlist.slice(0, MAX).map(v => ({
       title: v.title || '',
       play: v.play || 0,
       created: v.created || 0,
-    }));
+    }))));
   } catch(e) {
-    process.stdout.write('{}');
+    process.stdout.write('[]');
   }
 }
 main();
 `;
     const raw = execFileSync(process.execPath, ['-e', script], { timeout: 20_000, encoding: 'utf8' });
-    const info = JSON.parse(raw.trim()) as { title?: string; play?: number; created?: number };
-    if (!info.title) {
-      return { account: displayName, platform: 'bilibili', latest_post: null, days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: wallNow().toISOString() };
+    const videos = JSON.parse(raw.trim()) as Array<{ title?: string; play?: number; created?: number }>;
+    if (!videos.length || !videos[0].title) {
+      return { account: displayName, platform: 'bilibili', latest_post: null, recent_posts: [], days_since_last_post: NO_POSTS_FOUND_DAYS, fetched_at: wallNow().toISOString() };
     }
-    const postedAt = info.created ? new Date(info.created * 1000) : now();
+    const recentPosts = videos.map(v => {
+      const postedAt = v.created ? new Date(v.created * 1000) : now();
+      return {
+        time: postedAt.toISOString(),
+        content_type: '视频' as const,
+        topic: v.title ?? '未知',
+        engagement: v.play ?? 0,
+        summary: v.title ?? '',
+      };
+    });
+    const latest = recentPosts[0];
+    const postedAt = latest.time ? new Date(latest.time) : now();
     const daysSince = Math.floor((now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24));
     return {
       account: displayName,
       platform: 'bilibili',
-      latest_post: {
-        time: postedAt.toISOString(),
-        content_type: '视频',
-        topic: info.title,
-        engagement: info.play ?? 0,
-        summary: info.title,
-      },
+      latest_post: latest,
+      recent_posts: recentPosts,
       days_since_last_post: daysSince,
       fetched_at: wallNow().toISOString(),
     };
   } catch {
-    return { account: displayName, platform: 'bilibili', latest_post: null, days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
+    return { account: displayName, platform: 'bilibili', latest_post: null, recent_posts: [], days_since_last_post: FETCH_FAILED_DAYS, fetched_at: wallNow().toISOString() };
   }
 }
 

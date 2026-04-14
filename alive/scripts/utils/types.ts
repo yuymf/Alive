@@ -1070,6 +1070,8 @@ export interface CompetitorUpdate {
   account: string;
   platform: 'xhs' | 'douyin' | 'bilibili';
   latest_post: CompetitorLatestPost | null;
+  /** Recent posts sorted by time (newest first), max 10 */
+  recent_posts: CompetitorLatestPost[];
   days_since_last_post: number;
   fetched_at: string;
   /** Number of posts in the last 7 days */

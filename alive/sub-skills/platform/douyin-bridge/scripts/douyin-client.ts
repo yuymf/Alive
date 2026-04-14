@@ -32,6 +32,7 @@ export interface DouyinVideo {
   aweme_id: string;
   desc: string;
   create_time: number;
+  is_top: boolean;
   author: string;
   digg_count: number;
 }
