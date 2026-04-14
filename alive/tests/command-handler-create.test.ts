@@ -39,6 +39,16 @@ afterEach(() => {
 
 describe('/alive create (async dispatch)', () => {
   it('dispatch returns a Promise', async () => {
+    // Mock the async generator to avoid real LLM calls
+    const creatorModule = await import('../scripts/admin/persona-creator');
+    vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
+      .mockResolvedValue({
+        meta: { name: 'TestChar', id: 'test', gender: '女', tagline: '测试' },
+        personality: { mbti: 'ENFP', core_traits: ['creative'], description: 'test' },
+        voice: { language: 'zh-CN', style: 'casual', emoji_density: 'low', sample_lines: ['hi'] },
+        sub_skills: [],
+      });
+
     const { dispatch } = await import('../scripts/admin/command-handler');
     const result = dispatch('/alive create');
     // dispatch must return a Promise (thenable)
@@ -48,6 +58,16 @@ describe('/alive create (async dispatch)', () => {
   });
 
   it('handleCommand returns a Promise for create subcommand', async () => {
+    // Mock the async generator to avoid real LLM calls
+    const creatorModule = await import('../scripts/admin/persona-creator');
+    vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
+      .mockResolvedValue({
+        meta: { name: 'TestChar', id: 'test', gender: '女', tagline: '测试' },
+        personality: { mbti: 'ENFP', core_traits: ['creative'], description: 'test' },
+        voice: { language: 'zh-CN', style: 'casual', emoji_density: 'low', sample_lines: ['hi'] },
+        sub_skills: [],
+      });
+
     const { parseCommand, handleCommand } = await import('../scripts/admin/command-handler');
     const cmd = parseCommand('/alive create');
     const result = handleCommand(cmd);

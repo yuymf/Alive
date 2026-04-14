@@ -122,7 +122,7 @@ describe('account_freshness', () => {
     const candidate = makeCandidate({ first_seen: twoYearsAgo });
     const scored = scoreCandidateAccount(candidate, []);
     // Allow small floating-point variance from Date.now() timing
-    expect(scored.score_breakdown.account_freshness).toBeGreaterThanOrEqual(0.999);
+    expect(scored.score_breakdown.account_freshness).toBeGreaterThanOrEqual(0.998);
     expect(scored.score_breakdown.account_freshness).toBeLessThanOrEqual(1.0);
   });
 

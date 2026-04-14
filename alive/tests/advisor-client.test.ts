@@ -48,7 +48,7 @@ describe('consultAdvisor', () => {
     vi.useFakeTimers();
     process.env.ADVISOR_TIMEOUT_MS = '5';
 
-    vi.spyOn(llmClient, 'callLLM').mockImplementationOnce(async (_prompt, _maxTokens, _caller, options) => {
+    vi.spyOn(llmClient, 'callLLM').mockImplementationOnce(async (_prompt, _caller, options) => {
       return await new Promise((_, reject) => {
         options?.signal?.addEventListener('abort', () => {
           const err = Object.assign(new Error('aborted'), { name: 'AbortError' });
@@ -70,7 +70,7 @@ describe('consultAdvisor', () => {
 
     expect(result).toBe('');
     expect(llmClient.callLLM).toHaveBeenCalledTimes(1);
-    const optionsArg = (llmClient.callLLM as any).mock.calls[0][3];
+    const optionsArg = (llmClient.callLLM as any).mock.calls[0][2];
     expect(optionsArg?.signal).toBeDefined();
     expect(optionsArg?.signal.aborted).toBe(true);
   });

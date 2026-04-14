@@ -495,17 +495,20 @@ ${templateSummary}
       const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
 
       const oneDayAgo = new Date(now().getTime() - 24 * 3600 * 1000).toISOString();
-      const recentEntries = competitorLog.entries
+      // Collect all recent posts from competitor entries, flatten into a single list
+      const allRecentPosts = competitorLog.entries
         .filter(e => e.fetched_at >= oneDayAgo && e.latest_post)
-        .sort((a, b) => (b.latest_post?.engagement ?? 0) - (a.latest_post?.engagement ?? 0))
+        .flatMap(e => (e.recent_posts?.length ? e.recent_posts : (e.latest_post ? [e.latest_post] : []))
+          .map(post => ({ ...post, account: e.account, platform: e.platform })));
+
+      const topEntries = allRecentPosts
+        .sort((a, b) => b.engagement - a.engagement)
         .slice(0, 3);
 
-      if (recentEntries.length > 0 && persona.ops?.competitors) {
+      if (topEntries.length > 0 && persona.ops?.competitors) {
         const personaSummary = `${persona.meta.name}: ${persona.personality.mbti}, ${persona.personality.core_traits.join('、')}`;
 
-        for (const entry of recentEntries) {
-          if (!entry.latest_post) continue;
-
+        for (const entry of topEntries) {
           const profile = persona.ops.competitors.find(
             c => c.name === entry.account || c.url?.includes(entry.account),
           );
@@ -513,7 +516,7 @@ ${templateSummary}
 
           const prompt = buildAnalysisPrompt(
             { name: profile.name, platform: profile.platform, tag_desc: profile.tag_desc, content_mix: profile.content_mix as Record<string, number> | undefined },
-            { title: entry.latest_post.topic, content: entry.latest_post.summary, likes: entry.latest_post.engagement, comments: 0 },
+            { title: entry.topic, content: entry.summary, likes: entry.engagement, comments: 0 },
             personaSummary,
           );
 
@@ -526,12 +529,12 @@ ${templateSummary}
             addPattern({
               type: analysis.title_formula.type,
               source: profile.name,
-              source_post: entry.latest_post.topic,
+              source_post: entry.topic,
               formula: analysis.title_formula.pattern,
               examples: [analysis.title_formula.example],
             });
 
-            console.log(`[night-reflect] analyzed competitor post: ${profile.name} - ${entry.latest_post.topic}`);
+            console.log(`[night-reflect] analyzed competitor post: ${profile.name} - ${entry.topic}`);
           } catch (err) {
             console.error(`[night-reflect] competitor analysis LLM failed for ${profile.name}:`, err);
           }

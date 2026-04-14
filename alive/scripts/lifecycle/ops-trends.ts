@@ -80,18 +80,20 @@ async function main(): Promise<void> {
     const allItems: TrendLikeItem[] = competitorsResult.status === 'fulfilled'
       ? competitorsResult.value
           .filter(c => (c.platform === 'xhs' || c.platform === 'douyin') && c.latest_post !== null)
-          .map(c => ({
-            // Use raw account:time as source_id — buildEntryId in viral-kb-store already
-            // prepends platform, so we must NOT duplicate it here.
-            source_id: `${c.account}:${c.latest_post!.time}`,
-            platform: c.platform as 'xhs' | 'douyin',
-            title: c.latest_post!.topic,
-            description: c.latest_post!.summary,
-            likes: c.latest_post!.engagement,
-            comments: 0,
-            shares: 0,
-            source_type: 'competitor' as const,
-          }))
+          .flatMap(c => {
+            // 展开所有 recent_posts 为独立的 TrendLikeItem
+            const posts = c.recent_posts?.length ? c.recent_posts : [c.latest_post!];
+            return posts.map(post => ({
+              source_id: `${c.account}:${post.time}`,
+              platform: c.platform as 'xhs' | 'douyin',
+              title: post.topic,
+              description: post.summary,
+              likes: post.engagement,
+              comments: 0,
+              shares: 0,
+              source_type: 'competitor' as const,
+            }));
+          })
       : [];
 
     // 2. 检测爆款候选

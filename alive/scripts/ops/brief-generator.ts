@@ -115,7 +115,7 @@ export function formatBriefCard(
 
     lines.push('━━ 竞品动态 ━━');
 
-    // Active competitors: detailed display
+    // Active competitors: detailed display with recent posts
     for (const c of active) {
       const { topic, engagement } = c.latest_post!;
       const timeStr = c.days_since_last_post === UNKNOWN_POST_AGE_DAYS
@@ -125,6 +125,13 @@ export function formatBriefCard(
       const analysis = enrichment?.competitorAnalysis?.analyses?.[analysisKey];
       const topicTruncated = topic.length > 18 ? topic.slice(0, 18) + '…' : topic;
       lines.push(`@${c.account}${timeStr}「${topicTruncated}」互动${engStr}`);
+      // Show up to 2 more recent posts
+      if (c.recent_posts?.length > 1) {
+        for (const rp of c.recent_posts.slice(1, 3)) {
+          const rpTruncated = rp.topic.length > 15 ? rp.topic.slice(0, 15) + '…' : rp.topic;
+          lines.push(`  ·「${rpTruncated}」互动${fmtEngagement(rp.engagement)}`);
+        }
+      }
       if (analysis?.key_insight) {
         lines.push(`  💡 核心洞察：${analysis.key_insight}`);
       }

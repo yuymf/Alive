@@ -167,7 +167,7 @@ describe('gallery-send', () => {
         id: 'old',
         createdAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
       });
-      const recent = makePhoto({ id: 'recent' });
+      const recent = makePhoto({ id: 'recent', createdAt: new Date().toISOString() });
       writeJSON(PATHS.photoGallery, { photos: [old, recent] });
 
       const pruned = pruneGallery();

@@ -31,9 +31,10 @@ describe('persona-loader fallback', () => {
   });
 
   it('loads from memory directory when persona.yaml exists there', () => {
-    // Write persona.yaml to memory dir
+    // Write persona.yaml to memory dir's persona/ subdirectory (matching PATHS.personaConfig)
+    fs.mkdirSync(path.join(tmpMemory, 'persona'), { recursive: true });
     fs.writeFileSync(
-      path.join(tmpMemory, 'persona.yaml'),
+      path.join(tmpMemory, 'persona', 'persona.yaml'),
       YAML.stringify({ ...MINIMAL_PERSONA, meta: { ...MINIMAL_PERSONA.meta, name: 'MemoryPersona' } })
     );
 
@@ -54,9 +55,10 @@ describe('persona-loader fallback', () => {
   });
 
   it('prefers memory directory over skill directory', () => {
-    // Write to BOTH locations
+    // Write to BOTH locations (memory uses persona/ subdirectory)
+    fs.mkdirSync(path.join(tmpMemory, 'persona'), { recursive: true });
     fs.writeFileSync(
-      path.join(tmpMemory, 'persona.yaml'),
+      path.join(tmpMemory, 'persona', 'persona.yaml'),
       YAML.stringify({ ...MINIMAL_PERSONA, meta: { ...MINIMAL_PERSONA.meta, name: 'MemoryPersona' } })
     );
     fs.writeFileSync(

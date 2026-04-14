@@ -22,7 +22,15 @@ describe('listDouyinUserPosts', () => {
         digg_count: 1234,
       }],
     };
-    vi.mocked(child_process.execFileSync).mockReturnValue(JSON.stringify(mockResult));
+    vi.mocked(child_process.spawnSync).mockReturnValue({
+      stdout: JSON.stringify(mockResult),
+      stderr: '',
+      status: 0,
+      signal: null,
+      pid: 1234,
+      output: [null, JSON.stringify(mockResult), ''],
+      error: undefined,
+    } as any);
     const result = listDouyinUserPosts('some_sec_uid');
     expect(result.success).toBe(true);
     expect(result.videos).toHaveLength(1);
@@ -31,18 +39,30 @@ describe('listDouyinUserPosts', () => {
   });
 
   it('handles CLI failure gracefully', () => {
-    vi.mocked(child_process.execFileSync).mockImplementation(() => {
-      throw new Error('uv not found');
-    });
+    vi.mocked(child_process.spawnSync).mockReturnValue({
+      stdout: '',
+      stderr: '',
+      status: 1,
+      signal: null,
+      pid: 1234,
+      output: [null, '', ''],
+      error: new Error('uv not found'),
+    } as any);
     const result = listDouyinUserPosts('some_sec_uid');
     expect(result.success).toBe(false);
     expect(result.error).toContain('uv not found');
   });
 
   it('returns no posts when videos array is empty', () => {
-    vi.mocked(child_process.execFileSync).mockReturnValue(
-      JSON.stringify({ success: true, videos: [] }),
-    );
+    vi.mocked(child_process.spawnSync).mockReturnValue({
+      stdout: JSON.stringify({ success: true, videos: [] }),
+      stderr: '',
+      status: 0,
+      signal: null,
+      pid: 1234,
+      output: [null, JSON.stringify({ success: true, videos: [] }), ''],
+      error: undefined,
+    } as any);
     const result = listDouyinUserPosts('some_sec_uid');
     expect(result.success).toBe(true);
     expect(result.videos).toHaveLength(0);
@@ -64,7 +84,15 @@ describe('searchDouyinVideos', () => {
         digg_count: 500,
       }],
     };
-    vi.mocked(child_process.execFileSync).mockReturnValue(JSON.stringify(mockResult));
+    vi.mocked(child_process.spawnSync).mockReturnValue({
+      stdout: JSON.stringify(mockResult),
+      stderr: '',
+      status: 0,
+      signal: null,
+      pid: 1234,
+      output: [null, JSON.stringify(mockResult), ''],
+      error: undefined,
+    } as any);
     const result = searchDouyinVideos('测试关键词');
     expect(result.success).toBe(true);
     expect(result.videos).toHaveLength(1);
@@ -72,18 +100,30 @@ describe('searchDouyinVideos', () => {
   });
 
   it('returns failure on CLI error', () => {
-    vi.mocked(child_process.execFileSync).mockReturnValue(
-      JSON.stringify({ success: false, error: '搜索无结果' }),
-    );
+    vi.mocked(child_process.spawnSync).mockReturnValue({
+      stdout: JSON.stringify({ success: false, error: '搜索无结果' }),
+      stderr: '',
+      status: 0,
+      signal: null,
+      pid: 1234,
+      output: [null, JSON.stringify({ success: false, error: '搜索无结果' }), ''],
+      error: undefined,
+    } as any);
     const result = searchDouyinVideos('不存在的内容');
     expect(result.success).toBe(false);
     expect(result.error).toBe('搜索无结果');
   });
 
   it('handles exception gracefully', () => {
-    vi.mocked(child_process.execFileSync).mockImplementation(() => {
-      throw new Error('spawn uv ENOENT');
-    });
+    vi.mocked(child_process.spawnSync).mockReturnValue({
+      stdout: '',
+      stderr: '',
+      status: 1,
+      signal: null,
+      pid: 1234,
+      output: [null, '', ''],
+      error: new Error('spawn uv ENOENT'),
+    } as any);
     const result = searchDouyinVideos('test');
     expect(result.success).toBe(false);
     expect(result.error).toContain('spawn uv ENOENT');

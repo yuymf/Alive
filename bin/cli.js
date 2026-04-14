@@ -1631,6 +1631,11 @@ function writeSoulSection(persona, soulFilePath) {
   // Inject persona placeholders
   template = injectPersonaTemplate(template, persona);
 
+  // Replace {baseDir} with actual skill path (SKILL.md has this resolved by OpenClaw,
+  // but SOUL.md is a workspace file where OpenClaw doesn't auto-resolve it)
+  const skillPath = path.join(SKILLS_DIR, skillSlug);
+  template = template.replace(/\{baseDir\}/g, skillPath);
+
   const section = [
     marker,
     template.trim(),

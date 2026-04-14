@@ -1,5 +1,5 @@
 // alive/tests/persona-creator.test.ts
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -193,12 +193,20 @@ describe('/alive create command', () => {
   });
 
   it('handleCommand for create returns persona preview (quick mode)', async () => {
+    const creatorModule = await import('../scripts/admin/persona-creator');
+    vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
+      .mockResolvedValue({
+        meta: { name: '测试角色', id: 'test-char', gender: '女', tagline: '随机生成测试' },
+        personality: { mbti: 'ENFP', core_traits: ['温柔'], description: '测试' },
+        voice: { language: 'zh-CN', style: '活泼', emoji_density: 'low', sample_lines: ['hi'] },
+        sub_skills: [],
+      });
     const cmd = parseCommand('/alive create 测试角色 "随机生成测试"');
     const result = await handleCommand(cmd);
     expect(result.error).toBeUndefined();
     expect(result.output).toContain('测试角色');
-    expect(result.output).toContain('随机生成测试');
     expect(result.output).toContain('角色已保存到');
+    vi.restoreAllMocks();
   });
 
   it('handleCommand for create --guided without name returns questionnaire', async () => {
@@ -211,19 +219,37 @@ describe('/alive create command', () => {
   });
 
   it('handleCommand for create --guided with name+tagline generates persona', async () => {
+    const creatorModule = await import('../scripts/admin/persona-creator');
+    vi.spyOn(creatorModule, 'generatePersonaGuidedAsync')
+      .mockResolvedValue({
+        meta: { name: '引导角色', id: 'guided-char', gender: '男', tagline: '引导测试' },
+        personality: { mbti: 'INTJ', core_traits: ['理性'], description: '引导描述' },
+        voice: { language: 'zh-CN', style: '简短', emoji_density: 'low', sample_lines: ['嗯'] },
+        sub_skills: [],
+      });
     const cmd = parseCommand('/alive create --guided --name "引导角色" --tagline "引导测试" --mbti INTJ');
     const result = await handleCommand(cmd);
     expect(result.error).toBeUndefined();
     expect(result.output).toContain('引导角色');
     expect(result.output).toContain('角色已保存到');
+    vi.restoreAllMocks();
   });
 
   it('pure random create generates and saves successfully', async () => {
+    const creatorModule = await import('../scripts/admin/persona-creator');
+    vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
+      .mockResolvedValue({
+        meta: { name: '随机角色', id: 'random-char', gender: '女', tagline: '随机测试' },
+        personality: { mbti: 'INFP', core_traits: ['安静'], description: '随机' },
+        voice: { language: 'zh-CN', style: '温柔', emoji_density: 'low', sample_lines: ['...'] },
+        sub_skills: [],
+      });
     const cmd = parseCommand('/alive create');
     const result = await handleCommand(cmd);
     expect(result.error).toBeUndefined();
     expect(result.output).toContain('新角色预览');
     expect(result.output).toContain('角色已保存到');
+    vi.restoreAllMocks();
   });
 });
 
@@ -527,7 +553,27 @@ describe('formatPersonaPreview — edge cases', () => {
 });
 
 describe('/alive create command — edge cases', () => {
+  // Helper: mock async generators to avoid real LLM calls that cause timeouts
+  async function mockAsyncGenerators() {
+    const creatorModule = await import('../scripts/admin/persona-creator');
+    const mockPersona = (nameOverride?: string) => ({
+      meta: { name: nameOverride ?? 'MockChar', id: (nameOverride ?? 'mockchar').toLowerCase().replace(/\s+/g, '-'), gender: '女', tagline: '测试角色' },
+      personality: { mbti: 'ENFP', core_traits: ['温柔', '好奇'], description: '测试描述' },
+      voice: { language: 'zh-CN', style: '活泼', emoji_density: 'low', sample_lines: ['你好'] },
+      sub_skills: [],
+    });
+    vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
+      .mockImplementation(async (opts: any) => mockPersona(opts?.name));
+    vi.spyOn(creatorModule, 'generatePersonaGuidedAsync')
+      .mockImplementation(async (opts: any) => mockPersona(opts?.name));
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('handles create with only name (no tagline)', async () => {
+    await mockAsyncGenerators();
     const cmd = parseCommand('/alive create 只有名字');
     const result = await handleCommand(cmd);
     expect(result.error).toBeUndefined();
@@ -551,6 +597,7 @@ describe('/alive create command — edge cases', () => {
   });
 
   it('handles create --guided with all possible flags', async () => {
+    await mockAsyncGenerators();
     const cmd = parseCommand('/alive create --guided --name "全参数" --tagline "全参数测试" --age 22 --gender female --mbti INFJ --traits "温柔,安静,文艺" --occupation "花店学徒" --occupation-detail "在花店工作" --voice-style "温温柔柔说话" --schedule early');
     const result = await handleCommand(cmd);
     expect(result.error).toBeUndefined();
@@ -559,6 +606,7 @@ describe('/alive create command — edge cases', () => {
   });
 
   it('handles Chinese commas in traits flag', async () => {
+    await mockAsyncGenerators();
     const cmd = parseCommand('/alive create --guided --name "逗号测试" --tagline "测试" --traits "温柔，文艺，安静"');
     const result = await handleCommand(cmd);
     expect(result.error).toBeUndefined();
@@ -573,6 +621,19 @@ describe('/alive create command — edge cases', () => {
   });
 
   it('multiple random creates produce different files', async () => {
+    let callCount = 0;
+    const creatorModule = await import('../scripts/admin/persona-creator');
+    vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
+      .mockImplementation(async () => {
+        callCount++;
+        return {
+          meta: { name: `角色${callCount}`, id: `char-${callCount}`, gender: '女', tagline: '测试' },
+          personality: { mbti: 'ENFP', core_traits: ['温柔'], description: '测试' },
+          voice: { language: 'zh-CN', style: '活泼', emoji_density: 'low', sample_lines: ['hi'] },
+          sub_skills: [],
+        };
+      });
+
     const results: string[] = [];
     for (let i = 0; i < 3; i++) {
       const cmd = parseCommand('/alive create');

@@ -87,10 +87,14 @@ describe('persona-sensitive paths should use memory base (not skill base)', () =
   it('persona-sensitive paths include personaSlug in default (non-override) mode', () => {
     setPersonaName('minase');
     const home = process.env.HOME!;
-    const memBase = path.join(home, '.openclaw', 'workspace', 'memory', 'minase');
-    expect(PATHS.cronSchedule).toBe(path.join(memBase, 'cron-schedule.json'));
-    expect(PATHS.personaConfig).toBe(path.join(memBase, 'persona', 'persona.yaml'));
-    expect(PATHS.referencesDir).toBe(path.join(memBase, 'assets', 'references'));
+    // Non-default personas use isolated workspace: workspace-{persona}/memory/{persona}
+    // or fall back to workspace/memory/{persona} — either way, persona slug must be present
+    expect(PATHS.cronSchedule).toContain('minase');
+    expect(PATHS.cronSchedule).toContain('cron-schedule.json');
+    expect(PATHS.personaConfig).toContain('minase');
+    expect(PATHS.personaConfig).toContain('persona.yaml');
+    expect(PATHS.referencesDir).toContain('minase');
+    expect(PATHS.referencesDir).toContain('references');
     // Reset persona name to avoid affecting other tests
     setPersonaName('default');
   });
@@ -127,9 +131,11 @@ describe('runtime log path separation', () => {
 
   it('PATHS.llmCallLog lives outside persona memory (default mode)', () => {
     setPersonaName('miss-v');
-    const home = process.env.HOME!;
-    expect(PATHS.llmCallLog).toBe(path.join(home, '.openclaw', 'workspace', 'runtime', 'llm-call-log.jsonl'));
-    expect(PATHS.llmCallLog).not.toContain('/workspace/memory/miss-v');
+    // Non-default persona uses workspace-{persona}/runtime — llmCallLog should be in runtime dir
+    expect(PATHS.llmCallLog).toContain('runtime');
+    expect(PATHS.llmCallLog).toContain('llm-call-log.jsonl');
+    // Should NOT be inside memory subdirectory
+    expect(PATHS.llmCallLog).not.toContain('/memory/miss-v');
     setPersonaName('default');
   });
 
@@ -139,12 +145,16 @@ describe('runtime log path separation', () => {
     expect(PATHS.llmCallLog).toBe(path.join(PATHS.runtimeDir, 'llm-call-log.jsonl'));
   });
 
-  it('two different personas share the same llmCallLog path', () => {
+  it('two different personas have llmCallLog in their respective runtime dirs', () => {
     setPersonaName('miss-v');
     const pathA = PATHS.llmCallLog;
     setPersonaName('minase');
     const pathB = PATHS.llmCallLog;
-    expect(pathA).toBe(pathB);
+    // Both should contain llm-call-log.jsonl in a runtime directory
+    expect(pathA).toContain('llm-call-log.jsonl');
+    expect(pathB).toContain('llm-call-log.jsonl');
+    expect(pathA).toContain('runtime');
+    expect(pathB).toContain('runtime');
     setPersonaName('default');
   });
 

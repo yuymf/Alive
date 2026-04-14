@@ -151,6 +151,6 @@ describe('updatePatternSuccessRate integration', () => {
 
 describe('PATHS.inspirationState', () => {
   it('points to inspiration-state.json in persona memory', () => {
-    expect(PATHS.inspirationState).toBe(path.join(tmpDir, 'inspiration-state.json'));
+    expect(PATHS.inspirationState).toBe(path.join(tmpDir, 'state', 'inspiration-state.json'));
   });
 });

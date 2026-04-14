@@ -118,9 +118,15 @@ export function buildCompetitorContext(
         ? Object.entries(p.content_mix).map(([k, v]) => `${k}${v}%`).join('、')
         : '未知';
       const liveData = updates.find(u => u.account === p.name && u.platform === p.platform);
-      const liveStr = liveData?.latest_post
-        ? `最新：「${liveData.latest_post.topic}」互动${liveData.latest_post.engagement}`
-        : '暂无实时数据';
+      const recentStr = liveData?.recent_posts?.length
+        ? liveData.recent_posts.slice(0, 3).map((post, i) =>
+            i === 0
+              ? `最新：「${post.topic}」互动${post.engagement}`
+              : `·「${post.topic.length > 15 ? post.topic.slice(0, 15) + '…' : post.topic}」互动${post.engagement}`
+          ).join('\n    ')
+        : liveData?.latest_post
+          ? `最新：「${liveData.latest_post.topic}」互动${liveData.latest_post.engagement}`
+          : '暂无实时数据';
       const startStr = p.estimated_start_date
         ? `起号：${p.estimated_start_date.slice(0, 10)}`
         : '';
@@ -129,7 +135,7 @@ export function buildCompetitorContext(
     内容比例：${mixStr}
     受众：${p.audience ?? '未知'}
     互动风格：${p.interaction_style ?? '未知'}
-    ${liveStr}`;
+    ${recentStr}`;
     }).join('\n');
     sections.push(`【${groupName}】\n${memberLines}`);
   }

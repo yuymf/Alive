@@ -255,7 +255,7 @@ describe('callLLM', () => {
       },
     };
 
-    await callLLM('test', 4096, 'test-caller', { responseFormat: schema });
+    await callLLM('test', 'test-caller', { responseFormat: schema });
 
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.response_format).toEqual(schema);
@@ -359,7 +359,7 @@ describe('callLLMJSON', () => {
       },
     };
     mockFetchOk('{"wantToPost":false}');
-    await callLLMJSON('test', 4096, 'caller', { responseFormat: customSchema });
+    await callLLMJSON('test', 'caller', { responseFormat: customSchema });
 
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(body.response_format).toEqual(customSchema);
