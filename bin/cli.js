@@ -84,9 +84,9 @@ function ensureIsolatedAgent(personaSlug, persona, model) {
     return true;
   }
 
-  // Create workspace directory upfront so openclaw agents add can use it
-  fs.mkdirSync(agentWorkspace, { recursive: true });
-
+  // Do NOT pre-create workspace directory — let `openclaw agents add` create it
+  // so that OpenClaw's default template files (AGENTS.md, BOOTSTRAP.md,
+  // HEARTBEAT.md, TOOLS.md) are properly scaffolded into the workspace.
   const args = [
     'agents', 'add', personaSlug,
     '--workspace', agentWorkspace,

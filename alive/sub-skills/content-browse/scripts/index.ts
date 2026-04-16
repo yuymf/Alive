@@ -17,6 +17,7 @@ export interface FeedItem {
   title: string;
   likes: number;
   user?: string;
+  user_url?: string;
   tags?: string[];
   caption?: string;
   thumbnail_url?: string;
@@ -32,7 +33,7 @@ export interface TrendPost {
 }
 
 export interface InspirationSummary {
-  feed_highlights: Array<{ title: string; likes: number; topic: string; takeaway?: string; author?: string; source?: string }>;
+  feed_highlights: Array<{ title: string; likes: number; topic: string; takeaway?: string; author?: string; author_url?: string; source?: string }>;
   trending_topics: string[];
   domain_insights: string[];
   saved_inspirations: Array<{
@@ -41,6 +42,7 @@ export interface InspirationSummary {
     visual_description: string;
     style_tags: string[];
     author?: string;
+    author_url?: string;
   }>;
 }
 
@@ -246,6 +248,30 @@ export const actions = {
       summary = await llm.callJSON<InspirationSummary>(prompt, 1500);
     } catch (err) {
       console.error(`[content-browse] LLM analysis failed: ${(err as Error).message}`);
+      // Even on LLM failure, save raw feed items as basic highlights so data isn't lost
+      // This ensures author/source are preserved from raw data
+      const rawHighlights: InspirationSummary['feed_highlights'] = allItems.slice(0, 10).map(item => ({
+        title: item.title,
+        likes: item.likes,
+        topic: 'auto',
+        author: item.user || undefined,
+        author_url: item.user_url || undefined,
+        source: item.source || (item.id.indexOf('_') > 0 ? item.id.slice(0, item.id.indexOf('_')) : undefined),
+      }));
+      const currentState = memory.readJSON<InspirationState>('inspiration-state', DEFAULT_INSPIRATION_STATE);
+      const existingTitles = new Set((currentState.feed_highlights ?? []).map(h => h.title));
+      const newTitles = new Set(rawHighlights.map(h => h.title));
+      const merged = [...rawHighlights, ...(currentState.feed_highlights ?? []).filter(h => !newTitles.has(h.title))]
+        .filter(h => !existingTitles.has(h.title) || newTitles.has(h.title))
+        .slice(0, 20);
+      const updatedBrowsedIds = [...(currentState.last_browsed_ids ?? []), ...allItems.map(i => i.id)].slice(-100);
+      memory.writeJSON<InspirationState>('inspiration-state', {
+        ...currentState,
+        last_refreshed_at: new Date().toISOString(),
+        feed_highlights: merged,
+        last_browsed_ids: updatedBrowsedIds,
+      });
+      console.log(`[content-browse] Saved ${rawHighlights.length} raw highlights as LLM fallback`);
       return createResult(
         `刷了 ${allItems.length} 条内容，但没来得及细想`,
         { vitality_cost: 10, emotion_deltas: [{ creativity: 0.03 }] },
@@ -281,14 +307,20 @@ export const actions = {
       for (const h of summary.feed_highlights) {
         const needsAuthor = !h.author || h.author === 'unknown';
         const needsSource = !h.source || h.source === 'unknown';
-        if (needsAuthor || needsSource) {
-          const match = feedItemMap.get(h.title) ?? findItemByTitle(h.title, allItems);
+        const needsAuthorUrl = !h.author_url;
+        if (needsAuthor || needsSource || needsAuthorUrl) {
+          // Strategy 1: exact title match
+          let match = feedItemMap.get(h.title);
+          // Strategy 2: fuzzy title match
+          if (!match) match = findItemByTitle(h.title, allItems);
+          // Strategy 3: match by author name (if LLM gave author but we still need source)
+          if (!match && h.author && h.author !== 'unknown') {
+            match = allItems.find(i => i.user === h.author);
+          }
           if (match) {
             if (needsAuthor) h.author = match.user || undefined;
             if (needsSource) h.source = inferPlatform(match);
-            console.log(`[content-browse] Backfilled highlight "${h.title.slice(0, 30)}" → author=${h.author}, source=${h.source} (from FeedItem ${match.id})`);
-          } else {
-            console.log(`[content-browse] No FeedItem match for highlight "${h.title.slice(0, 30)}" (allItems count: ${allItems.length})`);
+            if (needsAuthorUrl) h.author_url = match.user_url || undefined;
           }
         }
         // Fallback: try to infer source from saved_inspirations with matching title
@@ -299,9 +331,27 @@ export const actions = {
             if (sNorm.length > 0 && (hNorm.includes(sNorm) || sNorm.includes(hNorm))) {
               h.source = s.source_id.split('_')[0];
               if (!h.author || h.author === 'unknown') h.author = s.author || undefined;
-              console.log(`[content-browse] Backfilled highlight "${h.title.slice(0, 30)}" → source=${h.source} (from saved_inspiration ${s.source_id})`);
               break;
             }
+          }
+        }
+        // Final fallback: if we have author but no source, check if any FeedItem has this user
+        if (!h.source || h.source === 'unknown') {
+          const authorItem = allItems.find(i => i.user && i.user === h.author);
+          if (authorItem) {
+            h.source = inferPlatform(authorItem);
+          }
+        }
+        // Ultimate fallback: extract from last_browsed_ids prefix statistics
+        // Most items in a batch come from the same platform(s)
+        if (!h.source || h.source === 'unknown') {
+          const idPrefixes = allItems.map(i => { const idx = i.id.indexOf('_'); return idx > 0 ? i.id.slice(0, idx) : ''; });
+          const prefixCounts = new Map<string, number>();
+          for (const p of idPrefixes) { if (p) prefixCounts.set(p, (prefixCounts.get(p) ?? 0) + 1); }
+          // Pick the most common prefix (most likely the main platform for this batch)
+          const sorted = [...prefixCounts.entries()].sort((a, b) => b[1] - a[1]);
+          if (sorted.length > 0) {
+            h.source = sorted[0][0];
           }
         }
       }
@@ -314,6 +364,7 @@ export const actions = {
         const match = feedItemMap.get(s.source_id) ?? findItemByTitle(s.source_title, allItems);
         if (match) {
           if (!s.author || s.author === 'unknown') s.author = match.user || undefined;
+          if (!s.author_url) s.author_url = match.user_url || undefined;
         }
       }
     }
@@ -339,6 +390,35 @@ export const actions = {
       seenHighlightTitles.add(h.title);
       return true;
     }).slice(0, 20);
+
+    // Post-merge backfill: fill missing source fields using saved_inspirations
+    // (saved_inspirations have source_id with platform prefix, e.g. "xhs_标题")
+    const allSavedInspos = [...(currentState.saved_inspirations ?? []), ...(summary.saved_inspirations ?? [])];
+    for (const h of mergedHighlights) {
+      if (!h.source || h.source === 'unknown') {
+        // Try to find a matching saved_inspiration by title overlap
+        const hNorm = h.title.replace(/\s+/g, '').toLowerCase();
+        for (const s of allSavedInspos) {
+          const sNorm = s.source_title.replace(/\s+/g, '').toLowerCase();
+          if (sNorm.length > 0 && (hNorm.includes(sNorm) || sNorm.includes(hNorm))) {
+            const platform = s.source_id.split('_')[0];
+            if (platform && platform.length < 15) {
+              h.source = platform;
+              if (!h.author || h.author === 'unknown') h.author = s.author || undefined;
+              break;
+            }
+          }
+        }
+        // Final fallback: use most common platform from browsed IDs
+        if (!h.source || h.source === 'unknown') {
+          const idPrefixes = allItems.map(i => { const idx = i.id.indexOf('_'); return idx > 0 ? i.id.slice(0, idx) : ''; });
+          const prefixCounts = new Map<string, number>();
+          for (const p of idPrefixes) { if (p) prefixCounts.set(p, (prefixCounts.get(p) ?? 0) + 1); }
+          const sorted = [...prefixCounts.entries()].sort((a, b) => b[1] - a[1]);
+          if (sorted.length > 0) h.source = sorted[0][0];
+        }
+      }
+    }
 
     // Merge trending_topics (dedup, keep last 15)
     const existingTopics = currentState.trending_topics ?? [];

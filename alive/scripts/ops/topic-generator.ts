@@ -32,7 +32,7 @@ import { queryTrackInMemory, loadEntries, saveEntries, loadFormulas as loadViral
 
 import { matchesTaxonomy } from './ops-taxonomy';
 import { buildOpsMemoryContext } from './ops-memory';
-import { filterByDiversity } from './diversity-gate';
+import { filterByDiversity, DiversityGateOptions } from './diversity-gate';
 
 // ─── Viral KB context builder ────────────────────────────────────────────────
 
@@ -281,17 +281,87 @@ export function buildContentDrivenContext(
   return `【赛道内容驱动指数】${rounded.toFixed(2)}（${label}）`;
 }
 
-// ─── Trigger words context builder ──────────────────────────────────────────
+// ─── Viral formula context builder (v2: 案例驱动，公式辅助) ──────────────────
 
 /**
- * Aggregate trigger_words from all UniversalFormulas in the viral KB.
- * Optionally filter by platform.
- * Returns a one-liner for LLM prompt injection, or '' if no trigger words.
+ * Build a rich context string from UniversalFormulas for runtime prompt injection.
+ *
+ * v2 design: instead of dumping trigger words only, we now inject:
+ *   - 2-3 representative example titles (few-shot reference)
+ *   - Structural template (if available, e.g. "[数字] + [反转] + [情绪结论]")
+ *   - Trigger words (high-frequency emotion words)
+ *   - A reminder to NOT copy verbatim
+ *
+ * This replaces the old buildTriggerWordsContext() which only injected trigger words.
+ *
+ * @param basePath  Memory base path for loading formulas
+ * @param platform  Optional platform filter ('xhs' | 'douyin')
+ * @param maxFormulas  Max number of formulas to include (default 4)
+ */
+export function buildViralFormulaContext(
+  basePath: string,
+  platform?: string,
+  maxFormulas?: number,
+): string {
+  const formulas = loadViralFormulas(basePath);
+  if (formulas.length === 0) return '';
+
+  // Filter by platform and sort by confidence (highest first)
+  const filtered = platform
+    ? formulas.filter(f => f.platform === platform)
+    : formulas;
+
+  const sorted = [...filtered].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+  const limit = maxFormulas ?? 4;
+  const top = sorted.slice(0, limit);
+
+  if (top.length === 0) return '';
+
+  const lines: string[] = [];
+
+  for (const f of top) {
+    const parts: string[] = [];
+    const label = `${f.content_type}×${f.hook_type}`;
+    const conf = f.confidence !== undefined ? `（置信度 ${Math.round(f.confidence * 100)}%）` : '';
+
+    parts.push(`- ${label}${conf}`);
+
+    // Structural template
+    if (f.structural_template) {
+      parts.push(`  句式结构：${f.structural_template}`);
+    }
+
+    // Example titles (few-shot)
+    if (f.example_titles && f.example_titles.length > 0) {
+      const examples = f.example_titles.slice(0, 3).map(t => `「${t}」`).join('、');
+      parts.push(`  代表标题：${examples}`);
+    }
+
+    // Trigger words
+    if (f.trigger_words && f.trigger_words.length > 0) {
+      parts.push(`  高频触发词：${f.trigger_words.join('、')}`);
+    }
+
+    lines.push(parts.join('\n'));
+  }
+
+  return [
+    '【爆款共性结构参考（提炼自多个爆款案例，借鉴结构不照搬标题）】',
+    ...lines,
+    '⚠️ 以上结构仅供句式和节奏参考，请结合自身风格重新创作，禁止直接复制标题。',
+  ].join('\n');
+}
+
+/**
+ * @deprecated Use buildViralFormulaContext() instead.
+ * Kept for backward compat — it now delegates to buildViralFormulaContext
+ * with maxFormulas=1 to produce a compact trigger-words-only output.
  */
 export function buildTriggerWordsContext(
   basePath: string,
   platform?: string,
 ): string {
+  // Fallback: extract just the trigger words from the new function
   const formulas = loadViralFormulas(basePath);
   if (formulas.length === 0) return '';
 
@@ -588,6 +658,7 @@ export async function generateTopics(
   personaDescription: string,
   llm: LLMClient,
   voice?: { style?: string; sample_lines?: string[] },
+  diversityOptions?: DiversityGateOptions,
 ): Promise<void> {
   const topN = trends.slice(0, ops.topic_count);
 
@@ -600,7 +671,7 @@ export async function generateTopics(
       topN,
       queue.items,
       selectIdentityMode,
-      { maxSameModeInWindow: 3, minAngleDistance: 0.5 },
+      { maxSameModeInWindow: 3, minAngleDistance: 0.5, ...diversityOptions },
     );
     if (diverseTopN.length < topN.length) {
       console.log(`[topic-generator] Diversity gate: ${topN.length} → ${diverseTopN.length} topics`);
@@ -708,9 +779,9 @@ export async function generateTopics(
     const cdfContext = buildContentDrivenContext(analysisStore, ops.competitors, identityMode);
     if (cdfContext) contextParts.push(cdfContext);
 
-    // Inject trigger words from viral KB formulas
-    const triggerWordsContext = buildTriggerWordsContext(basePath);
-    if (triggerWordsContext) contextParts.push(triggerWordsContext);
+    // Inject viral formula context (案例+模板+触发词，v2 runtime injection)
+    const viralFormulaCtx = buildViralFormulaContext(basePath, trackPlatform);
+    if (viralFormulaCtx) contextParts.push(viralFormulaCtx);
 
     if (patternsContext) contextParts.push(patternsContext);
     if (strategyContext) contextParts.push(strategyContext);

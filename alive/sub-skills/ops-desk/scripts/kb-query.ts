@@ -18,8 +18,11 @@ import {
   auditEntries,
   requeueEntriesForRepair,
   isHollowEntry,
+  dedupEntries,
+  clearEntries,
   KBStats,
   KBAuditReport,
+  DedupResult,
 } from '../../../scripts/ops/viral-kb-store';
 import { ViralEntry, UniversalFormula, ViralPlatform, ViralSourceType } from '../../../scripts/utils/types';
 
@@ -130,20 +133,45 @@ function formatAudit(report: KBAuditReport): string {
 
 function formatFormulas(formulas: UniversalFormula[]): string {
   if (formulas.length === 0) {
-    return '## 🔮 通用爆款公式\n\n暂无公式（需要同一组合出现 ≥3 次才会升级）。';
+    return '## 🔮 爆款共性结构\n\n暂无共性结构（需要同一组合出现 ≥3 次才会升级）。';
   }
 
-  const rows = formulas.map(f => {
-    const injected = f.injected_to_templates ? '✅' : '—';
-    return `| ${f.platform} | ${f.content_type} | ${f.hook_type} | ${f.occurrence_count} | ${injected} | ${f.formula_summary} |`;
-  }).join('\n');
+  // Sort by confidence descending
+  const sorted = [...formulas].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+
+  const blocks = sorted.map(f => {
+    const conf = f.confidence !== undefined ? `${Math.round(f.confidence * 100)}%` : '—';
+    const sources = f.distinct_source_count ?? '—';
+    const parts: string[] = [
+      `**${f.content_type} × ${f.hook_type}**（${f.platform}）`,
+      `- 出现次数：${f.occurrence_count} | 来源多样性：${sources} | 置信度：${conf}`,
+    ];
+
+    if (f.structural_template) {
+      parts.push(`- 句式结构：\`${f.structural_template}\``);
+    }
+
+    if (f.example_titles && f.example_titles.length > 0) {
+      const examples = f.example_titles.map(t => `  - 「${t}」`).join('\n');
+      parts.push(`- 代表标题：`);
+      parts.push(examples);
+    }
+
+    if (f.trigger_words && f.trigger_words.length > 0) {
+      parts.push(`- 高频触发词：${f.trigger_words.join('、')}`);
+    }
+
+    parts.push(`- 摘要：${f.formula_summary}`);
+
+    return parts.join('\n');
+  }).join('\n\n');
 
   return [
-    `## 🔮 通用爆款公式（${formulas.length} 条）`,
+    `## 🔮 爆款共性结构（${formulas.length} 条）`,
     '',
-    '| 平台 | content_type | hook_type | 次数 | 已注入 | 公式摘要 |',
-    '|------|-------------|-----------|------|--------|---------|',
-    rows,
+    '> 以下结构提炼自多个爆款案例，供运营参考。不再自动注入 persona 模板。',
+    '',
+    blocks,
   ].join('\n');
 }
 
@@ -158,6 +186,8 @@ function helpText(): string {
     '| `kb list [--platform douyin/xhs] [--type 种草类] [--status done|failed|hollow] [--source competitor|search|trending_feed]` | 按条件列出条目 |',
     '| `kb audit` | 查看空壳条目和质量摘要 |',
     '| `kb repair [--limit N]` | 将 hollow 条目重新入队修复 |',
+    '| `kb dedup` | 去除重复条目（同平台+同标题保留 likes 最高的） |',
+    '| `kb clear` | 清空所有条目 |',
     '| `kb formulas [--platform douyin/xhs]` | 列出通用爆款公式 |',
     '| `kb top [--platform douyin/xhs] [--limit N]` | 按点赞排 Top N |',
   ].join('\n');
@@ -223,6 +253,22 @@ export function handleKbCommand(
         `- 已重新入队：${result.requeued}`,
         `- 本轮跳过：${result.skipped}`,
       ].join('\n');
+    }
+
+    case 'dedup': {
+      const result = dedupEntries(basePath);
+      return [
+        '## 🧹 Viral KB 去重',
+        '',
+        `- 去重前：${result.before} 条`,
+        `- 去重后：${result.after} 条`,
+        `- 移除：${result.removed} 条`,
+      ].join('\n');
+    }
+
+    case 'clear': {
+      const count = clearEntries(basePath);
+      return `## 🗑️ Viral KB 清空\n\n已清空 ${count} 条条目。`;
     }
 
     case 'formulas': {

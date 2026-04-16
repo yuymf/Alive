@@ -78,20 +78,46 @@ export function formatBriefCard(
 ): string {
   const lines: string[] = [`📊 今日简报  ${date}`, ''];
 
-  // Trends
+  // Trends — split by signal_kind for clear semantics
   if (trends.length > 0) {
-    const srcIcon: Record<string, string> = { '热榜': '📰', '搜索': '🔍', '推荐流': '🏷️' };
-    lines.push('━━ 平台正在助推 ━━');
-    for (const t of trends.slice(0, 5)) {
-      const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
-      const bucket = t.source_bucket ?? '热榜';
-      const srcEmoji = srcIcon[bucket] ?? '📰';
-      lines.push(`${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  ${srcEmoji}${bucket}`);
+    const breakout = trends.filter(t => t.signal_kind === 'breakout');
+    const searchDemand = trends.filter(t => t.signal_kind === 'search_demand');
+    const recommended = trends.filter(t => t.signal_kind === 'recommended_track');
+    // Also include items without signal_kind (legacy) as breakout
+    const unknown = trends.filter(t => !t.signal_kind);
+    const effectiveBreakout = [...breakout, ...unknown];
+
+    if (effectiveBreakout.length > 0) {
+      lines.push('━━ 趋势加速 ━━');
+      for (const t of effectiveBreakout.slice(0, 3)) {
+        const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
+        lines.push(`${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  📰热榜`);
+      }
+      lines.push('');
     }
+
+    if (searchDemand.length > 0) {
+      lines.push('━━ 真实搜索 ━━');
+      for (const t of searchDemand.slice(0, 3)) {
+        const metric = t.display_metric ?? `${t.velocity_score.toFixed(1)}x`;
+        lines.push(`🔍 ${t.keyword}  ${t.platform}  ${metric}`);
+      }
+      lines.push('');
+    }
+
+    if (recommended.length > 0) {
+      lines.push('━━ 平台持续推荐 ━━');
+      for (const t of recommended.slice(0, 3)) {
+        const metric = t.display_metric ?? '赛道信号';
+        lines.push(`🏷️ ${t.keyword}  ${t.platform}  ${metric}`);
+      }
+      lines.push('');
+    }
+
     lines.push('🔥 /trends 查看更多趋势');
     lines.push('');
   } else {
-    lines.push('━━ 平台正在助推 ━━');
+    lines.push('━━ 趋势信号 ━━');
     lines.push('📭 今日暂无捕获到强趋势信号');
     lines.push('🔥 /trends 手动刷新');
     lines.push('');

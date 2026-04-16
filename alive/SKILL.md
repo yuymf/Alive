@@ -69,6 +69,15 @@ def handle_message(user_message):
     if any(kw in msg for kw in ['队列状态', '工作台状态', '运营状态']):
         return bash("node {baseDir}/scripts/ops/ops-command-handler.js status")
     
+    if any(kw in msg for kw in ['批量审核', '快速审核', '审核一遍', '过一遍', 'review']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js review")
+    
+    if any(kw in msg for kw in ['全部通过', '一键通过', 'approve-all']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js review approve-all")
+    
+    if any(kw in msg for kw in ['弃置低分', '清理低分', 'discard-low']):
+        return bash("node {baseDir}/scripts/ops/ops-command-handler.js review discard-low")
+    
     # No keyword matched — proceed with persona conversation
     return conversation_start_protocol()
 ```
@@ -279,7 +288,10 @@ When a message starts with `/alive`, it is an **admin command** — NOT a conver
 | `/alive trends` | `dispatch('/alive trends')` | 查看当前热点趋势 |
 | `/alive idea [方向]` | `dispatch('/alive idea ...')` | 手动生成选题（可指定方向，如 `/alive idea 电竞`） |
 | `/alive post [N]` | `dispatch('/alive post')` | 查看选题列表 / 第N个选题详情 |
+| `/alive review` | `dispatch('/alive review')` | 批量快速审核（LLM 逐项判定 🟢🟡🔴 + 一句话理由） |
+| `/alive review approve-all` | `dispatch('/alive review approve-all')` | 一键通过所有待审核选题 |
+| `/alive review discard-low` | `dispatch('/alive review discard-low')` | 自动弃置 LLM 判定为🔴的选题 |
 | `/alive analyze <URL>` | `dispatch('/alive analyze <URL>')` | 爆款帖子拆解分析 |
 | `/alive advice` | `dispatch('/alive advice')` | 人设契合度建议 |
 
-> **Note:** `/alive brief`, `/alive trends`, `/alive idea`, `/alive analyze`, `/alive advice` involve LLM calls and may take 30-60 seconds to complete. `/alive post` is instant (reads from local queue).
+> **Note:** `/alive brief`, `/alive trends`, `/alive idea`, `/alive analyze`, `/alive advice`, `/alive review` involve LLM calls and may take 30-60 seconds to complete. `/alive post` is instant (reads from local queue). `/alive review approve-all` and `/alive review discard-low` are batch operations — `approve-all` is instant, `discard-low` requires an LLM call first to judge each item.

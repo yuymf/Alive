@@ -76,6 +76,19 @@ export function savePreference(profile: OperatorPreferenceProfile): void {
   writeJSON(getPreferencePath(), profile);
 }
 
+// ─── Label Normalization (Fuzzy Match) ───────────────────────────────────────
+
+/**
+ * Normalize a label for fuzzy comparison: strip punctuation, whitespace,
+ * CJK punctuation, and lowercase. This prevents fragmentation when labels
+ * differ only in trivial formatting (e.g. "标题抓人" vs "标题要抓人").
+ */
+function normalizeLabel(label: string): string {
+  return label
+    .replace(/[\s\u3000,.，。！？、；：""''【】《》（）(){}[\]!?,;:'"]/g, '')
+    .toLowerCase();
+}
+
 // ─── EMA Update Logic ────────────────────────────────────────────────────────
 
 function upsertSignal(
@@ -84,9 +97,13 @@ function upsertSignal(
   newAffinity: number,
   ts: string,
 ): PreferenceSignal[] {
-  const existing = signals.find(s => s.label === label);
+  const normalizedTarget = normalizeLabel(label);
+  const existing = signals.find(s => normalizeLabel(s.label) === normalizedTarget);
   if (existing) {
-    // EMA update
+    // EMA update — keep the longer/more descriptive label
+    if (label.length > existing.label.length) {
+      existing.label = label;
+    }
     existing.affinity = EMA_ALPHA * newAffinity + (1 - EMA_ALPHA) * existing.affinity;
     existing.sample_count += 1;
     existing.last_updated = ts;

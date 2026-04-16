@@ -243,14 +243,18 @@ describe('checkFormulaPromotion', () => {
     expect(loadFormulas(sandboxDir)[0].occurrence_count).toBe(2);
   });
 
-  it('count 3 → promotion triggered', () => {
+  it('count 3 → promotion triggered (v2: no longer injects to persona templates)', () => {
     checkFormulaPromotion(sandboxDir, makeUniversalEntry('e1'));
     checkFormulaPromotion(sandboxDir, makeUniversalEntry('e2'));
     const result = checkFormulaPromotion(sandboxDir, makeUniversalEntry('e3'));
     expect(result.promoted).toBe(true);
     expect(result.formula).toBeDefined();
     expect(result.formula?.occurrence_count).toBe(3);
-    expect(result.formula?.injected_to_templates).toBe(true);
+    // v2: injected_to_templates stays false — formulas are injected at runtime, not into persona.yaml
+    expect(result.formula?.injected_to_templates).toBe(false);
+    // v2: enriched fields should be present on promotion
+    expect(result.formula?.example_titles).toBeDefined();
+    expect(result.formula?.confidence).toBeGreaterThan(0);
   });
 
   it('after promotion, further entries do not re-promote (single-shot)', () => {

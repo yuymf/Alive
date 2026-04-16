@@ -203,9 +203,12 @@ describe('handleKbCommand — formulas', () => {
       formula_summary: '用问题引导进入内容',
       source_entry_ids: ['e1'],
       occurrence_count: 3,
-      injected_to_templates: true,
+      injected_to_templates: false,
       created_at: new Date().toISOString(),
       last_seen_at: new Date().toISOString(),
+      example_titles: ['测试标题1'],
+      structural_template: '[数字] + [反转]',
+      confidence: 0.65,
     };
     saveFormulas(dir, [formula]);
 
@@ -213,13 +216,15 @@ describe('handleKbCommand — formulas', () => {
 
     expect(result).toContain('工具类');
     expect(result).toContain('反问式');
-    expect(result).toContain('✅');
+    // v2: shows structural template and confidence instead of ✅ injected marker
+    expect(result).toContain('[数字] + [反转]');
+    expect(result).toContain('65%');
   });
 
   it('returns help message when no formulas exist', () => {
     const dir = makeTmpDir();
     const result = handleKbCommand(['formulas'], {}, dir);
-    expect(result).toContain('暂无公式');
+    expect(result).toContain('暂无共性结构');
   });
 
   it('filters by platform flag', () => {

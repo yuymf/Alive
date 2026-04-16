@@ -15,6 +15,7 @@
 
 import type { QueueItem, IdentityMode } from '../utils/types';
 import type { FilteredTrend } from './trend-analyzer';
+import { extractTrendHookKeyword } from '../utils/text-utils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,15 @@ export interface DiversityGateOptions {
   minAngleDistance?: number;
   /** Recent window size (number of queue items to check). Default: 10 */
   windowSize?: number;
+  /**
+   * If true, when diversity gate filters ALL topics out (result is empty),
+   * fall back to keeping the first (best) topic as a minimum guarantee.
+   * This prevents the worst UX of "0 topics after LLM generation".
+   * Default: true
+   */
+  ensureMinimum?: boolean;
+  /** If true, relax thresholds for user-specified direction mode. Default: false */
+  relaxedForDirection?: boolean;
 }
 
 // ─── Utility ─────────────────────────────────────────────────────────────────
@@ -96,7 +106,7 @@ export function checkDiversity(
   // 1. Exact keyword dedup (already in review-queue.addItem, but catch upstream)
   const keywordMatch = window.find(
     item => item.status === 'pending'
-      && extractKeyword(item.trend_hook) === trend.keyword
+      && extractTrendHookKeyword(item.trend_hook) === trend.keyword
       && item.identity_mode === identityMode,
   );
   if (keywordMatch) {
@@ -154,22 +164,14 @@ export function checkDiversity(
   return { pass: true, reason: '' };
 }
 
-// ─── Helper ──────────────────────────────────────────────────────────────────
-
-/**
- * Extract the keyword portion from a trend_hook string.
- * Supports: "keyword (platform, Nx, 来源桶)" format.
- */
-function extractKeyword(hook: string): string {
-  const cleaned = hook.replace(/\s*[⚠📢].+$/, '');
-  const idx = cleaned.lastIndexOf(' (');
-  return idx > 0 ? cleaned.slice(0, idx).trim() : cleaned.trim();
-}
-
 /**
  * Filter trends through the diversity gate.
  * Returns only trends that pass diversity checks.
  * Logs skipped trends to console.
+ *
+ * If ensureMinimum is true (default) and ALL trends are filtered out,
+ * falls back to the first (best-scoring) trend as a minimum guarantee,
+ * preventing the worst UX of "0 topics after LLM generation".
  */
 export function filterByDiversity(
   trends: FilteredTrend[],
@@ -177,17 +179,33 @@ export function filterByDiversity(
   getIdentityMode: (trend: FilteredTrend) => IdentityMode,
   options?: DiversityGateOptions,
 ): FilteredTrend[] {
+  const ensureMinimum = options?.ensureMinimum ?? true;
+  const relaxedForDirection = options?.relaxedForDirection ?? false;
+
+  // For direction mode, use relaxed thresholds
+  const effectiveOptions: DiversityGateOptions | undefined = relaxedForDirection
+    ? { ...options, maxSameModeInWindow: Math.max(options?.maxSameModeInWindow ?? 3, 5), minAngleDistance: Math.min(options?.minAngleDistance ?? 0.5, 0.3) }
+    : options;
+
   const passed: FilteredTrend[] = [];
 
   for (const trend of trends) {
     const mode = getIdentityMode(trend);
-    const verdict = checkDiversity(trend, mode, [...recentItems, ...passed.map(toFakeQueueItem)], options);
+    const verdict = checkDiversity(trend, mode, [...recentItems, ...passed.map(toFakeQueueItem)], effectiveOptions);
 
     if (verdict.pass) {
       passed.push(trend);
     } else {
       console.log(`[diversity-gate] Skipped「${trend.keyword}」: ${verdict.reason}`);
     }
+  }
+
+  // Minimum guarantee: if all filtered out but we had input, keep the best one
+  if (ensureMinimum && passed.length === 0 && trends.length > 0) {
+    const best = trends[0];
+    const mode = getIdentityMode(best);
+    console.log(`[diversity-gate] All topics filtered out — minimum guarantee: keeping「${best.keyword}」(${mode})`);
+    return [best];
   }
 
   return passed;

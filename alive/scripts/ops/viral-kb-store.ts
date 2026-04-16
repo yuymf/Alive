@@ -12,8 +12,6 @@
 
 import * as path from 'path';
 import * as crypto from 'crypto';
-import * as fs from 'fs';
-import YAML from 'yaml';
 import { readJSON, writeJSON } from '../utils/file-utils';
 import { wallNow } from '../utils/time-utils';
 import { ViralEntry, UniversalFormula, DissectQueueItem, ViralPlatform } from '../utils/types';
@@ -318,6 +316,19 @@ function titleSimilarity(a: string, b: string): number {
 /** Minimum Jaccard similarity to consider two titles as duplicates. */
 const TITLE_SIMILARITY_THRESHOLD = 0.85;
 
+/**
+ * Normalize a title for dedup comparison: remove emoji, punctuation, whitespace.
+ * This catches cases where the same content title has minor formatting differences.
+ */
+function normalizeTitle(title: string): string {
+  return title
+    // Remove emoji (Unicode ranges for common emoji blocks)
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '')
+    // Remove CJK punctuation & common punctuation
+    .replace(/[\s\p{P}]/gu, '')
+    .toLowerCase();
+}
+
 // ─── Upsert ───────────────────────────────────────────────────────────────────
 
 /**
@@ -348,10 +359,14 @@ export function upsertEntry(basePath: string, entry: ViralEntry): void {
     return;
   }
 
-  // 2. Title fuzzy dedup — same platform + similar title
+  // 2. Title fuzzy dedup — same platform + similar title (exact, normalized, or Jaccard)
   const dupIdx = current.findIndex(e =>
     e.platform === entry.platform &&
-    (e.title === entry.title || titleSimilarity(e.title, entry.title) >= TITLE_SIMILARITY_THRESHOLD)
+    (
+      e.title === entry.title ||
+      normalizeTitle(e.title) === normalizeTitle(entry.title) ||
+      titleSimilarity(e.title, entry.title) >= TITLE_SIMILARITY_THRESHOLD
+    )
   );
   if (dupIdx !== -1) {
     // Keep one canonical entry id for title-deduped duplicates so downstream
@@ -393,25 +408,78 @@ export function upsertEntry(basePath: string, entry: ViralEntry): void {
 
 // ─── Formula promotion ────────────────────────────────────────────────────────
 
+/** Minimum promotion threshold — same combo must appear ≥ this many times */
+const FORMULA_PROMOTION_THRESHOLD = 3;
+
+/**
+ * Compute a 0-1 confidence score for a formula based on:
+ * - occurrence count (more = higher, logarithmic)
+ * - distinct source diversity (source_type variety among contributing entries)
+ * - recency (more recent last_seen = higher)
+ */
+function computeConfidence(
+  occurrenceCount: number,
+  distinctSourceCount: number,
+  lastSeenIso: string,
+): number {
+  // Occurrence factor: log curve, max at ~15 occurrences
+  const occFactor = Math.min(Math.log2(occurrenceCount + 1) / Math.log2(16), 1);
+  // Diversity factor: ≥3 distinct sources = full score
+  const divFactor = Math.min(distinctSourceCount / 3, 1);
+  // Recency factor: full score if seen within 7 days, decays linearly over 30 days
+  const daysSinceLastSeen = (Date.now() - new Date(lastSeenIso).getTime()) / (24 * 60 * 60 * 1000);
+  const recencyFactor = Math.max(1 - daysSinceLastSeen / 30, 0);
+
+  return Math.round((occFactor * 0.4 + divFactor * 0.3 + recencyFactor * 0.3) * 100) / 100;
+}
+
+/**
+ * Build a structural template from example titles by extracting recurring patterns.
+ * Extracts the most common hook pattern as a simple placeholder template.
+ * Returns undefined if titles are too few or too diverse.
+ */
+function buildStructuralTemplate(titles: string[]): string | undefined {
+  if (titles.length < 2) return undefined;
+
+  // Detect common structural elements across titles
+  const hasNumbers = titles.filter(t => /\d+/.test(t)).length >= Math.ceil(titles.length * 0.5);
+  const hasQuestion = titles.filter(t => /[？?]/.test(t)).length >= Math.ceil(titles.length * 0.5);
+  const hasExclamation = titles.filter(t => /[！!]/.test(t)).length >= Math.ceil(titles.length * 0.5);
+  const hasCommand = titles.filter(t => /一定要|千万别|必须|赶紧/.test(t)).length >= Math.ceil(titles.length * 0.5);
+  const hasContrast = titles.filter(t => /但是|却|居然|没想到|竟然/.test(t)).length >= Math.ceil(titles.length * 0.5);
+
+  const parts: string[] = [];
+  if (hasNumbers) parts.push('[数字]');
+  if (hasCommand) parts.push('[命令式开头]');
+  if (hasContrast) parts.push('[反转/意外]');
+  if (hasQuestion) parts.push('[疑问收尾]');
+  if (hasExclamation) parts.push('[感叹强调]');
+
+  // Need at least 2 structural elements to form a meaningful template
+  if (parts.length < 2) {
+    // Fallback: describe the general pattern in natural language
+    return undefined;
+  }
+
+  return parts.join(' + ');
+}
+
 /**
  * Check whether the given entry triggers a new UniversalFormula promotion.
  *
- * Logic:
+ * v2 Logic (案例驱动，公式辅助):
  * - Only successfully-dissected universal entries (dissection_status == 'done'
  *   AND identity_mode == null) participate.
  * - Find an existing formula matching platform + content_type + hook_type.
  * - If none: create with count = 1.
- * - If count < 3: increment count, update last_seen_at.
- * - If count reaches 3 for the first time: attempt persona injection;
- *   only mark injected_to_templates = true if the write succeeded.
- * - At most 1 formula can be promoted per call (protection mechanism).
+ * - If count < FORMULA_PROMOTION_THRESHOLD: increment count.
+ * - On promotion (count reaches threshold): enrich with example_titles,
+ *   structural_template, distinct_source_count, confidence.
+ * - **No longer writes to persona.yaml** — formulas are injected at runtime
+ *   via buildViralFormulaContext() in topic-generator.
  * - Same entry.id never inflates occurrence_count twice (dedup via source_entry_ids).
  *
- * When promotion occurs and personaConfigPath is provided:
- * - Reads the persona.yaml at personaConfigPath
- * - Appends a new ContentTemplate object to ops.content_templates[]
- * - Writes back with .bak backup
- * - Marks the formula as injected_to_templates = true ONLY if write succeeded
+ * @param personaConfigPath Kept for API backward compat but **no longer used**.
  */
 export function checkFormulaPromotion(
   basePath: string,
@@ -460,6 +528,8 @@ export function checkFormulaPromotion(
       injected_to_templates: false,
       created_at: wallNow().toISOString(),
       last_seen_at: wallNow().toISOString(),
+      example_titles: [entry.title],
+      distinct_source_count: 1,
     };
     saveFormulas(basePath, [...formulas, newFormula]);
     return { promoted: false };
@@ -474,43 +544,48 @@ export function checkFormulaPromotion(
     ? existing.source_entry_ids
     : [...existing.source_entry_ids, entry.id];
 
-  const isFirstPromotion = existing.occurrence_count < 3 && updatedCount >= 3;
-  const shouldAttemptInjection = !existing.injected_to_templates && updatedCount >= 3;
+  const isFirstPromotion = existing.occurrence_count < FORMULA_PROMOTION_THRESHOLD
+    && updatedCount >= FORMULA_PROMOTION_THRESHOLD;
   const now = wallNow().toISOString();
 
-  // Attempt persona injection only when the formula has not yet been injected.
-  // This preserves the one-time persona write behavior while allowing later stat refreshes.
-  let injectionSucceeded = false;
-  if (shouldAttemptInjection && personaConfigPath) {
-    const tentativeFormula: UniversalFormula = {
-      ...existing,
-      occurrence_count: updatedCount,
-      last_seen_at: now,
-      source_entry_ids: updatedSourceIds,
-      injected_to_templates: false,
-    };
-    injectionSucceeded = injectTemplateIntoPersona(personaConfigPath, tentativeFormula);
-  }
+  // Collect enrichment data from source entries
+  const allEntries = loadEntries(basePath);
+  const sourceEntries = allEntries.filter(e => updatedSourceIds.includes(e.id));
+  const sourceTitles = sourceEntries.map(e => e.title);
 
-  const injectedToTemplates = shouldAttemptInjection
-    ? (personaConfigPath ? injectionSucceeded : true)
-    : existing.injected_to_templates;
+  // Count distinct source types (competitor / search / trending_feed) as diversity proxy
+  const distinctSourceTypes = new Set(sourceEntries.map(e => e.source_type));
 
-  const shouldRefreshTriggerWords = !alreadyCounted && updatedCount >= 3;
+  // Build example_titles: keep up to 3 most-liked titles
+  const exampleTitles = sourceEntries
+    .sort((a, b) => b.likes - a.likes)
+    .slice(0, 3)
+    .map(e => e.title);
+
+  // Refresh trigger words when promoted or new entry added post-promotion
+  const shouldRefreshTriggerWords = !alreadyCounted && updatedCount >= FORMULA_PROMOTION_THRESHOLD;
+  const triggerWords = shouldRefreshTriggerWords
+    ? extractTriggerWords(sourceTitles, 2)
+    : (existing.trigger_words ?? []);
+
+  // Build structural template on promotion or when new data arrives post-promotion
+  const structuralTemplate = updatedCount >= FORMULA_PROMOTION_THRESHOLD
+    ? (buildStructuralTemplate(sourceTitles) ?? existing.structural_template)
+    : existing.structural_template;
+
+  const confidence = computeConfidence(updatedCount, distinctSourceTypes.size, now);
+
   const updatedFormula: UniversalFormula = {
     ...existing,
     occurrence_count: updatedCount,
     last_seen_at: alreadyCounted ? existing.last_seen_at : now,
     source_entry_ids: updatedSourceIds,
-    injected_to_templates: injectedToTemplates,
-    ...(shouldRefreshTriggerWords ? (() => {
-      const allEntries = loadEntries(basePath);
-      const sourceTitles = allEntries
-        .filter(e => updatedSourceIds.includes(e.id))
-        .map(e => e.title);
-      const triggerWords = extractTriggerWords(sourceTitles, 2);
-      return triggerWords.length > 0 ? { trigger_words: triggerWords } : {};
-    })() : {}),
+    injected_to_templates: existing.injected_to_templates, // preserve old value, no new writes
+    example_titles: exampleTitles,
+    structural_template: structuralTemplate,
+    distinct_source_count: distinctSourceTypes.size,
+    confidence,
+    ...(triggerWords.length > 0 ? { trigger_words: triggerWords } : {}),
   };
 
   const updatedFormulas = [
@@ -526,56 +601,9 @@ export function checkFormulaPromotion(
   return { promoted: false, formula: updatedFormula };
 }
 
-/**
- * Append a new ContentTemplate derived from a promoted formula to persona.yaml.
- * Uses YAML parse + stringify with .bak backup (via fs rename before write).
- * Returns true if the write succeeded, false otherwise.
- * Callers must check the return value before marking injected_to_templates = true.
- */
-function injectTemplateIntoPersona(personaConfigPath: string, formula: UniversalFormula): boolean {
-  try {
-    const raw = fs.readFileSync(personaConfigPath, 'utf8');
-    const doc = YAML.parse(raw) as Record<string, unknown>;
-
-    // Build the new content template from the formula
-    const newTemplate: Record<string, unknown> = {
-      type: `${formula.content_type}_${formula.hook_type}`.replace(/\s+/g, '_'),
-      category: formula.content_type,
-      priority: 'normal',
-      scene: formula.formula_summary,
-      camera: '常规镜头',
-      styling: '根据内容调整',
-      highlights: [formula.hook_type, formula.content_type],
-      platforms: [formula.platform],
-      source: 'auto_promoted',
-      promoted_at: wallNow().toISOString(),
-    };
-
-    // Navigate to ops.content_templates — create if absent
-    const ops = (doc.ops ?? {}) as Record<string, unknown>;
-    const existingTemplates = Array.isArray(ops.content_templates)
-      ? ops.content_templates as unknown[]
-      : [];
-
-    const updatedOps = {
-      ...ops,
-      content_templates: [...existingTemplates, newTemplate],
-    };
-
-    const updatedDoc = { ...doc, ops: updatedOps };
-
-    // Write with .bak backup
-    const bakPath = `${personaConfigPath}.bak`;
-    if (fs.existsSync(personaConfigPath)) {
-      fs.copyFileSync(personaConfigPath, bakPath);
-    }
-    fs.writeFileSync(personaConfigPath, YAML.stringify(updatedDoc), 'utf8');
-    return true;
-  } catch (err) {
-    console.error('[viral-kb-store] Failed to inject template into persona.yaml:', (err as Error).message);
-    return false;
-  }
-}
+// NOTE: injectTemplateIntoPersona() has been removed in v2.
+// Formulas are no longer auto-written into persona.yaml.
+// They are injected at runtime via buildViralFormulaContext() in topic-generator.ts.
 
 // ─── Sort helper ──────────────────────────────────────────────────────────────
 
@@ -749,4 +777,52 @@ export function getStats(basePath: string): KBStats {
     by_content_type,
     by_hook_type,
   };
+}
+
+// ─── Dedup & clear ───────────────────────────────────────────────────────────
+
+export interface DedupResult {
+  before: number;
+  after: number;
+  removed: number;
+}
+
+/**
+ * Remove duplicate entries from the KB.
+ * Two entries are considered duplicates if they share the same platform AND
+ * have the same normalized title (emoji/punctuation/whitespace stripped).
+ * Among duplicates, keep the one with the highest likes.
+ */
+export function dedupEntries(basePath: string): DedupResult {
+  const entries = loadEntries(basePath);
+  const before = entries.length;
+
+  const keepMap = new Map<string, ViralEntry>(); // key = platform:normalizedTitle
+
+  for (const e of entries) {
+    const key = `${e.platform}:${normalizeTitle(e.title)}`;
+    const existing = keepMap.get(key);
+    if (!existing || e.likes > existing.likes) {
+      keepMap.set(key, e);
+    }
+  }
+
+  const deduped = [...keepMap.values()];
+  const removed = before - deduped.length;
+
+  if (removed > 0) {
+    writeJSON(entriesPath(basePath), deduped);
+  }
+
+  return { before, after: deduped.length, removed };
+}
+
+/**
+ * Clear all entries and formulas from the KB (keeps the dissect queue).
+ */
+export function clearEntries(basePath: string): number {
+  const entries = loadEntries(basePath);
+  const count = entries.length;
+  writeJSON(entriesPath(basePath), []);
+  return count;
 }

@@ -79,6 +79,8 @@ export interface CandidateAccount {
   status: CandidateStatus;
   /** Content-driven factor (0=account-driven, 1=content-driven). Computed from CV of engagement data. */
   content_driven_factor?: number;
+  /** Direct link to the user's profile page on the platform (if known) */
+  profile_url?: string;
 }
 
 export interface CandidateAccountsStore {
@@ -131,6 +133,8 @@ interface InspirationHighlight {
   takeaway?: string;
   /** Author/creator name (may be absent in older data) */
   author?: string;
+  /** Direct link to author's profile page */
+  author_url?: string;
   /** Source platform (e.g. 'xhs', 'bilibili') — may be absent in older data */
   source?: string;
 }
@@ -142,6 +146,8 @@ interface InspirationSaved {
   style_tags: string[];
   /** Author/creator name (may be absent in older data) */
   author?: string;
+  /** Direct link to author's profile page */
+  author_url?: string;
 }
 
 interface InspirationState {
@@ -250,6 +256,7 @@ export function processInspirationForAccountDiscovery(identityKeys?: string[]): 
     maxEngagement: number;
     topics: Set<string>;
     platform: string;
+    profileUrl?: string;
   }>();
 
   // From discovery pool items (which have engagement data)
@@ -283,7 +290,23 @@ export function processInspirationForAccountDiscovery(identityKeys?: string[]): 
     for (const tag of saved.style_tags) {
       existing.topics.add(tag);
     }
+    // Preserve author_url from saved inspirations
+    if (saved.author_url && !existing.profileUrl) {
+      existing.profileUrl = saved.author_url;
+    }
     authorData.set(key, existing);
+  }
+
+  // Also collect author_url from feed_highlights
+  for (const h of inspoState.feed_highlights) {
+    if (!h.author || h.author === '' || h.author === 'unknown' || !h.author_url) continue;
+    const platform = h.source ?? 'unknown';
+    const key = `${h.author}:${platform}`;
+    const existing = authorData.get(key);
+    if (existing && !existing.profileUrl) {
+      existing.profileUrl = h.author_url;
+      authorData.set(key, existing);
+    }
   }
 
   // Auto-approve candidates before updating engagement stats this tick.
@@ -342,6 +365,10 @@ export function processInspirationForAccountDiscovery(identityKeys?: string[]): 
         const cv = Math.abs(existing.peak_engagement - existing.avg_engagement) / existing.avg_engagement;
         existing.content_driven_factor = Math.min(cv / 2.0, 1.0);
       }
+      // Backfill profile_url if discovered this tick
+      if (data.profileUrl && !existing.profile_url) {
+        existing.profile_url = data.profileUrl;
+      }
     } else {
       // Add new candidate
       store.candidates.push({
@@ -354,6 +381,7 @@ export function processInspirationForAccountDiscovery(identityKeys?: string[]): 
         first_seen: dateStr,
         last_seen: dateStr,
         status: 'pending',
+        profile_url: data.profileUrl,
       });
       newCandidates++;
     }

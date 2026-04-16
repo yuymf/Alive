@@ -8,6 +8,7 @@
 
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
+import { extractTrendHookKeyword } from '../utils/text-utils';
 import {
   QueueItem, QueueItemStatus, IdentityMode, QueueItemContent,
   ReviewQueue, QueueItemTemplateSpec, QueueItemCompetitorBenchmark,
@@ -56,19 +57,11 @@ export interface AddItemInput {
 export async function addItem(input: AddItemInput): Promise<QueueItem> {
   const queue = await loadQueue();
 
-  // Dedup: extract keyword from trend_hook
-  // Supports both old format "keyword (platform, Nx)" and new format "keyword (platform, Nx, 来源桶)"
-  // Uses lastIndexOf(' (') to find the metadata suffix, then takes everything before it as keyword
-  const extractKeyword = (hook: string) => {
-    // Strip trailing warning/ad labels first (⚠️疑似标题党, 📢广告)
-    const cleaned = hook.replace(/\s*[⚠📢].+$/, '');
-    const idx = cleaned.lastIndexOf(' (');
-    return idx > 0 ? cleaned.slice(0, idx).trim() : cleaned.trim();
-  };
-  const inputKeyword = extractKeyword(input.trend_hook);
+  // Dedup: check if same keyword + identity_mode already pending
+  const inputKeyword = extractTrendHookKeyword(input.trend_hook);
   const existingItem = queue.items.find(
     i => i.status === 'pending'
-      && extractKeyword(i.trend_hook) === inputKeyword
+      && extractTrendHookKeyword(i.trend_hook) === inputKeyword
       && i.identity_mode === input.identity_mode,
   );
   if (existingItem) {

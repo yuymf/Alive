@@ -569,11 +569,14 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     const llm = createRealLLMClient('test-ops-trends');
     const identities = buildPersonaIdentities(personaConfig);
     const trends = await analyzeTrends(personaConfig.ops, identities, llm);
+    // Also return signal_pool from cache for display
+    const cache = readJSON<{ signal_pool?: { bucket: string; top: { keyword: string; platform: string; v: string; p: string }[] }[] }>(PATHS.trendsCache, {} as any);
     return {
       command: 'ops-trends',
       message: `趋势分析完成: 找到 ${trends.length} 个相关趋势`,
       trends,
       count: trends.length,
+      signal_pool: cache?.signal_pool ?? [],
     };
   }
 

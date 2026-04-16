@@ -10,9 +10,9 @@
 
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now, getLocalDate } from '../utils/time-utils';
-import { TrendItem, TrendHistory, OpsConfig, PersonaConfig, TagVocabulary, TrendSourceType, TrendSourceBucket, toSourceBucket, sourceWeight } from '../utils/types';
+import { TrendItem, TrendHistory, OpsConfig, PersonaConfig, TagVocabulary, TrendSourceType, TrendSourceBucket, TrendSignalKind, toSourceBucket, sourceWeight, classifySignalKind } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
-import { normalizeKeyword } from '../utils/text-utils';
+import { normalizeKeyword, extractTrendHookKeyword } from '../utils/text-utils';
 import { loadDiscoveryPool } from './discovery-engine';
 import type { DiscoveryItem } from './discovery-engine';
 import { searchXhsNotes } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
@@ -48,6 +48,110 @@ export function computeVelocityScore(currentVolume: number, avg7d: number): numb
   return currentVolume / avg7d;
 }
 
+// ─── Synthetic signal scoring (non-breakout sources) ─────────────────────────
+
+/**
+ * Compute a bounded signal score for non-breakout sources (search, tag, discovery).
+ * Unlike hot_list velocity which is a true ratio (current / avg_7d), these
+ * sources have no historical average — we use hit count + engagement to
+ * produce a normalized score within [floor, ceiling].
+ *
+ * Exported for testing.
+ */
+export function computeSyntheticSignalScore(opts: {
+  count: number;
+  avgEngagement: number;
+  floor: number;
+  ceiling: number;
+}): number {
+  const base = opts.floor + Math.min(0.45, (Math.max(opts.count, 1) - 1) * 0.12);
+  const engagementBoost = Math.min(0.35, Math.log10(Math.max(opts.avgEngagement, 10)) * 0.08);
+  return Math.min(opts.ceiling, Math.max(opts.floor, base + engagementBoost));
+}
+
+// ─── Topic specificity penalty ───────────────────────────────────────────────
+
+const GENERIC_TRACK_WORDS = new Set([
+  '电竞', '赛车', '音乐', '美妆', '穿搭', '健身', '美食', '旅行', '摄影',
+  '女性力量', '日常', '生活', '搞笑', '情感', '职场', '科技', '游戏',
+]);
+
+/**
+ * Penalize overly generic keywords from non-breakout sources.
+ * Breakout (hot_list) keywords are not penalized — they represent real events.
+ * Exported for testing.
+ */
+export function computeTopicSpecificityPenalty(
+  keyword: string,
+  signalKind: TrendSignalKind,
+): number {
+  if (signalKind === 'breakout') return 1.0;
+
+  const bare = keyword.replace(/^#/, '').trim();
+  const len = bare.length;
+  let penalty = 1.0;
+
+  if (len <= 2) penalty = 0.55;
+  else if (len === 3) penalty = 0.75;
+  else penalty = 1.0;
+
+  if (GENERIC_TRACK_WORDS.has(bare)) {
+    penalty *= 0.85;
+  }
+
+  return penalty;
+}
+
+// ─── Signal quota allocation ─────────────────────────────────────────────────
+
+/**
+ * Apply signal-kind-based quota to prevent any single kind from dominating.
+ * Rules:
+ *   - If breakout items exist, at least 1 must be included
+ *   - If search_demand items exist, at least 1 must be included
+ *   - recommended_track capped at 40% of quota (2 of top-5, 4 of top-10)
+ *   - Final list re-sorted by priority_score
+ *
+ * Exported for testing.
+ */
+export function applySignalQuota(items: TrendItem[], quotaSize: number): TrendItem[] {
+  if (items.length <= quotaSize) return items;
+
+  const sorted = [...items].sort((a, b) => b.priority_score - a.priority_score);
+  const picked: TrendItem[] = [];
+  const pickedKeys = new Set<string>();
+
+  const addItem = (item: TrendItem) => {
+    const key = `${item.platform}:${item.keyword}`;
+    if (pickedKeys.has(key)) return;
+    pickedKeys.add(key);
+    picked.push(item);
+  };
+
+  // Reserve slots for breakout and search_demand
+  const firstBreakout = sorted.find(i => i.signal_kind === 'breakout');
+  const firstSearch = sorted.find(i => i.signal_kind === 'search_demand');
+  if (firstBreakout) addItem(firstBreakout);
+  if (firstSearch) addItem(firstSearch);
+
+  // Fill remaining by priority, but cap recommended_track
+  const maxRecommended = Math.max(1, Math.ceil(quotaSize * 0.4));
+  let recommendedCount = picked.filter(i => i.signal_kind === 'recommended_track').length;
+
+  for (const item of sorted) {
+    if (picked.length >= quotaSize) break;
+    const key = `${item.platform}:${item.keyword}`;
+    if (pickedKeys.has(key)) continue;
+    if (item.signal_kind === 'recommended_track') {
+      if (recommendedCount >= maxRecommended) continue;
+      recommendedCount++;
+    }
+    addItem(item);
+  }
+
+  return picked.sort((a, b) => b.priority_score - a.priority_score);
+}
+
 // ─── Trend Fatigue Detection (3.3) ──────────────────────────────────────────
 //
 // Detects when a trend keyword has been previously selected and generated into
@@ -67,20 +171,6 @@ export interface TrendUsageRecord {
   keyword: string;
   identity_mode: string;
   used_at: string;        // ISO timestamp
-}
-
-/**
- * Extract keyword from a trend_hook string.
- * Supports formats:
- *   "keyword (platform, Nx)"
- *   "keyword (platform, Nx, 来源桶)"
- *   "keyword"
- * Strips trailing warning/ad labels (⚠️, 📢) first.
- */
-export function extractTrendKeyword(trendHook: string): string {
-  const cleaned = trendHook.replace(/\s*[⚠📢].+$/, '');
-  const idx = cleaned.lastIndexOf(' (');
-  return idx > 0 ? cleaned.slice(0, idx).trim() : cleaned.trim();
 }
 
 /**
@@ -110,7 +200,7 @@ export function buildTrendUsageMap(
     // Include: pending, approved, published, editing, discarded (discarded still means "was selected")
     if (item.status === 'expired') continue;
 
-    const keyword = extractTrendKeyword(item.trend_hook).toLowerCase();
+    const keyword = extractTrendHookKeyword(item.trend_hook).toLowerCase();
     if (!keyword) continue;
 
     const record: TrendUsageRecord = {
@@ -287,7 +377,7 @@ export function buildRelevancePrompt(
 
 来源说明：
 - 搜索：用户主动搜索命中的高互动内容关联 tag —— 代表真实用户需求
-- 推荐流：推荐算法已验证分发的高互动内容 tag —— 代表算法认可的赛道
+- 赛道 Tag：搜索与竞品分析中验证的高互动内容 tag —— 代表算法认可的赛道
 - 热榜：平台编辑型热搜/热榜 —— 公共议题曝光，不一定适合做赛道内容
 
 ${trendList}
@@ -302,8 +392,9 @@ ${trendList}
 5. 如果没有合适的话题，返回空数组 {"topics":[]}
 6. 避免标题党/误导性话题：对比标题与描述，如果标题字面意思与描述事实不符（如标题暗示"已变"，描述说"无此政策"），不要选择该话题。如果话题标记了⚠️疑似标题党，需要格外谨慎。对于标记了[无描述，无法核实事实]的话题，也要审慎评估，优先选择有描述佐证的话题。如果某个话题可能存在争议但无法确认，在 hook_angle 中注明"⚠️ 需核实事实"。
 7. 跳过标记为📢广告的话题，不要选择广告内容。
-8. 【重要】当相关性接近时，优先选择"搜索"和"推荐流"来源的信号，它们代表真实用户互动和算法验证。"热榜"只作为补充，不要让热榜压过赛道 tag。tag 型关键词（如 #电竞女孩）优先保留原貌。
+8. 【重要】当相关性接近时，优先选择"搜索"和"赛道 Tag"来源的信号，它们代表真实用户互动和算法验证。"热榜"只作为补充，不要让热榜压过赛道 tag。tag 型关键词（如 #电竞女孩）优先保留原貌。
 9. 按 priority 分数从高到低优先选择。
+10. 【多样性】如果选择了 3 个以上话题，确保至少包含 1 个"热榜"来源的话题（作为公共议题补充），以及至少 2 个"搜索"或"赛道 Tag"来源的话题。
 
 对每个筛选出的话题，给出：
 - keyword: 必须与上方列表中的某个话题关键词完全一致（不要缩写或改写）
@@ -332,16 +423,25 @@ export function injectTagVocabularyItems(): TrendItem[] {
     .slice(0, 20)
     .map(t => {
       const st: TrendSourceType = 'tag_engine';
+      const hitCount = Math.max(t.hit_count ?? 1, 1);
+      const velocity = computeSyntheticSignalScore({
+        count: hitCount,
+        avgEngagement: Math.max(t.score, 1),
+        floor: 0.9,
+        ceiling: 1.5,
+      });
       return {
         platform: (t.platform === 'douyin' ? 'douyin' : t.platform === 'both' ? 'xhs' : 'xhs') as 'xhs' | 'douyin',
         keyword: t.tag,
         current_volume: t.score,
         avg_7d: 0,
-        velocity_score: t.score / 100,
+        velocity_score: velocity,
         rank: 999,
         _source: 'tag_engine' as const,
         source_type: st,
         source_bucket: toSourceBucket(st),
+        signal_kind: classifySignalKind(st),
+        display_metric: `命中 ${hitCount} 次`,
         priority_score: 0,
       };
     });
@@ -370,17 +470,24 @@ export function injectDiscoveryPoolTrends(): TrendItem[] {
     const rawPlatform = item.source.split(':').pop() ?? item.source;
     const normalizedPlatform = (rawPlatform === 'content-browse' || rawPlatform === 'instagram' || rawPlatform === 'reddit')
       ? 'xhs' : rawPlatform;
+    const velocity = computeSyntheticSignalScore({
+      count: 1,
+      avgEngagement: item.engagement,
+      floor: 0.9,
+      ceiling: 1.5,
+    });
     return {
       platform: normalizedPlatform as TrendItem['platform'],
       keyword: item.topic || item.title,
       current_volume: item.engagement,
       avg_7d: 0,
-      // Discovery pool items get boosted velocity since they represent verified engagement
-      velocity_score: Math.max(1.5, item.score / 50),
+      velocity_score: velocity,
       rank: 998,
       _source: 'discovery_pool' as const,
       source_type: st,
       source_bucket: toSourceBucket(st),
+      signal_kind: classifySignalKind(st),
+      display_metric: '赛道信号',
       priority_score: 0,
     };
   });
@@ -550,11 +657,18 @@ export async function fetchSearchKeywordTrends(): Promise<TrendItem[]> {
       keyword: tag,
       current_volume: data.totalEngagement,
       avg_7d: 0,
-      velocity_score: Math.min(3.0, (data.count * 0.3) + Math.log10(Math.max(avgEngagement, 1)) * 0.2),
+      velocity_score: computeSyntheticSignalScore({
+        count: data.count,
+        avgEngagement,
+        floor: 0.9,
+        ceiling: 1.8,
+      }),
       rank: 997,
       _source: 'search_keyword' as const,
       source_type: 'search_keyword' as TrendSourceType,
       source_bucket: toSourceBucket('search_keyword'),
+      signal_kind: classifySignalKind('search_keyword'),
+      display_metric: `命中 ${data.count} 篇`,
       priority_score: 0,
     });
   }
@@ -589,11 +703,11 @@ export function loadCachedSearchKeywordTrends(): TrendItem[] {
 }
 
 /**
- * Compute priority_score for each item based on velocity_score × source_weight.
+ * Compute priority_score for each item based on velocity_score × source_weight × penalties.
  * Unlike the old applyAuthenticEngagementWeight(), this does NOT mutate velocity_score.
  * velocity_score stays as the raw "trend speed" — priority_score is used for ranking.
  *
- * Also back-fills source_type/source_bucket for legacy items that only have _source.
+ * Also back-fills source_type/source_bucket/signal_kind for legacy items that only have _source.
  */
 export function computePriorityScores(items: TrendItem[]): TrendItem[] {
   return items.map(item => {
@@ -607,17 +721,20 @@ export function computePriorityScores(items: TrendItem[]): TrendItem[] {
         : 'hot_list';
     }
 
+    const sk: TrendSignalKind = item.signal_kind ?? classifySignalKind(st);
     const w = sourceWeight(st);
     // Clickbait penalty: reduce priority for suspected clickbait
     const qualityPenalty = (item.clickbait_labels && item.clickbait_labels.length >= 2) ? 0.5
       : item.is_ad ? 0.1
       : 1.0;
-    const ps = item.velocity_score * w * qualityPenalty;
+    const specificityPenalty = computeTopicSpecificityPenalty(item.keyword, sk);
+    const ps = item.velocity_score * w * qualityPenalty * specificityPenalty;
 
     return {
       ...item,
       source_type: st,
       source_bucket: toSourceBucket(st),
+      signal_kind: sk,
       priority_score: Math.round(ps * 100) / 100,
     };
   });
@@ -742,6 +859,7 @@ async function callDailyHotNews(platform: string, limit = 30): Promise<TrendItem
         clickbait_labels: clickbait.labels.length > 0 ? clickbait.labels : undefined,
         source_type: st,
         source_bucket: toSourceBucket(st),
+        signal_kind: classifySignalKind(st),
         priority_score: 0,
       };
     }).filter(i => i.keyword !== '');
@@ -807,6 +925,7 @@ async function callWeiboDirectApi(limit = 30): Promise<TrendItem[]> {
         clickbait_labels: clickbait.labels.length > 0 ? clickbait.labels : undefined,
         source_type: st,
         source_bucket: toSourceBucket(st),
+        signal_kind: classifySignalKind(st),
         priority_score: 0,
       };
     }).filter(i => i.keyword !== '');
@@ -856,6 +975,7 @@ async function callBilibiliDirectApi(limit = 20): Promise<TrendItem[]> {
       rank: idx + 1,
       source_type: st,
       source_bucket: toSourceBucket(st),
+      signal_kind: classifySignalKind(st),
       priority_score: 0,
     })).filter(i => i.keyword !== '');
   } catch (err) {
@@ -895,6 +1015,7 @@ async function callDouyinDirectApi(limit = 30): Promise<TrendItem[]> {
       rank: idx + 1,
       source_type: st,
       source_bucket: toSourceBucket(st),
+      signal_kind: classifySignalKind(st),
       priority_score: 0,
     })).filter(i => i.keyword !== '');
   } catch (err) {
@@ -978,10 +1099,31 @@ interface TrendsCacheData {
   persona_identities: string; // identities string used for this computation (invalidates on persona change)
   scoring_version: number;   // Invalidate cache when scoring model changes
   results: FilteredTrend[];
+  /** Signal pool summary for /trends display */
+  signal_pool?: { bucket: string; top: { keyword: string; platform: string; v: string; p: string }[] }[];
 }
 
 const TRENDS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
-const SCORING_VERSION = 2; // Bump when scoring model / prompt changes
+const SCORING_VERSION = 3; // Bump when scoring model / prompt changes
+
+/** Build signal pool summary for /trends display — groups items by source_bucket, shows top 3 per group */
+function buildSignalPoolSummary(items: TrendItem[]): TrendsCacheData['signal_pool'] {
+  const byBucket = new Map<string, TrendItem[]>();
+  for (const t of items) {
+    const b = t.source_bucket ?? '热榜';
+    if (!byBucket.has(b)) byBucket.set(b, []);
+    byBucket.get(b)!.push(t);
+  }
+  return [...byBucket.entries()].map(([bucket, items]) => ({
+    bucket,
+    top: items.slice(0, 3).map(t => ({
+      keyword: t.keyword,
+      platform: t.platform,
+      v: t.velocity_score.toFixed(1),
+      p: t.priority_score.toFixed(1),
+    })),
+  }));
+}
 
 export async function analyzeTrends(
   ops: OpsConfig,
@@ -1077,20 +1219,15 @@ export async function analyzeTrends(
     aboveThreshold = withVelocity.sort((a, b) => b.current_volume - a.current_volume).slice(0, 30);
   }
 
-  // ── Source quota: ensure authentic signals aren't drowned by hot-list ──
-  // Reserve at least 40% of the top slots for search/推荐流 signals when available.
+  // ── Signal quota: balanced representation of all signal kinds ──
   const quotaSize = Math.min(25, aboveThreshold.length);
-  const authenticItems = aboveThreshold.filter(i => i.source_type !== 'hot_list');
-  const hotListItems = aboveThreshold.filter(i => i.source_type === 'hot_list');
-  const authenticSlots = Math.max(Math.ceil(quotaSize * 0.5), Math.min(authenticItems.length, quotaSize));
-  const hotListSlots = quotaSize - Math.min(authenticSlots, authenticItems.length);
-  const quotaApplied = [
-    ...authenticItems.slice(0, authenticSlots),
-    ...hotListItems.slice(0, hotListSlots),
-  ].sort((a, b) => b.priority_score - a.priority_score);
-  aboveThreshold = quotaApplied.length > 0 ? quotaApplied : aboveThreshold;
+  aboveThreshold = applySignalQuota(aboveThreshold, quotaSize);
 
-  if (isDebug()) console.log(`[trend-analyzer] DEBUG: aboveThreshold items: ${aboveThreshold.length} (authentic=${authenticItems.length}, hotList=${hotListItems.length})`);
+  if (isDebug()) {
+    const kindCounts = new Map<string, number>();
+    for (const i of aboveThreshold) kindCounts.set(i.signal_kind ?? 'unknown', (kindCounts.get(i.signal_kind ?? 'unknown') ?? 0) + 1);
+    console.log(`[trend-analyzer] DEBUG: aboveThreshold items: ${aboveThreshold.length} (${[...kindCounts.entries()].map(([k,v]) => `${k}=${v}`).join(', ')})`);
+  }
   if (aboveThreshold.length === 0) {
     if (isDebug()) console.log(`[trend-analyzer] DEBUG: No trends above threshold, returning empty`);
     // Cache empty result to avoid re-fetching
@@ -1099,6 +1236,7 @@ export async function analyzeTrends(
       persona_identities: personaIdentities,
       scoring_version: SCORING_VERSION,
       results: [],
+      signal_pool: buildSignalPoolSummary(aboveThreshold),
     } satisfies TrendsCacheData);
     return [];
   }
@@ -1198,6 +1336,7 @@ export async function analyzeTrends(
       persona_identities: personaIdentities,
       scoring_version: SCORING_VERSION,
       results: filtered,
+      signal_pool: buildSignalPoolSummary(aboveThreshold),
     } satisfies TrendsCacheData);
 
     return filtered;
@@ -1359,11 +1498,17 @@ function materialsToTrendItems(materials: DirectionalMaterial[]): TrendItem[] {
     keyword: m.title.slice(0, 40),
     current_volume: m.engagement,
     avg_7d: 0,
-    velocity_score: Math.max(1.5, Math.log10(Math.max(m.engagement, 1)) * 0.5),
+    velocity_score: computeSyntheticSignalScore({
+      count: 1,
+      avgEngagement: m.engagement,
+      floor: 0.9,
+      ceiling: 1.8,
+    }),
     rank: 900 + idx,
     description: m.excerpt,
     source_type: 'search_keyword' as TrendSourceType,
     source_bucket: '搜索' as TrendSourceBucket,
+    signal_kind: 'search_demand' as TrendSignalKind,
     priority_score: m.engagement * 0.001,
   }));
 }

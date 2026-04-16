@@ -218,3 +218,22 @@ export function normalizeKeyword(
 
   return cleaned.trim().toLowerCase();
 }
+
+// ─── Trend Hook Keyword Extraction ───────────────────────────────────────────
+
+/**
+ * Extract the keyword portion from a trend_hook string.
+ *
+ * Supports formats:
+ *   "keyword (platform, Nx)"
+ *   "keyword (platform, Nx, 来源桶)"
+ *   "keyword (platform, Nx, 来源桶) ⚠️疑似标题党"
+ *   "keyword"
+ *
+ * Strips trailing warning/ad labels (⚠️, 📢) before extraction.
+ */
+export function extractTrendHookKeyword(trendHook: string): string {
+  const cleaned = trendHook.replace(/\s*[⚠📢].+$/, '');
+  const idx = cleaned.lastIndexOf(' (');
+  return idx > 0 ? cleaned.slice(0, idx).trim() : cleaned.trim();
+}

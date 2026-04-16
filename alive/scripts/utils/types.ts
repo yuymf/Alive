@@ -1066,25 +1066,42 @@ export interface ReviewQueue {
 export type TrendSourceType = 'hot_list' | 'search_keyword' | 'tag_engine' | 'discovery_pool';
 
 /** User-facing source bucket (human-readable label) */
-export type TrendSourceBucket = '热榜' | '搜索' | '推荐流';
+export type TrendSourceBucket = '热榜' | '搜索' | '赛道 Tag';
+
+/** Signal kind: breakout = real acceleration, search_demand = user search hits, recommended_track = platform algorithm push */
+export type TrendSignalKind = 'breakout' | 'search_demand' | 'recommended_track';
+
+/** Map source_type → signal_kind */
+export function classifySignalKind(st: TrendSourceType): TrendSignalKind {
+  switch (st) {
+    case 'hot_list': return 'breakout';
+    case 'search_keyword': return 'search_demand';
+    case 'tag_engine': return 'recommended_track';
+    case 'discovery_pool': return 'recommended_track';
+  }
+}
 
 /** Map source_type → source_bucket */
 export function toSourceBucket(st: TrendSourceType): TrendSourceBucket {
   switch (st) {
     case 'hot_list': return '热榜';
     case 'search_keyword': return '搜索';
-    case 'tag_engine': return '推荐流';
-    case 'discovery_pool': return '推荐流';
+    case 'tag_engine': return '赛道 Tag';
+    case 'discovery_pool': return '赛道 Tag';
   }
 }
 
-/** Source weight for priority scoring (search > discovery ≈ tag_engine >> hot_list) */
+/**
+ * Source weight for priority scoring.
+ * Rebalanced: all sources are in a similar range so no single source type
+ * can dominate the ranking purely through weight advantage.
+ */
 export function sourceWeight(st: TrendSourceType): number {
   switch (st) {
-    case 'search_keyword': return 2.0;
-    case 'discovery_pool': return 1.8;
-    case 'tag_engine': return 1.6;
-    case 'hot_list': return 0.3;
+    case 'search_keyword': return 1.15;
+    case 'discovery_pool': return 1.05;
+    case 'tag_engine': return 0.95;
+    case 'hot_list': return 1.00;
   }
 }
 
@@ -1103,7 +1120,11 @@ export interface TrendItem {
   source_type: TrendSourceType;
   /** User-facing source bucket label */
   source_bucket: TrendSourceBucket;
-  /** Composite priority score for ranking (velocity × source_weight × quality_penalty) */
+  /** Signal kind: breakout (real velocity), search_demand, or recommended_track */
+  signal_kind: TrendSignalKind;
+  /** Human-readable metric for non-breakout signals (e.g. "命中 9 次", "命中 4 篇") */
+  display_metric?: string;
+  /** Composite priority score for ranking (velocity × source_weight × quality_penalty × specificity) */
   priority_score: number;
   /** Topic description/summary from API (e.g. weibo note/note_desc, DailyHot desc) — used for clickbait detection */
   description?: string;
@@ -1899,6 +1920,10 @@ export interface ViralEntry {
 /**
  * A universal viral formula derived from ≥3 entries sharing the same
  * platform + content_type + hook_type combination.
+ *
+ * v2: enriched with example titles, structural template, confidence score,
+ *     and distinct source count for runtime prompt injection (案例驱动).
+ *     `injected_to_templates` is kept for backward compat but no longer written to persona.
  */
 export interface UniversalFormula {
   id: string;
@@ -1908,10 +1933,21 @@ export interface UniversalFormula {
   formula_summary: string;             // 提炼的可复用公式描述
   source_entry_ids: string[];
   occurrence_count: number;            // ≥3 触发升级
+  /** @deprecated No longer auto-injected into persona.yaml (v2). Kept for backward compat. */
   injected_to_templates: boolean;
   created_at: string;
   last_seen_at: string;
   trigger_words?: string[];            // 高频情绪触发词（来自爆款标题分析）
+
+  // ── v2 enrichment fields ──
+  /** 2-3 representative titles from source entries (verbatim) */
+  example_titles?: string[];
+  /** Structural template with [占位符], e.g. "[数字]+[反转]+[情绪结论]" */
+  structural_template?: string;
+  /** Number of distinct source types / authors contributing to this formula */
+  distinct_source_count?: number;
+  /** Confidence score 0-1 based on occurrence count, source diversity, & recency */
+  confidence?: number;
 }
 
 /** A single item waiting to be dissected by the LLM. */

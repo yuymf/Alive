@@ -10,6 +10,7 @@
  *   trends             — 刷新热点趋势
  *   idea [方向]         — 手动出选题
  *   post [N]           — 查看选题详情
+ *   review [子命令]     — 批量快速审核
  *   analyze <url>      — 爆款拆解
  *   advice             — 人设建议
  *   status             — 查看队列状态
@@ -30,7 +31,7 @@ import { analyzeTrends, analyzeDirectionalTrends, buildPersonaIdentities, Filter
 import { trackCompetitors } from '../ops/competitor-tracker';
 import { generateTopics } from '../ops/topic-generator';
 import { formatBriefCard, formatContentPackage, BriefEnrichment } from './brief-generator';
-import { loadQueue, cleanupOldItems } from './review-queue';
+import { loadQueue, cleanupOldItems, markApproved, markDiscarded, addReviewFeedback, getActivePendingItems } from './review-queue';
 import { PENDING_EXPIRE_HOURS, hoursSinceCreated } from './review-queue';
 import { generatePersonaReport, formatAlignmentCard } from './persona-advisor';
 import { analyzePost, formatAnalysisCard } from './viral-analyzer';
@@ -38,7 +39,7 @@ import { handleReviewMessage } from './ops-review-handler';
 import { setActiveReviewItem } from './review-session';
 import { runHealthCheck, formatHealthReport } from './health-check';
 import { now } from '../utils/time-utils';
-import { getIdentityKeys } from '../utils/types';
+import { getIdentityKeys, QueueItem } from '../utils/types';
 import { loadCandidateAccounts } from './discovery-engine';
 import { rankCandidates } from './candidate-scorer';
 import { getStats, queryAll, loadFormulas } from './viral-kb-store';
@@ -129,25 +130,66 @@ async function cmdTrends(): Promise<string> {
 
   if (trends.length === 0) return '📊 暂无通过过滤的热点话题';
 
-  // Group by source_bucket for clear display
-  const srcIcon: Record<string, string> = { '热榜': '📰', '搜索': '🔍', '推荐流': '🏷️' };
+  // Group by signal_kind for sectioned display
+  const kindLabel: Record<string, string> = {
+    breakout: '📰 趋势加速',
+    search_demand: '🔍 真实搜索',
+    recommended_track: '🏷️ 平台持续推荐',
+  };
+  const kindOrder = ['breakout', 'search_demand', 'recommended_track'] as const;
 
-  const lines = ['📊 当前热点趋势', ''];
-  for (const t of trends.slice(0, 10)) {
-    const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
-    const bucket = t.source_bucket ?? '热榜';
-    const srcEmoji = srcIcon[bucket] ?? '📰';
-    lines.push(`${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  ${srcEmoji}${bucket}`);
-  }
-
-  // Source distribution summary
-  const bucketCounts = new Map<string, number>();
+  const kindGroups = new Map<string, FilteredTrend[]>();
   for (const t of trends) {
-    const b = t.source_bucket ?? '热榜';
-    bucketCounts.set(b, (bucketCounts.get(b) ?? 0) + 1);
+    const k = t.signal_kind ?? 'breakout';
+    if (!kindGroups.has(k)) kindGroups.set(k, []);
+    kindGroups.get(k)!.push(t);
   }
-  const distParts = [...bucketCounts.entries()].map(([b, c]) => `${srcIcon[b] ?? ''}${b}×${c}`);
-  lines.push('', `来源分布：${distParts.join(' · ')}`);
+
+  const lines = ['📊 当前热点趋势（LLM 精选）', ''];
+
+  for (const kind of kindOrder) {
+    const items = kindGroups.get(kind);
+    if (!items || items.length === 0) continue;
+    lines.push(`${kindLabel[kind] ?? kind}（${items.length}）`);
+    for (const t of items) {
+      if (kind === 'breakout') {
+        const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
+        lines.push(`  ${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  p=${t.priority_score.toFixed(1)}`);
+      } else {
+        const metric = t.display_metric ?? `${t.velocity_score.toFixed(1)}x`;
+        lines.push(`  · ${t.keyword}  ${t.platform}  ${metric}  p=${t.priority_score.toFixed(1)}`);
+      }
+    }
+    lines.push('');
+  }
+
+  // Signal kind distribution summary
+  const kindCounts = new Map<string, number>();
+  for (const t of trends) {
+    const k = t.signal_kind ?? 'breakout';
+    kindCounts.set(k, (kindCounts.get(k) ?? 0) + 1);
+  }
+  const distParts = [...kindCounts.entries()].map(([k, c]) => `${kindLabel[k] ?? k}×${c}`);
+  lines.push(`信号分布：${distParts.join(' · ')}`);
+
+  // Signal pool overview: show top items per source bucket from the cached signal pool
+  try {
+    const { readJSON, PATHS } = await import('../utils/file-utils');
+    const srcIcon: Record<string, string> = { '赛道 Tag': '🏷️', '热榜': '📰', '搜索': '🔍' };
+    const cache = readJSON<{ signal_pool?: { bucket: string; top: { keyword: string; platform: string; v: string; p: string }[] }[] }>(PATHS.trendsCache, {} as any);
+    if (cache?.signal_pool && cache.signal_pool.length > 0) {
+      lines.push('', '📋 信号池概览（按来源）');
+      for (const group of cache.signal_pool) {
+        const srcEmoji = srcIcon[group.bucket] ?? '📰';
+        lines.push(`  ${srcEmoji}${group.bucket}:`);
+        for (const t of group.top) {
+          lines.push(`    · ${t.keyword}  ${t.platform}  v=${t.v}x  p=${t.p}`);
+        }
+      }
+    }
+  } catch {
+    // Non-fatal: signal pool overview is optional
+  }
 
   return lines.join('\n');
 }
@@ -186,13 +228,21 @@ async function cmdIdea(direction?: string): Promise<string> {
     ? { ...ops, topic_filter_prompt: `${ops.topic_filter_prompt}\n用户指定方向：${direction}` }
     : ops;
 
-  await generateTopics(trends, effectiveOps, persona.meta.name, llm, persona.voice);
+  await generateTopics(trends, effectiveOps, persona.meta.name, llm, persona.voice,
+    direction ? { relaxedForDirection: true } : undefined,
+  );
 
   const queueAfter = await loadQueue();
   const allPending = queueAfter.items.filter(i => i.status === 'pending');
   const newItems = allPending.filter(i => !existingIds.has(i.id));
 
-  if (newItems.length === 0) return '💡 暂未生成新选题（可能与已有选题重复），试试指定新方向：/idea 美食';
+  if (newItems.length === 0) {
+    // Provide context-aware message when direction was specified
+    if (direction) {
+      return `💡 暂未生成新选题——「${direction}」相关身份在当前队列中已较饱和，系统已放宽多样性限制仍无新选题通过。\n可尝试：\n1. 先清理部分待审核选题 (/post N → 修改/发布/弃置)\n2. 指定其他方向：/idea 美食`;
+    }
+    return '💡 暂未生成新选题（可能与已有选题重复），试试指定新方向：/idea 美食';
+  }
 
   const lines = [`💡 本次新增 ${newItems.length} 个选题（队列共 ${allPending.length} 个待审核）`, ''];
   newItems.forEach((item, idx) => {
@@ -234,6 +284,172 @@ async function cmdPost(indexStr?: string): Promise<string> {
   setActiveReviewItem(pending[idx].id);
 
   return formatContentPackage(pending[idx]);
+}
+
+// ─── Command: /review ──────────────────────────────────────────────────────────
+
+type ReviewVerdict = 'approve' | 'modify' | 'discard';
+
+interface BatchVerdict {
+  index: number;
+  verdict: ReviewVerdict;
+  reason: string;
+}
+
+async function cmdReview(subCommand?: string): Promise<string> {
+  const queue = await loadQueue();
+  const pending = queue.items.filter(i => i.status === 'pending');
+
+  if (pending.length === 0) return '📭 队列中没有待审核的选题，试试 /brief 或 /idea';
+
+  // ── /review approve-all ──
+  if (subCommand === 'approve-all') {
+    let approved = 0;
+    for (const item of pending) {
+      const result = await markApproved(item.id);
+      if (result) {
+        approved++;
+        await addReviewFeedback(item.id, {
+          decision: 'approved',
+          source: 'dashboard',
+          reason_summary: '批量审批通过（approve-all）',
+        });
+      }
+    }
+    return `✅ 已批量通过 ${approved}/${pending.length} 个选题`;
+  }
+
+  // ── /review discard-low ──
+  if (subCommand === 'discard-low') {
+    loadSkillEnvVars('alive');
+    const persona = await loadPersona();
+    const llm = createRealLLMClient('ops-review-discard');
+    const verdicts = await batchJudge(pending, persona, llm);
+
+    let discarded = 0;
+    const discardIds = verdicts
+      .filter(v => v.verdict === 'discard')
+      .map(v => pending[v.index]?.id)
+      .filter(Boolean) as string[];
+
+    if (discardIds.length === 0) {
+      return '✅ 没有被判定为"建议弃置"的选题，全部保留';
+    }
+
+    for (const id of discardIds) {
+      const result = await markDiscarded(id);
+      if (result) {
+        discarded++;
+        await addReviewFeedback(id, {
+          decision: 'discarded',
+          source: 'dashboard',
+          reason_summary: '批量弃置（LLM 判定低匹配）',
+        });
+      }
+    }
+    const remaining = pending.length - discarded;
+    return `🗑️ 已弃置 ${discarded} 个选题，剩余 ${remaining} 个待审核\n💡 回复 /review 查看剩余选题`;
+  }
+
+  // ── /review (default) or /review quick ──
+  loadSkillEnvVars('alive');
+  const persona = await loadPersona();
+  const llm = createRealLLMClient('ops-review-quick');
+  const verdicts = await batchJudge(pending, persona, llm);
+
+  // Count by verdict
+  const counts = { approve: 0, modify: 0, discard: 0 };
+  for (const v of verdicts) counts[v.verdict]++;
+
+  const ICON: Record<ReviewVerdict, string> = {
+    approve: '🟢',
+    modify: '🟡',
+    discard: '🔴',
+  };
+  const LABEL: Record<ReviewVerdict, string> = {
+    approve: '建议发布',
+    modify: '需修改',
+    discard: '建议弃置',
+  };
+
+  const lines = [`📋 快速审核（${pending.length}个选题）`, ''];
+
+  pending.forEach((item, idx) => {
+    const v = verdicts.find(vv => vv.index === idx) ?? { verdict: 'modify' as ReviewVerdict, reason: '未判定' };
+    lines.push(`${idx + 1}️⃣ ${ICON[v.verdict]} ${item.topic}`);
+    lines.push(`   ${v.reason}`);
+  });
+
+  lines.push('');
+  lines.push(`📊 LLM 判定：${ICON.approve}${LABEL.approve} ${counts.approve} · ${ICON.modify}${LABEL.modify} ${counts.modify} · ${ICON.discard}${LABEL.discard} ${counts.discard}`);
+  lines.push('');
+  lines.push('💡 /post N 查看详情 · /review approve-all 一键通过 · /review discard-low 弃置🔴项');
+
+  return lines.join('\n');
+}
+
+/**
+ * Batch-judge all pending items using a single LLM call.
+ * Returns an array of { index, verdict, reason }.
+ */
+async function batchJudge(
+  pending: QueueItem[],
+  persona: import('../utils/types').PersonaConfig,
+  llm: ReturnType<typeof createRealLLMClient>,
+): Promise<BatchVerdict[]> {
+  if (pending.length === 0) return [];
+
+  const identities = buildPersonaIdentities(persona);
+  const identityKeys = getIdentityKeys(persona);
+  const personaName = persona.meta?.name ?? '';
+
+  // Build concise item list for LLM
+  const itemLines = pending.map((item, idx) => {
+    const identityLabel = item.identity_mode || 'default';
+    return `${idx + 1}. 「${item.topic}」| 热点钩子: ${item.trend_hook} | 身份: ${identityLabel}`;
+  });
+
+  const prompt = `你是一个内容运营专家，正在帮运营快速审核选题。
+
+人设信息：
+- 名称：${personaName}
+- 身份维度：${identityKeys.join('、')}
+- 人设描述：${identities}
+
+待审核选题：
+${itemLines.join('\n')}
+
+对每个选题，从"人设匹配度"角度给出快速判定：
+- approve：选题与人设高度契合，可以直接发布
+- modify：选题方向可以，但需要调整（如标题、角度等）
+- discard：选题与人设偏差较大，建议弃置
+
+请用 JSON 格式返回，格式如下：
+[{"i":1,"v":"approve","r":"人设匹配，话题新鲜"},{"i":2,"v":"modify","r":"方向可以但标题需调整"},...]
+
+只返回 JSON 数组，不要其他内容。i 是编号（从1开始），v 是判定（approve/modify/discard），r 是一句话理由。`;
+
+  try {
+    const result = await llm.callJSON<Array<{ i: number; v: string; r: string }>>(prompt, 2000);
+    if (!Array.isArray(result)) return [];
+
+    const validVerdicts: ReviewVerdict[] = ['approve', 'modify', 'discard'];
+    return result
+      .filter(item => typeof item.i === 'number' && validVerdicts.includes(item.v as ReviewVerdict))
+      .map(item => ({
+        index: item.i - 1,
+        verdict: item.v as ReviewVerdict,
+        reason: item.r ?? '',
+      }));
+  } catch (err) {
+    console.error('[cmdReview] LLM batch judge failed:', (err as Error).message);
+    // Fallback: return all as "modify" with a note
+    return pending.map((_, idx) => ({
+      index: idx,
+      verdict: 'modify' as ReviewVerdict,
+      reason: 'LLM 判定失败，请人工审核',
+    }));
+  }
 }
 
 // ─── Command: /analyze ────────────────────────────────────────────────────────
@@ -300,6 +516,8 @@ async function cmdStatus(): Promise<string> {
   const published = queue.items.filter(i => i.status === 'published').length;
   const discarded = queue.items.filter(i => i.status === 'discarded').length;
 
+  const recommendation = buildStatusRecommendation(queue.items, pending, published);
+
   return [
     '📊 运营工作台状态',
     '',
@@ -307,10 +525,89 @@ async function cmdStatus(): Promise<string> {
     `✅ 已发布: ${published}`,
     `🗑️ 已弃置: ${discarded}`,
     `📦 队列总量: ${queue.items.length}`,
+    '',
+    `💡 ${recommendation}`,
   ].join('\n');
 }
 
+/**
+ * Generate a one-line ops recommendation based on current queue state.
+ * Prioritizes the most actionable next step.
+ */
+function buildStatusRecommendation(
+  items: QueueItem[],
+  pendingCount: number,
+  publishedCount: number,
+): string {
+  // 1. No pending & no published → kick off with /brief
+  if (pendingCount === 0 && publishedCount === 0) {
+    return '还没有选题，运行 /brief 生成今日简报和新选题';
+  }
+
+  // 2. Pending backlog (>=5) → review first
+  if (pendingCount >= 5) {
+    return `有 ${pendingCount} 个选题待审核，建议 /post 逐个过一遍`;
+  }
+
+  // 3. Pending > 0 but no published → review and publish
+  if (pendingCount > 0 && publishedCount === 0) {
+    return '队列有选题但还没发布，/post 审一下或 /idea 补充新方向';
+  }
+
+  // 4. Check days since last publish
+  const lastPublished = items
+    .filter(i => i.status === 'published' && i.published_at)
+    .sort((a, b) => new Date(b.published_at!).getTime() - new Date(a.published_at!).getTime())[0];
+  if (lastPublished?.published_at) {
+    const daysSince = Math.floor((now().getTime() - new Date(lastPublished.published_at).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSince >= 3) {
+      return `已经 ${daysSince} 天没更新了，/idea 出新选题或 /post 审核积压`;
+    }
+  }
+
+  // 5. Consecutive discards — direction shift needed
+  const recentByUpdate = [...items]
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  let consecutiveDiscards = 0;
+  for (const item of recentByUpdate) {
+    if (item.status === 'discarded') consecutiveDiscards++;
+    else break;
+  }
+  if (consecutiveDiscards >= 2) {
+    return `最近 ${consecutiveDiscards} 个选题都被否了，试试 /idea 换个方向`;
+  }
+
+  // 6. Default: gentle nudge
+  if (pendingCount > 0) {
+    return `/post 审核待定选题，或 /idea 探索新方向`;
+  }
+
+  return '/brief 刷新今日简报，保持内容节奏';
+}
+
 // ─── Command: /candidates ─────────────────────────────────────────────────────
+
+/** Generate a profile/search link based on account name and platform identifier. */
+function buildProfileLink(name: string, platform: string, profileUrl?: string): string | null {
+  // If we have a direct profile URL from discovery, use it
+  if (profileUrl) return profileUrl;
+  // Fallback: generate search URL by platform
+  const encoded = encodeURIComponent(name);
+  const p = platform.toLowerCase();
+  if (p.includes('xhs') || p.includes('小红书')) {
+    return `https://www.xiaohongshu.com/search_result?keyword=${encoded}`;
+  }
+  if (p.includes('bilibili') || p.includes('b站')) {
+    return `https://search.bilibili.com/upuser?keyword=${encoded}`;
+  }
+  if (p.includes('douyin') || p.includes('抖音')) {
+    return `https://www.douyin.com/search/${encoded}`;
+  }
+  if (p.includes('weibo') || p.includes('微博')) {
+    return `https://s.weibo.com/user?q=${encoded}`;
+  }
+  return null;
+}
 
 async function cmdCandidates(topNStr?: string): Promise<string> {
   loadSkillEnvVars('alive');
@@ -360,6 +657,8 @@ async function cmdCandidates(topNStr?: string): Promise<string> {
     if (c.topics.length > 0) {
       lines.push(`   话题: ${c.topics.slice(0, 3).join('、')}  |  峰值互动 ${c.peak_engagement}  |  出现 ${c.appearance_count} 次`);
     }
+    const link = buildProfileLink(c.name, c.platform, c.profile_url);
+    if (link) lines.push(`   🔗 ${link}`);
     lines.push(`   → /competitor add @${c.name} ${c.platform}`);
     lines.push('');
   });
@@ -378,6 +677,7 @@ function cmdHelp(): string {
     '/trends         — 查看当前热点趋势',
     '/idea [方向]     — 手动生成选题（可指定方向）',
     '/post [N]       — 查看选题列表 / 第N个选题详情',
+    '/review [子命令] — 批量快速审核（默认=LLM判定，approve-all=一键通过，discard-low=弃置低分）',
     '/analyze <URL>  — 爆款帖子拆解分析',
     '/advice         — 人设契合度建议',
     '/status         — 查看队列状态',
@@ -402,6 +702,8 @@ async function dispatchCommand(command: string, args: string[]): Promise<string>
       return await cmdIdea(args.join(' ') || undefined);
     case 'post':
       return await cmdPost(args[0]);
+    case 'review':
+      return await cmdReview(args[0]);
     case 'analyze':
       return await cmdAnalyze(args[0]);
     case 'advice':
