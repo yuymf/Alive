@@ -774,7 +774,7 @@ describe('rollContextAwareEvent', () => {
       const ctx = makeCtx({ currentSchedule: '上班', recentActions: ['consume'] });
 
       let totalChains = 0;
-      const trials = 100;
+      const trials = 500;
       for (let i = 0; i < trials; i++) {
         let callIdx = 0;
         const rng = () => {

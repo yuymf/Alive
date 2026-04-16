@@ -55,8 +55,8 @@ function makeEntry(overrides: Partial<ViralEntry> = {}): ViralEntry {
 describe('handleKbCommand — status', () => {
   it('returns statistics including platform distribution', () => {
     const dir = makeTmpDir();
-    upsertEntry(dir, makeEntry({ platform: 'douyin', id: 'e1' }));
-    upsertEntry(dir, makeEntry({ platform: 'xhs', id: 'e2' }));
+    upsertEntry(dir, makeEntry({ platform: 'douyin', id: 'e1', source_id: 'src-e1', title: 'douyin 条目' }));
+    upsertEntry(dir, makeEntry({ platform: 'xhs', id: 'e2', source_id: 'src-e2', title: 'xhs 条目' }));
 
     const result = handleKbCommand(['status'], {}, dir);
 
@@ -64,6 +64,22 @@ describe('handleKbCommand — status', () => {
     expect(result).toContain('douyin');
     expect(result).toContain('xhs');
     expect(result).toContain('平台分布');
+  });
+
+  it('status shows hollow and usable counts', () => {
+    const dir = makeTmpDir();
+    upsertEntry(dir, makeEntry({ id: 'ok-1', source_id: 'src-ok-1', title: '正常条目' }));
+    upsertEntry(dir, makeEntry({
+      id: 'bad-1',
+      source_id: 'src-bad-1',
+      title: '空壳条目',
+      dissection_status: 'done',
+      dissection: { ...makeEntry().dissection!, summary: '' },
+    }));
+
+    const result = handleKbCommand(['status'], {}, dir);
+    expect(result).toContain('可参考条目');
+    expect(result).toContain('空壳条目');
   });
 
   it('shows zeros for empty KB', () => {
@@ -97,8 +113,8 @@ describe('handleKbCommand — search', () => {
 describe('handleKbCommand — list', () => {
   it('lists all entries when no filters applied', () => {
     const dir = makeTmpDir();
-    upsertEntry(dir, makeEntry({ id: 'e1', platform: 'douyin' }));
-    upsertEntry(dir, makeEntry({ id: 'e2', platform: 'xhs' }));
+    upsertEntry(dir, makeEntry({ id: 'e1', source_id: 'src-e1', title: 'douyin 条目', platform: 'douyin' }));
+    upsertEntry(dir, makeEntry({ id: 'e2', source_id: 'src-e2', title: 'xhs 条目', platform: 'xhs' }));
 
     const result = handleKbCommand(['list'], {}, dir);
 
@@ -108,8 +124,8 @@ describe('handleKbCommand — list', () => {
 
   it('filters by platform flag', () => {
     const dir = makeTmpDir();
-    upsertEntry(dir, makeEntry({ id: 'e1', platform: 'douyin' }));
-    upsertEntry(dir, makeEntry({ id: 'e2', platform: 'xhs' }));
+    upsertEntry(dir, makeEntry({ id: 'e1', source_id: 'src-e1', title: 'douyin 条目', platform: 'douyin' }));
+    upsertEntry(dir, makeEntry({ id: 'e2', source_id: 'src-e2', title: 'xhs 条目', platform: 'xhs' }));
 
     const result = handleKbCommand(['list'], { platform: 'douyin' }, dir);
 
@@ -120,12 +136,59 @@ describe('handleKbCommand — list', () => {
 
   it('filters by type flag', () => {
     const dir = makeTmpDir();
-    upsertEntry(dir, makeEntry({ id: 'e1', dissection: { ...makeEntry().dissection!, content_type: '种草类' } }));
-    upsertEntry(dir, makeEntry({ id: 'e2', dissection: { ...makeEntry().dissection!, content_type: '情绪类' } }));
+    upsertEntry(dir, makeEntry({ id: 'e1', source_id: 'src-e1', title: '种草条目', dissection: { ...makeEntry().dissection!, content_type: '种草类' } }));
+    upsertEntry(dir, makeEntry({ id: 'e2', source_id: 'src-e2', title: '情绪条目', dissection: { ...makeEntry().dissection!, content_type: '情绪类' } }));
 
     const result = handleKbCommand(['list'], { type: '种草类' }, dir);
     expect(result).toContain('种草类');
     expect(result).toContain('1 条');
+  });
+
+  it('list can filter by status', () => {
+    const dir = makeTmpDir();
+    upsertEntry(dir, makeEntry({ id: 'ok-2', source_id: 'src-ok-2', title: '正常条目' }));
+    upsertEntry(dir, makeEntry({
+      id: 'failed-1',
+      source_id: 'src-failed-1',
+      title: '失败条目',
+      dissection_status: 'failed',
+      dissection_error_reason: 'hollow_result',
+    }));
+
+    const result = handleKbCommand(['list'], { status: 'failed' }, dir);
+    expect(result).toContain('failed');
+    expect(result).not.toContain('正常条目');
+  });
+});
+
+describe('handleKbCommand — audit / repair', () => {
+  it('audit shows hollow ids and quality summary', () => {
+    const dir = makeTmpDir();
+    upsertEntry(dir, makeEntry({
+      id: 'bad-2',
+      source_id: 'src-bad-2',
+      title: '待审计空壳',
+      dissection_status: 'done',
+      dissection: { ...makeEntry().dissection!, hook_type: '', summary: '' },
+    }));
+
+    const result = handleKbCommand(['audit'], {}, dir);
+    expect(result).toContain('bad-2');
+    expect(result).toContain('hollow');
+  });
+
+  it('repair requeues hollow entries', () => {
+    const dir = makeTmpDir();
+    upsertEntry(dir, makeEntry({
+      id: 'bad-3',
+      source_id: 'src-bad-3',
+      title: '待修复空壳',
+      dissection_status: 'done',
+      dissection: { ...makeEntry().dissection!, content_type: '', summary: '' },
+    }));
+
+    const result = handleKbCommand(['repair'], { limit: '5' }, dir);
+    expect(result).toContain('已重新入队');
   });
 });
 
@@ -184,9 +247,9 @@ describe('handleKbCommand — formulas', () => {
 describe('handleKbCommand — top', () => {
   it('returns entries sorted by likes descending', () => {
     const dir = makeTmpDir();
-    upsertEntry(dir, makeEntry({ id: 'e1', likes: 5000 }));
-    upsertEntry(dir, makeEntry({ id: 'e2', likes: 50000 }));
-    upsertEntry(dir, makeEntry({ id: 'e3', likes: 1000 }));
+    upsertEntry(dir, makeEntry({ id: 'e1', source_id: 'src-e1', title: '低赞条目', likes: 5000 }));
+    upsertEntry(dir, makeEntry({ id: 'e2', source_id: 'src-e2', title: '高赞条目', likes: 50000 }));
+    upsertEntry(dir, makeEntry({ id: 'e3', source_id: 'src-e3', title: '更低赞条目', likes: 1000 }));
 
     const result = handleKbCommand(['top'], {}, dir);
 
@@ -199,7 +262,7 @@ describe('handleKbCommand — top', () => {
   it('respects --limit flag', () => {
     const dir = makeTmpDir();
     for (let i = 0; i < 5; i++) {
-      upsertEntry(dir, makeEntry({ id: `e${i}`, likes: i * 1000 }));
+      upsertEntry(dir, makeEntry({ id: `e${i}`, source_id: `src-e${i}`, title: `条目-${i}`, likes: i * 1000 }));
     }
 
     const result = handleKbCommand(['top'], { limit: '2' }, dir);
@@ -209,7 +272,7 @@ describe('handleKbCommand — top', () => {
   it('falls back to 10 when --limit is non-numeric (NaN)', () => {
     const dir = makeTmpDir();
     for (let i = 0; i < 15; i++) {
-      upsertEntry(dir, makeEntry({ id: `e${i}`, likes: i * 1000 }));
+      upsertEntry(dir, makeEntry({ id: `e${i}`, source_id: `src-e${i}`, title: `条目-${i}`, likes: i * 1000 }));
     }
 
     // 'abc' parses to NaN — should fall back to default limit of 10

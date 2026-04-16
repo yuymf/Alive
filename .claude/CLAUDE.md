@@ -54,6 +54,43 @@ npx vitest run alive/tests/persona-creator.test.ts
 npx vitest run -t "emotion engine"
 ```
 
+### Post-Update: Sync & Test OpenClaw Plugin
+
+After any significant code change (feature, bugfix, refactor), you MUST:
+
+1. **Build & sync** the alive plugin to OpenClaw:
+   ```bash
+   # Build TypeScript first
+   npm run build
+
+   # Sync framework files to ~/.openclaw/skills/alive/ (preserves memory & config)
+   alive --update --persona alive/personas/<active-persona>.yaml
+   ```
+   This copies `alive/` source + `dist-alive/` compiled JS into `~/.openclaw/skills/alive/`, updates SOUL.md/IDENTITY.md/USER.md templates, while keeping memory files, cron jobs, and config untouched.
+
+2. **Test via `openclaw agent`** to verify the plugin loads and responds correctly:
+   ```bash
+   # Quick smoke test — /alive status command (no LLM, no persona)
+   openclaw agent --agent miss-v --message "/alive status" --json
+
+   # Test ops commands (if ops.enabled)
+   openclaw agent --agent miss-v --message "/alive trends" --json
+   openclaw agent --agent miss-v --message "/alive brief" --json
+
+   # Test natural conversation (loads persona + memory)
+   openclaw agent --agent miss-v --message "你好" --json
+   ```
+   Check that:
+   - No `MODULE_NOT_FOUND` or `SyntaxError` in the response
+   - `/alive status` returns persona info correctly
+   - Plugin version in `openclaw plugins list` shows `alive-admin` as `loaded`
+
+3. **Verify plugin status**:
+   ```bash
+   openclaw plugins list | grep alive
+   openclaw skills list | grep alive
+   ```
+
 ### CLI Commands
 
 ```bash

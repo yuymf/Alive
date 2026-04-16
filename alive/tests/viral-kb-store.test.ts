@@ -15,6 +15,7 @@ import {
   upsertEntry, checkFormulaPromotion,
   queryTrack, queryAll, queryFormulas, getStats,
   extractTriggerWords,
+  auditEntries, requeueEntriesForRepair,
 } from '../scripts/ops/viral-kb-store';
 import { ViralEntry, DissectQueueItem } from '../scripts/utils/types';
 
@@ -124,9 +125,50 @@ describe('upsertEntry', () => {
   });
 
   it('inserts two distinct entries', () => {
-    upsertEntry(sandboxDir, makeEntry({ id: 'a' }));
-    upsertEntry(sandboxDir, makeEntry({ id: 'b' }));
+    upsertEntry(sandboxDir, makeEntry({ id: 'a', title: 'Title A' }));
+    upsertEntry(sandboxDir, makeEntry({ id: 'b', title: 'Title B' }));
     expect(loadEntries(sandboxDir)).toHaveLength(2);
+  });
+
+  it('deduplicates by title on same platform (different source_id)', () => {
+    const e1 = makeEntry({ id: 'id-1', source_id: 'src-1', title: '野心勃勃的真财阀系爱豆', likes: 154000 });
+    upsertEntry(sandboxDir, e1);
+    const e2 = makeEntry({ id: 'id-2', source_id: 'src-2', title: '野心勃勃的真财阀系爱豆', likes: 120000 });
+    upsertEntry(sandboxDir, e2);
+    const entries = loadEntries(sandboxDir);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].id).toBe('id-1'); // keeps the one with higher likes
+    expect(entries[0].likes).toBe(154000);
+  });
+
+  it('keeps a stable canonical id when duplicate title has higher likes', () => {
+    const e1 = makeEntry({ id: 'id-1', source_id: 'src-1', title: '野心勃勃的真财阀系爱豆', likes: 120000 });
+    upsertEntry(sandboxDir, e1);
+    const e2 = makeEntry({ id: 'id-2', source_id: 'src-2', title: '野心勃勃的真财阀系爱豆', likes: 200000 });
+    upsertEntry(sandboxDir, e2);
+    const entries = loadEntries(sandboxDir);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].id).toBe('id-1'); // keep canonical sample id stable
+    expect(entries[0].source_id).toBe('src-1');
+    expect(entries[0].likes).toBe(200000);
+  });
+
+  it('allows same title on different platforms', () => {
+    const e1 = makeEntry({ id: 'id-1', platform: 'xhs', title: '爆款标题' });
+    const e2 = makeEntry({ id: 'id-2', platform: 'douyin', title: '爆款标题' });
+    upsertEntry(sandboxDir, e1);
+    upsertEntry(sandboxDir, e2);
+    expect(loadEntries(sandboxDir)).toHaveLength(2);
+  });
+
+  it('deduplicates similar (fuzzy) titles on same platform', () => {
+    const e1 = makeEntry({ id: 'id-1', source_id: 'src-1', title: '第一人称 快看漫画2.0版本主题曲', likes: 202000 });
+    upsertEntry(sandboxDir, e1);
+    const e2 = makeEntry({ id: 'id-2', source_id: 'src-2', title: '第一人称 快看漫画2.0版本主题曲 我穿…', likes: 180000 });
+    upsertEntry(sandboxDir, e2);
+    const entries = loadEntries(sandboxDir);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].id).toBe('id-1'); // keeps higher likes
   });
 });
 
@@ -219,6 +261,29 @@ describe('checkFormulaPromotion', () => {
     expect(result.promoted).toBe(false);
   });
 
+  it('continues updating occurrence_count after promotion', () => {
+    checkFormulaPromotion(sandboxDir, makeUniversalEntry('e1'));
+    checkFormulaPromotion(sandboxDir, makeUniversalEntry('e2'));
+    checkFormulaPromotion(sandboxDir, makeUniversalEntry('e3')); // promote
+    checkFormulaPromotion(sandboxDir, makeUniversalEntry('e4')); // should still count
+
+    const [formula] = loadFormulas(sandboxDir);
+    expect(formula.occurrence_count).toBe(4);
+  });
+
+  it('refreshes last_seen_at after promotion when a new entry arrives', async () => {
+    checkFormulaPromotion(sandboxDir, makeUniversalEntry('e1'));
+    checkFormulaPromotion(sandboxDir, makeUniversalEntry('e2'));
+    checkFormulaPromotion(sandboxDir, makeUniversalEntry('e3'));
+    const before = loadFormulas(sandboxDir)[0].last_seen_at;
+
+    await new Promise(resolve => setTimeout(resolve, 5));
+    checkFormulaPromotion(sandboxDir, makeUniversalEntry('e4'));
+
+    const after = loadFormulas(sandboxDir)[0].last_seen_at;
+    expect(new Date(after).getTime()).toBeGreaterThan(new Date(before).getTime());
+  });
+
   it('track entries (identity_mode != null) do not count towards formulas', () => {
     const trackEntry = makeEntry({
       id: 't1',
@@ -237,6 +302,28 @@ describe('checkFormulaPromotion', () => {
     const result = checkFormulaPromotion(sandboxDir, trackEntry);
     expect(result.promoted).toBe(false);
     expect(loadFormulas(sandboxDir)).toHaveLength(0);
+  });
+
+  it('does not inflate occurrence_count for title-deduped duplicates with new source ids', () => {
+    const e1 = makeUniversalEntry('e1');
+    const e2 = makeUniversalEntry('e2');
+    e1.title = '野心勃勃的真财阀系爱豆';
+    e1.source_id = 'src-1';
+    e1.likes = 120000;
+    e2.title = '野心勃勃的真财阀系爱豆';
+    e2.source_id = 'src-2';
+    e2.likes = 200000;
+
+    upsertEntry(sandboxDir, e1);
+    checkFormulaPromotion(sandboxDir, e1);
+
+    upsertEntry(sandboxDir, e2);
+    const result = checkFormulaPromotion(sandboxDir, e2);
+
+    expect(result.promoted).toBe(false);
+    expect(loadEntries(sandboxDir)).toHaveLength(1);
+    expect(loadFormulas(sandboxDir)[0].occurrence_count).toBe(1);
+    expect(loadFormulas(sandboxDir)[0].source_entry_ids).toEqual(['e1']);
   });
 });
 
@@ -326,6 +413,65 @@ describe('extractTriggerWords', () => {
 
   it('空标题列表返回空数组', () => {
     expect(extractTriggerWords([])).toEqual([]);
+  });
+});
+
+// ─── audit / repair ───────────────────────────────────────────────────────────
+
+describe('auditEntries / requeueEntriesForRepair', () => {
+  it('detects hollow entries even when status is done', () => {
+    const hollow = makeEntry({
+      id: 'h1',
+      dissection_status: 'done',
+      dissection: { ...makeEntry().dissection, hook_type: '', content_type: '', summary: '' },
+    });
+    upsertEntry(sandboxDir, hollow);
+
+    const report = auditEntries(sandboxDir);
+    expect(report.hollow_count).toBe(1);
+    expect(report.usable_count).toBe(0);
+  });
+
+  it('requeues hollow entries for repair and marks them failed', () => {
+    const hollow = makeEntry({
+      id: 'h2',
+      source_id: 'src-h2',
+      dissection_status: 'done',
+      dissection: { ...makeEntry().dissection, hook_type: '', content_type: '', summary: '' },
+    });
+    upsertEntry(sandboxDir, hollow);
+
+    const result = requeueEntriesForRepair(sandboxDir, { limit: 10, reason: 'hollow_result' });
+    expect(result.requeued).toBe(1);
+    expect(loadQueue(sandboxDir)).toHaveLength(1);
+    const repairedEntry = loadEntries(sandboxDir)[0];
+    expect(repairedEntry.dissection_status).toBe('failed');
+    expect(repairedEntry.dissection_error_reason).toBe('hollow_result');
+    expect(repairedEntry.repair_count).toBe(1);
+  });
+
+  it('counts failed and hollow entries in kb stats', () => {
+    upsertEntry(sandboxDir, makeEntry({ id: 'ok-1', source_id: 'src-ok-1', title: '正常条目' }));
+    upsertEntry(sandboxDir, makeEntry({
+      id: 'bad-1',
+      source_id: 'src-bad-1',
+      title: '空壳条目',
+      dissection_status: 'done',
+      dissection: { ...makeEntry().dissection, summary: '' },
+    }));
+    upsertEntry(sandboxDir, makeEntry({
+      id: 'failed-1',
+      source_id: 'src-failed-1',
+      title: '失败条目',
+      dissection_status: 'failed',
+      dissection_error_reason: 'hollow_result',
+    }));
+
+    const stats = getStats(sandboxDir);
+    expect(stats.hollow_count).toBe(1);
+    expect(stats.failed_count).toBe(1);
+    expect(stats.usable_count).toBe(1);
+    expect(stats.by_content_type['种草类']).toBe(2);
   });
 });
 

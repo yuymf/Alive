@@ -16,6 +16,9 @@ import { UNKNOWN_POST_AGE_DAYS, FETCH_FAILED_DAYS } from './competitor-tracker';
 import type { HealthReport } from './health-check';
 import type { KBStats } from './viral-kb-store';
 import type { UniversalFormula, ViralEntry } from '../utils/types';
+import { buildAudiencePerceptionContext } from './audience-perception';
+import { generateProactiveAdvice, formatAdviceSection } from './proactive-advisor';
+import type { ProactiveAdvice } from './proactive-advisor';
 
 // ─── Brief helpers ───────────────────────────────────────────────────────────
 
@@ -60,6 +63,8 @@ export interface BriefEnrichment {
   viralKbTopEntries?: readonly ViralEntry[];
   /** Recently promoted universal formulas */
   viralKbFormulas?: readonly UniversalFormula[];
+  /** Pre-computed proactive advice (if not provided, will be auto-generated) */
+  proactiveAdvice?: ProactiveAdvice[];
 }
 
 // ─── Pure formatting (exported for testing) ──────────────────────────────────
@@ -75,10 +80,13 @@ export function formatBriefCard(
 
   // Trends
   if (trends.length > 0) {
+    const srcIcon: Record<string, string> = { '热榜': '📰', '搜索': '🔍', '推荐流': '🏷️' };
     lines.push('━━ 平台正在助推 ━━');
     for (const t of trends.slice(0, 5)) {
       const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
-      lines.push(`${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x`);
+      const bucket = t.source_bucket ?? '热榜';
+      const srcEmoji = srcIcon[bucket] ?? '📰';
+      lines.push(`${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  ${srcEmoji}${bucket}`);
     }
     lines.push('🔥 /trends 查看更多趋势');
     lines.push('');
@@ -162,8 +170,14 @@ export function formatBriefCard(
   const expired = queueItems.filter(i => i.status === 'expired');
 
   if (activePending.length > 0) {
-    lines.push(`━━ AI 今日推荐选题（${activePending.length}个）━━`);
-    activePending.forEach((item, idx) => {
+    // Sort: clickbait items (⚠️ in trend_hook) moved to the end
+    const sortedPending = [...activePending].sort((a, b) => {
+      const aCb = a.trend_hook.includes('⚠️') ? 1 : 0;
+      const bCb = b.trend_hook.includes('⚠️') ? 1 : 0;
+      return aCb - bCb;
+    });
+    lines.push(`━━ AI 今日推荐选题（${sortedPending.length}个）━━`);
+    sortedPending.forEach((item, idx) => {
       lines.push(`${idx + 1}️⃣  ${item.topic}`);
       lines.push(`   ${item.trend_hook}`);
     });
@@ -176,6 +190,22 @@ export function formatBriefCard(
   if (suppressedCount > 0) {
     lines.push(`💤 ${suppressedCount} 条旧选题已超${PENDING_EXPIRE_HOURS}h未处理，不再提醒（/post 可查看）`);
     lines.push('');
+  }
+
+  // ─── 💡 助手建议 (proactive advice) ────────────────────────────────────────
+  try {
+    const advice = enrichment?.proactiveAdvice ?? generateProactiveAdvice({
+      trends,
+      queueItems,
+      strategy: null,  // lazy-load handled by caller or falls back to null
+    });
+    const adviceSection = formatAdviceSection(advice);
+    if (adviceSection) {
+      lines.push(adviceSection);
+      lines.push('');
+    }
+  } catch {
+    // proactive advice is non-critical, skip on error
   }
 
   // ─── Enrichment sections (new: 生图Prompt, 视频分镜, 人设建议) ────────────
@@ -219,10 +249,10 @@ export function formatBriefCard(
       if (douyin.bgm_suggestion) {
         lines.push(`🎵 BGM: ${douyin.bgm_suggestion}`);
       }
-      // Script excerpt (first 80 chars)
+      // Script excerpt (first 200 chars)
       if (douyin.script && douyin.script.length > 0) {
-        const excerpt = douyin.script.length > 80
-          ? douyin.script.slice(0, 80) + '…'
+        const excerpt = douyin.script.length > 200
+          ? douyin.script.slice(0, 200) + '…'
           : douyin.script;
         lines.push(`📝 脚本摘要：${excerpt}`);
       }
@@ -273,6 +303,73 @@ export function formatBriefCard(
     }
   } catch {
     // performance-log not available, skip
+  }
+
+  // ✅ 审核共识（from review feedback on queue items）
+  try {
+    const reviewed = queueItems.filter(
+      i => i.review_feedback && i.review_feedback.length > 0,
+    ).slice(-10);
+
+    if (reviewed.length > 0) {
+      const approveReasons: string[] = [];
+      const discardReasons: string[] = [];
+      const deviationTags = new Map<string, number>();
+      const directions = new Set<string>();
+
+      for (const item of reviewed) {
+        for (const fb of item.review_feedback!) {
+          if (fb.decision === 'approved' && fb.reason_summary) {
+            approveReasons.push(fb.reason_summary);
+          }
+          if (fb.decision === 'discarded' && fb.reason_summary) {
+            discardReasons.push(fb.reason_summary);
+          }
+          for (const tag of fb.persona_deviation_tags ?? []) {
+            deviationTags.set(tag, (deviationTags.get(tag) ?? 0) + 1);
+          }
+          for (const d of fb.improvement_directions ?? []) {
+            directions.add(d);
+          }
+        }
+      }
+
+      const reviewLines: string[] = ['━━ ✅ 审核共识 ━━'];
+      if (approveReasons.length > 0) {
+        const topApprove = [...new Set(approveReasons)].slice(-3);
+        reviewLines.push(`通过理由：${topApprove.join('；')}`);
+      }
+      if (discardReasons.length > 0) {
+        const topDiscard = [...new Set(discardReasons)].slice(-3);
+        reviewLines.push(`淘汰原因：${topDiscard.join('；')}`);
+      }
+      if (deviationTags.size > 0) {
+        const topTags = [...deviationTags.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([t]) => t);
+        reviewLines.push(`偏移标签：${topTags.join('、')}`);
+      }
+      if (directions.size > 0) {
+        reviewLines.push(`改进方向：${[...directions].slice(-3).join('；')}`);
+      }
+      lines.push(reviewLines.join('\n'));
+      lines.push('');
+    }
+  } catch {
+    // review feedback not available, skip
+  }
+
+  // 👁️ 受众感知（from audience perception store）
+  try {
+    const perceptionCtx = buildAudiencePerceptionContext({ maxEntries: 5, maxChars: 300 });
+    if (perceptionCtx) {
+      lines.push('━━ 👁️ 受众感知 ━━');
+      lines.push(perceptionCtx);
+      lines.push('');
+    }
+  } catch {
+    // audience perception not available, skip
   }
 
   // ─── 📚 爆款知识库 ──────────────────────────────────────────────────────

@@ -895,11 +895,6 @@ export const DEFAULT_WORK_IMPULSE_STATE: WorkImpulseState = {
   outputs_today: 0,
 };
 
-/** @deprecated Use WorkImpulseState instead */
-export type PostImpulseState = WorkImpulseState;
-/** @deprecated Use DEFAULT_WORK_IMPULSE_STATE instead */
-export const DEFAULT_POST_IMPULSE = DEFAULT_WORK_IMPULSE_STATE;
-
 // === Skill Discovery Types ===
 
 export interface SkillNeed {
@@ -992,6 +987,27 @@ export interface QueueItemEditEntry {
   field: string;
 }
 
+/** Structured review feedback — stored per approve/discard/edit decision. */
+export interface QueueItemReviewFeedback {
+  decision: 'approved' | 'discarded' | 'edit_requested';
+  created_at: string;
+  source: 'chat' | 'dashboard' | 'system';
+  /** Free-text one-liner: why this decision was made */
+  reason_summary: string;
+  /** Optional tags: persona traits the content drifted from */
+  persona_deviation_tags?: string[];
+  /** Optional tags: content risks identified */
+  risk_tags?: string[];
+  /** Optional tags: platform readiness indicators */
+  platform_fit_tags?: string[];
+  /** Actionable directions for future generation */
+  improvement_directions?: string[];
+  /** Traceability: what evidence supported this decision */
+  evidence_refs?: string[];
+  /** Free-text note from the operator */
+  operator_note?: string;
+}
+
 export interface QueueItemTemplateSpec {
   content_type: string;
   category: string;
@@ -1035,11 +1051,41 @@ export interface QueueItem {
   image_prompts?: string[];
   /** Whether performance tracking has started for this item */
   performance_tracked?: boolean;
+  /** Structured review feedback entries (one per approve/discard/edit decision) */
+  review_feedback?: QueueItemReviewFeedback[];
+  /** Human-readable summary of the latest review decision */
+  latest_review_summary?: string;
 }
 
 export interface ReviewQueue {
   items: QueueItem[];
   last_updated: string;
+}
+
+/** Fine-grained signal source type */
+export type TrendSourceType = 'hot_list' | 'search_keyword' | 'tag_engine' | 'discovery_pool';
+
+/** User-facing source bucket (human-readable label) */
+export type TrendSourceBucket = '热榜' | '搜索' | '推荐流';
+
+/** Map source_type → source_bucket */
+export function toSourceBucket(st: TrendSourceType): TrendSourceBucket {
+  switch (st) {
+    case 'hot_list': return '热榜';
+    case 'search_keyword': return '搜索';
+    case 'tag_engine': return '推荐流';
+    case 'discovery_pool': return '推荐流';
+  }
+}
+
+/** Source weight for priority scoring (search > discovery ≈ tag_engine >> hot_list) */
+export function sourceWeight(st: TrendSourceType): number {
+  switch (st) {
+    case 'search_keyword': return 2.0;
+    case 'discovery_pool': return 1.8;
+    case 'tag_engine': return 1.6;
+    case 'hot_list': return 0.3;
+  }
 }
 
 export interface TrendItem {
@@ -1051,6 +1097,22 @@ export interface TrendItem {
   rank: number;
   cover?: string;
   type?: string;
+  /** @deprecated Use source_type instead. Kept for backward compatibility during migration. */
+  _source?: 'tag_engine' | 'discovery_pool' | 'search_keyword';
+  /** Fine-grained signal source */
+  source_type: TrendSourceType;
+  /** User-facing source bucket label */
+  source_bucket: TrendSourceBucket;
+  /** Composite priority score for ranking (velocity × source_weight × quality_penalty) */
+  priority_score: number;
+  /** Topic description/summary from API (e.g. weibo note/note_desc, DailyHot desc) — used for clickbait detection */
+  description?: string;
+  /** Topic category (e.g. weibo category field: 影视/社会/体育 etc.) */
+  category?: string;
+  /** Whether the topic is a paid advertisement disguised as organic trending */
+  is_ad?: boolean;
+  /** Clickbait pattern labels detected by detectClickbait() */
+  clickbait_labels?: string[];
 }
 
 export interface TrendHistory {
@@ -1237,6 +1299,12 @@ export interface ParsedIntent {
   field?: string;
   instruction?: string;
   raw?: string;
+  /** Structured review reason (extracted by LLM or provided by dashboard) */
+  reason_summary?: string;
+  persona_deviation_tags?: string[];
+  risk_tags?: string[];
+  platform_fit_tags?: string[];
+  improvement_directions?: string[];
 }
 
 // ─── Competitor Profile Types ────────────────────────────────────────────────
@@ -1743,6 +1811,35 @@ export interface AnalysisLog {
   last_updated: string;
 }
 
+// ─── Audience Perception Types ───────────────────────────────────────────────
+
+/** A structured perception entry derived from published content's audience feedback. */
+export interface AudiencePerceptionEntry {
+  item_id: string;
+  platform: 'xhs' | 'douyin';
+  identity_mode: string;
+  generated_at: string;
+  /** One-liner summary of how the audience perceives this content / character */
+  summary: string;
+  /** Traits the audience attributes to the virtual persona */
+  perceived_traits: string[];
+  /** Emotional keywords from audience feedback */
+  emotional_keywords: string[];
+  /** What the audience wants more of */
+  desire_signals: string[];
+  /** What the audience pushes back on or dislikes */
+  resistance_signals: string[];
+  /** Selected representative comments for traceability */
+  representative_comments: string[];
+  /** Source references (e.g. performance entry id, analysis id) */
+  source_refs: string[];
+}
+
+export interface AudiencePerceptionStore {
+  entries: AudiencePerceptionEntry[];
+  last_updated: string;
+}
+
 // ─── Viral Knowledge Base Types ──────────────────────────────────────────────
 
 /** Platforms supported by the viral knowledge base. */
@@ -1791,6 +1888,12 @@ export interface ViralEntry {
   kb_tier: 'track' | 'universal';      // 赛道爆款 or 通用爆款
   promoted_to_template: boolean;
   times_referenced: number;
+
+  // Quality & repair metadata (added by taxonomy hardening)
+  dissection_error_reason?: string;     // e.g. 'hollow_result', 'invalid_json', 'repair_requested'
+  repair_count?: number;                // how many times this entry has been re-queued for repair
+  last_repaired_at?: string;            // ISO timestamp of last repair attempt
+  quality_score?: number;               // 0-1 quality assessment (future use)
 }
 
 /**

@@ -164,6 +164,9 @@ function fetchDouyinPosts(accountId: string): CompetitorPost[] {
   // Strategy 2: fallback to douyin-bridge CDP (headless Chrome, no Cookie required)
   const cdpResult = listDouyinUserPosts(accountId, MAX_POSTS_PER_ACCOUNT);
   if (!cdpResult.success) {
+    if (cdpResult.rate_limited) {
+      throw new Error(`Douyin 风控限流 for ${accountId}: ${cdpResult.reason ?? 'cooldown'}，等待 ${cdpResult.retry_after ?? '?'}s`);
+    }
     throw new Error(`CDP fallback failed for ${accountId}: ${cdpResult.error ?? 'unknown'}`);
   }
   if (!cdpResult.videos?.length) {

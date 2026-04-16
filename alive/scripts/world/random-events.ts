@@ -181,11 +181,6 @@ export function resetEventPool(): void {
   _eventPool = [...BUILTIN_EVENT_POOL];
 }
 
-/** Expose the current event pool (for testing). */
-export function getEventPool(): readonly RandomEventDef[] {
-  return _eventPool;
-}
-
 export { BUILTIN_EVENT_POOL };
 
 /** Alias for backward compatibility — tests import EVENT_POOL */

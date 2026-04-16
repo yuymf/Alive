@@ -107,4 +107,27 @@ describe('formatBriefCard', () => {
     // Stale item should be counted in "旧选题" summary
     expect(card).toContain('旧选题已超');
   });
+
+  it('shows review consensus when queue items have review feedback', () => {
+    const items: QueueItem[] = [
+      {
+        id: 'q1', status: 'approved', topic: '蹭#电竞', trend_hook: 'hook',
+        identity_mode: 'esports', created_at: recentTimestamp, updated_at: '',
+        content: { xhs: { title: '', body: '', tags: [], cover_images: [] },
+                   douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] } },
+        edit_history: [],
+        review_feedback: [{
+          decision: 'approved',
+          created_at: recentTimestamp,
+          source: 'chat',
+          reason_summary: '人设一致，语气到位',
+          persona_deviation_tags: [],
+          risk_tags: [],
+        }],
+      },
+    ] as QueueItem[];
+    const card = formatBriefCard('2026-03-30', [], [], items);
+    expect(card).toContain('审核共识');
+    expect(card).toContain('人设一致');
+  });
 });

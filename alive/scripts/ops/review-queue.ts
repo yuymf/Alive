@@ -11,6 +11,7 @@ import { now } from '../utils/time-utils';
 import {
   QueueItem, QueueItemStatus, IdentityMode, QueueItemContent,
   ReviewQueue, QueueItemTemplateSpec, QueueItemCompetitorBenchmark,
+  QueueItemReviewFeedback,
 } from '../utils/types';
 
 export { ReviewQueue };
@@ -54,6 +55,27 @@ export interface AddItemInput {
 
 export async function addItem(input: AddItemInput): Promise<QueueItem> {
   const queue = await loadQueue();
+
+  // Dedup: extract keyword from trend_hook
+  // Supports both old format "keyword (platform, Nx)" and new format "keyword (platform, Nx, 来源桶)"
+  // Uses lastIndexOf(' (') to find the metadata suffix, then takes everything before it as keyword
+  const extractKeyword = (hook: string) => {
+    // Strip trailing warning/ad labels first (⚠️疑似标题党, 📢广告)
+    const cleaned = hook.replace(/\s*[⚠📢].+$/, '');
+    const idx = cleaned.lastIndexOf(' (');
+    return idx > 0 ? cleaned.slice(0, idx).trim() : cleaned.trim();
+  };
+  const inputKeyword = extractKeyword(input.trend_hook);
+  const existingItem = queue.items.find(
+    i => i.status === 'pending'
+      && extractKeyword(i.trend_hook) === inputKeyword
+      && i.identity_mode === input.identity_mode,
+  );
+  if (existingItem) {
+    console.log(`[review-queue] Dedup: skipping duplicate keyword "${inputKeyword}" (existing id: ${existingItem.id})`);
+    return existingItem;
+  }
+
   const ts = now().toISOString();
   const item: QueueItem = {
     id: generateId(),
@@ -313,4 +335,110 @@ export async function markPerformanceTracked(id: string): Promise<QueueItem | nu
   ];
   await saveQueue({ ...queue, items: newItems });
   return updated;
+}
+
+// ─── Structured Review Feedback ──────────────────────────────────────────────
+
+export type { QueueItemReviewFeedback };
+
+/**
+ * Append a structured review feedback entry to a queue item.
+ * Also updates `latest_review_summary` for quick display.
+ * Can be called alongside or after markApproved / markDiscarded.
+ */
+export async function addReviewFeedback(
+  id: string,
+  feedback: Omit<QueueItemReviewFeedback, 'created_at'> & { created_at?: string },
+): Promise<QueueItem | null> {
+  const queue = await loadQueue();
+  const idx = queue.items.findIndex(i => i.id === id);
+  if (idx === -1) return null;
+
+  const existing = queue.items[idx];
+  const ts = now().toISOString();
+  const entry: QueueItemReviewFeedback = {
+    ...feedback,
+    created_at: feedback.created_at ?? ts,
+  };
+
+  const existingFeedback = existing.review_feedback ?? [];
+
+  const updated: QueueItem = {
+    ...existing,
+    review_feedback: [...existingFeedback, entry],
+    latest_review_summary: entry.reason_summary,
+    updated_at: ts,
+  };
+
+  const newItems = [
+    ...queue.items.slice(0, idx),
+    updated,
+    ...queue.items.slice(idx + 1),
+  ];
+  await saveQueue({ ...queue, items: newItems });
+
+  // Update operator preference profile (fire-and-forget, non-blocking)
+  try {
+    const { updatePreferenceFromFeedback } = await import('./operator-preference');
+    updatePreferenceFromFeedback(updated, entry);
+  } catch {
+    // operator-preference module not available, skip
+  }
+
+  return updated;
+}
+
+/**
+ * Get aggregated review feedback for recent queue items.
+ * Useful for brief-generator and strategy-engine context injection.
+ */
+export async function getRecentReviewLearning(maxItems = 10): Promise<{
+  approveReasons: string[];
+  discardReasons: string[];
+  commonDeviationTags: string[];
+  commonRiskTags: string[];
+  improvementDirections: string[];
+}> {
+  const queue = await loadQueue();
+
+  const approveReasons: string[] = [];
+  const discardReasons: string[] = [];
+  const deviationTags = new Map<string, number>();
+  const riskTags = new Map<string, number>();
+  const directions = new Set<string>();
+
+  const recentItems = queue.items
+    .filter(i => i.review_feedback && i.review_feedback.length > 0)
+    .slice(-maxItems);
+
+  for (const item of recentItems) {
+    for (const fb of item.review_feedback!) {
+      if (fb.decision === 'approved' && fb.reason_summary) {
+        approveReasons.push(fb.reason_summary);
+      }
+      if (fb.decision === 'discarded' && fb.reason_summary) {
+        discardReasons.push(fb.reason_summary);
+      }
+      for (const tag of fb.persona_deviation_tags ?? []) {
+        deviationTags.set(tag, (deviationTags.get(tag) ?? 0) + 1);
+      }
+      for (const tag of fb.risk_tags ?? []) {
+        riskTags.set(tag, (riskTags.get(tag) ?? 0) + 1);
+      }
+      for (const dir of fb.improvement_directions ?? []) {
+        directions.add(dir);
+      }
+    }
+  }
+
+  const sortedTags = (m: Map<string, number>) =>
+    [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+
+  return {
+    approveReasons: approveReasons.slice(-5),
+    discardReasons: discardReasons.slice(-5),
+    commonDeviationTags: sortedTags(deviationTags).slice(0, 10),
+    commonRiskTags: sortedTags(riskTags).slice(0, 10),
+    improvementDirections: [...directions].slice(0, 10),
+  };
 }

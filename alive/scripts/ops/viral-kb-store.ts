@@ -85,6 +85,25 @@ export interface KBStats {
   by_tier: Record<string, number>;
   queue_length: number;
   formula_count: number;
+  failed_count: number;
+  hollow_count: number;
+  usable_count: number;
+  by_content_type: Record<string, number>;
+  by_hook_type: Record<string, number>;
+}
+
+export interface KBAuditReport {
+  total: number;
+  failed_count: number;
+  hollow_count: number;
+  usable_count: number;
+  hollow_entry_ids: string[];
+}
+
+export interface RepairResult {
+  scanned: number;
+  requeued: number;
+  skipped: number;
 }
 
 // ─── PromotionResult ─────────────────────────────────────────────────────────
@@ -196,23 +215,172 @@ export function dequeueItems(basePath: string, n: number): DissectQueueItem[] {
   return taken;
 }
 
+// ─── Quality audit / repair helpers ──────────────────────────────────────────
+
+function hasMeaningfulValue(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return !['无', '未知', '无法判断', 'N/A', 'n/a', 'null', 'undefined', '—', '-'].includes(trimmed);
+}
+
+export function isHollowEntry(entry: ViralEntry): boolean {
+  if (entry.dissection_status !== 'done') return false;
+  const dissection = entry.dissection;
+  if (!dissection) return true;
+
+  return !hasMeaningfulValue(dissection.hook_type)
+    || !hasMeaningfulValue(dissection.content_type)
+    || !hasMeaningfulValue(dissection.summary);
+}
+
+export function auditEntries(basePath: string): KBAuditReport {
+  const entries = loadEntries(basePath);
+  const hollowEntries = entries.filter(isHollowEntry);
+  const failed_count = entries.filter(entry => entry.dissection_status === 'failed').length;
+  const usable_count = entries.filter(entry => entry.dissection_status === 'done' && !isHollowEntry(entry)).length;
+
+  return {
+    total: entries.length,
+    failed_count,
+    hollow_count: hollowEntries.length,
+    usable_count,
+    hollow_entry_ids: hollowEntries.map(entry => entry.id),
+  };
+}
+
+function buildRepairQueueItem(entry: ViralEntry): DissectQueueItem {
+  return {
+    id: entry.id,
+    platform: entry.platform,
+    source_id: entry.source_id,
+    source_type: entry.source_type,
+    title: entry.title,
+    description: entry.description,
+    likes: entry.likes,
+    comments: entry.comments,
+    shares: entry.shares,
+    queued_at: wallNow().toISOString(),
+    ...(entry.dissection?.identity_mode ? { identity_mode: entry.dissection.identity_mode } : {}),
+  };
+}
+
+export function requeueEntriesForRepair(
+  basePath: string,
+  opts: { limit?: number; reason?: string } = {},
+): RepairResult {
+  const entries = loadEntries(basePath);
+  const limit = opts.limit && opts.limit > 0 ? opts.limit : Number.POSITIVE_INFINITY;
+  const repairReason = opts.reason ?? 'repair_requested';
+
+  const candidates = entries.filter(entry => isHollowEntry(entry));
+  const selected = candidates.slice(0, limit);
+  const selectedIds = new Set(selected.map(entry => entry.id));
+
+  addManyToQueue(basePath, selected.map(buildRepairQueueItem));
+
+  const updatedEntries = entries.map(entry => {
+    if (!selectedIds.has(entry.id)) return entry;
+    return {
+      ...entry,
+      dissection_status: 'failed' as const,
+      dissection_error_reason: repairReason,
+      repair_count: (entry.repair_count ?? 0) + 1,
+      last_repaired_at: wallNow().toISOString(),
+    };
+  });
+
+  if (selected.length > 0) {
+    saveEntries(basePath, updatedEntries);
+  }
+
+  return {
+    scanned: candidates.length,
+    requeued: selected.length,
+    skipped: Math.max(candidates.length - selected.length, 0),
+  };
+}
+
+// ─── Title dedup helper ─────────────────────────────────────────────────────
+
+/**
+ * Compute character-level Jaccard similarity between two strings.
+ * Returns a value in [0, 1] where 1 means identical char sets.
+ */
+function titleSimilarity(a: string, b: string): number {
+  const setA = new Set(a.split(''));
+  const setB = new Set(b.split(''));
+  const intersection = [...setA].filter(c => setB.has(c)).length;
+  const union = new Set([...setA, ...setB]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/** Minimum Jaccard similarity to consider two titles as duplicates. */
+const TITLE_SIMILARITY_THRESHOLD = 0.85;
+
 // ─── Upsert ───────────────────────────────────────────────────────────────────
 
 /**
- * Insert a new ViralEntry or replace an existing one by id.
- * Immutable — returns a new array; saves to disk.
+ * Insert a new ViralEntry or replace an existing one.
+ *
+ * Deduplication strategy:
+ * 1. Exact match by entry.id (platform:sourceId hash) — replace if found.
+ * 2. Title fuzzy dedup — same platform + highly similar title → keep the one
+ *    with higher likes. This prevents the same content from different source_ids
+ *    (e.g. different platforms re-sharing the same post) from creating duplicates.
  */
 export function upsertEntry(basePath: string, entry: ViralEntry): void {
   const current = loadEntries(basePath);
-  const idx = current.findIndex(e => e.id === entry.id);
-  const updated = idx === -1
-    ? [...current, entry]
-    : [
-        ...current.slice(0, idx),
-        entry,
-        ...current.slice(idx + 1),
+
+  // 1. Exact dedup by id
+  const exactIdx = current.findIndex(e => e.id === entry.id);
+  if (exactIdx !== -1) {
+    const updated = [
+      ...current.slice(0, exactIdx),
+      entry,
+      ...current.slice(exactIdx + 1),
+    ];
+    saveEntries(basePath, updated);
+    try {
+      const { boostTagsFromViralEntry } = require('./tag-engine');
+      boostTagsFromViralEntry(entry);
+    } catch { /* non-blocking */ }
+    return;
+  }
+
+  // 2. Title fuzzy dedup — same platform + similar title
+  const dupIdx = current.findIndex(e =>
+    e.platform === entry.platform &&
+    (e.title === entry.title || titleSimilarity(e.title, entry.title) >= TITLE_SIMILARITY_THRESHOLD)
+  );
+  if (dupIdx !== -1) {
+    // Keep one canonical entry id for title-deduped duplicates so downstream
+    // formula promotion does not treat the same content as multiple samples.
+    const existing = current[dupIdx];
+    if (entry.likes > existing.likes) {
+      const mergedEntry: ViralEntry = {
+        ...existing,
+        ...entry,
+        id: existing.id,
+        source_id: existing.source_id,
+      };
+      const updated = [
+        ...current.slice(0, dupIdx),
+        mergedEntry,
+        ...current.slice(dupIdx + 1),
       ];
-  saveEntries(basePath, updated);
+      saveEntries(basePath, updated);
+      try {
+        const { boostTagsFromViralEntry } = require('./tag-engine');
+        boostTagsFromViralEntry(mergedEntry);
+      } catch { /* non-blocking */ }
+    }
+    // else: existing entry is better, silently skip the duplicate
+    return;
+  }
+
+  // 3. New entry — no duplicates found
+  saveEntries(basePath, [...current, entry]);
 
   // Boost tag scores from newly inserted viral entry (feedback loop)
   try {
@@ -259,6 +427,16 @@ export function checkFormulaPromotion(
     return { promoted: false };
   }
 
+  const storedEntries = loadEntries(basePath);
+  const canonicalStoredEntry = storedEntries.find(e => e.id === entry.id)
+    ?? storedEntries.find(e =>
+      e.platform === entry.platform &&
+      (e.title === entry.title || titleSimilarity(e.title, entry.title) >= TITLE_SIMILARITY_THRESHOLD)
+    );
+  if (canonicalStoredEntry && canonicalStoredEntry.id !== entry.id) {
+    return { promoted: false };
+  }
+
   const { content_type, hook_type } = entry.dissection;
   const formulas = loadFormulas(basePath);
 
@@ -289,11 +467,6 @@ export function checkFormulaPromotion(
 
   const existing = formulas[existingIdx];
 
-  // Already promoted — no-op
-  if (existing.injected_to_templates) {
-    return { promoted: false };
-  }
-
   // Dedup: same entry.id must not inflate occurrence_count more than once
   const alreadyCounted = existing.source_entry_ids.includes(entry.id);
   const updatedCount = alreadyCounted ? existing.occurrence_count : existing.occurrence_count + 1;
@@ -301,38 +474,36 @@ export function checkFormulaPromotion(
     ? existing.source_entry_ids
     : [...existing.source_entry_ids, entry.id];
 
-  const shouldPromote = updatedCount >= 3;
+  const isFirstPromotion = existing.occurrence_count < 3 && updatedCount >= 3;
+  const shouldAttemptInjection = !existing.injected_to_templates && updatedCount >= 3;
+  const now = wallNow().toISOString();
 
-  // Attempt persona injection BEFORE saving the formula so we know whether it succeeded.
-  // If no personaConfigPath is provided, skip injection but still mark as promoted.
+  // Attempt persona injection only when the formula has not yet been injected.
+  // This preserves the one-time persona write behavior while allowing later stat refreshes.
   let injectionSucceeded = false;
-  if (shouldPromote && personaConfigPath) {
+  if (shouldAttemptInjection && personaConfigPath) {
     const tentativeFormula: UniversalFormula = {
       ...existing,
       occurrence_count: updatedCount,
-      last_seen_at: wallNow().toISOString(),
+      last_seen_at: now,
       source_entry_ids: updatedSourceIds,
-      injected_to_templates: false, // will be set to true only on success
+      injected_to_templates: false,
     };
     injectionSucceeded = injectTemplateIntoPersona(personaConfigPath, tentativeFormula);
   }
 
-  // injected_to_templates = true when:
-  //   - promoted AND no personaConfigPath provided (no write required, promotion gate is reached)
-  //   - promoted AND personaConfigPath write succeeded
-  // injected_to_templates = false when promoted AND write failed (allows retry on next run)
-  const injectedToTemplates = shouldPromote
+  const injectedToTemplates = shouldAttemptInjection
     ? (personaConfigPath ? injectionSucceeded : true)
     : existing.injected_to_templates;
 
+  const shouldRefreshTriggerWords = !alreadyCounted && updatedCount >= 3;
   const updatedFormula: UniversalFormula = {
     ...existing,
     occurrence_count: updatedCount,
-    last_seen_at: wallNow().toISOString(),
+    last_seen_at: alreadyCounted ? existing.last_seen_at : now,
     source_entry_ids: updatedSourceIds,
     injected_to_templates: injectedToTemplates,
-    // Extract trigger words from source entries when promotion occurs
-    ...(shouldPromote ? (() => {
+    ...(shouldRefreshTriggerWords ? (() => {
       const allEntries = loadEntries(basePath);
       const sourceTitles = allEntries
         .filter(e => updatedSourceIds.includes(e.id))
@@ -349,10 +520,10 @@ export function checkFormulaPromotion(
   ];
   saveFormulas(basePath, updatedFormulas);
 
-  if (shouldPromote) {
+  if (isFirstPromotion) {
     return { promoted: true, formula: updatedFormula };
   }
-  return { promoted: false };
+  return { promoted: false, formula: updatedFormula };
 }
 
 /**
@@ -463,6 +634,8 @@ export interface QueryAllOptions {
   platform?: ViralPlatform;
   type?: string;
   keyword?: string;
+  source?: ViralEntry['source_type'];
+  status?: 'done' | 'failed' | 'hollow';
   limit?: number;
   sort?: 'recency' | 'likes';
 }
@@ -478,6 +651,16 @@ export function queryAll(basePath: string, opts: QueryAllOptions = {}): ViralEnt
   }
   if (opts.type) {
     entries = entries.filter(e => e.dissection?.content_type === opts.type);
+  }
+  if (opts.source) {
+    entries = entries.filter(e => e.source_type === opts.source);
+  }
+  if (opts.status) {
+    entries = entries.filter(entry => {
+      if (opts.status === 'hollow') return isHollowEntry(entry);
+      if (opts.status === 'failed') return entry.dissection_status === 'failed';
+      return entry.dissection_status === 'done' && !isHollowEntry(entry);
+    });
   }
   if (opts.keyword) {
     const kw = opts.keyword.toLowerCase();
@@ -520,10 +703,38 @@ export function getStats(basePath: string): KBStats {
 
   const by_platform: Record<string, number> = {};
   const by_tier: Record<string, number> = {};
+  const by_content_type: Record<string, number> = {};
+  const by_hook_type: Record<string, number> = {};
+
+  let failed_count = 0;
+  let hollow_count = 0;
+  let usable_count = 0;
 
   for (const e of entries) {
     by_platform[e.platform] = (by_platform[e.platform] ?? 0) + 1;
     by_tier[e.kb_tier] = (by_tier[e.kb_tier] ?? 0) + 1;
+
+    if (e.dissection_status === 'failed') {
+      failed_count += 1;
+    }
+
+    if (isHollowEntry(e)) {
+      hollow_count += 1;
+      continue;
+    }
+
+    if (e.dissection_status === 'done') {
+      usable_count += 1;
+    }
+
+    const contentType = e.dissection?.content_type?.trim();
+    const hookType = e.dissection?.hook_type?.trim();
+    if (contentType) {
+      by_content_type[contentType] = (by_content_type[contentType] ?? 0) + 1;
+    }
+    if (hookType) {
+      by_hook_type[hookType] = (by_hook_type[hookType] ?? 0) + 1;
+    }
   }
 
   return {
@@ -532,5 +743,10 @@ export function getStats(basePath: string): KBStats {
     by_tier,
     queue_length: queueItems.length,
     formula_count: formulas.length,
+    failed_count,
+    hollow_count,
+    usable_count,
+    by_content_type,
+    by_hook_type,
   };
 }

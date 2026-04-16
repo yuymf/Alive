@@ -69,7 +69,60 @@ describe('buildContentPrompt', () => {
     };
     const withExtra = buildContentPrompt(trend, 'V姐', 'xhs', '图文', '额外信息');
     const withoutExtra = buildContentPrompt(trend, 'V姐', 'xhs', '图文');
-    expect(withExtra).toBe(`${withoutExtra}\n额外信息`);
+    expect(withExtra).toBe(`${withoutExtra}\n\n额外信息`);
+  });
+
+  it('injects voice style and sample lines when options provided', () => {
+    const trend: FilteredTrend = {
+      platform: 'xhs', keyword: '#电竞', current_volume: 500,
+      avg_7d: 100, velocity_score: 5.0, rank: 1,
+      hook_angle: '从解说角度', identity_mode: 'esports',
+    };
+    const prompt = buildContentPrompt(trend, 'V姐', 'xhs', '图文', undefined, {
+      voiceStyle: '简练有力，偶尔反差式幽默',
+      sampleLines: ['BP阶段就已经赢了', '排位赛不说谎'],
+      identityMode: 'esports',
+    });
+    expect(prompt).toContain('简练有力，偶尔反差式幽默');
+    expect(prompt).toContain('BP阶段就已经赢了');
+    expect(prompt).toContain('专业控场');
+    expect(prompt).toContain('电竞解说');
+  });
+
+  it('includes viral thinking framework', () => {
+    const trend: FilteredTrend = {
+      platform: 'xhs', keyword: '#日常', current_volume: 200,
+      avg_7d: 100, velocity_score: 2.0, rank: 3,
+      hook_angle: '真实日常切入', identity_mode: 'daily',
+    };
+    const prompt = buildContentPrompt(trend, 'V姐', 'xhs', '图文');
+    expect(prompt).toContain('爆款思维框架');
+    expect(prompt).toContain('停留理由');
+    expect(prompt).toContain('情绪弧');
+    expect(prompt).toContain('互动设计');
+    expect(prompt).toContain('差异化');
+  });
+
+  it('includes prohibitions section', () => {
+    const trend: FilteredTrend = {
+      platform: 'douyin', keyword: '#日常', current_volume: 200,
+      avg_7d: 100, velocity_score: 2.0, rank: 3,
+      hook_angle: '真实日常切入', identity_mode: 'daily',
+    };
+    const prompt = buildContentPrompt(trend, 'V姐', 'douyin', '视频脚本');
+    expect(prompt).toContain('绝对禁止');
+    expect(prompt).toContain('照搬标志性语录原句');
+  });
+
+  it('falls back to trend.identity_mode when options.identityMode not provided', () => {
+    const trend: FilteredTrend = {
+      platform: 'xhs', keyword: '#赛车', current_volume: 300,
+      avg_7d: 100, velocity_score: 3.0, rank: 2,
+      hook_angle: '速度感', identity_mode: 'racer',
+    };
+    const prompt = buildContentPrompt(trend, 'V姐', 'xhs', '图文');
+    expect(prompt).toContain('赛车手');
+    expect(prompt).toContain('果敢利落');
   });
 });
 

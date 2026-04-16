@@ -42,11 +42,16 @@ export function buildNluPrompt(userMessage: string, activeItemId: string): strin
 - unknown: 无法判断
 
 格式（必须是合法 JSON，无 markdown）：
-{"action":"approve","item_id":"${activeItemId}"}
-{"action":"discard","item_id":"${activeItemId}"}
-{"action":"edit","item_id":"${activeItemId}","field":"title","instruction":"修改说明"}
+{"action":"approve","item_id":"${activeItemId}","reason_summary":"一句话说明为什么通过"}
+{"action":"discard","item_id":"${activeItemId}","reason_summary":"一句话说明为什么不行","persona_deviation_tags":["可选标签"],"risk_tags":["可选风险"],"improvement_directions":["改进方向"]}
+{"action":"edit","item_id":"${activeItemId}","field":"title","instruction":"修改说明","reason_summary":"为什么要改"}
 {"action":"list"}
-{"action":"unknown","raw":"原始消息"}`;
+{"action":"unknown","raw":"原始消息"}
+
+注意：
+- reason_summary 必须尽量提炼用户的审核理由，不超过30字
+- persona_deviation_tags / risk_tags / improvement_directions 是可选数组，只在有明确信息时填写
+- 如果用户没有明确说理由，reason_summary 填"运营确认"或"运营否决"`;
 }
 
 export function extractIntentFromNluResponse(raw: string, itemId: string): ParsedIntent {

@@ -285,9 +285,11 @@ function cmdHelp(): CommandResult {
 | \`/alive post [N]\` | 查看选题列表 / 第N个选题详情 |
 | \`/alive analyze <URL>\` | 爆款帖子拆解分析 |
 | \`/alive advice\` | 人设契合度建议 |
-| \`/alive kb status\` | 爆款知识库统计 |
+| \`/alive kb status\` | 爆款知识库统计（含 usable / hollow / failed） |
 | \`/alive kb search <关键词>\` | 知识库全文搜索 |
-| \`/alive kb list [--platform X] [--type Y]\` | 按平台/类型列出条目 |
+| \`/alive kb list [--platform X] [--type Y] [--status done|failed|hollow] [--source competitor|search|trending_feed]\` | 按条件列出条目 |
+| \`/alive kb audit\` | 查看空壳条目和质量摘要 |
+| \`/alive kb repair [--limit N]\` | 将 hollow 条目重新入队修复 |
 | \`/alive kb formulas [--platform X]\` | 列出通用爆款公式 |
 | \`/alive kb top [--platform X] [--limit N]\` | 按点赞排 Top N |
 

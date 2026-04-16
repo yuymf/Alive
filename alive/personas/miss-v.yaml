@@ -94,7 +94,7 @@ schedule:
     - 21
 
 content_sources:
-  platforms: [bilibili, weibo, dailyhot]
+  platforms: [bilibili, weibo, dailyhot, xhs, douyin]
   keywords: [电竞, 歌手, 赛车, 女性力量, 轻奢生活, AI虚拟偶像]
   dailyhot_platforms: [douyin, weibo, bilibili, toutiao, baidu]
 
@@ -104,7 +104,7 @@ ops:
   competitor_accounts:
     xhs: []
     douyin: []
-  trend_score_threshold: 1.0
+  trend_score_threshold: 0.6
   topic_count: 3
   topic_filter_prompt: |
     与以下任一赛道相关或可借势：电竞、音乐/歌手、赛车/运动、女性力量/大女主、轻奢生活
@@ -118,7 +118,7 @@ ops:
     douyin:
       enabled: true
       style: "视频脚本，前3秒必须有冲突感或反差，BGM卡点，字幕简洁，结尾引导互动"
-  strategy_enabled: false
+  strategy_enabled: true
   browse_interval: "0 */3 * * *"
   browse_sources:
     - platform: xhs

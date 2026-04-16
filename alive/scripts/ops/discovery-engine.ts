@@ -95,8 +95,8 @@ export const DEFAULT_CANDIDATES: CandidateAccountsStore = {
 
 const MAX_DISCOVERY_ITEMS = 30;
 const MAX_CANDIDATES = 20;
-/** Minimum engagement to be considered "high engagement" */
-const HIGH_ENGAGEMENT_THRESHOLD = 500;
+/** Minimum engagement to be considered "high engagement" — adaptive fallback */
+const HIGH_ENGAGEMENT_FLOOR = 50;
 /** Minimum appearances before suggesting as candidate */
 const MIN_APPEARANCES_FOR_SUGGESTION = 2;
 /** Auto-approve composite score threshold */
@@ -131,6 +131,8 @@ interface InspirationHighlight {
   takeaway?: string;
   /** Author/creator name (may be absent in older data) */
   author?: string;
+  /** Source platform (e.g. 'xhs', 'bilibili') — may be absent in older data */
+  source?: string;
 }
 
 interface InspirationSaved {
@@ -138,6 +140,8 @@ interface InspirationSaved {
   source_title: string;
   visual_description: string;
   style_tags: string[];
+  /** Author/creator name (may be absent in older data) */
+  author?: string;
 }
 
 interface InspirationState {
@@ -183,16 +187,23 @@ export function processInspirationForDiscovery(): number {
   const timestamp = now().toISOString();
   let addedCount = 0;
 
+  // Adaptive engagement threshold: P66 (66th percentile) of all likes, floor at HIGH_ENGAGEMENT_FLOOR.
+  // This ensures only the top ~1/3 of content enters the discovery pool.
+  const allLikes = inspoState.feed_highlights.map(h => h.likes).sort((a, b) => a - b);
+  const p66Index = Math.min(Math.floor(allLikes.length * 0.66), allLikes.length - 1);
+  const p66Likes = allLikes.length > 0 ? allLikes[p66Index] : 0;
+  const adaptiveThreshold = Math.max(p66Likes, HIGH_ENGAGEMENT_FLOOR);
+
   for (const highlight of inspoState.feed_highlights) {
     if (existingTitles.has(highlight.title)) continue;
-    if (highlight.likes < HIGH_ENGAGEMENT_THRESHOLD) continue;
+    if (highlight.likes < adaptiveThreshold) continue;
 
     const score = scoreContent(highlight);
 
     pool.items.push({
       title: highlight.title,
       author: highlight.author ?? '',
-      source: 'content-browse',
+      source: highlight.source ?? 'content-browse',
       engagement: highlight.likes,
       topic: highlight.topic,
       score,
@@ -257,10 +268,22 @@ export function processInspirationForAccountDiscovery(identityKeys?: string[]): 
 
   // From saved inspirations (extract platform from source_id prefix)
   for (const saved of inspoState.saved_inspirations) {
+    const author = saved.author;
+    if (!author || author === '' || author === 'unknown') continue;
     const platform = saved.source_id.split('_')[0] || 'unknown';
-    // Use source_title as a proxy for author (not perfect but available data)
-    // Skip — saved_inspirations don't reliably have author info
-    void platform;
+    const key = `${author}:${platform}`;
+    const existing = authorData.get(key) ?? {
+      count: 0, totalEngagement: 0, maxEngagement: 0, topics: new Set(), platform,
+    };
+    existing.count++;
+    // saved_inspirations don't have likes data, use a nominal engagement value
+    existing.totalEngagement += 100;
+    existing.maxEngagement = Math.max(existing.maxEngagement, 100);
+    // Use style_tags as topic proxies
+    for (const tag of saved.style_tags) {
+      existing.topics.add(tag);
+    }
+    authorData.set(key, existing);
   }
 
   // Auto-approve candidates before updating engagement stats this tick.

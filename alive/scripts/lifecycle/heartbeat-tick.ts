@@ -801,6 +801,18 @@ export async function regularTick(
             } catch (abErr) {
               console.warn(`[auto-breakdown] Post-browse auto-breakdown failed: ${(abErr as Error).message}`);
             }
+
+            // Search-keyword trend engine: pre-compute trend signals from keyword searches
+            // Results are cached and read by analyzeTrends() on next invocation
+            try {
+              const { fetchSearchKeywordTrends } = await import('../ops/trend-analyzer');
+              const skItems = await fetchSearchKeywordTrends();
+              if (skItems.length > 0) {
+                console.log(`[search-keyword] Pre-computed ${skItems.length} trend items from keyword searches`);
+              }
+            } catch (skErr) {
+              console.warn(`[search-keyword] Post-browse search-keyword pre-computation failed: ${(skErr as Error).message}`);
+            }
           }
         } catch (err) {
           console.error(`[router] Sub-skill ${route.skillName} failed: ${(err as Error).message}`);

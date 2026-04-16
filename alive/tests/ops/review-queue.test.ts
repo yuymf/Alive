@@ -123,11 +123,11 @@ describe('cleanupOldItems', () => {
 describe('getPendingItems', () => {
   it('returns only pending items', async () => {
     const item1 = await addItem({
-      topic: 'a', trend_hook: 'h', identity_mode: 'daily',
+      topic: 'a', trend_hook: 'h1 (test, 1.0x)', identity_mode: 'daily',
       content: { xhs: { title: '', body: '', tags: [], cover_images: [] }, douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] } },
     });
     await addItem({
-      topic: 'b', trend_hook: 'h', identity_mode: 'daily',
+      topic: 'b', trend_hook: 'h2 (test, 1.0x)', identity_mode: 'daily',
       content: { xhs: { title: '', body: '', tags: [], cover_images: [] }, douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] } },
     });
     await updateItemStatus(item1.id, 'approved');
@@ -374,8 +374,8 @@ describe('expireStalePendingItems', () => {
 describe('getActivePendingItems', () => {
   it('returns only pending items within the expiry window', async () => {
     // Add two pending items: one fresh, one old
-    const fresh = await addItem({ topic: 'fresh', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
-    const stale = await addItem({ topic: 'stale', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    const fresh = await addItem({ topic: 'fresh', trend_hook: 'fresh-hook (test, 1.0x)', identity_mode: 'daily', content: seedContent });
+    const stale = await addItem({ topic: 'stale', trend_hook: 'stale-hook (test, 1.0x)', identity_mode: 'daily', content: seedContent });
 
     // Backdate the stale item
     const q = await loadQueue();
@@ -393,11 +393,11 @@ describe('getActivePendingItems', () => {
 describe('cleanupOldItems with expiry integration', () => {
   it('auto-expires stale pending and removes old expired items in one pass', async () => {
     // Item 1: stale pending (created 4 days ago) → should be expired
-    const stalePending = await addItem({ topic: 'stale-pending', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    const stalePending = await addItem({ topic: 'stale-pending', trend_hook: 'stale-kw (test, 1.0x)', identity_mode: 'daily', content: seedContent });
     // Item 2: old expired (updated 10 days ago) → should be removed
-    const oldExpired = await addItem({ topic: 'old-expired', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    const oldExpired = await addItem({ topic: 'old-expired', trend_hook: 'old-kw (test, 1.0x)', identity_mode: 'daily', content: seedContent });
     // Item 3: fresh pending → should stay
-    const fresh = await addItem({ topic: 'fresh', trend_hook: 'h', identity_mode: 'daily', content: seedContent });
+    const fresh = await addItem({ topic: 'fresh', trend_hook: 'fresh-kw (test, 1.0x)', identity_mode: 'daily', content: seedContent });
 
     const q = await loadQueue();
     const items = q.items.map(item => {

@@ -80,7 +80,9 @@ describe('processInspirationForDiscovery', () => {
     });
 
     const added = processInspirationForDiscovery();
-    expect(added).toBe(2); // only 5000 and 20000 pass threshold
+    // Adaptive threshold: P66 of [100, 5000, 20000] = 5000, floor = 50 → threshold = 5000
+    // 5000 and 20000 pass the threshold
+    expect(added).toBe(2);
 
     const pool = loadDiscoveryPool();
     expect(pool.items).toHaveLength(2);

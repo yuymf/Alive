@@ -272,3 +272,49 @@ describe('computeStrategy', () => {
     expect(strategy!.performance_summary.total_posts).toBe(2);
   });
 });
+
+describe('buildStrategyPrompt', () => {
+  it('includes audience perception in prompt when provided', async () => {
+    const { buildStrategyPrompt } = await import('../../scripts/ops/strategy-engine');
+    const prompt = buildStrategyPrompt({
+      tierDistribution: { viral: 0, above_avg: 0, normal: 1, below_avg: 0 },
+      currentMix: { esports: 100 },
+      targetMix: { esports: 40 },
+      bestTemplate: 'A',
+      worstTemplate: 'B',
+      topPatterns: [],
+      risingPatterns: [],
+      decliningPatterns: [],
+      personaAlignmentAvg: 7,
+      driftAreas: [],
+      competitorSummary: '',
+      personaSummary: 'V姐',
+      weekOverWeek: 10,
+      audiencePerceptionSummary: '用户把她看成冷静专业的大姐姐',
+    });
+    expect(prompt).toContain('冷静专业');
+    expect(prompt).toContain('受众感知画像');
+  });
+
+  it('includes review learning in prompt when provided', async () => {
+    const { buildStrategyPrompt } = await import('../../scripts/ops/strategy-engine');
+    const prompt = buildStrategyPrompt({
+      tierDistribution: { viral: 0, above_avg: 0, normal: 1, below_avg: 0 },
+      currentMix: { esports: 100 },
+      targetMix: { esports: 40 },
+      bestTemplate: 'A',
+      worstTemplate: 'B',
+      topPatterns: [],
+      risingPatterns: [],
+      decliningPatterns: [],
+      personaAlignmentAvg: 7,
+      driftAreas: [],
+      competitorSummary: '',
+      personaSummary: 'V姐',
+      weekOverWeek: 10,
+      reviewLearningSummary: '通过理由：人设一致\n淘汰原因：语气偏品牌稿',
+    });
+    expect(prompt).toContain('人设一致');
+    expect(prompt).toContain('运营审核共识');
+  });
+});

@@ -1065,6 +1065,13 @@ body::after {
               <span class="btn-desc">Post-analysis 记录 / Tier 分布 / 网感更新</span>
             </div>
           </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-perception', this)" id="btn-ops-perception">
+            <div class="btn-icon">👁️</div>
+            <div class="btn-text">
+              <span class="btn-label">受众感知</span>
+              <span class="btn-desc">观众画像特质 / 渴望信号 / 抵触信号</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -1982,6 +1989,8 @@ function renderOpsData(command, data) {
     html = renderOpsPerformance(data);
   } else if (command === 'ops-analysis-log') {
     html = renderOpsAnalysisLog(data);
+  } else if (command === 'ops-perception') {
+    html = renderOpsPerception(data);
   } else {
     // Generic fallback
     html = '<div class="ops-data-card">'
@@ -2157,6 +2166,30 @@ function renderOpsQueueFull(data) {
         var c = item.content;
         if (c.title) h += '<div style="font-size:11px;color:var(--text-secondary);">标题: ' + escHtml(c.title) + '</div>';
         if (c.body) h += '<div style="font-size:11px;color:var(--text-dim);max-height:60px;overflow:hidden;">' + escHtml((c.body || '').slice(0, 200)) + '</div>';
+      }
+      // Review feedback summary
+      if (item.latest_review_summary) {
+        h += '<div style="margin-top:4px;padding:4px 6px;background:var(--green-pale);border-radius:3px;font-size:10px;color:var(--brown-dark);">';
+        h += '📋 ' + escHtml(item.latest_review_summary);
+        h += '</div>';
+      }
+      // Review feedback tags
+      if (item.review_feedback && item.review_feedback.length > 0) {
+        var lastFb = item.review_feedback[item.review_feedback.length - 1];
+        var allTags = [];
+        if (lastFb.persona_deviation_tags) lastFb.persona_deviation_tags.forEach(function(t) { allTags.push('🎭 ' + t); });
+        if (lastFb.risk_tags) lastFb.risk_tags.forEach(function(t) { allTags.push('⚠️ ' + t); });
+        if (lastFb.platform_fit_tags) lastFb.platform_fit_tags.forEach(function(t) { allTags.push('✅ ' + t); });
+        if (allTags.length > 0) {
+          h += '<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px;">';
+          allTags.forEach(function(tag) {
+            h += '<span class="ops-badge" style="font-size:9px;">' + escHtml(tag) + '</span>';
+          });
+          h += '</div>';
+        }
+        if (lastFb.improvement_directions && lastFb.improvement_directions.length > 0) {
+          h += '<div style="margin-top:2px;font-size:9px;color:var(--brown-mid);">🔄 ' + lastFb.improvement_directions.map(escHtml).join('；') + '</div>';
+        }
       }
       // Action buttons for pending items
       if (item.status === 'pending') {
@@ -2618,6 +2651,49 @@ function renderOpsAnalysisLog(data) {
   return h;
 }
 
+function renderOpsPerception(data) {
+  var entries = data.entries || [];
+  var context = data.context || '';
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">👁️ 受众感知</div>';
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(entries.length, '感知条目');
+  var platforms = {};
+  entries.forEach(function(e) { platforms[e.platform] = (platforms[e.platform] || 0) + 1; });
+  Object.keys(platforms).forEach(function(p) {
+    h += opsStatItem(platforms[p], p);
+  });
+  h += '</div>';
+
+  if (context) {
+    h += '<div style="margin:8px 0;padding:8px;background:var(--bg-inset);border-radius:4px;font-size:11px;color:var(--brown-dark);white-space:pre-wrap;">';
+    h += escHtml(context);
+    h += '</div>';
+  }
+
+  if (entries.length > 0) {
+    h += '<table class="ops-queue-table"><thead><tr><th>时间</th><th>平台</th><th>身份</th><th>感知特质</th><th>渴望信号</th><th>抵触信号</th></tr></thead><tbody>';
+    entries.slice(0, 20).forEach(function(e) {
+      var traits = (e.perceived_traits || []).slice(0, 3).join('、');
+      var desires = (e.desire_signals || []).slice(0, 2).join('、');
+      var aversions = (e.aversion_signals || []).slice(0, 2).join('、');
+      var ts = e.collected_at ? escHtml(e.collected_at.slice(0, 16)) : '—';
+      h += '<tr>'
+        + '<td>' + ts + '</td>'
+        + '<td>' + escHtml(e.platform || '') + '</td>'
+        + '<td><span class="ops-badge">' + escHtml(e.identity_mode || '') + '</span></td>'
+        + '<td>' + escHtml(traits || '—') + '</td>'
+        + '<td>' + escHtml(desires || '—') + '</td>'
+        + '<td>' + escHtml(aversions || '—') + '</td>'
+        + '</tr>';
+    });
+    h += '</tbody></table>';
+  } else {
+    h += '<div class="ops-data-card-body">暂无受众感知数据 — 需要先有帖子发布后分析</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
 function opsStatItem(val, label) {
   return '<div class="ops-stat-item"><span class="ops-stat-val">' + escHtml(String(val)) + '</span><span class="ops-stat-label">' + escHtml(label) + '</span></div>';
 }
@@ -2687,12 +2763,29 @@ async function loadOpsQueue() {
 /** Queue action: approve / discard / publish */
 async function opsQueueAction(action, itemId) {
   var command = 'ops-queue-' + action;
+  var payload = { id: itemId };
+
+  // Collect optional review reason for approve/discard
+  if (action === 'approve' || action === 'discard') {
+    var defaultReason = action === 'approve' ? '运营确认' : '运营否决';
+    var reason = prompt('审核理由（可选，直接确定跳过）：', defaultReason);
+    if (reason === null) return; // cancelled
+    payload.reason_summary = reason || defaultReason;
+    // Optional: collect tags via a second prompt (semicolon-separated)
+    if (action === 'discard') {
+      var tagsInput = prompt('人设偏差标签（分号分隔，可选）：', '');
+      if (tagsInput) payload.persona_deviation_tags = tagsInput.split(/[;；]/).map(function(s){ return s.trim(); }).filter(Boolean);
+      var riskInput = prompt('风险标签（分号分隔，可选）：', '');
+      if (riskInput) payload.risk_tags = riskInput.split(/[;；]/).map(function(s){ return s.trim(); }).filter(Boolean);
+    }
+  }
+
   var logId = addLogEntry(command + ':' + itemId, 'running');
   try {
     var res = await fetch(apiUrl(command), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: itemId }),
+      body: JSON.stringify(payload),
     });
     var data = await res.json();
     updateLogEntry(logId, data.success ? 'success' : 'error', data, 0);

@@ -631,7 +631,9 @@ export function createContentBrowseConfig(options?: {
         const douyinLogin = checkDouyinLogin();
         if (douyinLogin.success && douyinLogin.logged_in) {
           const douyinResult = searchDouyinVideos(keyword, maxSearchResults);
-          if (douyinResult.success && douyinResult.videos) {
+          if (douyinResult.rate_limited) {
+            console.warn(`[instagram-adapter] Douyin 风控限流: ${douyinResult.reason ?? 'cooldown'}，跳过抖音搜索`);
+          } else if (douyinResult.success && douyinResult.videos) {
             for (const video of douyinResult.videos.slice(0, maxSearchResults)) {
               items.push({
                 id: `douyin_${video.aweme_id}`,

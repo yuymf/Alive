@@ -26,7 +26,7 @@ console.log = (...args: unknown[]) => console.error(...args);
 import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { loadSkillEnvVars } from '../utils/file-utils';
-import { analyzeTrends, buildPersonaIdentities, FilteredTrend } from '../ops/trend-analyzer';
+import { analyzeTrends, analyzeDirectionalTrends, buildPersonaIdentities, FilteredTrend } from '../ops/trend-analyzer';
 import { trackCompetitors } from '../ops/competitor-tracker';
 import { generateTopics } from '../ops/topic-generator';
 import { formatBriefCard, formatContentPackage, BriefEnrichment } from './brief-generator';
@@ -63,7 +63,6 @@ async function cmdBrief(): Promise<string> {
   const llm = createRealLLMClient('ops-brief-cmd');
   const identities = buildPersonaIdentities(persona);
   const identityKeys = getIdentityKeys(persona);
-  const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
   await cleanupOldItems();
 
@@ -81,7 +80,8 @@ async function cmdBrief(): Promise<string> {
     // If even allSettled somehow throws, continue with empty data
   }
 
-  await generateTopics(trends, ops, persona.meta.name, imageStyle, llm);
+  const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
+  await generateTopics(trends, ops, persona.meta.name, llm, { style: imageStyle, sample_lines: persona.voice?.sample_lines });
 
   const queue = await loadQueue();
   const pending = queue.items.filter(i => i.status === 'pending');
@@ -129,11 +129,26 @@ async function cmdTrends(): Promise<string> {
 
   if (trends.length === 0) return '📊 暂无通过过滤的热点话题';
 
+  // Group by source_bucket for clear display
+  const srcIcon: Record<string, string> = { '热榜': '📰', '搜索': '🔍', '推荐流': '🏷️' };
+
   const lines = ['📊 当前热点趋势', ''];
   for (const t of trends.slice(0, 10)) {
     const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
-    lines.push(`${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x`);
+    const bucket = t.source_bucket ?? '热榜';
+    const srcEmoji = srcIcon[bucket] ?? '📰';
+    lines.push(`${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  ${srcEmoji}${bucket}`);
   }
+
+  // Source distribution summary
+  const bucketCounts = new Map<string, number>();
+  for (const t of trends) {
+    const b = t.source_bucket ?? '热榜';
+    bucketCounts.set(b, (bucketCounts.get(b) ?? 0) + 1);
+  }
+  const distParts = [...bucketCounts.entries()].map(([b, c]) => `${srcIcon[b] ?? ''}${b}×${c}`);
+  lines.push('', `来源分布：${distParts.join(' · ')}`);
+
   return lines.join('\n');
 }
 
@@ -149,31 +164,44 @@ async function cmdIdea(direction?: string): Promise<string> {
   const identities = buildPersonaIdentities(persona);
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
-  // Get current trends
+  // Get current trends — directional search when direction specified
   let trends: FilteredTrend[] = [];
   try {
-    trends = await analyzeTrends(ops, identities, llm);
+    if (direction) {
+      // Directional pipeline: cache → discovery-pool → platform search → LLM
+      trends = await analyzeDirectionalTrends(ops, identities, llm, direction);
+    } else {
+      trends = await analyzeTrends(ops, identities, llm);
+    }
   } catch {
     // proceed without trends
   }
+
+  // Snapshot existing pending IDs before generation to diff later
+  const queueBefore = await loadQueue();
+  const existingIds = new Set(queueBefore.items.filter(i => i.status === 'pending').map(i => i.id));
 
   // Optionally override filter prompt with user-specified direction
   const effectiveOps = direction
     ? { ...ops, topic_filter_prompt: `${ops.topic_filter_prompt}\n用户指定方向：${direction}` }
     : ops;
 
-  await generateTopics(trends, effectiveOps, persona.meta.name, imageStyle, llm);
+  await generateTopics(trends, effectiveOps, persona.meta.name, llm, persona.voice);
 
-  const queue = await loadQueue();
-  const pending = queue.items.filter(i => i.status === 'pending');
+  const queueAfter = await loadQueue();
+  const allPending = queueAfter.items.filter(i => i.status === 'pending');
+  const newItems = allPending.filter(i => !existingIds.has(i.id));
 
-  if (pending.length === 0) return '💡 暂未生成新选题，请稍后重试';
+  if (newItems.length === 0) return '💡 暂未生成新选题（可能与已有选题重复），试试指定新方向：/idea 美食';
 
-  const lines = [`💡 已生成 ${pending.length} 个选题`, ''];
-  pending.forEach((item, idx) => {
+  const lines = [`💡 本次新增 ${newItems.length} 个选题（队列共 ${allPending.length} 个待审核）`, ''];
+  newItems.forEach((item, idx) => {
     lines.push(`${idx + 1}️⃣  ${item.topic}`);
     lines.push(`   ${item.trend_hook}`);
   });
+  if (allPending.length > newItems.length) {
+    lines.push('', `📋 队列中还有 ${allPending.length - newItems.length} 个之前的选题`);
+  }
   lines.push('', '回复 /post N 查看详情');
   return lines.join('\n');
 }
@@ -300,7 +328,23 @@ async function cmdCandidates(topNStr?: string): Promise<string> {
   const ranked = rankCandidates(store, identityKeys, 'pending');
 
   if (ranked.length === 0) {
-    return '🔍 暂无待确认的候选对标账号\n\n候选账号通过 content-browse 自动发现，稍后再来查看。';
+    // Diagnostic: help the operator understand why no candidates exist
+    const diagLines = ['🔍 暂无待确认的候选对标账号', '', '可能原因：'];
+    const { loadDiscoveryPool } = await import('./discovery-engine');
+    const pool = loadDiscoveryPool();
+    if (pool.items.length === 0) {
+      diagLines.push('1. discovery-pool 为空 — 尚未有高互动内容被发现');
+      diagLines.push('   → 等待 content-browse 自动执行，或手动运行 /brief 触发内容浏览');
+    } else {
+      const noAuthorCount = pool.items.filter(i => !i.author || i.author === '').length;
+      diagLines.push(`1. discovery-pool 有 ${pool.items.length} 条内容，但 ${noAuthorCount} 条缺少作者信息`);
+      if (noAuthorCount > 0) {
+        diagLines.push('   → LLM 摘要可能未提取 author 字段，下次 content-browse 时会自动补充');
+      }
+    }
+    diagLines.push('2. 候选发现需要同一作者至少出现 2 次才会被推荐');
+    diagLines.push('   → 多运行几次 /brief 或等待 heartbeat 自动浏览，积累更多数据');
+    return diagLines.join('\n');
   }
 
   const display = showAll ? ranked : ranked.slice(0, topN);

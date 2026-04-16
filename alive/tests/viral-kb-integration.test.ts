@@ -76,13 +76,14 @@ function makeQueueItem(overrides: Partial<DissectQueueItem> = {}): DissectQueueI
 }
 
 function makeUniversalEntry(overrides: Partial<ViralEntry> = {}): ViralEntry {
+  const nonce = Math.random().toString(36).slice(2);
   return {
-    id: `entry-${Math.random().toString(36).slice(2)}`,
+    id: `entry-${nonce}`,
     platform: 'douyin',
-    source_id: 'src1',
+    source_id: `src-${nonce}`,
     source_type: 'trending_feed',
     persona_id: 'test',
-    title: '爆款测试',
+    title: `爆款测试-${nonce}`,
     description: '描述',
     likes: 10000,
     comments: 300,
@@ -172,8 +173,8 @@ describe('Scenario 2: dissectBatch → entries.json', () => {
     const mockLlm = createMockLLMClient([dissectionResponse, dissectionResponse]);
 
     const items = [
-      makeQueueItem({ id: 'q1', source_id: 's1' }),
-      makeQueueItem({ id: 'q2', source_id: 's2' }),
+      makeQueueItem({ id: 'q1', source_id: 's1', title: '测试标题-1' }),
+      makeQueueItem({ id: 'q2', source_id: 's2', title: '测试标题-2' }),
     ];
 
     const entries = await dissectBatch(items, mockLlm, 'test-persona');

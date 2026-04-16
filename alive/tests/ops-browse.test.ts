@@ -15,8 +15,15 @@ import type { PersonaConfig, HeartbeatLog } from '../scripts/utils/types';
 // ─── Module mocks (hoisted) ────────────────────────────────────
 
 const mockLoadPersona = vi.fn();
+const mockGetContentSourcesConfig = vi.fn(() => ({
+  platforms: ['xhs', 'bilibili', 'dailyhot'],
+  keywords: [],
+  dailyhot_platforms: [],
+  reddit_subreddits: [],
+}));
 vi.mock('../scripts/persona/persona-loader', () => ({
   loadPersona: (...args: unknown[]) => mockLoadPersona(...args),
+  getContentSourcesConfig: (...args: unknown[]) => mockGetContentSourcesConfig(...args),
 }));
 
 const mockCreateRealLLMClient = vi.fn(() => ({
@@ -40,7 +47,22 @@ vi.mock('../scripts/router/skill-router', () => ({
 
 vi.mock('../scripts/utils/time-utils', () => ({
   wallNow: vi.fn(() => new Date('2026-04-07T14:00:00+08:00')),
+  now: vi.fn(() => new Date('2026-04-07T14:00:00+08:00')),
   getLocalDate: vi.fn(() => '2026-04-07'),
+}));
+
+const mockRunKeywordSearch = vi.fn(async () => ({
+  searched: 0,
+  totalDiscovered: 0,
+  keywords: [],
+}));
+vi.mock('../scripts/ops/keyword-tracker', () => ({
+  runKeywordSearch: (...args: unknown[]) => mockRunKeywordSearch(...args),
+}));
+
+const mockFetchSearchKeywordTrends = vi.fn(async () => []);
+vi.mock('../scripts/ops/trend-analyzer', () => ({
+  fetchSearchKeywordTrends: (...args: unknown[]) => mockFetchSearchKeywordTrends(...args),
 }));
 
 // ─── Sandbox setup ──────────────────────────────────────────────
@@ -282,6 +304,26 @@ describe('ops-browse execution', () => {
     const log = readJSON<HeartbeatLog>(PATHS.heartbeatLog, { logs: [], retention_days: 7 });
     expect(log.logs).toHaveLength(1);
     expect(log.logs[0].tick_summary).toBe('No browse results');
+  });
+
+  it('runs keyword search and pre-computes search-keyword trends after browse', async () => {
+    const persona = makeOpsPersona();
+    mockLoadPersona.mockResolvedValue(persona);
+    mockResolveRouteBySkillName.mockReturnValue(fakeRoute);
+    mockExecuteSubSkill.mockResolvedValue({ narrative: '发现新趋势' });
+    mockRunKeywordSearch.mockResolvedValue({
+      searched: 1,
+      totalDiscovered: 2,
+      keywords: ['电竞'],
+    });
+    mockFetchSearchKeywordTrends.mockResolvedValue([
+      { keyword: '电竞', platform: 'xhs' },
+    ]);
+
+    await main();
+
+    expect(mockRunKeywordSearch).toHaveBeenCalledTimes(1);
+    expect(mockFetchSearchKeywordTrends).toHaveBeenCalledTimes(1);
   });
 });
 

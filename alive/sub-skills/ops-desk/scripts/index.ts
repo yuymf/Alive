@@ -51,7 +51,7 @@ async function actionGenerateTopics(ctx: SubSkillContext): Promise<SubSkillResul
   const trends = trendsResult.status === 'fulfilled' ? trendsResult.value : [];
 
   await cleanupOldItems();
-  await generateTopics(trends, ops, persona.meta.name, imageStyle, ctx.llm);
+  await generateTopics(trends, ops, persona.meta.name, ctx.llm, persona.voice);
 
   const queue = await loadQueue();
   const pending = queue.items.filter(i => i.status === 'pending');

@@ -249,9 +249,6 @@ function createCaptureLLM(realLLM?: LLMClient): LLMClient & { captured: Captured
           return {} as T;
         }
       }
-      captured.push({ label: 'callJSON', prompt, response: null });
-      if (prompt.includes('JSON 数组') || prompt.includes('topics')) return [] as unknown as T;
-      return {} as T;
     },
   };
 }

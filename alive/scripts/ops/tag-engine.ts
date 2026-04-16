@@ -145,7 +145,12 @@ function searchDouyinHighEngagement(
 ): Array<{ tags: string[] }> {
   try {
     const result = searchDouyinVideos(keyword, count);
-    if (!result.success || !result.videos) return [];
+    if (!result.success || !result.videos) {
+      if (result.rate_limited) {
+        console.warn(`[tag-engine] Douyin 风控限流 for "${keyword}": ${result.reason ?? 'cooldown'}`);
+      }
+      return [];
+    }
     return result.videos
       .filter((v: { digg_count: number }) => v.digg_count >= DOUYIN_HIT_THRESHOLD)
       .map((v: { desc: string }) => ({ tags: extractHashtags(v.desc) }));

@@ -13,6 +13,7 @@ import {
   aggregateCommentInsights,
 } from '../utils/types';
 import { buildCompetitorSummary } from './competitor-tracker';
+import { buildAudiencePerceptionContext } from './audience-perception';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,10 @@ export interface StrategyPromptInput {
     constructiveFeedback: string[];
     avgPositiveRatio: number;
   };
+  /** Audience perception summary from audience-perception store */
+  audiencePerceptionSummary?: string;
+  /** Review learning summary from recent queue item review feedback */
+  reviewLearningSummary?: string;
 }
 
 export function buildStrategyPrompt(input: StrategyPromptInput): string {
@@ -131,6 +136,16 @@ export function buildStrategyPrompt(input: StrategyPromptInput): string {
 - 建设性反馈: ${commentInsights.constructiveFeedback.slice(0, 5).join('；') || '无'}`
     : '';
 
+  // Audience perception section
+  const perceptionSection = input.audiencePerceptionSummary
+    ? `\n【受众感知画像】\n${input.audiencePerceptionSummary}`
+    : '';
+
+  // Review learning section
+  const reviewSection = input.reviewLearningSummary
+    ? `\n【运营审核共识】\n${input.reviewLearningSummary}`
+    : '';
+
   return `你是虚拟偶像的内容策略顾问。请根据上周表现数据，给出下周内容策略建议。
 
 【人设】${personaSummary}
@@ -157,6 +172,8 @@ ${patternStr}
 【竞品动态】
 ${competitorSummary || '无竞品数据'}
 ${commentSection}
+${reviewSection}
+${perceptionSection}
 
 请返回 JSON:
 \`\`\`json
@@ -412,6 +429,37 @@ export async function computeStrategy(
   const insights = aggregateCommentInsights(recentPerfEntries, 15, 8);
   if (insights) {
     input.commentInsights = insights;
+  }
+
+  // Inject audience perception summary
+  try {
+    const perceptionCtx = buildAudiencePerceptionContext({ maxEntries: 5, maxChars: 500 });
+    if (perceptionCtx) {
+      input.audiencePerceptionSummary = perceptionCtx;
+    }
+  } catch {
+    // audience perception not available, skip
+  }
+
+  // Inject review learning summary
+  try {
+    const { getRecentReviewLearning } = await import('./review-queue');
+    const learning = await getRecentReviewLearning(10);
+    const parts: string[] = [];
+    if (learning.approveReasons.length > 0) {
+      parts.push(`通过理由：${[...new Set(learning.approveReasons)].slice(-3).join('；')}`);
+    }
+    if (learning.discardReasons.length > 0) {
+      parts.push(`淘汰原因：${[...new Set(learning.discardReasons)].slice(-3).join('；')}`);
+    }
+    if (learning.improvementDirections.length > 0) {
+      parts.push(`改进方向：${[...new Set(learning.improvementDirections)].slice(-3).join('；')}`);
+    }
+    if (parts.length > 0) {
+      input.reviewLearningSummary = parts.join('\n');
+    }
+  } catch {
+    // review learning not available, skip
   }
 
   const prompt = buildStrategyPrompt(input);

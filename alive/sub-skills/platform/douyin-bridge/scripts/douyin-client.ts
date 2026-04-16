@@ -2,6 +2,11 @@
  * douyin-client.ts
  * TypeScript 调用层，通过 uv run 执行 douyin-skills CLI。
  * 镜像 xhs-bridge/scripts/xhs-client.ts 的设计模式。
+ *
+ * 风控防护：
+ * - 全局冷却：检测到风控后进入冷却期，冷却期内所有请求直接跳过
+ * - 指数退避：连续失败时递增等待间隔（封顶 5 分钟）
+ * - 风控信号识别：CLI 退出码 3 = 风控限流（captcha/403/429）
  */
 
 import { spawnSync } from 'child_process';
@@ -18,6 +23,71 @@ interface LoginCache {
   expiresAt: number;
 }
 let _loginCache: LoginCache | null = null;
+
+// ─── 全局风控冷却状态 ────────────────────────────────────────────────────────
+
+interface RateLimitState {
+  /** 冷却期结束时间（Date.now() 毫秒） */
+  cooldownUntil: number;
+  /** 连续风控触发次数（用于指数递增冷却时长） */
+  consecutiveHits: number;
+  /** 最近一次触发原因 */
+  lastReason: string;
+}
+
+const _rateLimitState: RateLimitState = {
+  cooldownUntil: 0,
+  consecutiveHits: 0,
+  lastReason: '',
+};
+
+/** 基础冷却时长（秒），实际 = base × 2^consecutiveHits，封顶 30 分钟 */
+const BASE_COOLDOWN_S = 60;
+const MAX_COOLDOWN_S = 1800;
+/** 连续多少次风控后进入长冷却（10分钟+） */
+const LONG_COOLDOWN_THRESHOLD = 3;
+
+function isInCooldown(): boolean {
+  return Date.now() < _rateLimitState.cooldownUntil;
+}
+
+function enterCooldown(reason: string, retryAfterS: number = 0): void {
+  _rateLimitState.consecutiveHits++;
+  _rateLimitState.lastReason = reason;
+
+  let cooldownS: number;
+  if (retryAfterS > 0) {
+    // 服务端指定了等待时长
+    cooldownS = retryAfterS;
+  } else {
+    // 指数递增：base × 2^hits，封顶 MAX_COOLDOWN_S
+    cooldownS = Math.min(
+      MAX_COOLDOWN_S,
+      BASE_COOLDOWN_S * Math.pow(2, _rateLimitState.consecutiveHits - 1),
+    );
+  }
+
+  // 加入 ±20% 随机噪声
+  const noise = cooldownS * 0.2 * (Math.random() * 2 - 1);
+  const actualS = Math.max(30, cooldownS + noise);
+
+  _rateLimitState.cooldownUntil = Date.now() + actualS * 1000;
+  console.warn(
+    `[douyin-client] 风控冷却: ${reason}, 等待 ${Math.round(actualS)}s ` +
+    `(连续 ${_rateLimitState.consecutiveHits} 次)`,
+  );
+}
+
+function resetCooldown(): void {
+  if (_rateLimitState.consecutiveHits > 0) {
+    console.log(
+      `[douyin-client] 风控冷却重置 (之前连续 ${_rateLimitState.consecutiveHits} 次)`,
+    );
+  }
+  _rateLimitState.consecutiveHits = 0;
+  _rateLimitState.lastReason = '';
+  // 注意：不重置 cooldownUntil，让当前冷却期自然结束
+}
 
 // ─── 节流工具 ─────────────────────────────────────────────────────────────────
 
@@ -41,6 +111,12 @@ export interface DouyinResult {
   success: boolean;
   videos?: DouyinVideo[];
   error?: string;
+  /** 是否因风控限流 */
+  rate_limited?: boolean;
+  /** 建议等待秒数 */
+  retry_after?: number;
+  /** 风控原因 */
+  reason?: string;
 }
 
 function buildChromeEnv(): NodeJS.ProcessEnv {
@@ -57,6 +133,18 @@ function buildChromeEnv(): NodeJS.ProcessEnv {
 }
 
 function runDouyinCli(args: string[], timeoutMs = 90_000): DouyinResult {
+  // 冷却期检查：直接返回，不发起请求
+  if (isInCooldown()) {
+    const remainS = Math.round((_rateLimitState.cooldownUntil - Date.now()) / 1000);
+    return {
+      success: false,
+      rate_limited: true,
+      error: `风控冷却中，剩余 ${remainS}s (原因: ${_rateLimitState.lastReason})`,
+      retry_after: remainS,
+      reason: _rateLimitState.lastReason,
+    };
+  }
+
   const result = spawnSync(
     'uv',
     ['run', '--directory', DOUYIN_SKILLS_DIR, 'python', DOUYIN_CLI, ...args],
@@ -73,7 +161,23 @@ function runDouyinCli(args: string[], timeoutMs = 90_000): DouyinResult {
 
   if (stdout) {
     try {
-      return JSON.parse(stdout) as DouyinResult;
+      const parsed = JSON.parse(stdout) as DouyinResult;
+
+      // 检测风控信号：CLI 退出码 3 或响应中 rate_limited=true
+      if (result.status === 3 || parsed.rate_limited) {
+        enterCooldown(
+          parsed.reason || 'unknown',
+          parsed.retry_after || 0,
+        );
+        return { ...parsed, rate_limited: true };
+      }
+
+      // 成功请求 → 重置冷却计数
+      if (parsed.success) {
+        resetCooldown();
+      }
+
+      return parsed;
     } catch {
       return { success: false, error: `Invalid JSON from CLI: ${stdout.slice(0, 200)}` };
     }
@@ -100,11 +204,23 @@ export function searchDouyinVideos(keyword: string, count = 10): DouyinResult {
   return runDouyinCli(['search-videos', '--keyword', keyword, '--count', String(count)]);
 }
 
+/** 获取抖音首页推荐流。 */
+export function fetchDouyinFeed(count = 20, refreshIndex = 0): DouyinResult {
+  // 节流：抓取前随机等待 3~6s，推荐流请求较重，模拟人类间歇节奏
+  jitterSync(3000, 6000);
+  return runDouyinCli(['fetch-feed', '--count', String(count), '--refresh-index', String(refreshIndex)], 120_000);
+}
+
 /** 检查登录状态（结果缓存 60s，避免高频探测触发风控）。 */
 export function checkDouyinLogin(): { success: boolean; logged_in?: boolean; error?: string } {
   const now = Date.now();
   if (_loginCache && now < _loginCache.expiresAt) {
     return _loginCache.result;
+  }
+
+  // 登录检查也受冷却期限制
+  if (isInCooldown()) {
+    return { success: false, error: `风控冷却中，跳过登录检测` };
   }
 
   const result = spawnSync(
@@ -137,4 +253,20 @@ export function checkDouyinLogin(): { success: boolean; logged_in?: boolean; err
   };
 
   return loginResult;
+}
+
+/** 获取当前风控状态（供 dashboard 和调试使用）。 */
+export function getDouyinRateLimitStatus(): {
+  in_cooldown: boolean;
+  cooldown_remaining_s: number;
+  consecutive_hits: number;
+  last_reason: string;
+} {
+  const remaining = Math.max(0, Math.round((_rateLimitState.cooldownUntil - Date.now()) / 1000));
+  return {
+    in_cooldown: isInCooldown(),
+    cooldown_remaining_s: remaining,
+    consecutive_hits: _rateLimitState.consecutiveHits,
+    last_reason: _rateLimitState.lastReason,
+  };
 }

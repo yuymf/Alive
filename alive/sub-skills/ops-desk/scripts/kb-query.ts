@@ -15,9 +15,13 @@ import {
   getStats,
   queryAll,
   queryFormulas,
+  auditEntries,
+  requeueEntriesForRepair,
+  isHollowEntry,
   KBStats,
+  KBAuditReport,
 } from '../../../scripts/ops/viral-kb-store';
-import { ViralEntry, UniversalFormula, ViralPlatform } from '../../../scripts/utils/types';
+import { ViralEntry, UniversalFormula, ViralPlatform, ViralSourceType } from '../../../scripts/utils/types';
 
 // ─── Markdown formatters ──────────────────────────────────────────────────────
 
@@ -30,10 +34,21 @@ function formatStats(stats: KBStats): string {
     .map(([t, n]) => `| ${t} | ${n} |`)
     .join('\n');
 
+  const contentTypeRows = Object.entries(stats.by_content_type)
+    .map(([type, count]) => `| ${type} | ${count} |`)
+    .join('\n');
+
+  const hookTypeRows = Object.entries(stats.by_hook_type)
+    .map(([type, count]) => `| ${type} | ${count} |`)
+    .join('\n');
+
   return [
     '## 📚 Viral KB 统计',
     '',
     `- 总条目：${stats.total}`,
+    `- 可参考条目：${stats.usable_count}`,
+    `- 空壳条目：${stats.hollow_count}`,
+    `- 失败条目：${stats.failed_count}`,
     `- 通用公式：${stats.formula_count}`,
     `- 待拆解队列：${stats.queue_length}`,
     '',
@@ -48,7 +63,24 @@ function formatStats(stats: KBStats): string {
     '| 分类 | 条目数 |',
     '|------|--------|',
     tierRows || '| — | — |',
+    '',
+    '### 内容类型分布',
+    '',
+    '| content_type | 条目数 |',
+    '|--------------|--------|',
+    contentTypeRows || '| — | — |',
+    '',
+    '### 钩子类型分布',
+    '',
+    '| hook_type | 条目数 |',
+    '|-----------|--------|',
+    hookTypeRows || '| — | — |',
   ].join('\n');
+}
+
+function formatEntryStatus(entry: ViralEntry): string {
+  if (isHollowEntry(entry)) return 'hollow';
+  return entry.dissection_status;
 }
 
 function formatEntries(entries: ViralEntry[], title: string): string {
@@ -58,20 +90,41 @@ function formatEntries(entries: ViralEntry[], title: string): string {
 
   const rows = entries.map(e => {
     const d = e.dissection;
+    const status = formatEntryStatus(e);
     const contentType = d?.content_type ?? '—';
     const hookType = d?.hook_type ?? '—';
-    const emotionArc = d?.emotion_arc ?? '—';
     const likes = e.likes.toLocaleString();
-    const summary = d?.summary ?? '—';
-    return `| ${contentType} | ${hookType} | ${emotionArc} | ${likes} | ${summary} |`;
+    const summary = d?.summary || '—';
+    return `| ${status} | ${e.source_type} | ${e.kb_tier} | ${e.title} | ${contentType} | ${hookType} | ${likes} | ${summary} |`;
   }).join('\n');
 
   return [
     `## ${title}（${entries.length} 条）`,
     '',
-    '| content_type | hook_type | emotion_arc | likes | summary |',
-    '|-------------|-----------|-------------|-------|---------|',
+    '| status | source_type | tier | title | content_type | hook_type | likes | summary |',
+    '|--------|-------------|------|-------|--------------|-----------|-------|---------|',
     rows,
+  ].join('\n');
+}
+
+function formatAudit(report: KBAuditReport): string {
+  const hollowRows = report.hollow_entry_ids.length > 0
+    ? report.hollow_entry_ids.map(id => `| ${id} | hollow |`).join('\n')
+    : '| — | — |';
+
+  return [
+    '## 🩺 Viral KB 质量审计',
+    '',
+    `- 总条目：${report.total}`,
+    `- 可参考条目：${report.usable_count}`,
+    `- 空壳条目：${report.hollow_count}`,
+    `- 失败条目：${report.failed_count}`,
+    '',
+    '### Hollow 条目',
+    '',
+    '| entry_id | status |',
+    '|----------|--------|',
+    hollowRows,
   ].join('\n');
 }
 
@@ -100,9 +153,11 @@ function helpText(): string {
     '',
     '| 子命令 | 说明 |',
     '|--------|------|',
-    '| `kb status` | 统计信息（总条数/平台分布/队列） |',
+    '| `kb status` | 统计信息（总条数/usable/hollow/failed/分布） |',
     '| `kb search <关键词>` | 全文搜索 summary + content_type |',
-    '| `kb list [--platform douyin/xhs] [--type 种草类]` | 按平台/类型列出 |',
+    '| `kb list [--platform douyin/xhs] [--type 种草类] [--status done|failed|hollow] [--source competitor|search|trending_feed]` | 按条件列出条目 |',
+    '| `kb audit` | 查看空壳条目和质量摘要 |',
+    '| `kb repair [--limit N]` | 将 hollow 条目重新入队修复 |',
     '| `kb formulas [--platform douyin/xhs]` | 列出通用爆款公式 |',
     '| `kb top [--platform douyin/xhs] [--limit N]` | 按点赞排 Top N |',
   ].join('\n');
@@ -141,11 +196,33 @@ export function handleKbCommand(
     case 'list': {
       const platform = flags['platform'] as ViralPlatform | undefined;
       const type = flags['type'];
-      const entries = queryAll(basePath, { platform, type });
+      const source = flags['source'] as ViralSourceType | undefined;
+      const status = flags['status'] as 'done' | 'failed' | 'hollow' | undefined;
+      const entries = queryAll(basePath, { platform, type, source, status });
       const titleParts = ['条目列表'];
       if (platform) titleParts.push(platform);
       if (type) titleParts.push(type);
+      if (status) titleParts.push(status);
+      if (source) titleParts.push(source);
       return formatEntries(entries, titleParts.join(' · '));
+    }
+
+    case 'audit': {
+      const report = auditEntries(basePath);
+      return formatAudit(report);
+    }
+
+    case 'repair': {
+      const rawLimit = flags['limit'] ? parseInt(flags['limit'], 10) : 10;
+      const limit = Number.isNaN(rawLimit) || rawLimit <= 0 ? 10 : rawLimit;
+      const result = requeueEntriesForRepair(basePath, { limit, reason: 'hollow_result' });
+      return [
+        '## 🛠️ Viral KB 修复',
+        '',
+        `- 扫描到可修复条目：${result.scanned}`,
+        `- 已重新入队：${result.requeued}`,
+        `- 本轮跳过：${result.skipped}`,
+      ].join('\n');
     }
 
     case 'formulas': {

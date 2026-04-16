@@ -21,7 +21,7 @@ import { loadPersona } from '../persona/persona-loader';
 import { detectKeywordLanguage } from '../utils/text-utils';
 import { getIdentityKeys } from '../utils/types';
 import { searchXhsNotes } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
-import { searchDouyinVideos } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
+import { searchDouyinVideos, getDouyinRateLimitStatus } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 import type { XhsNote } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 import type { DouyinVideo } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 import type { DiscoveryItem } from './discovery-engine';
@@ -144,7 +144,11 @@ export function searchDouyinViral(
   try {
     const result = searchDouyinVideos(keyword, 20);
     if (!result.success || !result.videos) {
-      console.warn(`[viral-search] Douyin search failed for "${keyword}": ${result.error ?? 'unknown'}`);
+      if (result.rate_limited) {
+        console.warn(`[viral-search] Douyin 风控限流 for "${keyword}": ${result.reason ?? 'cooldown'}`);
+      } else {
+        console.warn(`[viral-search] Douyin search failed for "${keyword}": ${result.error ?? 'unknown'}`);
+      }
       return [];
     }
     return result.videos.filter(v => v.digg_count >= threshold);
@@ -334,7 +338,14 @@ export async function runViralSearch(
     result.xhs_found += xhsNotes.length;
     result.injected += injectXhsNotesToPool(xhsNotes, `viral-search:xhs`, kw, poolHelper);
 
-    // Douyin (sync, best-effort)
+    // Douyin (sync, best-effort) — 风控冷却期内跳过
+    const rlStatus = getDouyinRateLimitStatus();
+    if (rlStatus.in_cooldown) {
+      if (i === 0 || rlStatus.cooldown_remaining_s > 0) {
+        console.warn(`[viral-search] Douyin 风控冷却中 (剩余 ${rlStatus.cooldown_remaining_s}s)，跳过剩余关键词`);
+      }
+      continue;
+    }
     const dyVideos = searchDouyinViral(kw, threshold);
     result.douyin_found += dyVideos.length;
     result.injected += injectDouyinVideosToPool(dyVideos, `viral-search:douyin`, kw, poolHelper);
@@ -502,16 +513,21 @@ export async function runCrossPlatformRadar(
       console.warn(`[radar] XHS search failed for "${kw}": ${(err as Error).message}`);
     }
 
-    // Douyin
-    try {
-      const dyResult = searchDouyinVideos(kw, 20);
-      if (dyResult.success && dyResult.videos) {
-        const filtered = dyResult.videos.filter(v => v.digg_count >= threshold);
-        result.douyin_found += filtered.length;
-        result.injected += injectDouyinVideosToPool(filtered, `radar:trending→douyin`, kw, poolHelper);
+    // Douyin — 风控冷却期内跳过
+    const dyRlStatus = getDouyinRateLimitStatus();
+    if (!dyRlStatus.in_cooldown) {
+      try {
+        const dyResult = searchDouyinVideos(kw, 20);
+        if (dyResult.success && dyResult.videos) {
+          const filtered = dyResult.videos.filter(v => v.digg_count >= threshold);
+          result.douyin_found += filtered.length;
+          result.injected += injectDouyinVideosToPool(filtered, `radar:trending→douyin`, kw, poolHelper);
+        } else if (dyResult.rate_limited) {
+          console.warn(`[radar] Douyin 风控限流 for "${kw}": ${dyResult.reason ?? 'cooldown'}`);
+        }
+      } catch (err) {
+        console.warn(`[radar] Douyin search failed for "${kw}": ${(err as Error).message}`);
       }
-    } catch (err) {
-      console.warn(`[radar] Douyin search failed for "${kw}": ${(err as Error).message}`);
     }
   }
 

@@ -6,13 +6,26 @@
  * Directly calls content-browse sub-skill without intent engine or LLM decisions.
  */
 
-import { loadPersona } from '../persona/persona-loader';
+import { loadPersona, getContentSourcesConfig } from '../persona/persona-loader';
 import { wallNow, getLocalDate } from '../utils/time-utils';
 import { PATHS, readJSON, writeJSON, appendText, setPersonaName } from '../utils/file-utils';
+import { processInspirationForDiscovery, processInspirationForAccountDiscovery } from '../ops/discovery-engine';
 import { buildRouteTable, resolveRouteBySkillName, buildContext, executeSubSkill } from '../router/skill-router';
 import { createRealLLMClient } from '../utils/llm-client';
 import { hydrateEmotionState, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../utils/types';
 import type { HeartbeatLog, HeartbeatLogEntry, EmotionState, ResolvedIntent } from '../utils/types';
+import { createContentBrowseConfig } from '../adapters/instagram-adapter';
+import { ContentProviderRegistry } from '../adapters/content-provider';
+import { BilibiliProvider } from '../adapters/providers/bilibili-provider';
+import { RedditProvider } from '../adapters/providers/reddit-provider';
+import { DailyHotApiProvider } from '../adapters/providers/dailyhot-provider';
+import { WeiboProvider } from '../adapters/providers/weibo-provider';
+import { ZhihuProvider } from '../adapters/providers/zhihu-provider';
+import { XhsProvider } from '../adapters/providers/xhs-provider';
+import { DouyinProvider } from '../adapters/providers/douyin-provider';
+import { exaWebSearch } from '../utils/exa-client';
+import { runKeywordSearch } from '../ops/keyword-tracker';
+import { fetchSearchKeywordTrends } from '../ops/trend-analyzer';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -119,6 +132,23 @@ export async function main(): Promise<void> {
 
   for (const source of browseSources) {
     try {
+      // Build content-browse config with real platform providers (same as heartbeat-tick)
+      const contentSources = getContentSourcesConfig(persona);
+      const registry = new ContentProviderRegistry();
+      registry.register(new BilibiliProvider());
+      registry.register(new RedditProvider());
+      registry.register(new DailyHotApiProvider());
+      registry.register(new WeiboProvider());
+      registry.register(new ZhihuProvider());
+      registry.register(new XhsProvider());
+      registry.register(new DouyinProvider());
+      const skillConfig = createContentBrowseConfig({
+        contentSources,
+        registry,
+        webSearch: (query, limit) => exaWebSearch(query, limit ?? 5),
+      }) as unknown as Record<string, unknown>;
+      skillConfig.actionContext = `定时浏览${source.platform}，了解最新动态`;
+
       const context = buildContext(
         persona,
         emotion,
@@ -126,7 +156,7 @@ export async function main(): Promise<void> {
         1.0, // neutral confidence
         { ...browseIntent, description: `定时浏览${source.platform}` },
         llm,
-        { searchKeywords: persona.content_sources?.keywords ?? [], actionContext: `定时浏览${source.platform}，了解最新动态` },
+        skillConfig,
       );
 
       const result = await executeSubSkill(browseRoute, context);
@@ -139,6 +169,45 @@ export async function main(): Promise<void> {
       console.error(`[ops-browse] Failed to browse ${source.platform}: ${(err as Error).message}`);
       results.push({ platform: source.platform, items: [] });
     }
+  }
+
+  // Post-browse hook: trigger discovery pipeline (matches heartbeat-tick post-hook)
+  try {
+    const discovered = processInspirationForDiscovery();
+    const newCandidates = processInspirationForAccountDiscovery();
+    if (discovered > 0 || newCandidates > 0) {
+      console.log(`[ops-browse] discovery: +${discovered} content discoveries, +${newCandidates} candidate accounts`);
+    }
+  } catch (err) {
+    console.error(`[ops-browse] discovery pipeline error: ${(err as Error).message}`);
+  }
+
+  // Post-browse hook: active keyword search + search-keyword trend pre-computation
+  try {
+    const keywordRegistry = new ContentProviderRegistry();
+    keywordRegistry.register(new BilibiliProvider());
+    keywordRegistry.register(new RedditProvider());
+    keywordRegistry.register(new DailyHotApiProvider());
+    keywordRegistry.register(new WeiboProvider());
+    keywordRegistry.register(new ZhihuProvider());
+    keywordRegistry.register(new XhsProvider());
+    keywordRegistry.register(new DouyinProvider());
+
+    const kResult = await runKeywordSearch(keywordRegistry);
+    if (kResult.searched > 0) {
+      console.log(`[keyword-tracker] Searched ${kResult.searched} keywords (${kResult.keywords.join(', ')}), +${kResult.totalDiscovered} discoveries`);
+    }
+  } catch (err) {
+    console.warn(`[keyword-tracker] Post-browse keyword search failed: ${(err as Error).message}`);
+  }
+
+  try {
+    const skItems = await fetchSearchKeywordTrends();
+    if (skItems.length > 0) {
+      console.log(`[search-keyword] Pre-computed ${skItems.length} trend items from keyword searches`);
+    }
+  } catch (err) {
+    console.warn(`[search-keyword] Post-browse search-keyword pre-computation failed: ${(err as Error).message}`);
   }
 
   // Write diary entry

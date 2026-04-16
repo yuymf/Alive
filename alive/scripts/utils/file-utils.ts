@@ -95,6 +95,7 @@ export const PATHS = {
   get analysisLog() { return path.join(getMemoryBase(), 'queues', 'analysis-log.json'); },
   get trendHistory() { return path.join(getMemoryBase(), 'queues', 'trend-history.json'); },
   get trendsCache() { return path.join(getMemoryBase(), 'queues', 'trends-cache.json'); },
+  get searchKeywordCache() { return path.join(getMemoryBase(), 'queues', 'search-keyword-cache.json'); },
   get competitorPosts() { return path.join(getMemoryBase(), 'queues', 'competitor-posts.json'); },
   get competitorAnalysis() { return path.join(getMemoryBase(), 'queues', 'competitor-analysis.json'); },
   get candidateAccounts() { return path.join(getMemoryBase(), 'queues', 'candidate-accounts.json'); },
@@ -102,6 +103,8 @@ export const PATHS = {
   get pendingEngagement() { return path.join(getMemoryBase(), 'queues', 'pending-engagement.json'); },
   get outboundHistory() { return path.join(getMemoryBase(), 'queues', 'outbound-history.json'); },
   get healthReport() { return path.join(getMemoryBase(), 'queues', 'health-report.json'); },
+  get audiencePerception() { return path.join(getMemoryBase(), 'queues', 'audience-perception.json'); },
+  get directionIdeaCache() { return path.join(getMemoryBase(), 'queues', 'direction-idea-cache.json'); },
 
   // === Social (unchanged) ===
   get socialMeta() { return path.join(getMemoryBase(), 'relations', 'social-meta.json'); },

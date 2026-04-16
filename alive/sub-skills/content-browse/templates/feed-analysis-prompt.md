@@ -19,6 +19,8 @@
 **feed_highlights**——从推荐流中挑有参考价值的内容：
 - 不只是看数据，要看内容是否和{persona.meta.name}的领域相关
 - 每条标注具体有什么可以学的
+- **必须标注 author（作者/博主名称）**，如果数据中有 "by xxx" 就提取 xxx；如果实在没有就填 "unknown"
+- **必须标注 source（来源平台）**，从内容行末括号中的平台名提取（如 xhs、bilibili、weibo、douyin、instagram）；如果没有则填 "unknown"
 - 注意区分不同平台的内容特征（如 Reddit 偏讨论、Bilibili 偏视频、知乎偏深度、微博偏热点）
 
 **trending_topics**——当前热点：
@@ -31,11 +33,12 @@
 **saved_inspirations**——只收藏**视觉上有参考价值**的内容：
 - visual_description 要写成能直接用来复刻的详细描述
 - source_id 保留原始平台前缀（如 reddit_xxx、bilibili_BVxxx）
+- **author 字段填写内容创作者名称**（如果有的话，没有就填 "unknown"）
 
 请以 JSON 格式返回：
 ```json
 {
-  "feed_highlights": [{"title": "...", "likes": 0, "topic": "...", "takeaway": "对创作有什么具体启发"}],
+  "feed_highlights": [{"title": "...", "likes": 0, "topic": "...", "takeaway": "对创作有什么具体启发", "author": "作者名", "source": "平台名"}],
   "trending_topics": ["话题1", "话题2"],
   "domain_insights": ["洞察1（要具体可执行）", "洞察2"],
   "saved_inspirations": [
@@ -43,7 +46,8 @@
       "source_id": "内容ID",
       "source_title": "标题",
       "visual_description": "详细视觉描述（150-250字）",
-      "style_tags": ["标签1", "标签2"]
+      "style_tags": ["标签1", "标签2"],
+      "author": "作者名"
     }
   ]
 }

@@ -18,6 +18,8 @@ import { loadQueue, cleanupOldItems, PENDING_EXPIRE_HOURS, hoursSinceCreated } f
 import { generatePersonaReport } from '../ops/persona-advisor';
 import { getIdentityKeys } from '../utils/types';
 import { getStats, queryAll, loadFormulas } from '../ops/viral-kb-store';
+import { generateProactiveAdvice } from '../ops/proactive-advisor';
+import { loadStrategy } from '../ops/strategy-engine';
 import { PATHS } from '../utils/file-utils';
 import * as path from 'path';
 
@@ -58,7 +60,7 @@ async function main(): Promise<void> {
   const competitors = competitorsResult.status === 'fulfilled' ? competitorsResult.value : [];
 
   console.log(`[${wallNow().toISOString()}] ops-brief: trends=${trends.length}, calling generateTopics...`);
-  await generateTopics(trends, ops, persona.meta.name, imageStyle, llm);
+  await generateTopics(trends, ops, persona.meta.name, llm, persona.voice);
 
   const queue = await loadQueue();
   const pending = queue.items.filter(i => i.status === 'pending');
@@ -98,6 +100,11 @@ async function main(): Promise<void> {
     viralKbStats,
     viralKbTopEntries,
     viralKbFormulas,
+    proactiveAdvice: generateProactiveAdvice({
+      trends,
+      queueItems: queue.items,
+      strategy: loadStrategy(),
+    }),
   }, deliveryMode);
 
   console.log(`[${wallNow().toISOString()}] ops-brief: brief sent=${sent} (mode=${deliveryMode}), ${activePending.length} active pending topics`);

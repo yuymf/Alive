@@ -78,7 +78,7 @@ describe('dissectBatch', () => {
     expect(entry.dissection.emotion_arc).toBe('焦虑→共鸣→解脱');
     expect(entry.dissection.interaction_design).toBe('评论区问答');
     expect(entry.dissection.visual_style).toBe('简约白');
-    expect(entry.dissection.cta_type).toBe('关注解锁');
+    expect(entry.dissection.cta_type).toBe('关注');
     expect(entry.dissection.summary).toBe('用数字引发共鸣达到爆款效果');
   });
 
@@ -113,7 +113,43 @@ describe('dissectBatch', () => {
     const results = await dissectBatch([item], llm, 'miss-v');
     expect(results).toHaveLength(1);
     expect(results[0].dissection_status).toBe('failed');
+    expect(results[0].dissection_error_reason).toBe('invalid_json');
     expect(results[0].id).toBeDefined();
+  });
+
+  it('normalizes broad labels into canonical taxonomy', async () => {
+    const llm = createMockLLMClient([JSON.stringify({
+      hook_type: '命令式钩子',
+      content_type: '情绪类',
+      identity_mode: null,
+      emotion_arc: '好奇→感动',
+      interaction_design: '评论互动',
+      visual_style: '暖色',
+      cta_type: '关注',
+      summary: '情绪触发带动转发',
+    })]);
+
+    const [entry] = await dissectBatch([makeQueueItem({ id: 'q-normalize', source_id: 'src-normalize' })], llm, 'miss-v');
+    expect(entry.dissection_status).toBe('done');
+    expect(entry.dissection.hook_type).toBe('指令式');
+    expect(entry.dissection.content_type).toBe('情绪共鸣类');
+  });
+
+  it('marks hollow JSON as failed instead of done', async () => {
+    const llm = createMockLLMClient([JSON.stringify({
+      hook_type: '',
+      content_type: '',
+      identity_mode: null,
+      emotion_arc: '',
+      interaction_design: '',
+      visual_style: '',
+      cta_type: '',
+      summary: '',
+    })]);
+
+    const [entry] = await dissectBatch([makeQueueItem({ id: 'q-hollow', source_id: 'src-hollow' })], llm, 'miss-v');
+    expect(entry.dissection_status).toBe('failed');
+    expect(entry.dissection_error_reason).toBe('hollow_result');
   });
 
   it('processes multiple items sequentially', async () => {

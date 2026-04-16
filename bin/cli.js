@@ -468,7 +468,6 @@ function preflightCheck({ opsEnabled = false } = {}) {
 // (daily-hot-news & douyin-hot-trend removed — trend-analyzer now calls DailyHot API directly)
 const REQUIRED_CLAWHUB_SKILLS = [
   'yt-dlp-downloader',   // competitor-fetcher, competitor-tracker, viral-analyzer, performance-tracker: 抖音视频信息
-  'tiktok-growth',       // topic-generator: 短视频 hook 创意
 ];
 
 function log(msg) { console.log(`\n  ${msg}`); }

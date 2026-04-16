@@ -351,6 +351,9 @@ function fetchDouyinAccount(secUid: string): CompetitorUpdate {
     // 请求 10+ 条，跳过置顶帖后保留 RECENT_POSTS_COUNT 条
     const result = listDouyinUserPosts(secUid, RECENT_POSTS_COUNT + 3);
     if (!result.success || !result.videos?.length) {
+      if (result.rate_limited) {
+        console.warn(`[competitor-tracker] Douyin 风控限流 for ${secUid}: ${result.reason ?? 'cooldown'}`);
+      }
       return {
         account: secUid,
         platform: 'douyin',

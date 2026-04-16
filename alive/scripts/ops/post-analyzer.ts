@@ -15,6 +15,7 @@ import {
 import { loadQueue } from './review-queue';
 import { addPattern, loadContentPatterns, saveContentPatterns } from './content-analyzer';
 import { updateTasteFromAnalysis } from './taste-engine';
+import { upsertAudiencePerceptionEntry, buildAudiencePerceptionEntry } from './audience-perception';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -330,6 +331,19 @@ export async function analyzePublishedPosts(
     if (!analysis) continue;
 
     saveAnalysis(analysis);
+
+    // Build and store audience perception entry from available comment data
+    try {
+      const perceptionEntry = buildAudiencePerceptionEntry({
+        item_id: entry.item_id,
+        platform: entry.platform,
+        identity_mode: entry.identity_mode,
+        comment_analysis: entry.comment_analysis,
+      });
+      upsertAudiencePerceptionEntry(perceptionEntry);
+    } catch {
+      // Non-blocking: audience perception is enrichment, not critical path
+    }
 
     // Update content taste memory from this analysis
     updateTasteFromAnalysis(analysis);

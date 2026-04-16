@@ -600,7 +600,7 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     const identities = buildPersonaIdentities(personaConfig);
     const trends = await analyzeTrends(personaConfig.ops, identities, llm);
     const personaDescription = identities;
-    await generateTopics(trends, personaConfig.ops, personaDescription, '', llm);
+    await generateTopics(trends, personaConfig.ops, personaDescription, llm, personaConfig.voice);
     // After generation, load the queue to see new items
     const queue = await loadQueue();
     const pending = queue.items.filter(i => i.status === 'pending');
@@ -638,6 +638,19 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     const params = paramJson ? JSON.parse(paramJson) : {};
     if (!params.id) return { error: '缺少参数: id (队列项ID)' };
     const result = await markApproved(params.id);
+    // Write structured review feedback if reason provided
+    if (result && (params.reason_summary || params.platform_fit_tags)) {
+      const { addReviewFeedback } = await import('../scripts/ops/review-queue');
+      await addReviewFeedback(params.id, {
+        decision: 'approved' as const,
+        source: 'dashboard' as const,
+        reason_summary: params.reason_summary ?? '运营确认',
+        persona_deviation_tags: params.persona_deviation_tags,
+        risk_tags: params.risk_tags,
+        platform_fit_tags: params.platform_fit_tags,
+        improvement_directions: params.improvement_directions,
+      });
+    }
     return {
       command: 'ops-queue-approve',
       message: result ? `已通过: ${params.id}` : `未找到: ${params.id}`,
@@ -651,6 +664,18 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     const params = paramJson ? JSON.parse(paramJson) : {};
     if (!params.id) return { error: '缺少参数: id (队列项ID)' };
     const result = await markDiscarded(params.id);
+    // Write structured review feedback if reason provided
+    if (result && (params.reason_summary || params.persona_deviation_tags)) {
+      const { addReviewFeedback } = await import('../scripts/ops/review-queue');
+      await addReviewFeedback(params.id, {
+        decision: 'discarded' as const,
+        source: 'dashboard' as const,
+        reason_summary: params.reason_summary ?? '运营否决',
+        persona_deviation_tags: params.persona_deviation_tags,
+        risk_tags: params.risk_tags,
+        improvement_directions: params.improvement_directions,
+      });
+    }
     return {
       command: 'ops-queue-discard',
       message: result ? `已废弃: ${params.id}` : `未找到: ${params.id}`,
@@ -974,6 +999,19 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
       tier_counts: tierCounts,
       taste_updated_count: tasteUpdated,
       last_updated: log.last_updated || null,
+    };
+  }
+
+  // ── Ops: Audience Perception ────────────────────────────────────
+  if (cmd === 'ops-perception') {
+    const { loadAudiencePerception, buildAudiencePerceptionContext } = await import('../scripts/ops/audience-perception');
+    const store = loadAudiencePerception();
+    const context = buildAudiencePerceptionContext({ maxEntries: 10, maxChars: 600 });
+    return {
+      command: 'ops-perception',
+      message: `受众感知: ${store.entries.length} 条记录`,
+      entries: store.entries,
+      context: context || '',
     };
   }
 

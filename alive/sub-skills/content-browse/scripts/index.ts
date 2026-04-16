@@ -32,7 +32,7 @@ export interface TrendPost {
 }
 
 export interface InspirationSummary {
-  feed_highlights: Array<{ title: string; likes: number; topic: string; takeaway?: string }>;
+  feed_highlights: Array<{ title: string; likes: number; topic: string; takeaway?: string; author?: string; source?: string }>;
   trending_topics: string[];
   domain_insights: string[];
   saved_inspirations: Array<{
@@ -40,6 +40,7 @@ export interface InspirationSummary {
     source_title: string;
     visual_description: string;
     style_tags: string[];
+    author?: string;
   }>;
 }
 
@@ -78,6 +79,26 @@ function formatFeedItem(item: FeedItem): string {
   const tags = item.tags?.length ? ` [${item.tags.join(', ')}]` : '';
   const source = item.source ? ` (${item.source})` : '';
   return `- ${item.title} (❤️${item.likes})${user}${tags}${source}`;
+}
+
+/** Find a FeedItem whose title closely matches the given string (fuzzy). */
+function findItemByTitle(title: string, items: FeedItem[]): FeedItem | undefined {
+  const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+  const target = norm(title);
+  // Exact normalized match
+  let best = items.find(i => norm(i.title) === target);
+  if (best) return best;
+  // Substring match (LLM may shorten or rephrase)
+  best = items.find(i => target.includes(norm(i.title)) || norm(i.title).includes(target));
+  if (best) return best;
+  // Loose: overlap ratio > 60%
+  let bestScore = 0.6;
+  for (const item of items) {
+    const n = norm(item.title);
+    const overlap = [...target].filter(c => n.includes(c)).length / Math.max(target.length, n.length);
+    if (overlap > bestScore) { bestScore = overlap; best = item; }
+  }
+  return best;
 }
 
 function getCurrentSeasonLabel(): string {
@@ -231,8 +252,76 @@ export const actions = {
       );
     }
 
-    // 4. Save state
+    // ── Post-process: backfill author & source from raw FeedItems ──
+    // LLM extraction of author/source is unreliable; use original data instead.
+    const feedItemMap = new Map<string, FeedItem>();
+    for (const item of allItems) {
+      feedItemMap.set(item.id, item);
+      // Also index by title for fuzzy matching (LLM may slightly rephrase)
+      feedItemMap.set(item.title, item);
+    }
+
+    /** Extract platform from FeedItem.id (format: platform_xxx) or FeedItem.source */
+    function inferPlatform(item: FeedItem | undefined): string | undefined {
+      if (!item) return undefined;
+      if (item.source) return item.source;
+      // Fallback: extract from id (e.g. "xhs_abc123" → "xhs")
+      const underscoreIdx = item.id.indexOf('_');
+      if (underscoreIdx > 0) {
+        const prefix = item.id.slice(0, underscoreIdx);
+        // Only accept known platform prefixes
+        const knownPlatforms = ['xhs', 'bilibili', 'douyin', 'weibo', 'zhihu', 'reddit', 'ig', 'dailyhot'];
+        if (knownPlatforms.includes(prefix)) return prefix;
+      }
+      return undefined;
+    }
+
+    // Backfill feed_highlights
+    if (summary.feed_highlights) {
+      for (const h of summary.feed_highlights) {
+        const needsAuthor = !h.author || h.author === 'unknown';
+        const needsSource = !h.source || h.source === 'unknown';
+        if (needsAuthor || needsSource) {
+          const match = feedItemMap.get(h.title) ?? findItemByTitle(h.title, allItems);
+          if (match) {
+            if (needsAuthor) h.author = match.user || undefined;
+            if (needsSource) h.source = inferPlatform(match);
+            console.log(`[content-browse] Backfilled highlight "${h.title.slice(0, 30)}" → author=${h.author}, source=${h.source} (from FeedItem ${match.id})`);
+          } else {
+            console.log(`[content-browse] No FeedItem match for highlight "${h.title.slice(0, 30)}" (allItems count: ${allItems.length})`);
+          }
+        }
+        // Fallback: try to infer source from saved_inspirations with matching title
+        if (!h.source || h.source === 'unknown') {
+          for (const s of summary.saved_inspirations ?? []) {
+            const sNorm = s.source_title.replace(/\s+/g, '');
+            const hNorm = h.title.replace(/\s+/g, '');
+            if (sNorm.length > 0 && (hNorm.includes(sNorm) || sNorm.includes(hNorm))) {
+              h.source = s.source_id.split('_')[0];
+              if (!h.author || h.author === 'unknown') h.author = s.author || undefined;
+              console.log(`[content-browse] Backfilled highlight "${h.title.slice(0, 30)}" → source=${h.source} (from saved_inspiration ${s.source_id})`);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Backfill saved_inspirations
+    if (summary.saved_inspirations) {
+      for (const s of summary.saved_inspirations) {
+        // Try matching by source_id first (format: platform_title)
+        const match = feedItemMap.get(s.source_id) ?? findItemByTitle(s.source_title, allItems);
+        if (match) {
+          if (!s.author || s.author === 'unknown') s.author = match.user || undefined;
+        }
+      }
+    }
+
+    // 4. Save state — merge with existing data instead of overwriting
     const currentState = memory.readJSON<InspirationState>('inspiration-state', DEFAULT_INSPIRATION_STATE);
+
+    // Merge saved_inspirations (dedup by source_id, keep last 20)
     const existingInspos = currentState.saved_inspirations ?? [];
     const newInspos = summary.saved_inspirations ?? [];
     const newIds = new Set(newInspos.map(s => s.source_id));
@@ -241,14 +330,34 @@ export const actions = {
       ...newInspos,
     ].slice(-20);
 
+    // Merge feed_highlights (dedup by title, keep last 20, newest first)
+    const existingHighlights = currentState.feed_highlights ?? [];
+    const newHighlights = summary.feed_highlights ?? [];
+    const seenHighlightTitles = new Set<string>();
+    const mergedHighlights = [...newHighlights, ...existingHighlights].filter(h => {
+      if (seenHighlightTitles.has(h.title)) return false;
+      seenHighlightTitles.add(h.title);
+      return true;
+    }).slice(0, 20);
+
+    // Merge trending_topics (dedup, keep last 15)
+    const existingTopics = currentState.trending_topics ?? [];
+    const newTopics = summary.trending_topics ?? [];
+    const mergedTopics = [...new Set([...newTopics, ...existingTopics])].slice(0, 15);
+
+    // Merge domain_insights (dedup, keep last 10)
+    const existingInsights = currentState.domain_insights ?? [];
+    const newInsights = summary.domain_insights ?? [];
+    const mergedInsights = [...new Set([...newInsights, ...existingInsights])].slice(0, 10);
+
     // Update browsed IDs for dedup: keep last 100
     const updatedBrowsedIds = [...(currentState.last_browsed_ids ?? []), ...allItems.map(i => i.id)].slice(-100);
 
     memory.writeJSON<InspirationState>('inspiration-state', {
       last_refreshed_at: new Date().toISOString(),
-      feed_highlights: summary.feed_highlights ?? [],
-      trending_topics: summary.trending_topics ?? [],
-      domain_insights: summary.domain_insights ?? [],
+      feed_highlights: mergedHighlights,
+      trending_topics: mergedTopics,
+      domain_insights: mergedInsights,
       saved_inspirations: mergedInspos,
       last_browsed_ids: updatedBrowsedIds,
     });

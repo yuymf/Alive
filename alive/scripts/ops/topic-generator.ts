@@ -31,6 +31,8 @@ import { now } from '../utils/time-utils';
 import { queryTrackInMemory, loadEntries, saveEntries, loadFormulas as loadViralFormulas } from './viral-kb-store';
 
 import { matchesTaxonomy } from './ops-taxonomy';
+import { buildOpsMemoryContext } from './ops-memory';
+import { filterByDiversity } from './diversity-gate';
 
 // ─── Viral KB context builder ────────────────────────────────────────────────
 
@@ -316,28 +318,44 @@ export function buildTriggerWordsContext(
 const XHS_GUIDELINES = `【小红书写作规范】
 - 标题：11-20字，必须含emoji开头或穿插，制造好奇心缺口（疑问/数字/反转）
 - 正文：500字以内，每2-3句换行，段落间用emoji分隔，口语化但有信息密度
-- 节奏：开头3行定生死→痛点共鸣→干货/故事→总结金句→互动引导（点赞收藏暗示）
+- 情绪弧：开头3行定生死 → 痛点共鸣/好奇缺口 → 干货/故事/反差 → 金句收尾 → 互动引导（收藏暗示/提问式结尾）
+- 互动钩子：正文至少留一个"评论钩"（如"你们觉得呢？""谁懂啊..."、"猜猜结果"），让人想说话
+- 信息密度：每句话都要有存在理由，删掉任何"凑字数"的废话；如果一句话删掉不影响理解，就不要写
 - 标签：5-10个，前3个为精准长尾词，后面为热门大词，自然穿插正文关键词做SEO
-- 封面：高对比、大字报风格或真实生活感，避免过度精修
-
-【质量红线】
-- 禁止"最好/第一/绝对"等绝对化表述
-- 禁止虚构数据或伪造引用
-- 禁止硬广口吻，要像朋友分享不像销售推荐`;
+- 封面：高对比、大字报风格或真实生活感，避免过度精修`;
 
 const DOUYIN_GUIDELINES = `【抖音脚本写作规范】
 - 钩子：前3秒决定生死，11-20字，用反问/冲突/悬念/数字冲击制造停留
 - 脚本：200-500字，口语化、短句为主，每句≤15字，像跟朋友聊天不像念稿
-- 节奏：钩子→建立共鸣→核心内容（故事/干货/反转）→情绪高点→行动号召
+- 情绪弧：钩子（0-3秒）→ 建立共鸣（3-8秒）→ 核心内容/反转（8-20秒）→ 情绪高点（20-25秒）→ 行动号召（最后3秒）
+- 互动设计：至少一个"评论钩"时刻（如提问、留悬念、争议观点），让用户忍不住评论
+- 信息密度：每句话都要推进内容，删掉"嗯""那个""就是说"等口头禅填充词
 - 字幕：3-5个关键要点，每条≤10字，强化记忆点
-- BGM：匹配内容情绪，优先热门音频提升推荐权重
-
-【质量红线】
-- 禁止"最好/第一/绝对"等绝对化表述
-- 禁止虚构数据或伪造引用
-- 脚本必须适合口播，避免书面语和长从句`;
+- BGM：匹配内容情绪，优先热门音频提升推荐权重`;
 
 // ─── Prompt builder ─────────────────────────────────────────────────────────
+
+/** Voice settings for content prompt — derived from persona.voice */
+export interface ContentPromptOptions {
+  voiceStyle?: string;
+  sampleLines?: string[];
+  identityMode?: string;
+}
+
+/** Identity-mode → voice personality mapping for prompt injection */
+const IDENTITY_VOICE_MAP: Record<string, string> = {
+  esports: '专业控场、理性分析但不失热血，电竞术语自然带出，偶尔一句毒舌金句',
+  singer: '随性有态度、声音里的故事感，不刻意文艺但开口就有画面',
+  racer: '果敢利落、不服就干，速度感和掌控感拉满，说话像过弯一样精准',
+  daily: '松弛随性、低调贵气，不迎合但有温度，像闺蜜聊天但不腻',
+};
+
+const IDENTITY_MODE_LABELS: Record<string, string> = {
+  esports: '电竞解说',
+  singer: '歌手/音乐人',
+  racer: '赛车手',
+  daily: '生活日常',
+};
 
 export function buildContentPrompt(
   trend: FilteredTrend,
@@ -345,24 +363,81 @@ export function buildContentPrompt(
   platform: 'xhs' | 'douyin',
   platformStyle: string,
   extraContext?: string,
+  options?: ContentPromptOptions,
 ): string {
   const guidelines = platform === 'xhs' ? XHS_GUIDELINES : DOUYIN_GUIDELINES;
+  const platformLabel = platform === 'xhs' ? '小红书图文' : '抖音视频脚本';
 
-  const base = `你是内容创作者 "${personaDescription}"。
+  // ── Voice & identity injection ──
+  const voiceStyle = options?.voiceStyle ?? '';
+  const sampleLines = options?.sampleLines ?? [];
+  const identityMode = options?.identityMode ?? trend.identity_mode;
+  const identityLabel = IDENTITY_MODE_LABELS[identityMode] ?? identityMode;
+  const identityVoice = IDENTITY_VOICE_MAP[identityMode] ?? '';
 
-当前热点：${trend.keyword}（${trend.platform}，速度分 ${trend.velocity_score.toFixed(1)}x）
-切入角度：${trend.hook_angle}
-目标平台：${platform}
-平台风格：${platformStyle}
+  const voiceBlock = voiceStyle
+    ? `声线：${voiceStyle}`
+    : '';
+  const identityVoiceBlock = identityVoice
+    ? `语感模式（${identityLabel}）：${identityVoice}`
+    : '';
+  const sampleLinesBlock = sampleLines.length > 0
+    ? `标志性语录（感受语气，不要照搬）：\n${sampleLines.map(l => `  - "${l}"`).join('\n')}`
+    : '';
+
+  const personaParts = [
+    `你是 ${personaDescription}。`,
+    identityLabel ? `当前以【${identityLabel}】身份切入。` : '',
+    voiceBlock,
+    identityVoiceBlock,
+    sampleLinesBlock,
+  ].filter(Boolean).join('\n');
+
+  // ── Viral thinking framework ──
+  const viralFramework = `【爆款思维框架】（创作前必须过一遍）
+1. 停留理由：用户刷到这条内容的 0.3 秒内，凭什么停下来？
+2. 情绪弧：好奇/共鸣 → 反转/干货 → 情绪高点 → 行动引导
+3. 互动设计：评论区最可能聊什么？内容里预留什么"钩"让人想评论/收藏？
+4. 差异化：同热点下大部分人会怎么写？你怎么写得不一样？`;
+
+  // ── Hard prohibitions ──
+  const prohibitions = `【绝对禁止】
+- 禁止"最好/第一/绝对"等绝对化表述
+- 禁止虚构数据或伪造引用
+- 禁止硬广口吻，要像朋友分享不像销售推荐
+- 禁止泛泛而谈没有信息密度，每句话都要有存在理由
+- 禁止堆砌emoji没有实质内容，emoji是节奏工具不是装饰
+- 禁止照搬标志性语录原句，那是参考语气不是要你复读`;
+
+  // ── Trend intelligence ──
+  const trendIntel = `【热点情报】
+- 热点：${trend.keyword}（${trend.platform}，速度分 ${trend.velocity_score.toFixed(1)}x）
+- 切入角度：${trend.hook_angle}
+- 身份模式：${identityLabel}
+- 目标平台：${platform}
+- 平台风格：${platformStyle}`;
+
+  const base = `【角色】
+${personaParts}
+
+【创作任务】
+借势热点「${trend.keyword}」创作一条${platformLabel}内容，目标是做出这条热点下最有人格辨识度、最容易引发互动的内容。
+
+${trendIntel}
+
+${viralFramework}
 
 ${guidelines}
 
-请严格按照以上写作规范，生成一条完整的 ${platform === 'xhs' ? '小红书图文' : '抖音视频脚本'} 内容草稿。
+${prohibitions}
+
+请严格按照以上写作规范和爆款思维框架，生成一条完整的 ${platformLabel} 内容草稿。
 
 ${platform === 'xhs' ? `输出格式 JSON：
-{"title":"...（11-20字，含emoji）","body":"...（正文500字以内，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"],"cover_description":"封面图画面描述（用于AI生图）"}` : `输出格式 JSON：
-{"opening_hook":"前3秒钩子（11-20字，反问/冲突/悬念）","script":"完整口播脚本（200-500字，短句口语化）","bgm_suggestion":"推荐BGM风格或歌名","key_captions":["字幕要点1（≤10字）","字幕要点2"],"cover_description":"封面图画面描述（用于AI生图）"}`}`;
-  return extraContext ? `${base}\n${extraContext}` : base;
+{"title":"...（11-20字，含emoji）","body":"...（正文500字以内，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"]}` : `输出格式 JSON：
+{"opening_hook":"前3秒钩子（11-20字，反问/冲突/悬念）","script":"完整口播脚本（200-500字，短句口语化）","bgm_suggestion":"推荐BGM风格或歌名","key_captions":["字幕要点1（≤10字）","字幕要点2"]}`}`;
+
+  return extraContext ? `${base}\n\n${extraContext}` : base;
 }
 
 // ─── Edit regeneration ──────────────────────────────────────────────────────
@@ -464,35 +539,8 @@ async function generateHooksViaLLM(
   }
 }
 
-interface XhsDraft { title: string; body: string; tags: string[]; cover_description: string }
-interface DouyinDraft { opening_hook: string; script: string; bgm_suggestion: string; key_captions: string[]; cover_description: string }
-
-// ─── Image generation (replaced deprecated openclaw CLI call) ────────────────
-
-/**
- * Generate cover images via the generate-image sub-skill (in-process import).
- * Previously called `openclaw skills run generate-image` which has been deprecated.
- * Now uses direct import like instagram-adapter.ts does.
- */
-async function callGenerateImageInProcess(
-  description: string,
-  stylePrompt: string,
-): Promise<string[]> {
-  try {
-    const { generateImage } = await import(
-      '../../sub-skills/platform/generate-image/scripts/provider'
-    );
-    const result = await generateImage({
-      prompt: `${stylePrompt}, ${description}`,
-      referenceImages: [],
-      style: 'daily',
-    });
-    return result.localPath ? [result.localPath] : [];
-  } catch (err) {
-    console.error('[topic-generator] generate-image call failed:', err);
-    return [];
-  }
-}
+interface XhsDraft { title: string; body: string; tags: string[] }
+interface DouyinDraft { opening_hook: string; script: string; bgm_suggestion: string; key_captions: string[] }
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
@@ -538,10 +586,28 @@ export async function generateTopics(
   trends: FilteredTrend[],
   ops: OpsConfig,
   personaDescription: string,
-  imageStylePrompt: string,
   llm: LLMClient,
+  voice?: { style?: string; sample_lines?: string[] },
 ): Promise<void> {
   const topN = trends.slice(0, ops.topic_count);
+
+  // ── Diversity gate: filter out trends too similar to existing queue items ──
+  let diverseTopN = topN;
+  try {
+    const { loadQueue } = await import('./review-queue');
+    const queue = await loadQueue();
+    diverseTopN = filterByDiversity(
+      topN,
+      queue.items,
+      selectIdentityMode,
+      { maxSameModeInWindow: 3, minAngleDistance: 0.5 },
+    );
+    if (diverseTopN.length < topN.length) {
+      console.log(`[topic-generator] Diversity gate: ${topN.length} → ${diverseTopN.length} topics`);
+    }
+  } catch {
+    // diversity gate not available, proceed with original list
+  }
 
   // Derive memory base path for viral KB queries
   const basePath = path.dirname(PATHS.emotionState);
@@ -589,7 +655,7 @@ export async function generateTopics(
   // Cache benchmarks by identityMode — only identityMode varies per trend
   const benchmarkCache = new Map<string, ReturnType<typeof buildCompetitorBenchmarks>>();
 
-  for (const trend of topN) {
+  for (const trend of diverseTopN) {
     const identityMode = selectIdentityMode(trend);
     const xhsStyle = ops.platforms.xhs?.style ?? '图文为主';
     const douyinStyle = ops.platforms.douyin?.style ?? '视频脚本';
@@ -651,13 +717,28 @@ export async function generateTopics(
     if (tasteContext) contextParts.push(tasteContext);
     if (discoveryContext) contextParts.push(discoveryContext);
 
+    // Inject unified ops memory (audience perception + review learning + operator preference + taste + strategy)
+    try {
+      const opsMemoryCtx = await buildOpsMemoryContext({
+        maxChars: 1500,
+        identityMode,
+      });
+      if (opsMemoryCtx) contextParts.push(opsMemoryCtx);
+    } catch {
+      // ops memory not available, skip
+    }
+
     // Generate XHS content via LLM
-    let xhsDraft: XhsDraft = { title: '', body: '', tags: [], cover_description: '' };
-    let douyinDraft: DouyinDraft = { opening_hook: '', script: '', bgm_suggestion: '', key_captions: [], cover_description: '' };
+    let xhsDraft: XhsDraft = { title: '', body: '', tags: [] };
+    let douyinDraft: DouyinDraft = { opening_hook: '', script: '', bgm_suggestion: '', key_captions: [] };
 
     try {
       xhsDraft = await llm.callJSON<XhsDraft>(
-        buildContentPrompt(trend, personaDescription, 'xhs', xhsStyle, contextParts.join('\n\n')), 4000,
+        buildContentPrompt(trend, personaDescription, 'xhs', xhsStyle, contextParts.join('\n\n'), {
+          voiceStyle: voice?.style,
+          sampleLines: voice?.sample_lines,
+          identityMode,
+        }), 4000,
       );
     } catch (err) {
       console.error(`[topic-generator] XHS draft failed for "${trend.keyword}":`, err);
@@ -669,15 +750,15 @@ export async function generateTopics(
       const hookContext = hooks.length > 0 ? `参考钩子公式：${hooks.slice(0, 2).join(' / ')}` : '';
       const douyinContext = [...contextParts, hookContext].filter(Boolean).join('\n\n');
       douyinDraft = await llm.callJSON<DouyinDraft>(
-        buildContentPrompt(trend, personaDescription, 'douyin', douyinStyle, douyinContext), 3000,
+        buildContentPrompt(trend, personaDescription, 'douyin', douyinStyle, douyinContext, {
+          voiceStyle: voice?.style,
+          sampleLines: voice?.sample_lines,
+          identityMode,
+        }), 3000,
       );
     } catch (err) {
       console.error(`[topic-generator] Douyin draft failed for "${trend.keyword}":`, err);
     }
-
-    // Generate cover images (via in-process sub-skill import)
-    const coverDescription = xhsDraft.cover_description || douyinDraft.cover_description || trend.keyword;
-    const coverImages = await callGenerateImageInProcess(coverDescription, imageStylePrompt);
 
     // Build template spec for review queue
     const templateSpec: QueueItemTemplateSpec | undefined = template
@@ -694,20 +775,20 @@ export async function generateTopics(
 
     await addItem({
       topic: `蹭 ${trend.keyword}：${trend.hook_angle}`,
-      trend_hook: `${trend.keyword} (${trend.platform}, ${trend.velocity_score.toFixed(1)}x)`,
+      trend_hook: `${trend.keyword} (${trend.platform}, ${trend.velocity_score.toFixed(1)}x, ${trend.source_bucket ?? '热榜'})${trend.clickbait_labels && trend.clickbait_labels.length >= 2 ? ' ⚠️疑似标题党' : ''}${trend.is_ad ? ' 📢广告' : ''}`,
       identity_mode: identityMode,
       content: {
         xhs: {
           title: xhsDraft.title,
           body: xhsDraft.body,
           tags: xhsDraft.tags,
-          cover_images: [...coverImages],
+          cover_images: [],
         },
         douyin: {
           script: `${douyinDraft.opening_hook}\n\n${douyinDraft.script}`.trim(),
           bgm_suggestion: douyinDraft.bgm_suggestion,
           key_captions: douyinDraft.key_captions,
-          cover_images: [...coverImages],
+          cover_images: [],
         },
       },
       template_spec: templateSpec,
