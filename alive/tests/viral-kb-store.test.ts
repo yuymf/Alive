@@ -436,6 +436,32 @@ describe('auditEntries / requeueEntriesForRepair', () => {
     expect(report.usable_count).toBe(0);
   });
 
+  it('detects empty-title entries as hollow even with valid dissection', () => {
+    const emptyTitle = makeEntry({
+      id: 'h-empty-title',
+      title: '',
+      dissection_status: 'done',
+      // dissection is valid (default from makeEntry)
+    });
+    upsertEntry(sandboxDir, emptyTitle);
+
+    const report = auditEntries(sandboxDir);
+    expect(report.hollow_count).toBe(1);
+    expect(report.usable_count).toBe(0);
+  });
+
+  it('detects whitespace-only title entries as hollow', () => {
+    const wsTitle = makeEntry({
+      id: 'h-ws-title',
+      title: '   ',
+      dissection_status: 'done',
+    });
+    upsertEntry(sandboxDir, wsTitle);
+
+    const report = auditEntries(sandboxDir);
+    expect(report.hollow_count).toBe(1);
+  });
+
   it('requeues hollow entries for repair and marks them failed', () => {
     const hollow = makeEntry({
       id: 'h2',

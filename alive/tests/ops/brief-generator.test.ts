@@ -130,4 +130,50 @@ describe('formatBriefCard', () => {
     expect(card).toContain('审核共识');
     expect(card).toContain('人设一致');
   });
+
+  it('shows XHS video storyboard with Seedance fields', () => {
+    const items: QueueItem[] = [
+      {
+        id: 'q_xhs_video', status: 'pending', topic: '变装挑战', trend_hook: '反差变装',
+        identity_mode: 'daily', created_at: recentTimestamp, updated_at: '',
+        content: {
+          xhs: {
+            title: '一秒变装✨', body: '', tags: ['#变装'], cover_images: [],
+            opening_hook: '你见过这样的变装吗',
+            script: '三二一变！',
+            bgm_suggestion: '热门变装BGM',
+            key_captions: ['变装'],
+            total_duration: '15秒',
+            pacing: 'fast',
+            shots: [
+              {
+                index: 1, time_range: '0-3秒', description: '素颜低头', camera_move: 'push_in',
+                camera_angle: 'eye_level', shot_size: 'medium', transition: 'smash',
+                mood: '好奇', video_prompt: 'A girl looking down at camera, natural lighting, cinematic style',
+                negative_prompt: 'jitter, blur, low quality', lighting: 'natural', style: 'cinematic',
+              },
+              {
+                index: 2, time_range: '3-6秒', description: '华丽转身', camera_move: 'orbit',
+                camera_angle: 'low_angle', shot_size: 'full', transition: 'none',
+                mood: '惊艳', video_prompt: 'Quick spin reveal, gorgeous dress, studio lighting',
+                negative_prompt: 'deformed hands, watermark', lighting: 'studio', style: 'fashion',
+              },
+            ],
+          },
+          douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] },
+        },
+        edit_history: [],
+      },
+    ] as QueueItem[];
+    const card = formatBriefCard('2026-03-30', [], [], items);
+    // Should show XHS video storyboard (not douyin)
+    expect(card).toContain('小红书视频分镜');
+    expect(card).toContain('变装挑战');
+    expect(card).toContain('push_in');
+    expect(card).toContain('orbit');
+    expect(card).toContain('🎬'); // video_prompt indicator
+    // Should show pacing and duration
+    expect(card).toContain('15秒');
+    expect(card).toContain('快节奏');
+  });
 });

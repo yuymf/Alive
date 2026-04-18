@@ -165,6 +165,40 @@ describe('buildPostAnalysisPrompt', () => {
     expect(prompt).toContain('V姐');
     expect(prompt).toContain('performance_tier');
   });
+
+  it('should include video analysis dimensions when isVideoContent=true', async () => {
+    const { buildPostAnalysisPrompt } = await import('../../scripts/ops/post-analyzer');
+    const prompt = buildPostAnalysisPrompt({
+      contentText: '变装视频脚本',
+      platform: 'xhs',
+      metrics: { likes: 5000, comments: 200, saves: 300 },
+      templateType: '服装变装',
+      identityMode: 'daily',
+      baseline: 500,
+      personaSummary: 'V姐',
+      isVideoContent: true,
+    });
+    expect(prompt).toContain('视频内容');
+    expect(prompt).toContain('video_analysis');
+    expect(prompt).toContain('shot_execution');
+    expect(prompt).toContain('pacing_effectiveness');
+    expect(prompt).toContain('visual_storytelling');
+  });
+
+  it('should not include video dimensions when isVideoContent is false/undefined', async () => {
+    const { buildPostAnalysisPrompt } = await import('../../scripts/ops/post-analyzer');
+    const prompt = buildPostAnalysisPrompt({
+      contentText: '图文笔记',
+      platform: 'xhs',
+      metrics: { likes: 500, comments: 20, saves: 30 },
+      templateType: '生活分享',
+      identityMode: 'daily',
+      baseline: 100,
+      personaSummary: 'V姐',
+    });
+    expect(prompt).not.toContain('video_analysis');
+    expect(prompt).not.toContain('shot_execution');
+  });
 });
 
 describe('parseAnalysisResponse', () => {

@@ -396,6 +396,25 @@ export async function analyzePublishedPosts(
     // Update content taste memory from this analysis
     updateTasteFromAnalysis(analysis);
 
+    // ─── Feed drift signal back to personality-drift engine ───
+    if (analysis.persona_alignment.tone_consistency !== 'on_brand') {
+      try {
+        const { loadPersonalityDrift, savePersonalityDrift } = await import('../engines/personality-drift');
+        const drift = loadPersonalityDrift();
+        const strength = analysis.persona_alignment.tone_consistency === 'off_brand' ? 1.5 : 0.7;
+        const modifier: import('../utils/types').PersonalityModifier = {
+          trait: analysis.persona_alignment.specific_notes || 'tone',
+          strength,
+          origin: `post-analyzer ${now().toISOString().slice(0, 10)}`,
+          effect: `内容分析检测到${analysis.persona_alignment.tone_consistency === 'off_brand' ? '显著' : '轻微'}调性偏移：${analysis.persona_alignment.specific_notes}`,
+        };
+        drift.modifiers.push(modifier);
+        savePersonalityDrift(drift);
+      } catch {
+        // personality-drift engine not available, skip
+      }
+    }
+
     // Update success rates for patterns actually used by this post
     // Only update patterns that match the template_type or extracted_patterns of the analyzed post
     const tierToRate: Record<PerformanceTier, number> = {

@@ -152,6 +152,25 @@ describe('dissectBatch', () => {
     expect(entry.dissection_error_reason).toBe('hollow_result');
   });
 
+  it('empty title item → status = "failed" with errorReason "empty_title", no LLM call', async () => {
+    const llm = createMockLLMClient([validDissectionJSON]);
+    const item = makeQueueItem({ id: 'q-empty-title', source_id: 'src-empty-title', title: '' });
+    const [entry] = await dissectBatch([item], llm, 'miss-v');
+
+    expect(entry.dissection_status).toBe('failed');
+    expect(entry.dissection_error_reason).toBe('empty_title');
+    expect(entry.title).toBe('');
+  });
+
+  it('whitespace-only title item → status = "failed" with errorReason "empty_title"', async () => {
+    const llm = createMockLLMClient([validDissectionJSON]);
+    const item = makeQueueItem({ id: 'q-ws-title', source_id: 'src-ws-title', title: '   ' });
+    const [entry] = await dissectBatch([item], llm, 'miss-v');
+
+    expect(entry.dissection_status).toBe('failed');
+    expect(entry.dissection_error_reason).toBe('empty_title');
+  });
+
   it('processes multiple items sequentially', async () => {
     const json1 = JSON.stringify({ hook_type: 'A', content_type: 'X', identity_mode: null, emotion_arc: '', interaction_design: '', visual_style: '', cta_type: '', summary: 's1' });
     const json2 = JSON.stringify({ hook_type: 'B', content_type: 'Y', identity_mode: 'racer', emotion_arc: '', interaction_design: '', visual_style: '', cta_type: '', summary: 's2' });
@@ -223,5 +242,43 @@ describe('dissectBatch', () => {
     const item = makeQueueItem(); // no comment_texts
     const results = await dissectBatch([item], llm, 'miss-v');
     expect(results[0].dissection.audience_response).toBeUndefined();
+  });
+});
+
+describe('isXhsVideoItem', () => {
+  it('returns false for douyin items', async () => {
+    const { isXhsVideoItem } = await import('../scripts/ops/content-dissector');
+    const item = makeQueueItem({ platform: 'douyin' });
+    expect(isXhsVideoItem(item)).toBe(false);
+  });
+
+  it('returns false for xhs items without video keywords', async () => {
+    const { isXhsVideoItem } = await import('../scripts/ops/content-dissector');
+    const item = makeQueueItem({ platform: 'xhs', title: '好物分享', description: '推荐一个超好用的' });
+    expect(isXhsVideoItem(item)).toBe(false);
+  });
+
+  it('returns true for xhs items with video keywords in title', async () => {
+    const { isXhsVideoItem } = await import('../scripts/ops/content-dissector');
+    const item = makeQueueItem({ platform: 'xhs', title: '变装挑战', description: '' });
+    expect(isXhsVideoItem(item)).toBe(true);
+  });
+
+  it('returns true for xhs items with video keywords in description', async () => {
+    const { isXhsVideoItem } = await import('../scripts/ops/content-dissector');
+    const item = makeQueueItem({ platform: 'xhs', title: '日常', description: '这个运镜太绝了' });
+    expect(isXhsVideoItem(item)).toBe(true);
+  });
+
+  it('detects VLOG keyword case-insensitively', async () => {
+    const { isXhsVideoItem } = await import('../scripts/ops/content-dissector');
+    const item = makeQueueItem({ platform: 'xhs', title: '一日VLOG', description: '' });
+    expect(isXhsVideoItem(item)).toBe(true);
+  });
+
+  it('detects 卡点 keyword', async () => {
+    const { isXhsVideoItem } = await import('../scripts/ops/content-dissector');
+    const item = makeQueueItem({ platform: 'xhs', title: '卡点视频', description: '' });
+    expect(isXhsVideoItem(item)).toBe(true);
   });
 });

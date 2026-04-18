@@ -389,3 +389,48 @@ describe('buildFormulaContext', () => {
     expect(ctx).not.toContain(':douyin');
   });
 });
+
+describe('buildViralVideoContext', () => {
+  it('returns empty string when no entries have video_structure', () => {
+    const entries: ViralEntry[] = [
+      { url: 'https://xhs/a', platform: 'xhs', title: 'test', metrics: { likes: 1000, comments: 50 }, dissection: {} },
+    ];
+    expect(buildViralVideoContext(entries)).toBe('');
+  });
+
+  it('returns empty string for empty entries array', () => {
+    expect(buildViralVideoContext([])).toBe('');
+  });
+
+  it('aggregates video_structure data from viral entries', () => {
+    const entries: ViralEntry[] = [
+      {
+        url: 'https://xhs/a', platform: 'xhs', title: '变装', metrics: { likes: 5000, comments: 200 },
+        dissection: {
+          video_structure: {
+            shot_count: 6,
+            pacing: 'fast',
+            transition_style: '快切为主',
+            dominant_moves: ['push_in', 'whip_pan'],
+          },
+        },
+      },
+      {
+        url: 'https://xhs/b', platform: 'xhs', title: '转场', metrics: { likes: 3000, comments: 100 },
+        dissection: {
+          video_structure: {
+            shot_count: 5,
+            pacing: 'fast',
+            transition_style: '匹配剪辑',
+            dominant_moves: ['push_in', 'orbit'],
+          },
+        },
+      },
+    ];
+    const ctx = buildViralVideoContext(entries);
+    expect(ctx).toContain('爆款视频运镜参考');
+    expect(ctx).toContain('push_in');  // Most frequent move (appears in both)
+    expect(ctx).toContain('快节奏');    // Most frequent pacing
+    expect(ctx).toContain('平均镜头数');
+  });
+});

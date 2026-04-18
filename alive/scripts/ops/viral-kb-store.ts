@@ -224,6 +224,8 @@ function hasMeaningfulValue(value: string | null | undefined): boolean {
 
 export function isHollowEntry(entry: ViralEntry): boolean {
   if (entry.dissection_status !== 'done') return false;
+  // Original data check: title must be meaningful — empty title means the source data itself is hollow
+  if (!hasMeaningfulValue(entry.title)) return true;
   const dissection = entry.dissection;
   if (!dissection) return true;
 

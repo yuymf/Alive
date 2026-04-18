@@ -201,7 +201,7 @@ interface DissectionJSON {
  * Uses heuristics: description/title contains video-related keywords,
  * or the source_type/content_type metadata indicates video.
  */
-function isXhsVideoItem(item: DissectQueueItem): boolean {
+export function isXhsVideoItem(item: DissectQueueItem): boolean {
   if (item.platform !== 'xhs') return false;
   // Check for video indicators in title or description
   const videoKeywords = ['视频', '视频脚本', '分镜', '运镜', '转场', '变装', '卡点', '手势舞', 'VLOG', 'vlog'];
@@ -322,6 +322,14 @@ async function dissectOne(
   llm: LLMClient,
   personaId: string,
 ): Promise<ViralEntry> {
+  // Early exit: skip LLM call if source data is fundamentally hollow (no title)
+  if (!item.title || !item.title.trim()) {
+    console.warn(
+      `[content-dissector] Skipping item ${item.id}: empty title, source data is hollow`,
+    );
+    return buildFailedEntry(item, personaId, 'empty_title');
+  }
+
   const base: Omit<ViralEntry, 'dissection' | 'dissection_status' | 'kb_tier'> = {
     id: buildEntryId(item.platform, item.source_id),
     platform: item.platform,

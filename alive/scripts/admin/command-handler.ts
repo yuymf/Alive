@@ -143,7 +143,7 @@ function cmdOpsProxy(cmd: ParsedCommand): CommandResult {
   const opsArgs = [cmd.subcommand, ...cmd.args];
   try {
     const output = execFileSync(process.execPath, [opsHandlerPath, ...opsArgs], {
-      timeout: 120_000,
+      timeout: 300_000,
       encoding: 'utf8' as const,
       env: { ...process.env },
     });

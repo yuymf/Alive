@@ -105,6 +105,10 @@ export interface StrategyPromptInput {
   audiencePerceptionSummary?: string;
   /** Review learning summary from recent queue item review feedback */
   reviewLearningSummary?: string;
+  /** Drift score from personality-drift engine (0-10) */
+  driftScore: number;
+  /** Drifting traits with quantified deviation from personality-drift engine */
+  driftingTraits: import('../engines/personality-drift').DriftingTrait[];
 }
 
 export function buildStrategyPrompt(input: StrategyPromptInput): string {
@@ -125,7 +129,9 @@ export function buildStrategyPrompt(input: StrategyPromptInput): string {
     : '暂无模式数据';
   const risingStr = (risingPatterns ?? []).length > 0 ? risingPatterns.join('、') : '无';
   const decliningStr = (decliningPatterns ?? []).length > 0 ? decliningPatterns.join('、') : '无';
-  const driftStr = driftAreas.length > 0 ? driftAreas.join('、') : '无明显偏移';
+  const driftStr = input.driftScore > 0
+    ? `偏离度 ${input.driftScore.toFixed(1)}/10 — ${driftAreas.join('、')}`
+    : '无明显偏移';
   const totalPosts = Object.values(td).reduce((a, b) => a + b, 0);
 
   // Comment insights section
@@ -362,6 +368,22 @@ function buildStrategyInput(
     .map(e => e.persona_alignment.specific_notes)
     .filter(Boolean);
 
+  // Prefer personality-drift engine's quantitative data over LLM one-shot analysis
+  let driftScore = 0;
+  let driftingTraits: import('../engines/personality-drift').DriftingTrait[] = [];
+  try {
+    const { detectDrift } = require('../engines/personality-drift') as typeof import('../engines/personality-drift');
+    const driftAnalysis = detectDrift();
+    driftScore = driftAnalysis.score;
+    driftingTraits = driftAnalysis.drifting_traits;
+    if (driftAnalysis.drifting_traits.length > 0) {
+      const engineDriftAreas = driftAnalysis.drifting_traits.map(t => `${t.trait}(偏离${t.deviation.toFixed(1)})`);
+      driftAreas.splice(0, driftAreas.length, ...engineDriftAreas);
+    }
+  } catch {
+    // Fallback: use LLM-analyzed drift from analysis log (driftAreas already populated)
+  }
+
   const topPatterns = [...patterns.patterns]
     .sort((a, b) => (b.success_rate ?? 0) - (a.success_rate ?? 0))
     .slice(0, TOP_PATTERNS_LIMIT);
@@ -390,6 +412,8 @@ function buildStrategyInput(
     competitorSummary,
     personaSummary,
     weekOverWeek,
+    driftScore,
+    driftingTraits,
   };
 }
 
@@ -460,6 +484,19 @@ export async function computeStrategy(
     }
   } catch {
     // review learning not available, skip
+  }
+
+  // ─── Auto-inject drift correction when score exceeds threshold ───
+  if (input.driftScore >= 6.0) {
+    try {
+      const { generateDriftWarning } = require('../engines/personality-drift') as typeof import('../engines/personality-drift');
+      const { loadPersona } = require('../persona/persona-loader') as typeof import('../persona/persona-loader');
+      const persona = loadPersona();
+      const warning = generateDriftWarning(persona, input.driftScore, input.driftingTraits);
+      input.personaSummary += `\n\n⚠️ 人设漂移预警（自动注入）:\n${warning}`;
+    } catch {
+      // drift warning generation failed, skip
+    }
   }
 
   const prompt = buildStrategyPrompt(input);
