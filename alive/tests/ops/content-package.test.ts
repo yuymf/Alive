@@ -76,6 +76,42 @@ describe('formatContentPackage', () => {
     const result = formatContentPackage(noPrompts);
     expect(result).not.toContain('AI生图提示词');
   });
+
+  it('includes Seedance video_prompt, negative_prompt, lighting, style in shot details', () => {
+    const withShots: QueueItem = {
+      ...sampleItem,
+      content: {
+        ...sampleItem.content,
+        douyin: {
+          ...sampleItem.content.douyin,
+          shots: [
+            {
+              index: 1,
+              time_range: '0-3秒',
+              description: '电竞解说台前，银发女孩紧盯屏幕',
+              camera_move: 'push_in' as const,
+              camera_angle: 'eye_level' as const,
+              shot_size: 'medium' as const,
+              transition: 'cut' as const,
+              mood: '紧张专注',
+              video_prompt: 'A young woman with silver hair in a gaming jersey, intensely staring at a monitor, her fingers rapidly pressing keyboard keys, in a dimly lit esports arena with neon blue and purple lights, dramatic side lighting with rim light, slow push-in camera, cinematic, 35mm, shallow depth of field',
+              negative_prompt: 'jitter, bent limbs, deformed hands, blur, low quality, watermark',
+              lighting: 'dramatic side lighting with rim light',
+              style: 'cinematic, 35mm, shallow depth of field',
+            },
+          ],
+          total_duration: '25-30秒',
+          pacing: 'fast' as const,
+        },
+      },
+    };
+    const result = formatContentPackage(withShots);
+    expect(result).toContain('video_prompt:');
+    expect(result).toContain('negative:');
+    expect(result).toContain('lighting:');
+    expect(result).toContain('style:');
+    expect(result).toContain('dramatic side lighting');
+  });
 });
 
 describe('extractPlatformUrl', () => {

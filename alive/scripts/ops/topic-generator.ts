@@ -57,6 +57,12 @@ export function buildViralContext(entries: ViralEntry[], platform: string): stri
     if (d.audience_response?.desire_signals && d.audience_response.desire_signals.length > 0) {
       parts.push(`   受众渴望：${d.audience_response.desire_signals.join('、')}`);
     }
+    // Append video_structure for douyin entries (爆款回流)
+    if (d.video_structure) {
+      const vs = d.video_structure;
+      const moveStr = vs.dominant_moves.length > 0 ? vs.dominant_moves.join('、') : '未知';
+      parts.push(`   视频结构：${vs.shot_count}镜头 · ${vs.pacing}节奏 · ${vs.transition_style} · 主运镜：${moveStr}`);
+    }
     return parts.join('\n');
   }).filter(Boolean);
 
@@ -64,6 +70,92 @@ export function buildViralContext(entries: ViralEntry[], platform: string): stri
     `近期${platformLabel}上【${identityLabel}】赛道爆款规律（供参考，不强制模仿）：`,
     ...lines,
   ].join('\n');
+}
+
+/**
+ * Build a video structure context from viral entries for douyin content generation.
+ * Extracts common camera moves, pacing patterns, and transition styles from
+ * dissected viral videos, then injects them as reference for new shot generation.
+ *
+ * This is the "爆款回流" loop: learn from what works → guide new creation.
+ */
+export function buildViralVideoContext(entries: ViralEntry[]): string {
+  if (entries.length === 0) return '';
+
+  // Only consider entries with video_structure
+  const withVideo = entries.filter(e => e.dissection?.video_structure);
+  if (withVideo.length === 0) return '';
+
+  // Aggregate camera moves across all viral entries
+  const moveCounts = new Map<string, number>();
+  const pacingCounts = new Map<string, number>();
+  const transitionStyles: string[] = [];
+
+  for (const e of withVideo) {
+    const vs = e.dissection!.video_structure!;
+
+    // Count dominant moves
+    for (const move of vs.dominant_moves) {
+      moveCounts.set(move, (moveCounts.get(move) ?? 0) + 1);
+    }
+
+    // Count pacing patterns
+    if (vs.pacing) {
+      pacingCounts.set(vs.pacing, (pacingCounts.get(vs.pacing) ?? 0) + 1);
+    }
+
+    // Collect transition styles
+    if (vs.transition_style) {
+      transitionStyles.push(vs.transition_style);
+    }
+  }
+
+  // Sort by frequency
+  const topMoves = [...moveCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([move]) => move);
+
+  const topPacing = [...pacingCounts.entries()]
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  // Build context string
+  const parts: string[] = [];
+
+  if (topMoves.length > 0) {
+    parts.push(`爆款高频运镜：${topMoves.join('、')}（建议至少使用其中一种）`);
+  }
+
+  if (topPacing) {
+    const pacingLabel: Record<string, string> = {
+      slow: '慢节奏（沉浸/治愈类）',
+      medium: '中速节奏（日常/讲解类）',
+      fast: '快节奏（变装/高燃类）',
+      variable: '变速节奏（叙事/反差类）',
+    };
+    parts.push(`爆款常见节奏：${pacingLabel[topPacing] ?? topPacing}`);
+  }
+
+  if (transitionStyles.length > 0) {
+    // Deduplicate and take top 2 most common styles
+    const styleCounts = new Map<string, number>();
+    for (const s of transitionStyles) {
+      styleCounts.set(s, (styleCounts.get(s) ?? 0) + 1);
+    }
+    const topStyles = [...styleCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([s]) => s);
+    parts.push(`爆款转场风格：${topStyles.join('、')}`);
+  }
+
+  // Calculate average shot count
+  const avgShots = Math.round(
+    withVideo.reduce((sum, e) => sum + e.dissection!.video_structure!.shot_count, 0) / withVideo.length
+  );
+  parts.push(`爆款平均镜头数：${avgShots}`);
+
+  return `【爆款视频运镜参考（提炼自${withVideo.length}条爆款视频数据）】\n${parts.join('\n')}\n⚠️ 以上为数据参考，请结合内容模板蓝图的约束来设计分镜。`;
 }
 
 // ─── Pure functions (exported for testing) ───────────────────────────────────
@@ -441,12 +533,83 @@ const DOUYIN_GUIDELINES = `【抖音脚本写作规范】
 
 转场词汇参考（transition）：
   cut(硬切) | dissolve(叠化) | wipe(擦除) | match_cut(匹配剪辑)
-  whip(甩镜头) | fade(淡入淡出) | smash(碎切) | zoom(变焦转场) | mask(遮罩) | none(无)`;
+  whip(甩镜头) | fade(淡入淡出) | smash(碎切) | zoom(变焦转场) | mask(遮罩) | none(无)
+
+【Seedance 2.0 视频提示词规范】
+每个镜头必须同时产出 Seedance 2.0 兼容的英文视频提示词，用于直接驱动 AI 视频生成。
+
+六步公式（video_prompt，英文60-100词，严格按顺序）：
+  ① Subject（主体） — 人物外貌+穿着，如 "A young woman with silver hair in a gaming jersey"
+  ② Action（动作） — 正在做什么，如 "intensely staring at a monitor, fingers rapidly pressing keyboard keys"
+  ③ Environment（环境） — 场景/背景，如 "in a dimly lit esports arena with neon blue and purple lights"
+  ④ Lighting（光线） — 光线描述，如 "dramatic side lighting with rim light"（也单独填入 lighting 字段）
+  ⑤ Camera（镜头运动） — 摄影机参数，如 "slow push-in camera"（与 camera_move 保持语义一致）
+  ⑥ Style（风格） — 视觉风格关键词，如 "cinematic, 35mm, shallow depth of field"（也单独填入 style 字段）
+
+lighting 字段参考词汇：
+  soft natural light | dramatic side lighting with rim light | golden hour warm backlight
+  neon-lit low key lighting | flat studio lighting | overhead fluorescent | candlelit warm glow
+  harsh spotlight | blue hour ambient | backlit silhouette
+
+style 字段参考词汇：
+  cinematic, 35mm, shallow depth of field | vlog, handheld, natural | anime, cel-shaded, vibrant colors
+  documentary, raw, unfiltered | fashion editorial, high contrast | retro film, grain, warm tones
+  noir, high contrast, monochrome | dreamy, soft focus, pastel
+
+negative_prompt 字段（英文，逗号分隔）：
+  必须包含: jitter, bent limbs, deformed hands, blur, low quality, watermark
+  可追加: text, subtitle, logo, oversaturated, distorted face, duplicate frames
+
+重要规则：
+- video_prompt 必须用英文写，60-100词，覆盖六步公式全部要素
+- lighting 和 style 字段从参考词汇中选取或组合
+- negative_prompt 每个镜头至少包含上面"必须包含"的6项
+- 环境和光线是 Seedance 中杠杆最高的元素，务必详细描写`;
 
 const XHS_OUTPUT_FORMAT = `输出格式 JSON：
 {"title":"...（11-20字，含emoji）","body":"...（正文500字以内，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"]}`;
 
-const DOUYIN_OUTPUT_FORMAT = `输出格式 JSON（分镜结构）：
+const XHS_VIDEO_OUTPUT_FORMAT = `输出格式 JSON（视频脚本+分镜结构，含 Seedance 2.0 视频提示词）：
+{
+  "title": "...（11-20字，含emoji）",
+  "opening_hook": "前3秒钩子（11-20字，反问/冲突/悬念）",
+  "script": "完整视频脚本（150-400字，口语化短句）",
+  "bgm_suggestion": "推荐BGM风格或歌名",
+  "key_captions": ["字幕要点1（≤10字）", "字幕要点2"],
+  "total_duration": "总时长（如15-25秒）",
+  "pacing": "slow | medium | fast | variable",
+  "shots": [
+    {
+      "index": 1,
+      "time_range": "0-3秒",
+      "description": "画面内容描述（中文）",
+      "camera_move": "从运镜词汇中选择一个",
+      "camera_angle": "从机位词汇中选择一个",
+      "shot_size": "从景别词汇中选择一个",
+      "transition": "从转场词汇中选择一个（最后镜头用none）",
+      "text_overlay": "画面文字（可选，≤8字）",
+      "mood": "情绪标签",
+      "video_prompt": "English 60-100 words, following 6-step formula: Subject + Action + Environment + Lighting + Camera + Style",
+      "negative_prompt": "jitter, bent limbs, deformed hands, blur, low quality, watermark, ...",
+      "lighting": "从lighting参考词汇中选取",
+      "style": "从style参考词汇中选取"
+    }
+  ],
+  "tags": ["#精准长尾词1", "#热门大词"]
+}
+
+分镜设计要求：
+1. shots 数组必须包含 4-7 个镜头，按时间顺序排列
+2. 第一个镜头必须对应 opening_hook 的时间段（0-3秒）
+3. 各镜头 time_range 必须连续且覆盖 total_duration
+4. mood 必须构成递进弧线（好奇→紧张→惊艳→自信 等）
+5. text_overlay 仅在必要时添加，可省略（省略时不要输出该字段）
+6. 每个 camera_move/camera_angle/shot_size/transition 必须从上面的词汇表中选择
+7. 每个镜头的 video_prompt 必须是英文 60-100 词，严格按六步公式顺序写
+8. negative_prompt 每个镜头至少包含: jitter, bent limbs, deformed hands, blur, low quality, watermark
+9. lighting 和 style 字段从 Seedance 参考词汇中选取`;
+
+const DOUYIN_OUTPUT_FORMAT = `输出格式 JSON（分镜结构，含 Seedance 2.0 视频提示词）：
 {
   "opening_hook": "前3秒钩子（11-20字，反问/冲突/悬念）",
   "script": "完整口播脚本（200-500字，短句口语化）",
@@ -458,13 +621,17 @@ const DOUYIN_OUTPUT_FORMAT = `输出格式 JSON（分镜结构）：
     {
       "index": 1,
       "time_range": "0-3秒",
-      "description": "画面内容、人物动作、表情（用中文）",
+      "description": "画面内容、人物动作、表情（中文）",
       "camera_move": "从运镜词汇中选择一个",
       "camera_angle": "从机位词汇中选择一个",
       "shot_size": "从景别词汇中选择一个",
       "transition": "从转场词汇中选择一个（最后镜头用none）",
       "text_overlay": "画面文字（可选，≤8字）",
-      "mood": "情绪标签（如：紧张悬念）"
+      "mood": "情绪标签（如：紧张悬念）",
+      "video_prompt": "English 60-100 words, following 6-step formula: Subject + Action + Environment + Lighting + Camera + Style",
+      "negative_prompt": "jitter, bent limbs, deformed hands, blur, low quality, watermark, ...",
+      "lighting": "从lighting参考词汇中选取",
+      "style": "从style参考词汇中选取"
     },
     {
       "index": 2,
@@ -475,7 +642,11 @@ const DOUYIN_OUTPUT_FORMAT = `输出格式 JSON（分镜结构）：
       "shot_size": "...",
       "transition": "...",
       "text_overlay": "...",
-      "mood": "..."
+      "mood": "...",
+      "video_prompt": "...",
+      "negative_prompt": "...",
+      "lighting": "...",
+      "style": "..."
     }
   ]
 }
@@ -486,7 +657,10 @@ const DOUYIN_OUTPUT_FORMAT = `输出格式 JSON（分镜结构）：
 3. 各镜头 time_range 必须连续且覆盖 total_duration
 4. mood 必须构成递进弧线（好奇→紧张→惊艳→自信 等）
 5. text_overlay 仅在必要时添加，可省略（省略时不要输出该字段）
-6. 每个 camera_move/camera_angle/shot_size/transition 必须从上面的词汇表中选择`;
+6. 每个 camera_move/camera_angle/shot_size/transition 必须从上面的词汇表中选择
+7. 每个镜头的 video_prompt 必须是英文 60-100 词，严格按六步公式顺序写
+8. negative_prompt 每个镜头至少包含: jitter, bent limbs, deformed hands, blur, low quality, watermark
+9. lighting 和 style 字段从 Seedance 参考词汇中选取`;
 
 // ─── Prompt builder ─────────────────────────────────────────────────────────
 
@@ -495,6 +669,8 @@ export interface ContentPromptOptions {
   voiceStyle?: string;
   sampleLines?: string[];
   identityMode?: string;
+  /** Content template — used to determine XHS video_post format */
+  template?: ContentTemplate | null;
 }
 
 /** Identity-mode → voice personality mapping for prompt injection */
@@ -520,8 +696,14 @@ export function buildContentPrompt(
   extraContext?: string,
   options?: ContentPromptOptions,
 ): string {
-  const guidelines = platform === 'xhs' ? XHS_GUIDELINES : DOUYIN_GUIDELINES;
-  const platformLabel = platform === 'xhs' ? '小红书图文' : '抖音视频脚本';
+  // XHS video_post templates use douyin-style guidelines + video output format
+  const isXhsVideo = platform === 'xhs' && options?.template?.format === 'video_post';
+  const guidelines = isXhsVideo ? DOUYIN_GUIDELINES
+    : platform === 'xhs' ? XHS_GUIDELINES
+    : DOUYIN_GUIDELINES;
+  const platformLabel = isXhsVideo ? '小红书视频脚本'
+    : platform === 'xhs' ? '小红书图文'
+    : '抖音视频脚本';
 
   // ── Voice & identity injection ──
   const voiceStyle = options?.voiceStyle ?? '';
@@ -588,7 +770,7 @@ ${prohibitions}
 
 请严格按照以上写作规范和爆款思维框架，生成一条完整的 ${platformLabel} 内容草稿。
 
-${platform === 'xhs' ? XHS_OUTPUT_FORMAT : DOUYIN_OUTPUT_FORMAT}`;
+${isXhsVideo ? XHS_VIDEO_OUTPUT_FORMAT : platform === 'xhs' ? XHS_OUTPUT_FORMAT : DOUYIN_OUTPUT_FORMAT}`;
 
   return extraContext ? `${base}\n\n${extraContext}` : base;
 }
@@ -607,10 +789,16 @@ export function buildRegeneratePrompt(
     'xhs.title': '11-20字，必须含emoji，制造好奇心缺口（疑问/数字/反转）',
     'xhs.body': '500字以内，每2-3句换行，段落间用emoji分隔，口语化但有信息密度',
     'xhs.tags': '5-10个标签，前3个精准长尾词，后面热门大词',
+    'xhs.opening_hook': '前3秒钩子，11-20字，反问/冲突/悬念',
+    'xhs.script': '150-400字，视频脚本，口语化短句',
+    'xhs.shots': '4-7个镜头的分镜数组，每个镜头含 index/time_range/description/camera_move/camera_angle/shot_size/transition/mood + Seedance video_prompt/negative_prompt/lighting/style',
+    'xhs.bgm_suggestion': '匹配视频情绪的BGM',
+    'xhs.key_captions': '3-5个关键字幕，每条≤10字',
     'douyin.opening_hook': '前3秒文案，11-20字，用反问/冲突/悬念/数字冲击',
     'douyin.script': '200-500字，口语化短句，每句≤15字，像聊天不像念稿',
     'douyin.bgm_suggestion': '匹配内容情绪的BGM，优先热门音频',
     'douyin.key_captions': '3-5个关键字幕，每条≤10字，强化记忆点',
+    'douyin.shots': '4-7个镜头的分镜数组，每个镜头含 index/time_range/description/camera_move/camera_angle/shot_size/transition/mood + Seedance video_prompt/negative_prompt/lighting/style',
   };
   const constraint = fieldConstraints[field] ?? '无特殊约束';
   const jsonKey = field.split('.').pop() ?? field;
@@ -692,7 +880,35 @@ async function generateHooksViaLLM(
   }
 }
 
-interface XhsDraft { title: string; body: string; tags: string[]; cover_description: string }
+interface XhsDraft {
+  title: string;
+  body: string;
+  tags: string[];
+  cover_description: string;
+  /** Video fields (only when template.format === 'video_post') */
+  opening_hook?: string;
+  script?: string;
+  bgm_suggestion?: string;
+  key_captions?: string[];
+  total_duration?: string;
+  pacing?: string;
+  shots?: Array<{
+    index: number;
+    time_range: string;
+    description: string;
+    camera_move: string;
+    camera_angle: string;
+    shot_size: string;
+    transition: string;
+    text_overlay?: string;
+    mood: string;
+    // Seedance 2.0 fields
+    video_prompt?: string;
+    negative_prompt?: string;
+    lighting?: string;
+    style?: string;
+  }>;
+}
 interface DouyinDraft {
   opening_hook: string;
   script: string;
@@ -710,6 +926,11 @@ interface DouyinDraft {
     transition: string;
     text_overlay?: string;
     mood: string;
+    // Seedance 2.0 fields
+    video_prompt: string;
+    negative_prompt: string;
+    lighting: string;
+    style: string;
   }>;
   cover_description: string;
 }
@@ -877,6 +1098,10 @@ export async function generateTopics(
     if (formulaContext) contextParts.push(formulaContext);
     if (viralContext) contextParts.push(viralContext);
 
+    // Inject viral video structure context (爆款回流：运镜模式从爆款学习)
+    const viralVideoCtx = buildViralVideoContext(trackPatterns);
+    if (viralVideoCtx) contextParts.push(viralVideoCtx);
+
     // Inject content-driven factor context
     const cdfContext = buildContentDrivenContext(analysisStore, ops.competitors, identityMode);
     if (cdfContext) contextParts.push(cdfContext);
@@ -911,6 +1136,7 @@ export async function generateTopics(
           voiceStyle: voice?.style,
           sampleLines: voice?.sample_lines,
           identityMode,
+          template,
         }), 4000,
       );
     } catch (err) {
@@ -956,6 +1182,28 @@ export async function generateTopics(
           body: xhsDraft.body,
           tags: xhsDraft.tags,
           cover_images: [],
+          // Video fields for XHS video_post templates
+          opening_hook: xhsDraft.opening_hook,
+          script: xhsDraft.script,
+          bgm_suggestion: xhsDraft.bgm_suggestion,
+          key_captions: xhsDraft.key_captions,
+          shots: (xhsDraft.shots ?? []).map(s => ({
+            index: s.index,
+            time_range: s.time_range,
+            description: s.description,
+            camera_move: s.camera_move as import('../utils/types').CameraMove,
+            camera_angle: s.camera_angle as import('../utils/types').CameraAngle,
+            shot_size: s.shot_size as import('../utils/types').ShotSize,
+            transition: s.transition as import('../utils/types').ShotTransition,
+            text_overlay: s.text_overlay,
+            mood: s.mood,
+            video_prompt: s.video_prompt ?? '',
+            negative_prompt: s.negative_prompt ?? 'jitter, bent limbs, deformed hands, blur, low quality, watermark',
+            lighting: s.lighting ?? '',
+            style: s.style ?? '',
+          })),
+          total_duration: xhsDraft.total_duration,
+          pacing: xhsDraft.pacing as QueueItemContent['xhs']['pacing'],
         },
         douyin: {
           script: `${douyinDraft.opening_hook}\n\n${douyinDraft.script}`.trim(),
@@ -972,6 +1220,10 @@ export async function generateTopics(
             transition: s.transition as import('../utils/types').ShotTransition,
             text_overlay: s.text_overlay,
             mood: s.mood,
+            video_prompt: s.video_prompt ?? '',
+            negative_prompt: s.negative_prompt ?? 'jitter, bent limbs, deformed hands, blur, low quality, watermark',
+            lighting: s.lighting ?? '',
+            style: s.style ?? '',
           })),
           total_duration: douyinDraft.total_duration || '',
           pacing: (douyinDraft.pacing || 'variable') as QueueItemContent['douyin']['pacing'],

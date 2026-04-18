@@ -253,28 +253,40 @@ export function formatBriefCard(
   }
 
   // 🎬 今日视频分镜 (structured: topic + identity + shot-by-shot storyboard)
+  // Supports both douyin and XHS video_post formats
   if (firstPending) {
     const douyin = firstPending.content?.douyin;
-    if (douyin && (douyin.key_captions.length > 0 || douyin.bgm_suggestion || douyin.script || douyin.shots?.length > 0)) {
-      lines.push('━━ 🎬 今日视频分镜 ━━');
-      // Associate with the topic
+    const xhs = firstPending.content?.xhs;
+    const isXhsVideo = !!(xhs?.shots && xhs.shots.length > 0);
+
+    // Prefer douyin storyboard; fall back to XHS video storyboard
+    const storyboard = (douyin && (douyin.shots?.length > 0 || douyin.key_captions.length > 0 || douyin.bgm_suggestion || douyin.script))
+      ? { platform: 'douyin' as const, source: douyin }
+      : isXhsVideo
+        ? { platform: 'xhs' as const, source: xhs! }
+        : null;
+
+    if (storyboard) {
+      const src = storyboard.source;
+      const platformLabel = storyboard.platform === 'xhs' ? '小红书视频' : '抖音视频';
+      lines.push(`━━ 🎬 今日${platformLabel}分镜 ━━`);
       lines.push(`📌 选题：${firstPending.topic}`);
       if (firstPending.identity_mode) {
         lines.push(`🎭 身份：${firstPending.identity_mode}`);
       }
-      if (douyin.total_duration) {
-        lines.push(`⏱ 时长：${douyin.total_duration}`);
+      if (src.total_duration) {
+        lines.push(`⏱ 时长：${src.total_duration}`);
       }
-      if (douyin.pacing) {
+      if (src.pacing) {
         const pacingLabel: Record<string, string> = { slow: '慢节奏', medium: '中速', fast: '快节奏', variable: '变速' };
-        lines.push(`🎵 节奏：${pacingLabel[douyin.pacing] ?? douyin.pacing}`);
+        lines.push(`🎵 节奏：${pacingLabel[src.pacing] ?? src.pacing}`);
       }
       lines.push('');
 
       // Structured shot-by-shot storyboard (primary)
-      if (douyin.shots && douyin.shots.length > 0) {
+      if (src.shots && src.shots.length > 0) {
         lines.push('📋 分镜表：');
-        douyin.shots.forEach((shot) => {
+        src.shots.forEach((shot) => {
           const cameraIcon: Record<string, string> = {
             static: '📐', pan: '↔️', tilt: '↕️', push_in: '🔍', pull_out: '🔭',
             tracking: '🏃', dolly: '🛤️', crane: '🏗️', orbit: '🔄', handheld: '✋',
@@ -290,27 +302,31 @@ export function formatBriefCard(
           lines.push(`     📝 ${shot.description}`);
           if (shot.text_overlay) lines.push(`     💬 "${shot.text_overlay}"`);
           lines.push(`     ${tIcon} → ${shot.transition} | 😐 ${shot.mood}`);
+          // Show Seedance fields in brief (condensed: video_prompt truncated, others on one line)
+          if (shot.video_prompt) {
+            const vpShort = shot.video_prompt.length > 80 ? shot.video_prompt.slice(0, 80) + '…' : shot.video_prompt;
+            lines.push(`     🎬 ${vpShort}`);
+          }
         });
         lines.push('');
-      } else {
-        // Fallback: key_captions with scene labels (legacy)
-        if (douyin.key_captions.length > 0) {
-          const sceneLabels = ['开场', '铺垫', '高潮', '收尾', '彩蛋', '转场'];
-          douyin.key_captions.forEach((cap, idx) => {
-            const label = idx < sceneLabels.length ? sceneLabels[idx] : `P${idx + 1}`;
-            lines.push(`${idx + 1}. [${label}] ${cap}`);
-          });
-          lines.push('');
-        }
+      } else if (storyboard.platform === 'douyin' && douyin!.key_captions.length > 0) {
+        // Fallback: key_captions with scene labels (legacy, douyin only)
+        const sceneLabels = ['开场', '铺垫', '高潮', '收尾', '彩蛋', '转场'];
+        douyin!.key_captions.forEach((cap, idx) => {
+          const label = idx < sceneLabels.length ? sceneLabels[idx] : `P${idx + 1}`;
+          lines.push(`${idx + 1}. [${label}] ${cap}`);
+        });
+        lines.push('');
       }
-      if (douyin.bgm_suggestion) {
-        lines.push(`🎵 BGM: ${douyin.bgm_suggestion}`);
+      if (src.bgm_suggestion) {
+        lines.push(`🎵 BGM: ${src.bgm_suggestion}`);
       }
       // Script excerpt (first 200 chars)
-      if (douyin.script && douyin.script.length > 0) {
-        const excerpt = douyin.script.length > 200
-          ? douyin.script.slice(0, 200) + '…'
-          : douyin.script;
+      const scriptText = storyboard.platform === 'xhs' ? xhs!.script : douyin!.script;
+      if (scriptText && scriptText.length > 0) {
+        const excerpt = scriptText.length > 200
+          ? scriptText.slice(0, 200) + '…'
+          : scriptText;
         lines.push(`📝 脚本摘要：${excerpt}`);
       }
       lines.push('🎬 /video 完整脚本 · /edit 分镜 调整');
@@ -578,7 +594,47 @@ export function formatContentPackage(item: QueueItem): string {
   ];
 
   const { xhs } = item.content;
-  lines.push('━━ 小红书 图文 ━━', `【标题】${xhs.title}`, '【正文】', xhs.body, `【标签】${xhs.tags.join(' ')}`);
+  const isXhsVideo = !!(xhs.shots && xhs.shots.length > 0);
+  lines.push(`━━ 小红书 ${isXhsVideo ? '视频脚本' : '图文'} ━━`, `【标题】${xhs.title}`);
+  if (isXhsVideo) {
+    // XHS video_post format
+    if (xhs.opening_hook) lines.push(`【钩子】${xhs.opening_hook}`);
+    if (xhs.script) lines.push('【脚本】', xhs.script);
+    if (xhs.bgm_suggestion) lines.push(`【BGM】${xhs.bgm_suggestion}`);
+    if (xhs.key_captions && xhs.key_captions.length > 0) {
+      lines.push('【关键字幕】');
+      xhs.key_captions.forEach(c => lines.push(`  - ${c}`));
+    }
+    if (xhs.total_duration) lines.push(`【总时长】${xhs.total_duration}`);
+    if (xhs.pacing) {
+      const pacingLabel: Record<string, string> = { slow: '慢节奏', medium: '中速', fast: '快节奏', variable: '变速' };
+      lines.push(`【节奏】${pacingLabel[xhs.pacing] ?? xhs.pacing}`);
+    }
+    if (xhs.shots && xhs.shots.length > 0) {
+      lines.push('【分镜表】');
+      xhs.shots.forEach((shot) => {
+        const textPart = shot.text_overlay ? ` 💬"${shot.text_overlay}"` : '';
+        lines.push(`  #${shot.index} [${shot.time_range}] ${shot.shot_size}/${shot.camera_move}/${shot.camera_angle} → ${shot.transition}`);
+        lines.push(`    ${shot.description}${textPart} | ${shot.mood}`);
+        if (shot.video_prompt) {
+          lines.push(`    🎬 video_prompt: ${shot.video_prompt}`);
+        }
+        if (shot.negative_prompt) {
+          lines.push(`    🚫 negative: ${shot.negative_prompt}`);
+        }
+        if (shot.lighting) {
+          lines.push(`    💡 lighting: ${shot.lighting}`);
+        }
+        if (shot.style) {
+          lines.push(`    🎨 style: ${shot.style}`);
+        }
+      });
+    }
+  } else {
+    // XHS image_post format (default)
+    lines.push('【正文】', xhs.body);
+  }
+  lines.push(`【标签】${xhs.tags.join(' ')}`);
   if (xhs.cover_images.length > 0) {
     lines.push('【封面】');
     xhs.cover_images.forEach((url, i) => lines.push(`  图${i + 1}: ${url}`));
@@ -600,6 +656,18 @@ export function formatContentPackage(item: QueueItem): string {
       const textPart = shot.text_overlay ? ` 💬"${shot.text_overlay}"` : '';
       lines.push(`  #${shot.index} [${shot.time_range}] ${shot.shot_size}/${shot.camera_move}/${shot.camera_angle} → ${shot.transition}`);
       lines.push(`    ${shot.description}${textPart} | ${shot.mood}`);
+      if (shot.video_prompt) {
+        lines.push(`    🎬 video_prompt: ${shot.video_prompt}`);
+      }
+      if (shot.negative_prompt) {
+        lines.push(`    🚫 negative: ${shot.negative_prompt}`);
+      }
+      if (shot.lighting) {
+        lines.push(`    💡 lighting: ${shot.lighting}`);
+      }
+      if (shot.style) {
+        lines.push(`    🎨 style: ${shot.style}`);
+      }
     });
   }
   if (douyin.key_captions.length > 0) {

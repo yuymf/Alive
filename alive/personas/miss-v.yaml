@@ -390,6 +390,7 @@ ops:
       category: "音乐"
       priority: "high"
       identity_mode: "singer"
+      format: "video_post"
       scene: "多场景叙事MV（都市/旷野/室内等）"
       camera: "慢镜头氛围感特写、多场景转切、情绪细节捕捉"
       styling: "多元造型切换（酷飒/温柔/复古）、表情随剧情流转、肢体动作贴合氛围"
@@ -400,11 +401,19 @@ ops:
       reference_links:
         - "https://v.douyin.com/ucO_pzp9uL4/"
       platforms: ["douyin", "xhs"]
+      video_blueprint:
+        default_shots: 6
+        pacing: "variable"
+        duration_range: "20-35秒"
+        required_moves: ["push_in", "orbit"]
+        required_transitions: ["dissolve", "match_cut"]
+        mood_arc: ["空灵", "张力", "释放", "余韵"]
 
     - type: "日常弹唱"
       category: "音乐"
       priority: "normal"
       identity_mode: "singer"
+      format: "video_post"
       scene: "居家/私人练习室"
       camera: "手写歌词本特写、弹唱近景、即兴创作跟拍"
       styling: "慵懒私服（宽松针织/休闲卫衣）、松弛随性表情、抱吉他/弹钢琴动作、简约配饰"
@@ -416,11 +425,19 @@ ops:
       reference_links:
         - "https://v.douyin.com/pXCsmF3wZPs/"
       platforms: ["douyin", "xhs"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "slow"
+        duration_range: "15-25秒"
+        required_moves: ["static", "push_in"]
+        required_transitions: ["dissolve", "fade"]
+        mood_arc: ["慵懒", "沉浸", "温柔"]
 
     - type: "舞台高光/封神舞台"
       category: "音乐"
       priority: "high"
       identity_mode: "singer"
+      format: "video_post"
       scene: "正式演出舞台（演唱会/打歌舞台）"
       camera: "高光时刻特写、舞台全景、造型/舞美镜头"
       styling: "高定舞台造型（亮片/利落剪裁）、自信凌厉表情、张力演唱/舞蹈动作、夸张舞台配饰"
@@ -432,11 +449,19 @@ ops:
       reference_links:
         - "https://v.douyin.com/GyHbgjEZXF4/"
       platforms: ["douyin", "xhs"]
+      video_blueprint:
+        default_shots: 5
+        pacing: "fast"
+        duration_range: "15-25秒"
+        required_moves: ["crane", "zoom_in"]
+        required_transitions: ["smash", "cut"]
+        mood_arc: ["蓄势", "爆发", "封神"]
 
     - type: "饭撒片段"
       category: "音乐"
       priority: "normal"
       identity_mode: "singer"
+      format: "video_post"
       scene: "舞台ending/粉丝互动环节"
       camera: "ending pose特写、耳钉反光细节、对视粉丝近景"
       styling: "保留舞台妆造但更柔和、温柔微笑表情、ending比V/挥手动作、单边麦耳钉细节"
@@ -448,11 +473,19 @@ ops:
       reference_links:
         - "https://www.xiaohongshu.com/discovery/item/66e64fd30000000025031bdd"
       platforms: ["xhs", "douyin"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "medium"
+        duration_range: "10-18秒"
+        required_moves: ["static", "push_in"]
+        required_transitions: ["cut", "fade"]
+        mood_arc: ["期待", "温柔", "暖心"]
 
     - type: "幕后片段"
       category: "音乐"
       priority: "normal"
       identity_mode: "singer"
+      format: "video_post"
       scene: "幕后空间（彩排候场、化妆间、录音棚、休息室）"
       camera: "妆造过程跟拍、彩排花絮、下台后松弛状态抓拍"
       styling: "舒适便服/宽松外套、素颜/淡妆、放松慵懒表情、瘫坐/补妆/闲聊随性动作"
@@ -462,12 +495,20 @@ ops:
         - "松弛状态"
         - "立体人设"
       platforms: ["douyin", "xhs"]
+      video_blueprint:
+        default_shots: 5
+        pacing: "slow"
+        duration_range: "15-25秒"
+        required_moves: ["handheld", "pan"]
+        required_transitions: ["dissolve", "cut"]
+        mood_arc: ["好奇", "真实", "治愈"]
 
     # === 赛车板块 ===
     - type: "赛事高光"
       category: "赛车"
       priority: "high"
       identity_mode: "racer"
+      format: "video_post"
       scene: "专业赛车赛道、赛事冲线区域"
       camera: "冲线瞬间抓拍、摘头盔特写、专属手势近景"
       styling: "专业赛车服、利落飒爽、眼神锐利、随性撩发"
@@ -479,6 +520,13 @@ ops:
       reference_links:
         - "https://www.xiaohongshu.com/discovery/item/68820e55000000001502293f"
       platforms: ["xhs", "douyin"]
+      video_blueprint:
+        default_shots: 5
+        pacing: "fast"
+        duration_range: "12-20秒"
+        required_moves: ["tracking", "push_in"]
+        required_transitions: ["smash", "cut"]
+        mood_arc: ["蓄势", "爆发", "封神"]
 
     - type: "训练片段"
       category: "赛车"
@@ -495,6 +543,13 @@ ops:
       reference_links:
         - "https://www.xiaohongshu.com/discovery/item/6909d8230000000005001394"
       platforms: ["xhs", "douyin"]
+      video_blueprint:
+        default_shots: 5
+        pacing: "medium"
+        duration_range: "15-25秒"
+        required_moves: ["tracking", "pan"]
+        required_transitions: ["cut", "dissolve"]
+        mood_arc: ["专注", "突破", "自信"]
 
     - type: "赛车相关"
       category: "赛车"
@@ -510,12 +565,20 @@ ops:
       reference_links:
         - "https://www.xiaohongshu.com/discovery/item/6864a7c3000000000d0185fa"
       platforms: ["xhs", "douyin"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "slow"
+        duration_range: "15-22秒"
+        required_moves: ["pan", "push_in"]
+        required_transitions: ["dissolve", "fade"]
+        mood_arc: ["随性", "精致", "松弛"]
 
     # === 生活日常板块 ===
     - type: "服装变装"
       category: "生活日常"
       priority: "high"
       identity_mode: "daily"
+      format: "video_post"
       scene: "赛道旁、室内换装空间、舞台后台"
       camera: "变装转场、服饰细节特写、赛道灰尘抓拍"
       styling: "赛车服→高定礼服、淡颜→精致、风格反差"
@@ -527,11 +590,19 @@ ops:
       reference_links:
         - "https://www.xiaohongshu.com/discovery/item/68caa95e000000001101c8ef"
       platforms: ["xhs", "douyin"]
+      video_blueprint:
+        default_shots: 5
+        pacing: "fast"
+        duration_range: "10-18秒"
+        required_moves: ["static", "whip_pan"]
+        required_transitions: ["match_cut", "whip"]
+        mood_arc: ["素颜", "反差", "惊艳"]
 
     - type: "妆面变装"
       category: "生活日常"
       priority: "high"
       identity_mode: "daily"
+      format: "video_post"
       scene: "居家化妆台、室内简约空间"
       camera: "手搓变装转场、素颜→全妆对比特写"
       styling: "素颜干净、全妆凌厉、神态反差、自然灵动"
@@ -543,11 +614,19 @@ ops:
       reference_links:
         - "https://v.douyin.com/ttMvf1nMGas/"
       platforms: ["douyin", "xhs"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "fast"
+        duration_range: "8-15秒"
+        required_moves: ["static", "push_in"]
+        required_transitions: ["match_cut", "mask"]
+        mood_arc: ["素净", "蜕变", "凌厉"]
 
     - type: "手势舞"
       category: "生活日常"
       priority: "high"
       identity_mode: "daily"
+      format: "video_post"
       scene: "简约室内、赛道旁、舞台侧方"
       camera: "手势特写、动作转场、结尾比V抓拍"
       styling: "姿态利落、动作连贯、专属手势、灵动自然"
@@ -559,11 +638,19 @@ ops:
       reference_links:
         - "https://www.xiaohongshu.com/discovery/item/673478dc000000001b02dc51"
       platforms: ["xhs", "douyin"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "fast"
+        duration_range: "8-15秒"
+        required_moves: ["static", "handheld"]
+        required_transitions: ["cut", "whip"]
+        mood_arc: ["俏皮", "利落", "自信"]
 
     - type: "瞳孔转场"
       category: "生活日常"
       priority: "normal"
       identity_mode: "daily"
+      format: "video_post"
       scene: "居家、赛道、舞台多场景"
       camera: "瞳孔特写转场、身份切换镜头、AI特效叠加"
       styling: "神态切换、眼神多变、三重身份气质融合"
@@ -575,6 +662,13 @@ ops:
       reference_links:
         - "https://v.douyin.com/HlwSGnZlXcw/"
       platforms: ["douyin"]
+      video_blueprint:
+        default_shots: 5
+        pacing: "fast"
+        duration_range: "10-18秒"
+        required_moves: ["push_in", "zoom_in"]
+        required_transitions: ["match_cut", "mask"]
+        mood_arc: ["凝视", "切换", "惊艳", "融合"]
 
     - type: "运动健身/普拉提/体态管理"
       category: "生活日常"
@@ -591,6 +685,13 @@ ops:
       reference_links:
         - "https://www.xiaohongshu.com/discovery/item/67e0a4e7000000001d02cea2"
       platforms: ["xhs", "douyin"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "slow"
+        duration_range: "15-22秒"
+        required_moves: ["tracking", "pan"]
+        required_transitions: ["dissolve", "fade"]
+        mood_arc: ["平静", "专注", "治愈"]
 
     - type: "朋友聚会/闺蜜局"
       category: "生活日常"
@@ -605,6 +706,13 @@ ops:
         - "活人感"
         - "社交形象展示"
       platforms: ["xhs", "douyin"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "medium"
+        duration_range: "12-20秒"
+        required_moves: ["handheld", "pan"]
+        required_transitions: ["cut", "dissolve"]
+        mood_arc: ["轻松", "欢聚", "温馨"]
 
     - type: "美容护肤/美甲/美发"
       category: "生活日常"
@@ -621,6 +729,13 @@ ops:
       reference_links:
         - "https://v.douyin.com/Ll7lfHw50U8/"
       platforms: ["douyin", "xhs"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "slow"
+        duration_range: "15-22秒"
+        required_moves: ["push_in", "static"]
+        required_transitions: ["dissolve", "fade"]
+        mood_arc: ["慵懒", "精致", "亲和"]
 
     - type: "roomtour/居家照"
       category: "生活日常"
@@ -637,6 +752,13 @@ ops:
       reference_links:
         - "https://v.douyin.com/Ep9Go_q9XE0/"
       platforms: ["douyin", "xhs"]
+      video_blueprint:
+        default_shots: 5
+        pacing: "slow"
+        duration_range: "18-28秒"
+        required_moves: ["pan", "push_in"]
+        required_transitions: ["dissolve", "fade"]
+        mood_arc: ["宁静", "雅致", "松弛"]
 
     # === 电竞解说板块 ===
     - type: "赛场氛围感"
@@ -652,11 +774,19 @@ ops:
         - "专业人设"
         - "视觉高级感"
       platforms: ["xhs", "douyin"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "medium"
+        duration_range: "12-20秒"
+        required_moves: ["static", "pan"]
+        required_transitions: ["cut", "dissolve"]
+        mood_arc: ["凝神", "专注", "沉稳"]
 
     - type: "赛场高燃瞬间"
       category: "电竞解说"
       priority: "high"
       identity_mode: "esports"
+      format: "video_post"
       scene: "电竞比赛现场、解说台"
       camera: "眼神特写、战绩卡点、团战/捧杯画面抓拍"
       styling: "神情锐利、情绪饱满、专业从容、气场拉满"
@@ -666,6 +796,13 @@ ops:
         - "赛事名场面"
         - "人设高光"
       platforms: ["douyin", "xhs"]
+      video_blueprint:
+        default_shots: 5
+        pacing: "fast"
+        duration_range: "12-20秒"
+        required_moves: ["push_in", "zoom_in"]
+        required_transitions: ["smash", "cut"]
+        mood_arc: ["蓄势", "爆发", "封神"]
 
     - type: "深夜氛围感/独战时刻"
       category: "电竞解说"
@@ -679,6 +816,13 @@ ops:
         - "独处人设"
         - "电竞氛围感拉满"
       platforms: ["douyin", "xhs"]
+      video_blueprint:
+        default_shots: 4
+        pacing: "slow"
+        duration_range: "15-25秒"
+        required_moves: ["static", "push_in"]
+        required_transitions: ["dissolve", "fade"]
+        mood_arc: ["静谧", "专注", "清冷"]
 
 sub_skills:
   - ops-desk

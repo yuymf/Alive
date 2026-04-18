@@ -5,6 +5,8 @@
  */
 
 import { execFileSync } from 'child_process';
+import * as os from 'os';
+import * as path from 'path';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import {
@@ -151,9 +153,10 @@ export function fetchXhsMetrics(url: string): PerformanceMetrics | null {
 
 export function fetchDouyinMetrics(url: string): PerformanceMetrics | null {
   try {
-    const raw = execFileSync('openclaw', [
-      'skill', 'run', 'yt-dlp-downloader',
-      '--args', JSON.stringify({ url, action: 'info' }),
+    const ytDlpDir = process.env.YTDLP_SKILLS_DIR ?? path.join(os.homedir(), '.openclaw', 'workspace', 'skills', 'yt-dlp-downloader');
+    const raw = execFileSync('python3', [
+      path.join(ytDlpDir, 'scripts', 'main.py'),
+      '--url', url,
     ], { timeout: 30_000, encoding: 'utf8' });
     const result = JSON.parse(raw) as {
       like_count?: number; comment_count?: number; view_count?: number; repost_count?: number;

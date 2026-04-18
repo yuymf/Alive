@@ -1018,6 +1018,105 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     };
   }
 
+  // ── Ops: Tag Engine ────────────────────────────────────────────
+  if (cmd === 'ops-tags') {
+    const tagVocab = readJSON<import('../scripts/utils/types').TagVocabulary>(PATHS.tagVocabulary, {
+      version: 1, last_updated: '', active: [], dormant: [],
+    });
+    // Count viral_kb source boosts
+    let viralKbBoosts = 0;
+    for (const t of tagVocab.active) {
+      if (t.sources.some(s => s.type === 'viral_kb')) viralKbBoosts++;
+    }
+    return {
+      command: 'ops-tags',
+      message: `Tag 追踪: ${tagVocab.active.length} active, ${tagVocab.dormant.length} dormant, ${viralKbBoosts} KB回流`,
+      vocab: tagVocab,
+      viral_kb_boosts: viralKbBoosts,
+    };
+  }
+
+  // ── Ops: Viral KB ──────────────────────────────────────────────
+  if (cmd === 'ops-viral-kb') {
+    const { loadEntries, loadFormulas, loadQueue, getStats, auditEntries } = await import('../scripts/ops/viral-kb-store');
+    // basePath is the directory containing state files (same as ops-command-handler)
+    const kbBasePath = PATHS.emotionState.replace(/\/[^/]+$/, '');
+    const stats = getStats(kbBasePath);
+    const formulas = loadFormulas(kbBasePath);
+    const audit = auditEntries(kbBasePath);
+    return {
+      command: 'ops-viral-kb',
+      message: `爆款KB: ${stats.total} 条目, ${stats.formula_count} 公式, ${stats.queue_length} 待拆解`,
+      stats,
+      formulas,
+      audit,
+    };
+  }
+
+  // ── Ops: Perception Flow ───────────────────────────────────────
+  if (cmd === 'ops-perception-flow') {
+    const { loadAudiencePerception, buildAudiencePerceptionContext } = await import('../scripts/ops/audience-perception');
+    const store = loadAudiencePerception();
+
+    // Gather unique traits, desires, resistances
+    const traitsSet = new Set<string>();
+    const desiresSet = new Set<string>();
+    const resistancesSet = new Set<string>();
+    for (const e of store.entries) {
+      for (const t of (e.perceived_traits || [])) traitsSet.add(t);
+      for (const d of (e.desire_signals || [])) desiresSet.add(d);
+      for (const r of (e.resistance_signals || [])) resistancesSet.add(r);
+    }
+
+    // Verify flow chain — check if perception data is read by downstream modules
+    const chain: Record<string, boolean> = {
+      post_analyzer: false,
+      brief_generator: false,
+      strategy_engine: false,
+      ops_memory: false,
+    };
+
+    // Check if the import chain works (try-catch each)
+    try { await import('../scripts/ops/post-analyzer'); chain.post_analyzer = true; } catch { /* */ }
+    try {
+      const mod = await import('../scripts/ops/brief-generator');
+      // Verify the module imports buildAudiencePerceptionContext
+      chain.brief_generator = typeof mod.formatBriefCard === 'function';
+    } catch { /* */ }
+    try {
+      const mod = await import('../scripts/ops/strategy-engine');
+      chain.strategy_engine = typeof mod.computeStrategy === 'function';
+    } catch { /* */ }
+    try {
+      const mod = await import('../scripts/ops/ops-memory');
+      chain.ops_memory = typeof mod.buildOpsMemoryContext === 'function';
+    } catch { /* */ }
+
+    // If we have perception entries, mark post_analyzer as active
+    if (store.entries.length > 0) chain.post_analyzer = true;
+    // If we can build context, mark downstream as active
+    const ctx = buildAudiencePerceptionContext({ maxEntries: 5, maxChars: 300 });
+    if (ctx) {
+      chain.brief_generator = true;
+      chain.strategy_engine = true;
+      chain.ops_memory = true;
+    }
+
+    return {
+      command: 'ops-perception-flow',
+      message: `感知回流: ${store.entries.length} 条记录, 特质 ${traitsSet.size}, 渴望 ${desiresSet.size}, 抵触 ${resistancesSet.size}`,
+      flow: {
+        perception_entries: store.entries.length,
+        unique_traits: traitsSet.size,
+        unique_desires: desiresSet.size,
+        unique_resistances: resistancesSet.size,
+        chain,
+        sample_traits: [...traitsSet].slice(0, 10),
+        sample_desires: [...desiresSet].slice(0, 10),
+      },
+    };
+  }
+
   // ── Ops: Status Overview ──────────────────────────────────────
   if (cmd === 'ops-status') {
     const queue = await loadQueue();

@@ -131,8 +131,13 @@ async function cmdTrends(): Promise<string> {
   if (trends.length === 0) return '📊 暂无通过过滤的热点话题';
 
   // Group by source_bucket for sectioned display
-  const srcIcon: Record<string, string> = { '推荐流': '🏷️', '热榜': '📰', '搜索': '🔍' };
-  const bucketOrder = ['推荐流', '搜索', '热榜'] as const;
+  // Map internal bucket names to user-facing labels
+  const bucketDisplay: Record<string, string> = {
+    '赛道 Tag': '🏷️ 推荐流',
+    '热榜': '📰 热榜',
+    '搜索': '🔍 搜索',
+  };
+  const bucketOrder = ['赛道 Tag', '搜索', '热榜'] as const;
 
   // Partition trends into buckets
   const bucketGroups = new Map<string, FilteredTrend[]>();
@@ -147,8 +152,8 @@ async function cmdTrends(): Promise<string> {
   for (const bucket of bucketOrder) {
     const items = bucketGroups.get(bucket);
     if (!items || items.length === 0) continue;
-    const emoji = srcIcon[bucket] ?? '📰';
-    lines.push(`${emoji} ${bucket}（${items.length}）`);
+    const label = bucketDisplay[bucket] ?? `📰 ${bucket}`;
+    lines.push(`${label}（${items.length}）`);
     for (const t of items) {
       const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
       lines.push(`  ${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  p=${t.priority_score.toFixed(1)}`);
@@ -162,7 +167,7 @@ async function cmdTrends(): Promise<string> {
     const b = t.source_bucket ?? '热榜';
     bucketCounts.set(b, (bucketCounts.get(b) ?? 0) + 1);
   }
-  const distParts = [...bucketCounts.entries()].map(([b, c]) => `${srcIcon[b] ?? ''}${b}×${c}`);
+  const distParts = [...bucketCounts.entries()].map(([b, c]) => `${bucketDisplay[b] ?? b}×${c}`);
   lines.push(`来源分布：${distParts.join(' · ')}`);
 
   // Signal pool overview: show top items per source bucket from the cached signal pool
@@ -172,8 +177,8 @@ async function cmdTrends(): Promise<string> {
     if (cache?.signal_pool && cache.signal_pool.length > 0) {
       lines.push('', '📋 信号池概览（按来源）');
       for (const group of cache.signal_pool) {
-        const emoji = srcIcon[group.bucket] ?? '📰';
-        lines.push(`  ${emoji}${group.bucket}:`);
+        const label = bucketDisplay[group.bucket] ?? `📰 ${group.bucket}`;
+        lines.push(`  ${label}:`);
         for (const t of group.top) {
           lines.push(`    · ${t.keyword}  ${t.platform}  v=${t.v}x  p=${t.p}`);
         }

@@ -5,9 +5,10 @@ import {
   buildContentPrompt, selectIdentityMode,
   selectContentTemplate, buildCompetitorBenchmarks,
   buildTemplateConstraint, buildFormulaContext,
+  buildViralVideoContext,
 } from '../../scripts/ops/topic-generator';
 import { saveFormulaStore } from '../../scripts/ops/formula-store';
-import type { FormulaStore } from '../../scripts/utils/types';
+import type { FormulaStore, ViralEntry } from '../../scripts/utils/types';
 import { FilteredTrend } from '../../scripts/ops/trend-analyzer';
 import { ContentTemplate, CompetitorProfile } from '../../scripts/utils/types';
 import * as os from 'os';
@@ -59,6 +60,54 @@ describe('buildContentPrompt', () => {
     };
     const prompt = buildContentPrompt(trend, 'V姐', 'douyin', '视频脚本', '参考钩子公式：公式A / 公式B');
     expect(prompt).toContain('参考钩子公式：公式A / 公式B');
+  });
+
+  it('includes Seedance 2.0 video prompt spec for douyin platform', () => {
+    const trend: FilteredTrend = {
+      platform: 'douyin', keyword: '#电竞女孩', current_volume: 500,
+      avg_7d: 100, velocity_score: 5.0, rank: 1,
+      hook_angle: '从赛车手视角切入', identity_mode: 'esports',
+    };
+    const prompt = buildContentPrompt(trend, 'V姐', 'douyin', '视频脚本');
+    expect(prompt).toContain('Seedance 2.0');
+    expect(prompt).toContain('video_prompt');
+    expect(prompt).toContain('negative_prompt');
+    expect(prompt).toContain('lighting');
+    expect(prompt).toContain('六步公式');
+    expect(prompt).toContain('Subject');
+    expect(prompt).toContain('Action');
+    expect(prompt).toContain('Environment');
+  });
+
+  it('does not include Seedance spec for xhs image_post platform', () => {
+    const trend: FilteredTrend = {
+      platform: 'xhs', keyword: '#日常', current_volume: 200,
+      avg_7d: 100, velocity_score: 2.0, rank: 3,
+      hook_angle: '真实日常切入', identity_mode: 'daily',
+    };
+    const prompt = buildContentPrompt(trend, 'V姐', 'xhs', '图文');
+    expect(prompt).not.toContain('Seedance');
+    expect(prompt).not.toContain('video_prompt');
+  });
+
+  it('includes Seedance spec for xhs video_post templates', () => {
+    const trend: FilteredTrend = {
+      platform: 'xhs', keyword: '#变装', current_volume: 500,
+      avg_7d: 100, velocity_score: 5.0, rank: 1,
+      hook_angle: '反差变装', identity_mode: 'daily',
+    };
+    const videoTemplate: ContentTemplate = {
+      type: '服装变装', category: '生活日常', priority: 'high',
+      scene: '室内', camera: '变装转场', styling: '多套造型',
+      highlights: ['反差'], format: 'video_post',
+    };
+    const prompt = buildContentPrompt(trend, 'V姐', 'xhs', '图文', undefined, {
+      template: videoTemplate,
+    });
+    expect(prompt).toContain('Seedance 2.0');
+    expect(prompt).toContain('video_prompt');
+    expect(prompt).toContain('小红书视频脚本');
+    expect(prompt).toContain('分镜设计要求');
   });
 
   it('returns base prompt only when extraContext is undefined', () => {

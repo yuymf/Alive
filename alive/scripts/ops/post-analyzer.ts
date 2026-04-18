@@ -120,10 +120,12 @@ export interface PostAnalysisInput {
   identityMode: string;
   baseline: number;
   personaSummary: string;
+  /** Whether the content is a video post (has shots/storyboard) */
+  isVideoContent?: boolean;
 }
 
 export function buildPostAnalysisPrompt(input: PostAnalysisInput): string {
-  const { contentText, platform, metrics, templateType, identityMode, baseline, personaSummary } = input;
+  const { contentText, platform, metrics, templateType, identityMode, baseline, personaSummary, isVideoContent } = input;
   const metricsStr = [
     `${metrics.likes}赞`,
     `${metrics.comments}评`,
@@ -132,10 +134,27 @@ export function buildPostAnalysisPrompt(input: PostAnalysisInput): string {
     metrics.views ? `${metrics.views}播` : null,
   ].filter(Boolean).join(' ');
 
+  const videoDimensions = isVideoContent ? `
+6. video_analysis: 视频专属维度分析（仅视频内容需填写）：
+   - shot_execution: 分镜执行质量 0-10（镜头设计是否合理、节奏是否紧凑）
+   - pacing_effectiveness: 节奏效果 0-10（节奏是否匹配内容类型，观众是否有耐心看完）
+   - visual_storytelling: 视觉叙事 0-10（运镜和转场是否增强了叙事表现力）
+   - camera_move_highlights: 运镜亮点（如：哪几个运镜特别有效，为什么）
+   - transition_feedback: 转场反馈（如：哪几个转场自然，哪几个突兀）` : '';
+
+  const videoJSONFields = isVideoContent ? `,
+  "video_analysis": {
+    "shot_execution": 8,
+    "pacing_effectiveness": 7,
+    "visual_storytelling": 8,
+    "camera_move_highlights": "亮点描述",
+    "transition_feedback": "反馈描述"
+  }` : '';
+
   return `你是内容数据分析专家。请对以下已发布内容进行全面分析。
 
 【内容信息】
-平台: ${platform === 'xhs' ? '小红书' : '抖音'}
+平台: ${platform === 'xhs' ? '小红书' : '抖音'}${isVideoContent ? '（视频内容）' : ''}
 身份模式: ${identityMode}
 内容模板: ${templateType}
 正文/脚本:
@@ -154,7 +173,7 @@ ${personaSummary}
 2. engagement_score: 综合得分 0-100
 3. pattern_analysis: 各维度 0-10 评分 + 成功因素 + 改进方向
 4. extracted_patterns: 如果是 viral 或 above_avg，提取可复用模式（否则不包含此字段）
-5. persona_alignment: 人设一致性检查
+5. persona_alignment: 人设一致性检查${videoDimensions}
 
 JSON格式:
 \`\`\`json
@@ -183,7 +202,7 @@ JSON格式:
     "identity_mode_match": true,
     "tone_consistency": "on_brand|slight_drift|off_brand",
     "specific_notes": "具体说明"
-  }
+  }${videoJSONFields}
 }
 \`\`\``;
 }
@@ -264,11 +283,39 @@ function getContentText(item: Awaited<ReturnType<typeof loadQueue>>['items'][num
   if (platform === 'xhs') {
     const xhs = item.content?.xhs;
     if (!xhs) return '';
-    return `标题: ${xhs.title}\n正文: ${xhs.body}`;
+    const parts = [`标题: ${xhs.title}`];
+    // XHS video: include script + shots summary
+    if (xhs.shots && xhs.shots.length > 0) {
+      if (xhs.script) parts.push(`视频脚本: ${xhs.script}`);
+      if (xhs.opening_hook) parts.push(`钩子: ${xhs.opening_hook}`);
+      parts.push(`分镜(${xhs.shots.length}镜头, ${xhs.total_duration ?? '未知时长'}, ${xhs.pacing ?? '未知'}节奏):`);
+      xhs.shots.forEach(s => {
+        parts.push(`  #${s.index} [${s.time_range}] ${s.camera_move}/${s.camera_angle}/${s.shot_size} → ${s.transition} | ${s.mood} | ${s.description}`);
+      });
+    } else {
+      parts.push(`正文: ${xhs.body}`);
+    }
+    return parts.join('\n');
   }
   const douyin = item.content?.douyin;
   if (!douyin) return '';
-  return `脚本: ${douyin.script}`;
+  const parts = [`脚本: ${douyin.script}`];
+  // Include shots summary if available
+  if (douyin.shots && douyin.shots.length > 0) {
+    parts.push(`分镜(${douyin.shots.length}镜头, ${douyin.total_duration ?? '未知时长'}, ${douyin.pacing ?? '未知'}节奏):`);
+    douyin.shots.forEach(s => {
+      parts.push(`  #${s.index} [${s.time_range}] ${s.camera_move}/${s.camera_angle}/${s.shot_size} → ${s.transition} | ${s.mood} | ${s.description}`);
+    });
+  }
+  return parts.join('\n');
+}
+
+/** Detect if a queue item is video content based on shots presence */
+function isVideoContent(item: Awaited<ReturnType<typeof loadQueue>>['items'][number], platform: 'xhs' | 'douyin'): boolean {
+  if (platform === 'xhs') {
+    return !!(item.content?.xhs?.shots && item.content.xhs.shots.length > 0);
+  }
+  return !!(item.content?.douyin?.shots && item.content.douyin.shots.length > 0);
 }
 
 // ─── Main Orchestration ───────────────────────────────────────────────────────
@@ -292,6 +339,7 @@ async function analyzeSinglePost(
     identityMode: entry.identity_mode,
     baseline,
     personaSummary,
+    isVideoContent: isVideoContent(queueItem, entry.platform),
   });
 
   try {

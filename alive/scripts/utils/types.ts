@@ -918,7 +918,7 @@ export interface VideoShot {
   index: number;
   /** Time range (e.g. "0-3秒", "8-15秒") */
   time_range: string;
-  /** Scene description: what happens, character action, expression */
+  /** Scene description: what happens, character action, expression (Chinese) */
   description: string;
   /** Camera movement */
   camera_move: CameraMove;
@@ -932,6 +932,39 @@ export interface VideoShot {
   text_overlay?: string;
   /** Mood / atmosphere label */
   mood: string;
+
+  // ── Seedance 2.0 video generation fields ──
+
+  /**
+   * Seedance 2.0 video prompt (English, 60-100 words).
+   * Follows the 6-step formula: Subject → Action → Environment → Lighting → Camera → Style.
+   * Example: "A young woman with silver hair in a gaming jersey, intensely staring at a monitor,
+   *   her fingers rapidly pressing keyboard keys, in a dimly lit esports arena with neon blue
+   *   and purple lights, dramatic side lighting with rim light, slow push-in camera, cinematic,
+   *   35mm, shallow depth of field"
+   */
+  video_prompt: string;
+
+  /**
+   * Seedance 2.0 negative prompt (English, comma-separated).
+   * Prevents common artifacts: jitter, bent limbs, deformed hands, blur, etc.
+   * Example: "jitter, bent limbs, deformed hands, blur, low quality, watermark, text"
+   */
+  negative_prompt: string;
+
+  /**
+   * Lighting description for Seedance (English).
+   * Examples: "dramatic side lighting with rim light", "soft natural window light",
+   *   "golden hour warm backlight", "neon-lit low key lighting"
+   */
+  lighting: string;
+
+  /**
+   * Visual style keywords for Seedance (English, comma-separated).
+   * Examples: "cinematic, 35mm, shallow depth of field",
+   *   "vlog, handheld, natural", "anime, cel-shaded, vibrant colors"
+   */
+  style: string;
 }
 
 export interface PostRecord {
@@ -1049,6 +1082,14 @@ export interface QueueItemContent {
     body: string;
     tags: string[];
     cover_images: string[];
+    /** Video fields (only when template.format === 'video_post') */
+    opening_hook?: string;
+    script?: string;
+    bgm_suggestion?: string;
+    key_captions?: string[];
+    shots?: VideoShot[];
+    total_duration?: string;
+    pacing?: VideoPacing;
   };
   douyin: {
     script: string;
@@ -1515,6 +1556,8 @@ export interface ContentTemplate {
   readonly category: string;
   /** high = ⭐ priority content type */
   readonly priority: 'high' | 'normal';
+  /** Content format: image_post (图文) or video_post (视频). Defaults to image_post for XHS, video_post for douyin */
+  readonly format?: 'image_post' | 'video_post';
   readonly scene: string;
   readonly camera: string;
   readonly styling: string;

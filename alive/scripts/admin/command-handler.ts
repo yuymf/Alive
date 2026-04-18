@@ -952,8 +952,7 @@ async function cmdOpsConfirmStrategy(_cmd: ParsedCommand): Promise<CommandResult
   const ok = confirmStrategy();
   if (!ok) {
     return {
-      output: '❌ 未找到待确认的策略。请等待 `ops-strategy` cron 任务生成新策略后再确认。',
-      error: true,
+      output: '⏳ 未找到待确认的策略。请等待 `ops-strategy` cron 任务生成新策略后再确认。',
     };
   }
   return {

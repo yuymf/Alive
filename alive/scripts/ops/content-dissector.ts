@@ -196,6 +196,19 @@ interface DissectionJSON {
 
 // ─── Prompt builder ───────────────────────────────────────────────────────────
 
+/**
+ * Detect if a DissectQueueItem is a video-type XHS post.
+ * Uses heuristics: description/title contains video-related keywords,
+ * or the source_type/content_type metadata indicates video.
+ */
+function isXhsVideoItem(item: DissectQueueItem): boolean {
+  if (item.platform !== 'xhs') return false;
+  // Check for video indicators in title or description
+  const videoKeywords = ['视频', '视频脚本', '分镜', '运镜', '转场', '变装', '卡点', '手势舞', 'VLOG', 'vlog'];
+  const text = `${item.title} ${item.description}`.toLowerCase();
+  return videoKeywords.some(kw => text.includes(kw.toLowerCase()));
+}
+
 function buildDissectPrompt(item: DissectQueueItem): string {
   const platformLabel = item.platform === 'xhs' ? '小红书' : '抖音';
   const trackHint = item.identity_mode ?? '未知';
@@ -237,7 +250,7 @@ ${CANONICAL_CTA_TYPES.map(label => `- ${label}`).join('\n')}
 6. 不允许空字符串；如果无法完全判断，也要给出最接近的主类。
 7. identity_mode 仅在内容明显属于特定垂直赛道时填写，否则返回 null。
 8. summary 必须是非空的一句话，概括爆款逻辑，不要写成"无法判断"。
-9. 若该内容为视频类型（抖音），必须填写 video_structure 字段，分析其镜头结构。
+9. 若该内容为视频类型（抖音或小红书视频），必须填写 video_structure 字段，分析其镜头结构。
 
 请输出 JSON（字段说明见下）：
 {
@@ -248,7 +261,7 @@ ${CANONICAL_CTA_TYPES.map(label => `- ${label}`).join('\n')}
   "interaction_design": "互动引导手法描述",
   "visual_style": "视觉风格特征描述",
   "cta_type": "从主标签中选择一个",
-  "summary": "一句话爆款逻辑总结（20字以内）"${item.platform === 'douyin' ? `,
+  "summary": "一句话爆款逻辑总结（20字以内）"${(item.platform === 'douyin' || isXhsVideoItem(item)) ? `,
   "video_structure": {
     "shot_count": "镜头数量（整数）",
     "pacing": "节奏特征：slow/medium/fast/variable",

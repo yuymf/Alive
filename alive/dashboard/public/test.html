@@ -1072,6 +1072,27 @@ body::after {
               <span class="btn-desc">观众画像特质 / 渴望信号 / 抵触信号</span>
             </div>
           </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-tags', this)" id="btn-ops-tags">
+            <div class="btn-icon">🏷️</div>
+            <div class="btn-text">
+              <span class="btn-label">Tag 热度追踪</span>
+              <span class="btn-desc">Active/Dormant 分布 / 衰减周期 / KB 回流</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-viral-kb', this)" id="btn-ops-viral-kb">
+            <div class="btn-icon">🧠</div>
+            <div class="btn-text">
+              <span class="btn-label">爆款知识库</span>
+              <span class="btn-desc">6维拆解统计 / 公式晋升 / 审计修复</span>
+            </div>
+          </button>
+          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-perception-flow', this)" id="btn-ops-perception-flow">
+            <div class="btn-icon">🔄</div>
+            <div class="btn-text">
+              <span class="btn-label">受众感知回流</span>
+              <span class="btn-desc">感知 → 简报/策略/选题 回流链路验证</span>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -1991,6 +2012,12 @@ function renderOpsData(command, data) {
     html = renderOpsAnalysisLog(data);
   } else if (command === 'ops-perception') {
     html = renderOpsPerception(data);
+  } else if (command === 'ops-tags') {
+    html = renderOpsTags(data);
+  } else if (command === 'ops-viral-kb') {
+    html = renderOpsViralKB(data);
+  } else if (command === 'ops-perception-flow') {
+    html = renderOpsPerceptionFlow(data);
   } else {
     // Generic fallback
     html = '<div class="ops-data-card">'
@@ -2892,6 +2919,186 @@ async function runViralAnalysis() {
   runningActions.delete('ops-analyze');
   allBtns.forEach(function(b) { b.disabled = false; });
   setTimeout(function() { if (btn) btn.classList.remove('success', 'error'); }, 3000);
+}
+
+/** Tag Engine — 衰减/复苏/淘汰追踪 */
+function renderOpsTags(data) {
+  var vocab = data.vocab || {};
+  var active = vocab.active || [];
+  var dormant = vocab.dormant || [];
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🏷️ Tag 热度追踪</div>';
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(active.length, 'Active');
+  h += opsStatItem(dormant.length, 'Dormant');
+  h += opsStatItem(data.viral_kb_boosts || 0, 'KB 回流提升');
+  h += '</div>';
+
+  if (vocab.last_updated) {
+    h += '<div style="font-size:10px;color:var(--text-dim);margin-bottom:8px;">最后更新: ' + escHtml(vocab.last_updated) + '</div>';
+  }
+
+  // Active tags table
+  if (active.length > 0) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">🔥 Active Tags (Top 20)</strong></div>';
+    h += '<table class="ops-queue-table"><thead><tr><th>Tag</th><th>分数</th><th>峰值</th><th>命中</th><th>来源</th></tr></thead><tbody>';
+    active.sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
+    active.slice(0, 20).forEach(function(t) {
+      var sources = (t.sources || []).map(function(s) { return s.type; });
+      var srcBadge = sources.indexOf('viral_kb') >= 0 ? '<span class="ops-badge approved">KB</span>' : '<span class="ops-badge">' + escHtml(sources[0] || '?') + '</span>';
+      h += '<tr>'
+        + '<td><strong>' + escHtml(t.tag || '') + '</strong></td>'
+        + '<td>' + (t.score || 0) + '</td>'
+        + '<td>' + (t.peak_score || 0) + '</td>'
+        + '<td>' + (t.hit_count || 0) + '</td>'
+        + '<td>' + srcBadge + '</td>'
+        + '</tr>';
+    });
+    h += '</tbody></table>';
+  }
+
+  // Dormant tags
+  if (dormant.length > 0) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">❄️ Dormant Tags (' + dormant.length + ')</strong></div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0;">';
+    dormant.slice(0, 30).forEach(function(t) {
+      h += '<span class="ops-badge discarded">' + escHtml(t.tag || '') + ' (' + (t.score || 0) + ')</span>';
+    });
+    if (dormant.length > 30) h += '<span class="ops-badge">+' + (dormant.length - 30) + ' more</span>';
+    h += '</div>';
+  }
+
+  if (active.length === 0 && dormant.length === 0) {
+    h += '<div class="ops-data-card-body">暂无 Tag 数据 — 需要先运行 ops-trends 或 ops-competitors</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+/** Viral KB — 爆款知识库 + 公式晋升 */
+function renderOpsViralKB(data) {
+  var stats = data.stats || {};
+  var formulas = data.formulas || [];
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🧠 爆款知识库</div>';
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(stats.total || 0, '总条目');
+  h += opsStatItem(stats.usable_count || 0, '可用');
+  h += opsStatItem(stats.hollow_count || 0, '空壳');
+  h += opsStatItem(stats.failed_count || 0, '失败');
+  h += opsStatItem(stats.queue_length || 0, '待拆解');
+  h += opsStatItem(stats.formula_count || 0, '通用公式');
+  h += '</div>';
+
+  // Tier breakdown
+  if (stats.by_tier) {
+    var tiers = stats.by_tier;
+    h += '<div style="margin-top:6px;display:flex;gap:6px;">';
+    if (tiers.universal) h += '<span class="ops-badge approved">Universal: ' + tiers.universal + '</span>';
+    if (tiers.track) h += '<span class="ops-badge pending">Track: ' + tiers.track + '</span>';
+    h += '</div>';
+  }
+
+  // Content type breakdown
+  if (stats.by_content_type) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">📊 内容类型分布</strong></div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0;">';
+    Object.keys(stats.by_content_type).forEach(function(ct) {
+      h += '<span class="ops-badge">' + escHtml(ct) + ' (' + stats.by_content_type[ct] + ')</span>';
+    });
+    h += '</div>';
+  }
+
+  // Promoted formulas
+  if (formulas.length > 0) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">⭐ 已晋升通用公式 (' + formulas.length + ')</strong></div>';
+    h += '<table class="ops-queue-table"><thead><tr><th>Hook</th><th>Content</th><th>出现次数</th><th>置信度</th><th>触发词</th></tr></thead><tbody>';
+    formulas.slice(0, 15).forEach(function(f) {
+      var triggerWords = (f.trigger_words || []).slice(0, 3).join('、');
+      h += '<tr>'
+        + '<td><strong>' + escHtml(f.hook_type || '') + '</strong></td>'
+        + '<td>' + escHtml(f.content_type || '') + '</td>'
+        + '<td>' + (f.occurrence_count || 0) + '</td>'
+        + '<td>' + ((f.confidence || 0) * 100).toFixed(0) + '%</td>'
+        + '<td style="font-size:10px;">' + escHtml(triggerWords || '—') + '</td>'
+        + '</tr>';
+    });
+    h += '</tbody></table>';
+  } else {
+    h += '<div style="margin-top:8px;font-size:11px;color:var(--text-dim);">暂无晋升公式 — 需 ≥3 条相同 universal 拆解</div>';
+  }
+
+  // Audit info
+  if (data.audit) {
+    var audit = data.audit;
+    h += '<div style="margin-top:8px;padding:6px;background:' + (audit.hollow_count > 0 ? 'var(--gold-pale)' : 'var(--green-pale)') + ';border-radius:4px;font-size:11px;">';
+    h += (audit.hollow_count > 0 ? '⚠️' : '✅') + ' 审计: ' + (audit.usable_count || 0) + ' 可用 / ' + (audit.hollow_count || 0) + ' 空壳 / ' + (audit.failed_count || 0) + ' 失败';
+    h += '</div>';
+  }
+
+  h += '</div>';
+  return h;
+}
+
+/** Perception Flow — 受众感知回流链路验证 */
+function renderOpsPerceptionFlow(data) {
+  var flow = data.flow || {};
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">🔄 受众感知回流验证</div>';
+
+  // Perception source
+  h += '<div class="ops-stat-grid">';
+  h += opsStatItem(flow.perception_entries || 0, '感知条目');
+  h += opsStatItem(flow.unique_traits || 0, '独特特质');
+  h += opsStatItem(flow.unique_desires || 0, '渴望信号');
+  h += opsStatItem(flow.unique_resistances || 0, '抵触信号');
+  h += '</div>';
+
+  // Flow chain verification
+  h += '<div style="margin-top:8px;"><strong style="font-size:11px;">🔗 回流链路检查</strong></div>';
+  var chain = flow.chain || {};
+  var chainItems = [
+    { key: 'post_analyzer', icon: '📝', label: 'Post-Analyzer → 写入感知', desc: '分析帖子时自动写入 audience_perception' },
+    { key: 'brief_generator', icon: '📋', label: '简报生成 ← 读取感知', desc: 'buildAudiencePerceptionContext 被简报引用' },
+    { key: 'strategy_engine', icon: '🎲', label: '策略计算 ← 读取感知', desc: 'buildAudiencePerceptionContext 被策略引用' },
+    { key: 'ops_memory', icon: '💾', label: 'Ops 记忆 ← 读取感知', desc: 'buildAudiencePerceptionContext 被记忆引用' },
+  ];
+
+  chainItems.forEach(function(item) {
+    var ok = chain[item.key];
+    var statusIcon = ok ? '✅' : '❌';
+    var bgColor = ok ? 'var(--green-pale)' : '#FFE0E0';
+    h += '<div style="padding:6px 8px;margin:3px 0;background:' + bgColor + ';border-radius:4px;display:flex;align-items:center;gap:6px;">';
+    h += '<span>' + statusIcon + '</span>';
+    h += '<span style="font-size:12px;">' + item.icon + ' <strong>' + escHtml(item.label) + '</strong></span>';
+    h += '<span style="font-size:10px;color:var(--text-secondary);margin-left:auto;">' + escHtml(item.desc) + '</span>';
+    h += '</div>';
+  });
+
+  // Sample traits & desires
+  if (flow.sample_traits && flow.sample_traits.length > 0) {
+    h += '<div style="margin-top:8px;"><strong style="font-size:11px;">🏷️ 感知特质 Top</strong></div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0;">';
+    flow.sample_traits.forEach(function(t) {
+      h += '<span class="ops-badge approved">' + escHtml(t) + '</span>';
+    });
+    h += '</div>';
+  }
+
+  if (flow.sample_desires && flow.sample_desires.length > 0) {
+    h += '<div style="margin-top:6px;"><strong style="font-size:11px;">💡 渴望信号 Top</strong></div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0;">';
+    flow.sample_desires.forEach(function(d) {
+      h += '<span class="ops-badge pending">' + escHtml(d) + '</span>';
+    });
+    h += '</div>';
+  }
+
+  // Flow summary
+  var allOk = chain.post_analyzer && chain.brief_generator && chain.strategy_engine && chain.ops_memory;
+  h += '<div style="margin-top:10px;padding:8px;background:' + (allOk ? 'var(--green-pale)' : 'var(--gold-pale)') + ';border-radius:4px;font-family:var(--font-pixel);font-size:9px;color:var(--brown-dark);">';
+  h += allOk ? '✅ 回流链路完整 — 感知数据已正确回流到简报/策略/选题' : '⚠️ 回流链路不完整 — 部分接入点未就位';
+  h += '</div>';
+
+  h += '</div>';
+  return h;
 }
 
 // ═══════════════════════════════════════════════════════════════

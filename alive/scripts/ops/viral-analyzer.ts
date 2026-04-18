@@ -412,9 +412,12 @@ export async function fetchXhsPost(url: string): Promise<PostContent> {
 export async function fetchDouyinPost(url: string): Promise<PostContent> {
   try {
     const { execFileSync } = await import('child_process');
-    const raw = execFileSync('openclaw', [
-      'skill', 'run', 'yt-dlp-downloader',
-      '--args', JSON.stringify({ url, action: 'info' }),
+    const { homedir } = await import('os');
+    const { join } = await import('path');
+    const ytDlpDir = process.env.YTDLP_SKILLS_DIR ?? join(homedir(), '.openclaw', 'workspace', 'skills', 'yt-dlp-downloader');
+    const raw = execFileSync('python3', [
+      join(ytDlpDir, 'scripts', 'main.py'),
+      '--url', url,
     ], { timeout: 45_000, encoding: 'utf8' });
     const info = JSON.parse(raw) as {
       title?: string;

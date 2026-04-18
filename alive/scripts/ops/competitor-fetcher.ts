@@ -7,7 +7,6 @@
  * Each account is fetched independently; one failure never blocks others.
  */
 
-import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { wallNow } from '../utils/time-utils';
 import type { CompetitorPost, CompetitorPostsStore, CompetitorProfile, FetchResult } from '../utils/types';
@@ -118,59 +117,19 @@ async function fetchXhsPostsByUserId(userId: string, displayName: string): Promi
   }));
 }
 
-interface YtDlpVideo {
-  id?: string;
-  title?: string;
-  like_count?: number;
-  upload_date?: string;
-  thumbnail?: string;
-  comment_count?: number;
-}
-
 function fetchDouyinPosts(accountId: string): CompetitorPost[] {
   const fetchedAt = wallNow().toISOString();
 
-  // Strategy 1: try yt-dlp-downloader skill (works for public video URLs)
-  try {
-    const raw = execFileSync(
-      'openclaw',
-      ['skill', 'run', 'yt-dlp-downloader', '--args', JSON.stringify({ account_id: accountId, limit: MAX_POSTS_PER_ACCOUNT })],
-      { timeout: DOUYIN_FETCH_TIMEOUT, encoding: 'utf8' },
-    );
-
-    const parsed = JSON.parse(raw.trim()) as { videos?: YtDlpVideo[] };
-    const videos = parsed.videos ?? [];
-
-    if (videos.length > 0) {
-      return videos.map(video => ({
-        account_name: accountId,
-        platform: 'douyin' as const,
-        post_id: video.id ?? `douyin_${accountId}_${Math.random().toString(36).slice(2)}`,
-        title: video.title ?? '',
-        engagement: video.like_count ?? 0,
-        comment_count: video.comment_count,
-        posted_at: video.upload_date,
-        cover_url: video.thumbnail,
-        fetched_at: fetchedAt,
-      }));
-    }
-    console.warn(`[competitor-fetcher] yt-dlp-downloader returned 0 videos for ${accountId}, trying CDP fallback`);
-  } catch (err) {
-    console.warn(
-      `[competitor-fetcher] yt-dlp-downloader failed for ${accountId}: ${err instanceof Error ? err.message : err} — trying CDP fallback`,
-    );
-  }
-
-  // Strategy 2: fallback to douyin-bridge CDP (headless Chrome, no Cookie required)
+  // Use douyin-bridge CDP (headless Chrome, no Cookie required)
   const cdpResult = listDouyinUserPosts(accountId, MAX_POSTS_PER_ACCOUNT);
   if (!cdpResult.success) {
     if (cdpResult.rate_limited) {
       throw new Error(`Douyin 风控限流 for ${accountId}: ${cdpResult.reason ?? 'cooldown'}，等待 ${cdpResult.retry_after ?? '?'}s`);
     }
-    throw new Error(`CDP fallback failed for ${accountId}: ${cdpResult.error ?? 'unknown'}`);
+    throw new Error(`CDP fetch failed for ${accountId}: ${cdpResult.error ?? 'unknown'}`);
   }
   if (!cdpResult.videos?.length) {
-    throw new Error(`CDP fallback returned 0 videos for ${accountId}`);
+    throw new Error(`CDP returned 0 videos for ${accountId}`);
   }
   return cdpResult.videos.map(v => ({
     account_name: accountId,
