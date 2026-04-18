@@ -19,6 +19,7 @@ import { buildEntryId } from './viral-kb-store';
 export const CANONICAL_CONTENT_TYPES = [
   '种草类', '工具类', '情绪共鸣类', '知识科普类', '赛事解读类',
   '人物故事类', '热点评论类', '生活记录类', '搞笑娱乐类', '其他',
+  '变装转场类', '卡点剪辑类', '口播讲解类', '剧情短片类',
 ] as const;
 
 /** Canonical hook type labels. */
@@ -31,6 +32,7 @@ export const CANONICAL_HOOK_TYPES = [
 export const CANONICAL_CTA_TYPES = [
   '关注', '收藏', '评论互动', '转发', '投票',
   '点赞', '私信', '链接跳转', '无明显CTA', '其他',
+  '双击屏幕', '长按观看',
 ] as const;
 
 /** Alias mapping: LLM variations → canonical content_type */
@@ -44,6 +46,10 @@ export const CONTENT_TYPE_ALIASES: Record<string, string> = {
   '热点类': '热点评论类', '热点评论': '热点评论类', '时事类': '热点评论类',
   '生活类': '生活记录类', '日常类': '生活记录类', '生活记录': '生活记录类', 'vlog': '生活记录类',
   '搞笑类': '搞笑娱乐类', '搞笑': '搞笑娱乐类', '娱乐类': '搞笑娱乐类',
+  '变装': '变装转场类', '变装类': '变装转场类', '换装': '变装转场类', '转场': '变装转场类',
+  '卡点': '卡点剪辑类', '卡点类': '卡点剪辑类', '踩点': '卡点剪辑类', '踩点类': '卡点剪辑类',
+  '口播': '口播讲解类', '口播类': '口播讲解类', '解说类': '口播讲解类', '讲解类': '口播讲解类',
+  '剧情': '剧情短片类', '剧情类': '剧情短片类', '短剧': '剧情短片类', '情景剧': '剧情短片类',
 };
 
 /** Alias mapping: LLM variations → canonical hook_type */
@@ -66,6 +72,8 @@ export const CTA_TYPE_ALIASES: Record<string, string> = {
   '收藏备用': '收藏', '收藏夹': '收藏',
   '转发分享': '转发', '分享': '转发',
   '点赞支持': '点赞',
+  '双击': '双击屏幕', '双击红心': '双击屏幕',
+  '长按': '长按观看', '长按看更多': '长按观看',
 };
 
 // ─── Normalization & validation helpers ───────────────────────────────────────
@@ -140,6 +148,18 @@ function normalizeDissection(parsed: DissectionJSON): {
     summary: (parsed.summary ?? '').trim(),
   };
 
+  // Attach video_structure if present and valid
+  if (parsed.video_structure && typeof parsed.video_structure.shot_count === 'number') {
+    dissection.video_structure = {
+      shot_count: parsed.video_structure.shot_count,
+      pacing: parsed.video_structure.pacing ?? '',
+      transition_style: parsed.video_structure.transition_style ?? '',
+      dominant_moves: Array.isArray(parsed.video_structure.dominant_moves)
+        ? parsed.video_structure.dominant_moves
+        : [],
+    };
+  }
+
   // Hollow check: at minimum, hook_type + content_type + summary must be non-empty
   const hollowFields = [hook_type, content_type, dissection.summary].filter(v => !v);
   if (hollowFields.length > 0 || !isMeaningfulSummary(dissection.summary)) {
@@ -160,6 +180,13 @@ interface DissectionJSON {
   visual_style: string;
   cta_type: string;
   summary: string;
+  /** Video structure analysis (for video content only) */
+  video_structure?: {
+    shot_count: number;
+    pacing: string;
+    transition_style: string;
+    dominant_moves: string[];
+  };
   audience_response?: {
     top_keywords: string[];
     emotional_triggers: string[];
@@ -205,11 +232,12 @@ ${CANONICAL_CONTENT_TYPES.map(label => `- ${label}`).join('\n')}
 3. cta_type 只能从以下主标签里选一个：
 ${CANONICAL_CTA_TYPES.map(label => `- ${label}`).join('\n')}
 
-4. 若看到类似“命令式钩子/情绪类/关注解锁”这类宽泛或同义表达，必须归一化为上面的主标签。
+4. 若看到类似"命令式钩子/情绪类/关注解锁"这类宽泛或同义表达，必须归一化为上面的主标签。
 5. 每个字段只能输出一个主标签，不允许输出多个标签拼接。
 6. 不允许空字符串；如果无法完全判断，也要给出最接近的主类。
 7. identity_mode 仅在内容明显属于特定垂直赛道时填写，否则返回 null。
-8. summary 必须是非空的一句话，概括爆款逻辑，不要写成“无法判断”。
+8. summary 必须是非空的一句话，概括爆款逻辑，不要写成"无法判断"。
+9. 若该内容为视频类型（抖音），必须填写 video_structure 字段，分析其镜头结构。
 
 请输出 JSON（字段说明见下）：
 {
@@ -220,7 +248,13 @@ ${CANONICAL_CTA_TYPES.map(label => `- ${label}`).join('\n')}
   "interaction_design": "互动引导手法描述",
   "visual_style": "视觉风格特征描述",
   "cta_type": "从主标签中选择一个",
-  "summary": "一句话爆款逻辑总结（20字以内）"${audienceResponseField}
+  "summary": "一句话爆款逻辑总结（20字以内）"${item.platform === 'douyin' ? `,
+  "video_structure": {
+    "shot_count": "镜头数量（整数）",
+    "pacing": "节奏特征：slow/medium/fast/variable",
+    "transition_style": "转场风格描述（如：快切为主/变装匹配剪辑/叠化过渡）",
+    "dominant_moves": ["主要运镜方式1", "主要运镜方式2"]
+  }` : ''}${audienceResponseField}
 }
 
 只输出 JSON，不要任何解释或 markdown。`;
@@ -260,6 +294,7 @@ function buildFailedEntry(
       visual_style: '',
       cta_type: '',
       summary: '',
+      video_structure: undefined,
     },
     dissection_status: 'failed',
     dissection_error_reason: errorReason,

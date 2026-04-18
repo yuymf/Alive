@@ -130,58 +130,50 @@ async function cmdTrends(): Promise<string> {
 
   if (trends.length === 0) return '📊 暂无通过过滤的热点话题';
 
-  // Group by signal_kind for sectioned display
-  const kindLabel: Record<string, string> = {
-    breakout: '📰 趋势加速',
-    search_demand: '🔍 真实搜索',
-    recommended_track: '🏷️ 平台持续推荐',
-  };
-  const kindOrder = ['breakout', 'search_demand', 'recommended_track'] as const;
+  // Group by source_bucket for sectioned display
+  const srcIcon: Record<string, string> = { '推荐流': '🏷️', '热榜': '📰', '搜索': '🔍' };
+  const bucketOrder = ['推荐流', '搜索', '热榜'] as const;
 
-  const kindGroups = new Map<string, FilteredTrend[]>();
+  // Partition trends into buckets
+  const bucketGroups = new Map<string, FilteredTrend[]>();
   for (const t of trends) {
-    const k = t.signal_kind ?? 'breakout';
-    if (!kindGroups.has(k)) kindGroups.set(k, []);
-    kindGroups.get(k)!.push(t);
+    const b = t.source_bucket ?? '热榜';
+    if (!bucketGroups.has(b)) bucketGroups.set(b, []);
+    bucketGroups.get(b)!.push(t);
   }
 
   const lines = ['📊 当前热点趋势（LLM 精选）', ''];
 
-  for (const kind of kindOrder) {
-    const items = kindGroups.get(kind);
+  for (const bucket of bucketOrder) {
+    const items = bucketGroups.get(bucket);
     if (!items || items.length === 0) continue;
-    lines.push(`${kindLabel[kind] ?? kind}（${items.length}）`);
+    const emoji = srcIcon[bucket] ?? '📰';
+    lines.push(`${emoji} ${bucket}（${items.length}）`);
     for (const t of items) {
-      if (kind === 'breakout') {
-        const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
-        lines.push(`  ${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  p=${t.priority_score.toFixed(1)}`);
-      } else {
-        const metric = t.display_metric ?? `${t.velocity_score.toFixed(1)}x`;
-        lines.push(`  · ${t.keyword}  ${t.platform}  ${metric}  p=${t.priority_score.toFixed(1)}`);
-      }
+      const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
+      lines.push(`  ${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  p=${t.priority_score.toFixed(1)}`);
     }
     lines.push('');
   }
 
-  // Signal kind distribution summary
-  const kindCounts = new Map<string, number>();
+  // Source distribution summary
+  const bucketCounts = new Map<string, number>();
   for (const t of trends) {
-    const k = t.signal_kind ?? 'breakout';
-    kindCounts.set(k, (kindCounts.get(k) ?? 0) + 1);
+    const b = t.source_bucket ?? '热榜';
+    bucketCounts.set(b, (bucketCounts.get(b) ?? 0) + 1);
   }
-  const distParts = [...kindCounts.entries()].map(([k, c]) => `${kindLabel[k] ?? k}×${c}`);
-  lines.push(`信号分布：${distParts.join(' · ')}`);
+  const distParts = [...bucketCounts.entries()].map(([b, c]) => `${srcIcon[b] ?? ''}${b}×${c}`);
+  lines.push(`来源分布：${distParts.join(' · ')}`);
 
   // Signal pool overview: show top items per source bucket from the cached signal pool
   try {
     const { readJSON, PATHS } = await import('../utils/file-utils');
-    const srcIcon: Record<string, string> = { '赛道 Tag': '🏷️', '热榜': '📰', '搜索': '🔍' };
     const cache = readJSON<{ signal_pool?: { bucket: string; top: { keyword: string; platform: string; v: string; p: string }[] }[] }>(PATHS.trendsCache, {} as any);
     if (cache?.signal_pool && cache.signal_pool.length > 0) {
       lines.push('', '📋 信号池概览（按来源）');
       for (const group of cache.signal_pool) {
-        const srcEmoji = srcIcon[group.bucket] ?? '📰';
-        lines.push(`  ${srcEmoji}${group.bucket}:`);
+        const emoji = srcIcon[group.bucket] ?? '📰';
+        lines.push(`  ${emoji}${group.bucket}:`);
         for (const t of group.top) {
           lines.push(`    · ${t.keyword}  ${t.platform}  v=${t.v}x  p=${t.p}`);
         }

@@ -252,25 +252,56 @@ export function formatBriefCard(
     }
   }
 
-  // 🎬 今日视频分镜 (structured: topic + identity + scene labels + script excerpt)
+  // 🎬 今日视频分镜 (structured: topic + identity + shot-by-shot storyboard)
   if (firstPending) {
     const douyin = firstPending.content?.douyin;
-    if (douyin && (douyin.key_captions.length > 0 || douyin.bgm_suggestion || douyin.script)) {
+    if (douyin && (douyin.key_captions.length > 0 || douyin.bgm_suggestion || douyin.script || douyin.shots?.length > 0)) {
       lines.push('━━ 🎬 今日视频分镜 ━━');
       // Associate with the topic
       lines.push(`📌 选题：${firstPending.topic}`);
       if (firstPending.identity_mode) {
         lines.push(`🎭 身份：${firstPending.identity_mode}`);
       }
+      if (douyin.total_duration) {
+        lines.push(`⏱ 时长：${douyin.total_duration}`);
+      }
+      if (douyin.pacing) {
+        const pacingLabel: Record<string, string> = { slow: '慢节奏', medium: '中速', fast: '快节奏', variable: '变速' };
+        lines.push(`🎵 节奏：${pacingLabel[douyin.pacing] ?? douyin.pacing}`);
+      }
       lines.push('');
-      // Structured scene labels for key captions
-      if (douyin.key_captions.length > 0) {
-        const sceneLabels = ['开场', '铺垫', '高潮', '收尾', '彩蛋', '转场'];
-        douyin.key_captions.forEach((cap, idx) => {
-          const label = idx < sceneLabels.length ? sceneLabels[idx] : `P${idx + 1}`;
-          lines.push(`${idx + 1}. [${label}] ${cap}`);
+
+      // Structured shot-by-shot storyboard (primary)
+      if (douyin.shots && douyin.shots.length > 0) {
+        lines.push('📋 分镜表：');
+        douyin.shots.forEach((shot) => {
+          const cameraIcon: Record<string, string> = {
+            static: '📐', pan: '↔️', tilt: '↕️', push_in: '🔍', pull_out: '🔭',
+            tracking: '🏃', dolly: '🛤️', crane: '🏗️', orbit: '🔄', handheld: '✋',
+            whip_pan: '💨', drone: '🚁', zoom_in: '🔎', zoom_out: '👁️',
+          };
+          const transitionIcon: Record<string, string> = {
+            cut: '✂️', dissolve: '🌊', wipe: '🧹', match_cut: '🔗', whip: '💨',
+            fade: '🌅', smash: '💥', zoom: '🔍', mask: '🎭', none: '🏁',
+          };
+          const icon = cameraIcon[shot.camera_move] ?? '🎬';
+          const tIcon = transitionIcon[shot.transition] ?? '→';
+          lines.push(`  ${icon} #${shot.index} [${shot.time_range}] ${shot.shot_size} · ${shot.camera_move} · ${shot.camera_angle}`);
+          lines.push(`     📝 ${shot.description}`);
+          if (shot.text_overlay) lines.push(`     💬 "${shot.text_overlay}"`);
+          lines.push(`     ${tIcon} → ${shot.transition} | 😐 ${shot.mood}`);
         });
         lines.push('');
+      } else {
+        // Fallback: key_captions with scene labels (legacy)
+        if (douyin.key_captions.length > 0) {
+          const sceneLabels = ['开场', '铺垫', '高潮', '收尾', '彩蛋', '转场'];
+          douyin.key_captions.forEach((cap, idx) => {
+            const label = idx < sceneLabels.length ? sceneLabels[idx] : `P${idx + 1}`;
+            lines.push(`${idx + 1}. [${label}] ${cap}`);
+          });
+          lines.push('');
+        }
       }
       if (douyin.bgm_suggestion) {
         lines.push(`🎵 BGM: ${douyin.bgm_suggestion}`);
@@ -556,6 +587,21 @@ export function formatContentPackage(item: QueueItem): string {
 
   const { douyin } = item.content;
   lines.push('━━ 抖音 视频脚本 ━━', '【脚本】', douyin.script, `【BGM】${douyin.bgm_suggestion}`);
+  if (douyin.total_duration) {
+    lines.push(`【总时长】${douyin.total_duration}`);
+  }
+  if (douyin.pacing) {
+    const pacingLabel: Record<string, string> = { slow: '慢节奏', medium: '中速', fast: '快节奏', variable: '变速' };
+    lines.push(`【节奏】${pacingLabel[douyin.pacing] ?? douyin.pacing}`);
+  }
+  if (douyin.shots && douyin.shots.length > 0) {
+    lines.push('【分镜表】');
+    douyin.shots.forEach((shot) => {
+      const textPart = shot.text_overlay ? ` 💬"${shot.text_overlay}"` : '';
+      lines.push(`  #${shot.index} [${shot.time_range}] ${shot.shot_size}/${shot.camera_move}/${shot.camera_angle} → ${shot.transition}`);
+      lines.push(`    ${shot.description}${textPart} | ${shot.mood}`);
+    });
+  }
   if (douyin.key_captions.length > 0) {
     lines.push('【关键字幕】');
     douyin.key_captions.forEach(c => lines.push(`  - ${c}`));

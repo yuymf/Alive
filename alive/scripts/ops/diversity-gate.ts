@@ -226,7 +226,7 @@ function toFakeQueueItem(trend: FilteredTrend): QueueItem {
     updated_at: new Date().toISOString(),
     content: {
       xhs: { title: '', body: '', tags: [], cover_images: [] },
-      douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [] },
+      douyin: { script: '', bgm_suggestion: '', key_captions: [], cover_images: [], shots: [], total_duration: '', pacing: 'variable' },
     },
     edit_history: [],
   };

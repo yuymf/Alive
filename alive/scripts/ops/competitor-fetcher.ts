@@ -134,7 +134,7 @@ function fetchDouyinPosts(accountId: string): CompetitorPost[] {
   try {
     const raw = execFileSync(
       'openclaw',
-      ['skills', 'run', 'yt-dlp-downloader', '--args', JSON.stringify({ account_id: accountId, limit: MAX_POSTS_PER_ACCOUNT })],
+      ['skill', 'run', 'yt-dlp-downloader', '--args', JSON.stringify({ account_id: accountId, limit: MAX_POSTS_PER_ACCOUNT })],
       { timeout: DOUYIN_FETCH_TIMEOUT, encoding: 'utf8' },
     );
 

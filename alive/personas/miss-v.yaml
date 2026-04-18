@@ -123,9 +123,7 @@ ops:
   browse_sources:
     - platform: xhs
       count: 5
-    - platform: bilibili
-      count: 3
-    - platform: dailyhot
+    - platform: douyin
       count: 5
   automation:
     brief_delivery: session

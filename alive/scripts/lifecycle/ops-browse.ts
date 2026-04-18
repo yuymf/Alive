@@ -15,7 +15,7 @@ import { createRealLLMClient } from '../utils/llm-client';
 import { hydrateEmotionState, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../utils/types';
 import type { HeartbeatLog, HeartbeatLogEntry, EmotionState, ResolvedIntent } from '../utils/types';
 import { createContentBrowseConfig } from '../adapters/instagram-adapter';
-import { ContentProviderRegistry } from '../adapters/content-provider';
+import { ContentProviderRegistry, type ContentProvider } from '../adapters/content-provider';
 import { BilibiliProvider } from '../adapters/providers/bilibili-provider';
 import { RedditProvider } from '../adapters/providers/reddit-provider';
 import { DailyHotApiProvider } from '../adapters/providers/dailyhot-provider';
@@ -33,6 +33,18 @@ interface BrowseSourceResult {
   platform: string;
   items: Array<{ title: string; source: string }>;
 }
+
+// ── Provider mapping ─────────────────────────────────────────────
+
+const PROVIDER_MAP: Record<string, () => ContentProvider> = {
+  xhs: () => new XhsProvider(),
+  douyin: () => new DouyinProvider(),
+  bilibili: () => new BilibiliProvider(),
+  weibo: () => new WeiboProvider(),
+  zhihu: () => new ZhihuProvider(),
+  reddit: () => new RedditProvider(),
+  dailyhot: () => new DailyHotApiProvider(),
+};
 
 // ── Helpers (exported for testing) ───────────────────────────────
 
@@ -132,18 +144,26 @@ export async function main(): Promise<void> {
 
   for (const source of browseSources) {
     try {
-      // Build content-browse config with real platform providers (same as heartbeat-tick)
-      const contentSources = getContentSourcesConfig(persona);
+      // Only register the provider for the current browse source platform
       const registry = new ContentProviderRegistry();
-      registry.register(new BilibiliProvider());
-      registry.register(new RedditProvider());
-      registry.register(new DailyHotApiProvider());
-      registry.register(new WeiboProvider());
-      registry.register(new ZhihuProvider());
-      registry.register(new XhsProvider());
-      registry.register(new DouyinProvider());
+      const providerFactory = PROVIDER_MAP[source.platform];
+      if (!providerFactory) {
+        console.warn(`[ops-browse] Unknown platform: ${source.platform}, skipping`);
+        results.push({ platform: source.platform, items: [] });
+        continue;
+      }
+      registry.register(providerFactory());
+
+      // Limit contentSources to the current platform only
+      const contentSources = getContentSourcesConfig(persona);
+      const singleSourceConfig = {
+        platforms: [source.platform],
+        keywords: contentSources.keywords,
+        dailyhot_platforms: source.platform === 'dailyhot' ? contentSources.dailyhot_platforms : [],
+      };
+
       const skillConfig = createContentBrowseConfig({
-        contentSources,
+        contentSources: singleSourceConfig,
         registry,
         webSearch: (query, limit) => exaWebSearch(query, limit ?? 5),
       }) as unknown as Record<string, unknown>;
@@ -185,13 +205,14 @@ export async function main(): Promise<void> {
   // Post-browse hook: active keyword search + search-keyword trend pre-computation
   try {
     const keywordRegistry = new ContentProviderRegistry();
-    keywordRegistry.register(new BilibiliProvider());
-    keywordRegistry.register(new RedditProvider());
-    keywordRegistry.register(new DailyHotApiProvider());
-    keywordRegistry.register(new WeiboProvider());
-    keywordRegistry.register(new ZhihuProvider());
-    keywordRegistry.register(new XhsProvider());
-    keywordRegistry.register(new DouyinProvider());
+    const registered = new Set<string>();
+    for (const source of browseSources) {
+      const factory = PROVIDER_MAP[source.platform];
+      if (factory && !registered.has(source.platform)) {
+        keywordRegistry.register(factory());
+        registered.add(source.platform);
+      }
+    }
 
     const kResult = await runKeywordSearch(keywordRegistry);
     if (kResult.searched > 0) {

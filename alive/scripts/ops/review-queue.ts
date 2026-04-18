@@ -52,6 +52,7 @@ export interface AddItemInput {
   content: QueueItemContent;
   template_spec?: QueueItemTemplateSpec;
   competitor_benchmarks?: QueueItemCompetitorBenchmark[];
+  image_prompts?: string[];
 }
 
 export async function addItem(input: AddItemInput): Promise<QueueItem> {
@@ -82,6 +83,7 @@ export async function addItem(input: AddItemInput): Promise<QueueItem> {
     edit_history: [],
     ...(input.template_spec ? { template_spec: input.template_spec } : {}),
     ...(input.competitor_benchmarks ? { competitor_benchmarks: input.competitor_benchmarks } : {}),
+    ...(input.image_prompts?.length ? { image_prompts: input.image_prompts } : {}),
   };
   await saveQueue({ ...queue, items: [...queue.items, item] });
   return item;

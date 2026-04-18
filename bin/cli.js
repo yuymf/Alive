@@ -737,14 +737,14 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
     const briefSession = 'isolated';
 
     specs.push(
-      { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 请运行 npx alive:ops-brief${personaSlug ? ' --persona ' + personaSlug : ''}，生成今日运营简报（热点+选题+人设建议）。`, timeout: 180, noDeliver: briefNoDeliver, session: briefSession },
+      { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-brief.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，生成今日运营简报（热点+选题+人设建议）。`, timeout: 360, noDeliver: briefNoDeliver, session: briefSession },
     );
 
     // Background ops jobs (always-on)
     const bgJobs = [
-      { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 请运行 npx alive:ops-trends${personaSlug ? ' --persona ' + personaSlug : ''}，从抖音/微博/B站/头条/百度采集热点数据，追踪竞品动态，更新爆款知识库。`, timeout: 120 },
-      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 请运行 npx alive:ops-competitor-analysis${personaSlug ? ' --persona ' + personaSlug : ''}，采集并分析竞品账号最新帖子。`, timeout: 300 },
-      { name: `${skillSlug}:${personaSlug}:ops-tags`, cron: '0 10,20 * * *', message: `[cron:ops-tags] 请运行 npx alive:ops-tags${personaSlug ? ' --persona ' + personaSlug : ''}，维护Tag词表（热门词检测+过期词清理）。`, timeout: 120 },
+      { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: '0 * * * *', message: `[cron:ops-trends] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-trends.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，从抖音/微博/B站/头条/百度采集热点数据，追踪竞品动态，更新爆款知识库。`, timeout: 300 },
+      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-competitor-analysis.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，采集并分析竞品账号最新帖子。`, timeout: 600 },
+      { name: `${skillSlug}:${personaSlug}:ops-tags`, cron: '0 10,20 * * *', message: `[cron:ops-tags] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-tags.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，维护Tag词表（热门词检测+过期词清理）。`, timeout: 600 },
     ];
     for (const job of bgJobs) {
       specs.push({ ...job, noDeliver: silentBg });
@@ -754,9 +754,9 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
     const strategyEnabled = persona.ops?.strategy_enabled === true;
     if (strategyEnabled) {
       const strategyJobs = [
-        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 请运行 npx alive:ops-performance${personaSlug ? ' --persona ' + personaSlug : ''}，采集内容表现数据。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 请运行 npx alive:ops-analyze${personaSlug ? ' --persona ' + personaSlug : ''}，分析内容表现数据。`, timeout: 120 },
-        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 请运行 npx alive:ops-strategy${personaSlug ? ' --persona ' + personaSlug : ''}，生成周度内容策略。`, timeout: 300 },
+        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-performance.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，采集内容表现数据。`, timeout: 240 },
+        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-analyze.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，分析内容表现数据。`, timeout: 240 },
+        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-strategy.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，生成周度内容策略。`, timeout: 600 },
       ];
       for (const job of strategyJobs) {
         specs.push({ ...job, noDeliver: silentBg });
@@ -769,8 +769,8 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
       specs.push({
         name: `${skillSlug}:${personaSlug}:ops-browse`,
         cron: browseInterval,
-        message: `[cron:ops-browse] 请运行 npx alive:ops-browse${personaSlug ? ' --persona ' + personaSlug : ''}，浏览内容平台发现灵感。`,
-        timeout: 120,
+        message: `[cron:ops-browse] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-browse.js')}${personaSlug ? ' --persona ' + personaSlug : ''} 浏览内容平台发现灵感。`,
+        timeout: 600,
         noDeliver: silentBg,
       });
     }

@@ -204,6 +204,18 @@ export function buildCompetitorBenchmarks(
  * Build a template constraint string for LLM prompt injection.
  */
 export function buildTemplateConstraint(template: ContentTemplate): string {
+  const videoBP = template.video_blueprint;
+  const videoBPSection = videoBP
+    ? `
+【视频分镜蓝图】
+默认镜头数：${videoBP.default_shots ?? '4-7'}
+节奏：${videoBP.pacing ?? 'variable'}
+${videoBP.duration_range ? `时长范围：${videoBP.duration_range}` : ''}
+${videoBP.required_moves && videoBP.required_moves.length > 0 ? `必须包含运镜：${videoBP.required_moves.join('、')}` : ''}
+${videoBP.required_transitions && videoBP.required_transitions.length > 0 ? `必须包含转场：${videoBP.required_transitions.join('、')}` : ''}
+${videoBP.mood_arc && videoBP.mood_arc.length > 0 ? `情绪弧线：${videoBP.mood_arc.join(' → ')}` : ''}`
+    : '';
+
   return `【内容模板约束】
 类型：${template.type}（${template.category}）
 场景：${template.scene}
@@ -212,7 +224,7 @@ export function buildTemplateConstraint(template: ContentTemplate): string {
 内容亮点：${template.highlights.join('、')}
 ${template.reference_links && template.reference_links.length > 0
     ? `参考案例：${template.reference_links.join(' / ')}`
-    : ''}
+    : ''}${videoBPSection}
 
 请严格按照以上场景、镜头、造型要求来构思内容。`;
 }
@@ -401,7 +413,80 @@ const DOUYIN_GUIDELINES = `【抖音脚本写作规范】
 - 互动设计：至少一个"评论钩"时刻（如提问、留悬念、争议观点），让用户忍不住评论
 - 信息密度：每句话都要推进内容，删掉"嗯""那个""就是说"等口头禅填充词
 - 字幕：3-5个关键要点，每条≤10字，强化记忆点
-- BGM：匹配内容情绪，优先热门音频提升推荐权重`;
+- BGM：匹配内容情绪，优先热门音频提升推荐权重
+
+【分镜设计规范】（SCAAL框架：Subject + Camera + Action + Atmosphere + Length）
+每个镜头必须回答四个核心问题：画面里有什么？镜头怎么运动？情绪氛围是什么？持续多久？
+
+- 镜头数：4-7个镜头，节奏紧凑
+- 每镜头时长：2-8秒，开场钩子镜头≤3秒，高潮镜头可延长至5-8秒
+- 运镜原则：每镜头只指定一种运镜，不要组合多种运动；固定镜头用于对话/平静场景
+- 转场设计：变装/身份切换用 match_cut 或 whip；情绪过渡用 dissolve；快节奏用 cut；结尾用 fade
+- 景别节奏：开场用 long/medium_long 建立场景 → 中段切 close_up 抓情绪 → 高潮 extreme_close_up 放大细节 → 收尾 medium 回归稳定
+- 氛围弧：各镜头 mood 必须构成递进弧线（如 好奇→紧张→惊艳→自信）
+- text_overlay：仅在有强视觉冲击或关键信息时添加，不超过8字
+
+运镜词汇参考（camera_move）：
+  static(固定) | pan(水平摇) | tilt(垂直摇) | push_in(推入) | pull_out(拉远)
+  tracking(跟踪) | dolly(推轨) | crane(摇臂升降) | orbit(环绕) | handheld(手持)
+  whip_pan(快甩) | drone(航拍) | zoom_in(变焦推) | zoom_out(变焦拉)
+
+机位词汇参考（camera_angle）：
+  eye_level(平视) | low_angle(仰拍) | high_angle(俯拍) | dutch_angle(倾斜)
+  over_shoulder(过肩) | pov(第一人称) | bird_eye(鸟瞰)
+
+景别词汇参考（shot_size）：
+  extreme_close_up(大特写) | close_up(特写) | medium_close_up(近景)
+  medium(中景) | medium_long(中远景) | long(全景) | extreme_long(远景)
+
+转场词汇参考（transition）：
+  cut(硬切) | dissolve(叠化) | wipe(擦除) | match_cut(匹配剪辑)
+  whip(甩镜头) | fade(淡入淡出) | smash(碎切) | zoom(变焦转场) | mask(遮罩) | none(无)`;
+
+const XHS_OUTPUT_FORMAT = `输出格式 JSON：
+{"title":"...（11-20字，含emoji）","body":"...（正文500字以内，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"]}`;
+
+const DOUYIN_OUTPUT_FORMAT = `输出格式 JSON（分镜结构）：
+{
+  "opening_hook": "前3秒钩子（11-20字，反问/冲突/悬念）",
+  "script": "完整口播脚本（200-500字，短句口语化）",
+  "bgm_suggestion": "推荐BGM风格或歌名+节拍描述",
+  "key_captions": ["字幕要点1（≤10字）", "字幕要点2"],
+  "total_duration": "总时长（如25-30秒）",
+  "pacing": "slow | medium | fast | variable",
+  "shots": [
+    {
+      "index": 1,
+      "time_range": "0-3秒",
+      "description": "画面内容、人物动作、表情（用中文）",
+      "camera_move": "从运镜词汇中选择一个",
+      "camera_angle": "从机位词汇中选择一个",
+      "shot_size": "从景别词汇中选择一个",
+      "transition": "从转场词汇中选择一个（最后镜头用none）",
+      "text_overlay": "画面文字（可选，≤8字）",
+      "mood": "情绪标签（如：紧张悬念）"
+    },
+    {
+      "index": 2,
+      "time_range": "3-8秒",
+      "description": "...",
+      "camera_move": "...",
+      "camera_angle": "...",
+      "shot_size": "...",
+      "transition": "...",
+      "text_overlay": "...",
+      "mood": "..."
+    }
+  ]
+}
+
+分镜设计要求：
+1. shots 数组必须包含 4-7 个镜头，按时间顺序排列
+2. 第一个镜头必须对应 opening_hook 的时间段（0-3秒）
+3. 各镜头 time_range 必须连续且覆盖 total_duration
+4. mood 必须构成递进弧线（好奇→紧张→惊艳→自信 等）
+5. text_overlay 仅在必要时添加，可省略（省略时不要输出该字段）
+6. 每个 camera_move/camera_angle/shot_size/transition 必须从上面的词汇表中选择`;
 
 // ─── Prompt builder ─────────────────────────────────────────────────────────
 
@@ -503,9 +588,7 @@ ${prohibitions}
 
 请严格按照以上写作规范和爆款思维框架，生成一条完整的 ${platformLabel} 内容草稿。
 
-${platform === 'xhs' ? `输出格式 JSON：
-{"title":"...（11-20字，含emoji）","body":"...（正文500字以内，段落间用emoji分隔）","tags":["#精准长尾词1","#精准长尾词2","#热门大词"]}` : `输出格式 JSON：
-{"opening_hook":"前3秒钩子（11-20字，反问/冲突/悬念）","script":"完整口播脚本（200-500字，短句口语化）","bgm_suggestion":"推荐BGM风格或歌名","key_captions":["字幕要点1（≤10字）","字幕要点2"]}`}`;
+${platform === 'xhs' ? XHS_OUTPUT_FORMAT : DOUYIN_OUTPUT_FORMAT}`;
 
   return extraContext ? `${base}\n\n${extraContext}` : base;
 }
@@ -609,8 +692,27 @@ async function generateHooksViaLLM(
   }
 }
 
-interface XhsDraft { title: string; body: string; tags: string[] }
-interface DouyinDraft { opening_hook: string; script: string; bgm_suggestion: string; key_captions: string[] }
+interface XhsDraft { title: string; body: string; tags: string[]; cover_description: string }
+interface DouyinDraft {
+  opening_hook: string;
+  script: string;
+  bgm_suggestion: string;
+  key_captions: string[];
+  total_duration: string;
+  pacing: string;
+  shots: Array<{
+    index: number;
+    time_range: string;
+    description: string;
+    camera_move: string;
+    camera_angle: string;
+    shot_size: string;
+    transition: string;
+    text_overlay?: string;
+    mood: string;
+  }>;
+  cover_description: string;
+}
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
@@ -800,8 +902,8 @@ export async function generateTopics(
     }
 
     // Generate XHS content via LLM
-    let xhsDraft: XhsDraft = { title: '', body: '', tags: [] };
-    let douyinDraft: DouyinDraft = { opening_hook: '', script: '', bgm_suggestion: '', key_captions: [] };
+    let xhsDraft: XhsDraft = { title: '', body: '', tags: [], cover_description: '' };
+    let douyinDraft: DouyinDraft = { opening_hook: '', script: '', bgm_suggestion: '', key_captions: [], total_duration: '', pacing: 'variable', shots: [], cover_description: '' };
 
     try {
       xhsDraft = await llm.callJSON<XhsDraft>(
@@ -860,6 +962,19 @@ export async function generateTopics(
           bgm_suggestion: douyinDraft.bgm_suggestion,
           key_captions: douyinDraft.key_captions,
           cover_images: [],
+          shots: (douyinDraft.shots ?? []).map(s => ({
+            index: s.index,
+            time_range: s.time_range,
+            description: s.description,
+            camera_move: s.camera_move as import('../utils/types').CameraMove,
+            camera_angle: s.camera_angle as import('../utils/types').CameraAngle,
+            shot_size: s.shot_size as import('../utils/types').ShotSize,
+            transition: s.transition as import('../utils/types').ShotTransition,
+            text_overlay: s.text_overlay,
+            mood: s.mood,
+          })),
+          total_duration: douyinDraft.total_duration || '',
+          pacing: (douyinDraft.pacing || 'variable') as QueueItemContent['douyin']['pacing'],
         },
       },
       template_spec: templateSpec,

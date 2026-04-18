@@ -857,6 +857,83 @@ export interface ShotDescription {
   outfitChange?: boolean;
 }
 
+// === Video Storyboard Types ===
+
+/** Camera movement vocabulary — based on SCAAL framework & industry standards */
+export type CameraMove =
+  | 'static'       // 固定镜头
+  | 'pan'          // 水平摇摄
+  | 'tilt'         // 垂直摇摄
+  | 'push_in'      // 推入/推进
+  | 'pull_out'     // 拉出/拉远
+  | 'tracking'     // 跟踪拍摄
+  | 'dolly'        // 推轨
+  | 'crane'        // 摇臂/升降
+  | 'orbit'        // 环绕拍摄
+  | 'handheld'     // 手持
+  | 'whip_pan'     // 快甩
+  | 'drone'        // 无人机航拍
+  | 'zoom_in'      // 变焦推进
+  | 'zoom_out';    // 变焦拉远
+
+/** Camera angle / shot perspective */
+export type CameraAngle =
+  | 'eye_level'        // 平视
+  | 'low_angle'        // 仰拍
+  | 'high_angle'       // 俯拍
+  | 'dutch_angle'      // 倾斜角度
+  | 'over_shoulder'    // 过肩
+  | 'pov'              // 第一人称
+  | 'bird_eye';        // 鸟瞰/上帝视角
+
+/** Shot size / framing */
+export type ShotSize =
+  | 'extreme_close_up'  // 大特写
+  | 'close_up'          // 特写
+  | 'medium_close_up'   // 近景
+  | 'medium'            // 中景
+  | 'medium_long'       // 中远景
+  | 'long'              // 全景
+  | 'extreme_long';     // 远景/大全景
+
+/** Transition between shots */
+export type ShotTransition =
+  | 'cut'         // 硬切
+  | 'dissolve'    // 叠化
+  | 'wipe'        // 擦除
+  | 'match_cut'   // 匹配剪辑
+  | 'whip'        // 甩镜头转场
+  | 'fade'        // 淡入淡出
+  | 'smash'       // 碎切/撞击
+  | 'zoom'        // 变焦转场
+  | 'mask'        // 遮罩转场
+  | 'none';       // 无/最后镜头
+
+/** Video pacing / rhythm */
+export type VideoPacing = 'slow' | 'medium' | 'fast' | 'variable';
+
+/** Single video shot / storyboard frame — inspired by SCAAL framework + clipcurator/ai-storyboard-prompts */
+export interface VideoShot {
+  /** Shot number (1-based) */
+  index: number;
+  /** Time range (e.g. "0-3秒", "8-15秒") */
+  time_range: string;
+  /** Scene description: what happens, character action, expression */
+  description: string;
+  /** Camera movement */
+  camera_move: CameraMove;
+  /** Camera angle / perspective */
+  camera_angle: CameraAngle;
+  /** Shot framing / size */
+  shot_size: ShotSize;
+  /** Transition to next shot */
+  transition: ShotTransition;
+  /** On-screen text / subtitle hint */
+  text_overlay?: string;
+  /** Mood / atmosphere label */
+  mood: string;
+}
+
 export interface PostRecord {
   media_id: string;
   timestamp: number;
@@ -978,6 +1055,12 @@ export interface QueueItemContent {
     bgm_suggestion: string;
     key_captions: string[];
     cover_images: string[];
+    /** Structured shot-by-shot storyboard */
+    shots: VideoShot[];
+    /** Total video duration (e.g. "25-30秒") */
+    total_duration: string;
+    /** Overall pacing / rhythm */
+    pacing: VideoPacing;
   };
 }
 
@@ -1411,6 +1494,22 @@ export interface BreakdownInput {
 
 // ─── Content Template Types ─────────────────────────────────────────────────
 
+/** Video storyboard blueprint — constrains shot generation per content template */
+export interface VideoBlueprint {
+  /** Default number of shots */
+  default_shots?: number;
+  /** Default pacing */
+  pacing?: VideoPacing;
+  /** Camera moves that must appear at least once */
+  required_moves?: readonly CameraMove[];
+  /** Transitions that must appear at least once */
+  required_transitions?: readonly ShotTransition[];
+  /** Emotional arc across shots (e.g. ["好奇", "惊艳", "自信"]) */
+  mood_arc?: readonly string[];
+  /** Duration range (e.g. "15-30秒") */
+  duration_range?: string;
+}
+
 export interface ContentTemplate {
   readonly type: string;
   readonly category: string;
@@ -1424,6 +1523,8 @@ export interface ContentTemplate {
   readonly platforms?: readonly ('xhs' | 'douyin')[];
   /** Which identity mode this template belongs to */
   readonly identity_mode?: IdentityMode;
+  /** Video storyboard blueprint — only for video-capable templates */
+  readonly video_blueprint?: VideoBlueprint;
 }
 
 // ─── Ops Config ─────────────────────────────────────────────────────────────
@@ -1903,6 +2004,13 @@ export interface ViralEntry {
     cta_type: string;
     summary: string;
     audience_response?: AudienceResponse; // XHS 评论受众分析（仅有评论文本时）
+    /** Video structure analysis (for video content only) */
+    video_structure?: {
+      shot_count: number;
+      pacing: string;
+      transition_style: string;
+      dominant_moves: string[];
+    };
   };
 
   dissection_status: 'done' | 'failed';

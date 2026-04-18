@@ -6,6 +6,7 @@ import {
   isXhsAvailable,
   listXhsFeed,
   searchXhsNotes,
+  getXhsRateLimitStatus,
 } from '../../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 
 export class XhsProvider implements ContentProvider {
@@ -17,6 +18,12 @@ export class XhsProvider implements ContentProvider {
 
   async isAvailable(): Promise<boolean> {
     try {
+      // 风控冷却期内直接视为不可用，避免无谓探测
+      const rlStatus = getXhsRateLimitStatus();
+      if (rlStatus.in_cooldown) {
+        console.warn(`[XhsProvider] 风控冷却中 (剩余 ${rlStatus.cooldown_remaining_s}s)，暂不可用`);
+        return false;
+      }
       return await isXhsAvailable();
     } catch {
       return false;
@@ -39,7 +46,12 @@ export class XhsProvider implements ContentProvider {
         snippet: note.description ? note.description.slice(0, 200) : undefined,
       }));
     } catch (err) {
-      console.warn(`[XhsProvider] getFeed error: ${(err as Error).message}`);
+      const msg = (err as Error).message ?? '';
+      if (msg.includes('风控冷却中') || msg.includes('触发风控')) {
+        console.warn(`[XhsProvider] getFeed 触发风控: ${msg}`);
+      } else {
+        console.warn(`[XhsProvider] getFeed error: ${msg}`);
+      }
       return [];
     }
   }
@@ -60,7 +72,12 @@ export class XhsProvider implements ContentProvider {
         snippet: note.description ? note.description.slice(0, 200) : undefined,
       }));
     } catch (err) {
-      console.warn(`[XhsProvider] search error: ${(err as Error).message}`);
+      const msg = (err as Error).message ?? '';
+      if (msg.includes('风控冷却中') || msg.includes('触发风控')) {
+        console.warn(`[XhsProvider] search 触发风控: ${msg}，跳过关键词 "${keyword}"`);
+      } else {
+        console.warn(`[XhsProvider] search error: ${msg}`);
+      }
       return [];
     }
   }

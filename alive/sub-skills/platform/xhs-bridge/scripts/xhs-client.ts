@@ -12,6 +12,12 @@
  *
  * The CLI outputs camelCase JSON; this module normalises it to the
  * snake_case interfaces that inspiration-collector.ts expects.
+ *
+ * 风控防护：
+ * - 全局冷却：检测到风控后进入冷却期，冷却期内所有请求直接跳过
+ * - 指数退避：连续失败时递增等待间隔（base×2^hits，封顶 30 分钟）
+ * - 风控信号识别：CLI stderr/error 中包含 rate/429/限制/验证码 等关键词
+ * - 成功重置：请求成功后清零连续触发计数
  */
 
 import * as fs from 'fs';
@@ -112,17 +118,33 @@ export function resetSearchCacheForTests(): void {
   }
 }
 
-/** 随机等待 minMs~maxMs 毫秒，模拟人类操作节奏。 */
+/**
+ * 高斯随机延迟：以 (minMs+maxMs)/2 为均值，(maxMs-minMs)/6 为标准差，
+ * 生成更接近人类节奏的间隔分布（大多数在均值附近，偶尔特别长或短）。
+ * 结果裁剪到 [minMs, maxMs] 范围内。
+ */
+function gaussianJitter(minMs: number, maxMs: number): number {
+  const mean = (minMs + maxMs) / 2;
+  const stddev = (maxMs - minMs) / 6;  // 99.7% 落在 [min, max] 内（3σ 原则）
+  // Box-Muller 变换
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const z = Math.sqrt(-2 * Math.log(u1 || 1e-10)) * Math.cos(2 * Math.PI * u2);
+  return Math.max(minMs, Math.min(maxMs, mean + z * stddev));
+}
+
+/** 随机等待 minMs~maxMs 毫秒，使用高斯分布模拟人类操作节奏。 */
 function jitter(minMs: number, maxMs: number): Promise<void> {
-  const ms = minMs + Math.random() * (maxMs - minMs);
+  const ms = gaussianJitter(minMs, maxMs);
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ─── 全局 XHS 请求速率限制器 ─────────────────────────────────────────────
 
 /**
- * 双重限制：令牌桶（每小时 30 次上限）+ 最小间隔（8~15s 人类节奏）。
- * 所有 XHS CLI 调用通过 acquire() 排队，确保不触发平台风控。
+ * 双重限制：令牌桶（每小时 20 次上限）+ 最小间隔（10~18s 人类节奏）。
+ * 风控冷却：触发风控后进入指数退避冷却期，冷却期内所有请求直接跳过。
+ * 所有 XHS CLI 调用通过 acquire() + 冷却闸门，确保不触发且不怕平台风控。
  */
 interface XhsRateLimiter {
   acquire(): Promise<void>;
@@ -132,10 +154,10 @@ interface XhsRateLimiter {
 }
 
 function createRateLimiter(): XhsRateLimiter {
-  const BUCKET_MAX = 30;           // 令牌桶容量：每小时最多 30 次
+  const BUCKET_MAX = 20;           // 令牌桶容量：每小时最多 20 次（留更大余量防风控）
   const BUCKET_REFILL_MS = 60 * 60 * 1000; // 1 小时全量回补
-  const MIN_INTERVAL_MS = 8_000;   // 最小请求间隔 8s
-  const MAX_JITTER_MS = 7_000;     // 额外随机抖动 0~7s（总间隔 8~15s）
+  const MIN_INTERVAL_MS = 10_000;  // 最小请求间隔 10s（更接近人类节奏）
+  const MAX_JITTER_MS = 8_000;     // 额外随机抖动 0~8s（总间隔 10~18s）
   const LOGIN_CACHE_TTL_MS = 5 * 60 * 1000; // check-login 缓存 5 分钟
 
   let tokens = BUCKET_MAX;
@@ -171,13 +193,13 @@ function createRateLimiter(): XhsRateLimiter {
         refillTokens();
       }
 
-      // 最小间隔检查
+      // 最小间隔检查（高斯分布抖动，更接近人类节奏）
       const sinceLastRequest = Date.now() - lastRequestTime;
       if (lastRequestTime > 0 && sinceLastRequest < MIN_INTERVAL_MS) {
         const baseWait = MIN_INTERVAL_MS - sinceLastRequest;
-        const jitterWait = Math.random() * MAX_JITTER_MS;
+        const jitterWait = gaussianJitter(0, MAX_JITTER_MS);
         const totalWait = baseWait + jitterWait;
-        console.log(`[xhs-bridge] Rate limiter: waiting ${(totalWait / 1000).toFixed(1)}s (interval + jitter)`);
+        console.log(`[xhs-bridge] Rate limiter: waiting ${(totalWait / 1000).toFixed(1)}s (interval + gaussian jitter)`);
         await new Promise(resolve => setTimeout(resolve, totalWait));
       }
 
@@ -215,6 +237,107 @@ const rateLimiter = createRateLimiter();
 /** 测试用：重置速率限制器状态 */
 export function resetRateLimiterForTests(): void {
   rateLimiter.reset();
+}
+
+// ─── 全局风控冷却状态 ────────────────────────────────────────────────────────
+
+interface XhsRateLimitState {
+  /** 冷却期结束时间（Date.now() 毫秒） */
+  cooldownUntil: number;
+  /** 连续风控触发次数（用于指数递增冷却时长） */
+  consecutiveHits: number;
+  /** 最近一次触发原因 */
+  lastReason: string;
+}
+
+const _xhsRateLimitState: XhsRateLimitState = {
+  cooldownUntil: 0,
+  consecutiveHits: 0,
+  lastReason: '',
+};
+
+/** 基础冷却时长（秒），实际 = base × 2^hits，封顶 30 分钟 */
+const XHS_BASE_COOLDOWN_S = 60;
+const XHS_MAX_COOLDOWN_S = 1800;
+
+/** 风控信号关键词（CLI stderr / stdout 中出现时判定为风控） */
+const XHS_RATE_LIMIT_SIGNALS = [
+  'rate', 'limit', '429', '461', 'captcha', '验证码',
+  '限制', '风控', '频繁', 'blocked', 'too many',
+  'request_denied', 'access_denied', 'forbidden',
+  '滑块', 'slider', 'challenge',
+] as const;
+
+/** 461 专属信号（小红书特有，触发时需要更长冷却） */
+const XHS_461_SIGNALS = ['461', '滑块', 'slider', 'captcha', '验证码', 'challenge'] as const;
+
+/** 检测是否为 461 类风控（需要滑块验证，比普通限流更严重） */
+function isXhs461Signal(text: string): boolean {
+  const lower = text.toLowerCase();
+  return XHS_461_SIGNALS.some(signal => lower.includes(signal));
+}
+
+function xhsIsInCooldown(): boolean {
+  return Date.now() < _xhsRateLimitState.cooldownUntil;
+}
+
+function xhsEnterCooldown(reason: string, retryAfterS: number = 0): void {
+  _xhsRateLimitState.consecutiveHits++;
+  _xhsRateLimitState.lastReason = reason;
+
+  let cooldownS: number;
+  if (retryAfterS > 0) {
+    cooldownS = retryAfterS;
+  } else {
+    // 指数递增：base × 2^hits，封顶 MAX_COOLDOWN_S
+    cooldownS = Math.min(
+      XHS_MAX_COOLDOWN_S,
+      XHS_BASE_COOLDOWN_S * Math.pow(2, _xhsRateLimitState.consecutiveHits - 1),
+    );
+  }
+
+  // 加入 ±20% 随机噪声
+  const noise = cooldownS * 0.2 * (Math.random() * 2 - 1);
+  const actualS = Math.max(30, cooldownS + noise);
+
+  _xhsRateLimitState.cooldownUntil = Date.now() + actualS * 1000;
+  console.warn(
+    `[xhs-bridge] 风控冷却: ${reason}, 等待 ${Math.round(actualS)}s ` +
+    `(连续 ${_xhsRateLimitState.consecutiveHits} 次)`,
+  );
+}
+
+function xhsResetCooldown(): void {
+  if (_xhsRateLimitState.consecutiveHits > 0) {
+    console.log(
+      `[xhs-bridge] 风控冷却重置 (之前连续 ${_xhsRateLimitState.consecutiveHits} 次)`,
+    );
+  }
+  _xhsRateLimitState.consecutiveHits = 0;
+  _xhsRateLimitState.lastReason = '';
+  // 注意：不重置 cooldownUntil，让当前冷却期自然结束
+}
+
+/** 检测 CLI 输出中是否包含风控信号 */
+function isXhsRateLimitSignal(text: string): boolean {
+  const lower = text.toLowerCase();
+  return XHS_RATE_LIMIT_SIGNALS.some(signal => lower.includes(signal));
+}
+
+/** 获取当前风控状态（供 Provider 和调试使用）。 */
+export function getXhsRateLimitStatus(): {
+  in_cooldown: boolean;
+  cooldown_remaining_s: number;
+  consecutive_hits: number;
+  last_reason: string;
+} {
+  const remaining = Math.max(0, Math.round((_xhsRateLimitState.cooldownUntil - Date.now()) / 1000));
+  return {
+    in_cooldown: xhsIsInCooldown(),
+    cooldown_remaining_s: remaining,
+    consecutive_hits: _xhsRateLimitState.consecutiveHits,
+    last_reason: _xhsRateLimitState.lastReason,
+  };
 }
 
 export interface XhsNote {
@@ -267,6 +390,14 @@ async function callXhsCli(command: string, args: string[] = []): Promise<unknown
     );
   }
 
+  // 风控冷却闸门：冷却期内直接抛错，不发起请求
+  if (xhsIsInCooldown()) {
+    const remaining = Math.round((_xhsRateLimitState.cooldownUntil - Date.now()) / 1000);
+    throw new Error(
+      `[xhs-bridge] 风控冷却中，剩余 ${remaining}s (原因: ${_xhsRateLimitState.lastReason})`
+    );
+  }
+
   // 全局速率限制：排队等待（令牌桶 + 最小间隔）
   await rateLimiter.acquire();
 
@@ -277,18 +408,47 @@ async function callXhsCli(command: string, args: string[] = []): Promise<unknown
     const uvArgs = ['run', '--directory', xhsDir, 'python', cliPath, command, ...args];
 
     execFile('uv', uvArgs, { timeout: XHS_CLI_TIMEOUT }, (error, stdout, stderr) => {
-      if (stderr && (process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true')) console.error(`[xhs-bridge] ${stderr.trim()}`);
+      const stderrText = stderr?.trim() ?? '';
+      if (stderrText && (process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true')) console.error(`[xhs-bridge] ${stderrText}`);
+
+      // 检测风控信号：stderr 或 error.message 中出现关键词
+      const combinedText = `${stderrText} ${(error?.message ?? '')}`.toLowerCase();
+      if (isXhsRateLimitSignal(combinedText)) {
+        // 461 类风控（滑块验证）比普通限流更严重，使用加长冷却
+        if (isXhs461Signal(combinedText)) {
+          xhsEnterCooldown(`CLI ${command} 触发461/验证码风控`, 300);  // 461 固定 5 分钟冷却
+        } else {
+          xhsEnterCooldown(`CLI ${command} 触发风控信号`);
+        }
+        return reject(new Error(
+          `[xhs-bridge] ${command} 触发风控，已进入冷却 (连续 ${_xhsRateLimitState.consecutiveHits} 次)`
+        ));
+      }
+
       if (error) {
         try {
           const parsed = JSON.parse(stdout);
-          if (parsed.error) return reject(new Error(parsed.error));
+          if (parsed.error) {
+            // JSON error 中也可能包含风控信号
+            if (isXhsRateLimitSignal(parsed.error)) {
+              if (isXhs461Signal(parsed.error)) {
+                xhsEnterCooldown(parsed.error, 300);  // 461 固定 5 分钟冷却
+              } else {
+                xhsEnterCooldown(parsed.error);
+              }
+            }
+            return reject(new Error(parsed.error));
+          }
         } catch {
           if (stdout) console.error(`[xhs-bridge] Unparseable stdout: ${stdout.slice(0, 200)}`);
         }
         return reject(new Error(`xhs-bridge ${command} failed: ${error.message}`));
       }
       try {
-        resolve(JSON.parse(stdout));
+        const result = JSON.parse(stdout);
+        // 成功请求 → 重置冷却计数
+        xhsResetCooldown();
+        resolve(result);
       } catch {
         reject(new Error(`Failed to parse xhs-bridge output: ${stdout.slice(0, 200)}`));
       }
@@ -442,7 +602,7 @@ export async function getUserNotes(accountName: string, limit = 20): Promise<Xhs
       throw new Error('[xhs-bridge] Not logged in — skipping getUserNotes to avoid rate-limit trigger');
     }
 
-    // ── 节流：抓取前随机等待 3~8s，模拟人类间歇节奏 ──
+    // ── 节流：抓取前高斯随机等待 3~8s，模拟人类间歇节奏 ──
     await jitter(3000, 8000);
 
     try {
