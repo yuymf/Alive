@@ -122,6 +122,10 @@ export interface PostAnalysisInput {
   personaSummary: string;
   /** Whether the content is a video post (has shots/storyboard) */
   isVideoContent?: boolean;
+  /** The hook angle used in this content (from trend data) */
+  hookAngle?: string;
+  /** Topic keywords associated with this content */
+  topicKeywords?: string[];
 }
 
 export function buildPostAnalysisPrompt(input: PostAnalysisInput): string {
@@ -174,12 +178,16 @@ ${personaSummary}
 3. pattern_analysis: 各维度 0-10 评分 + 成功因素 + 改进方向
 4. extracted_patterns: 如果是 viral 或 above_avg，提取可复用模式（否则不包含此字段）
 5. persona_alignment: 人设一致性检查${videoDimensions}
+6. hook_angle: 内容切入角度分类（如"反常识"、"共鸣式"、"冲突对比"、"数据冲击"、"悬念"、"实用干货"等）
+7. topic_tags: 内容话题标签数组（如["赛事分析","选手故事","战术拆解"]），2-4个标签
 
 JSON格式:
 \`\`\`json
 {
   "performance_tier": "viral|above_avg|normal|below_avg",
   "engagement_score": 85,
+  "hook_angle": "反常识",
+  "topic_tags": ["赛事分析", "选手故事"],
   "pattern_analysis": {
     "hook_effectiveness": 9,
     "emotional_resonance": 8,
@@ -214,6 +222,10 @@ interface AnalysisContext {
   platform: 'xhs' | 'douyin';
   identity_mode: string;
   template_type: string;
+  /** Fallback hook_angle from trend data if LLM doesn't provide one */
+  hook_angle?: string;
+  /** Fallback topic_tags from trend data if LLM doesn't provide them */
+  topic_tags?: string[];
 }
 
 export function parseAnalysisResponse(
@@ -232,6 +244,8 @@ export function parseAnalysisResponse(
     platform: ctx.platform,
     identity_mode: ctx.identity_mode as ContentAnalysis['identity_mode'],
     template_type: ctx.template_type,
+    hook_angle: (response.hook_angle as string) ?? ctx.hook_angle,
+    topic_tags: (response.topic_tags as string[]) ?? ctx.topic_tags,
     pattern_analysis: {
       hook_effectiveness: (pa?.hook_effectiveness as number) ?? 5,
       emotional_resonance: (pa?.emotional_resonance as number) ?? 5,
@@ -340,6 +354,8 @@ async function analyzeSinglePost(
     baseline,
     personaSummary,
     isVideoContent: isVideoContent(queueItem, entry.platform),
+    hookAngle: queueItem.trend_hook,
+    topicKeywords: queueItem.topic ? [queueItem.topic] : [],
   });
 
   try {
@@ -349,6 +365,8 @@ async function analyzeSinglePost(
       platform: entry.platform,
       identity_mode: entry.identity_mode,
       template_type: entry.template_type,
+      hook_angle: queueItem.trend_hook,
+      topic_tags: queueItem.topic ? [queueItem.topic] : [],
     });
   } catch (err) {
     console.error(`[post-analyzer] Failed to analyze ${entry.item_id}:`, (err as Error).message);

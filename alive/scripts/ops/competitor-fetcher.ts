@@ -9,6 +9,7 @@
 
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { wallNow } from '../utils/time-utils';
+import { execFileSync } from 'child_process';
 import type { CompetitorPost, CompetitorPostsStore, CompetitorProfile, FetchResult } from '../utils/types';
 import { listDouyinUserPosts } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 
@@ -142,6 +143,105 @@ function fetchDouyinPosts(accountId: string): CompetitorPost[] {
   }));
 }
 
+function fetchBilibiliPosts(mid: string, displayName: string): CompetitorPost[] {
+  const fetchedAt = wallNow().toISOString();
+  const cookie = process.env.BILIBILI_COOKIE ?? '';
+  const maxPosts = MAX_POSTS_PER_ACCOUNT;
+
+  const script = `
+const https = require('https');
+const crypto = require('crypto');
+const mid = ${JSON.stringify(mid)};
+const COOKIE = ${JSON.stringify(cookie)};
+const MAX = ${maxPosts};
+
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+const MIXIN_KEY_ENC_TAB = [
+  46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,
+  27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,
+  37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,
+  22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52,
+];
+
+function getMixinKey(imgKey, subKey) {
+  const raw = imgKey + subKey;
+  return MIXIN_KEY_ENC_TAB.map(i => raw[i]).join('').slice(0, 32);
+}
+
+function get(url, extraHeaders) {
+  return new Promise((resolve, reject) => {
+    const headers = {
+      'User-Agent': UA,
+      'Referer': 'https://space.bilibili.com/' + mid + '/video',
+      'Origin': 'https://space.bilibili.com',
+      ...(COOKIE ? { 'Cookie': COOKIE } : {}),
+      ...(extraHeaders || {}),
+    };
+    const req = https.get(url, { headers }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+    });
+    req.on('error', reject);
+    req.setTimeout(12000, () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+async function main() {
+  try {
+    const nav = await get('https://api.bilibili.com/x/web-interface/nav');
+    const imgKey = nav?.data?.wbi_img?.img_url?.match(/([a-f0-9]+)\\.png/)?.[1] ?? '';
+    const subKey = nav?.data?.wbi_img?.sub_url?.match(/([a-f0-9]+)\\.png/)?.[1] ?? '';
+    if (!imgKey || !subKey) { process.stdout.write('[]'); return; }
+
+    const mixinKey = getMixinKey(imgKey, subKey);
+    const wts = Math.floor(Date.now() / 1000);
+    const params = { mid, ps: MAX, pn: 1, order: 'pubdate', wts };
+    const query = Object.keys(params).sort()
+      .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k]).replace(/[!'()*]/g, '')))
+      .join('&');
+    const w_rid = crypto.createHash('md5').update(query + mixinKey).digest('hex');
+
+    const apiUrl = 'https://api.bilibili.com/x/space/wbi/arc/search?' + query + '&w_rid=' + w_rid;
+    const d = await get(apiUrl);
+    const vlist = d?.data?.list?.vlist ?? [];
+    if (!vlist.length) { process.stdout.write('[]'); return; }
+    process.stdout.write(JSON.stringify(vlist.slice(0, MAX).map(v => ({
+      title: v.title || '',
+      play: v.play || 0,
+      created: v.created || 0,
+      bvid: v.bvid || '',
+    }))));
+  } catch(e) {
+    process.stdout.write('[]');
+  }
+}
+main();
+`;
+
+  try {
+    const raw = execFileSync(process.execPath, ['-e', script], { timeout: 20_000, encoding: 'utf8' });
+    const videos = JSON.parse(raw.trim()) as Array<{ title?: string; play?: number; created?: number; bvid?: string }>;
+
+    if (!videos.length || !videos[0].title) {
+      return [];
+    }
+
+    return videos.map(v => ({
+      account_name: displayName,
+      platform: 'bilibili' as const,
+      post_id: v.bvid || `bili_${mid}_${v.created ?? Date.now()}`,
+      title: v.title ?? '',
+      engagement: v.play ?? 0,
+      posted_at: v.created ? new Date(v.created * 1000).toISOString() : undefined,
+      fetched_at: fetchedAt,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -150,7 +250,7 @@ function fetchDouyinPosts(accountId: string): CompetitorPost[] {
  * Results are written to PATHS.competitorPosts.
  */
 export async function fetchCompetitorPosts(
-  accounts: { xhs: string[]; xhsUserIds: Map<string, string>; douyin: string[] },
+  accounts: { xhs: string[]; xhsUserIds: Map<string, string>; douyin: string[]; bilibili?: Array<{ mid: string; name: string }> },
   _profiles: readonly CompetitorProfile[],
   _basePath: string,
 ): Promise<FetchResult> {
@@ -244,6 +344,37 @@ export async function fetchCompetitorPosts(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[competitor-fetcher] Douyin 抓取失败 ${key}: ${msg}`);
+      failed.push(key);
+    }
+  }
+
+  // Fetch Bilibili accounts
+  const bilibiliAccounts = accounts.bilibili ?? [];
+  for (let i = 0; i < bilibiliAccounts.length; i++) {
+    const { mid, name } = bilibiliAccounts[i];
+    const key = buildAccountKey(name, 'bilibili');
+    if (i > 0) await jitter(5000, 12000);
+    try {
+      const incoming = fetchBilibiliPosts(mid, name);
+      if (incoming.length === 0) {
+        // No posts returned — keep existing data, just log
+        console.warn(`[competitor-fetcher] Bilibili 抓取返回 0 条 ${key}`);
+        // Still mark success if we had existing data (no error thrown)
+        if (updatedAccounts[key]?.length) {
+          success.push(key);
+        } else {
+          failed.push(key);
+        }
+        continue;
+      }
+      const existingPosts = updatedAccounts[key] ?? [];
+      const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
+      const pruned = pruneOldPosts(merged, now);
+      updatedAccounts[key] = pruned;
+      success.push(key);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[competitor-fetcher] Bilibili 抓取失败 ${key}: ${msg}`);
       failed.push(key);
     }
   }

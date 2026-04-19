@@ -211,6 +211,27 @@ export async function runNightReflect(
       if (strongTones.length > 0) {
         parts.push(`擅长的内容调性：${strongTones.map(t => t.label).join('、')}`);
       }
+      const strongAngles = taste.angle_preferences
+        .filter(a => a.affinity >= 0.3 && a.sample_count >= 2)
+        .sort((a, b) => b.affinity - a.affinity)
+        .slice(0, 3);
+      if (strongAngles.length > 0) {
+        parts.push(`高效切入角度：${strongAngles.map(a => a.label).join('、')}`);
+      }
+      const strongTopics = taste.topic_preferences
+        .filter(t => t.affinity >= 0.3 && t.sample_count >= 2)
+        .sort((a, b) => b.affinity - a.affinity)
+        .slice(0, 3);
+      if (strongTopics.length > 0) {
+        parts.push(`热门话题方向：${strongTopics.map(t => t.label).join('、')}`);
+      }
+      const strongModes = taste.persona_mode_preferences
+        .filter(m => m.affinity >= 0.3 && m.sample_count >= 2)
+        .sort((a, b) => b.affinity - a.affinity)
+        .slice(0, 3);
+      if (strongModes.length > 0) {
+        parts.push(`偏好人设模式：${strongModes.map(m => m.label).join('、')}`);
+      }
       if (taste.anti_patterns.length > 0) {
         parts.push(`要避免的风格：${taste.anti_patterns.slice(0, 3).join('、')}`);
       }

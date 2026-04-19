@@ -2,7 +2,7 @@
  * taste-engine.test.ts
  * Tests for the content taste memory engine.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as path from 'path';
 import * as fs from 'fs';
 import { setBasePaths, resetBasePaths, PATHS } from '../../scripts/utils/file-utils';
@@ -11,8 +11,9 @@ import {
   saveContentTaste,
   updateTasteFromAnalysis,
   buildTasteContext,
+  runTasteDecay,
 } from '../../scripts/ops/taste-engine';
-import { ContentAnalysis, DEFAULT_CONTENT_TASTE } from '../../scripts/utils/types';
+import { ContentAnalysis, DEFAULT_CONTENT_TASTE, TastePreference } from '../../scripts/utils/types';
 
 const TEST_DIR = path.join(__dirname, '__taste_test_sandbox__');
 
@@ -25,6 +26,8 @@ function makeAnalysis(overrides: Partial<ContentAnalysis> = {}): ContentAnalysis
     platform: 'xhs',
     identity_mode: 'esports',
     template_type: '赛场高燃瞬间',
+    hook_angle: '反常识',
+    topic_tags: ['赛事分析', '选手故事'],
     pattern_analysis: {
       hook_effectiveness: 8,
       emotional_resonance: 7,
@@ -68,6 +71,9 @@ describe('taste-engine', () => {
     expect(taste.visual_styles).toEqual([]);
     expect(taste.hook_formulas).toEqual([]);
     expect(taste.anti_patterns).toEqual([]);
+    expect(taste.angle_preferences).toEqual([]);
+    expect(taste.topic_preferences).toEqual([]);
+    expect(taste.persona_mode_preferences).toEqual([]);
   });
 
   it('saves and loads taste', () => {
@@ -149,13 +155,16 @@ describe('taste-engine', () => {
   it('buildTasteContext includes strong preferences', () => {
     // Manually set up taste with enough data
     saveContentTaste({
-      visual_styles: [{ label: '赛场高燃', affinity: 0.8, sample_count: 5, last_updated: '' }],
+      visual_styles: [{ label: '赛场高燃', affinity: 0.8, sample_count: 5, last_updated: new Date().toISOString() }],
       hook_formulas: [
-        { label: '反转式开头', affinity: 0.9, sample_count: 4, last_updated: '' },
-        { label: '数据冲击', affinity: 0.7, sample_count: 3, last_updated: '' },
+        { label: '反转式开头', affinity: 0.9, sample_count: 4, last_updated: new Date().toISOString() },
+        { label: '数据冲击', affinity: 0.7, sample_count: 3, last_updated: new Date().toISOString() },
       ],
       tone_preferences: [],
       engagement_drivers: [],
+      angle_preferences: [],
+      topic_preferences: [],
+      persona_mode_preferences: [],
       anti_patterns: ['过度卖萌', '标题太长'],
       last_updated: '',
     });
@@ -165,5 +174,177 @@ describe('taste-engine', () => {
     expect(ctx).toContain('反转式开头');
     expect(ctx).toContain('赛场高燃');
     expect(ctx).toContain('过度卖萌');
+  });
+
+  // ── New dimension tests: angle, topic, persona_mode ──
+
+  it('tracks angle preferences from hook_angle', () => {
+    const analysis = makeAnalysis({
+      performance_tier: 'viral',
+      hook_angle: '冲突对比',
+    });
+    updateTasteFromAnalysis(analysis);
+    const taste = loadContentTaste();
+    const angle = taste.angle_preferences.find(a => a.label === '冲突对比');
+    expect(angle).toBeDefined();
+    expect(angle!.affinity).toBe(1.0); // viral = 1.0
+    expect(angle!.sample_count).toBe(1);
+  });
+
+  it('tracks topic preferences from topic_tags', () => {
+    const analysis = makeAnalysis({
+      performance_tier: 'above_avg',
+      topic_tags: ['赛事复盘', '战术拆解'],
+    });
+    updateTasteFromAnalysis(analysis);
+    const taste = loadContentTaste();
+    const topicLabels = taste.topic_preferences.map(t => t.label);
+    expect(topicLabels).toContain('赛事复盘');
+    expect(topicLabels).toContain('战术拆解');
+    // above_avg affinity = 0.6
+    for (const t of taste.topic_preferences) {
+      expect(t.affinity).toBe(0.6);
+    }
+  });
+
+  it('tracks persona mode preferences from identity_mode', () => {
+    const analysis = makeAnalysis({
+      performance_tier: 'viral',
+      identity_mode: 'lifestyle',
+    });
+    updateTasteFromAnalysis(analysis);
+    const taste = loadContentTaste();
+    const mode = taste.persona_mode_preferences.find(m => m.label === 'lifestyle');
+    expect(mode).toBeDefined();
+    expect(mode!.affinity).toBe(1.0);
+  });
+
+  it('does not add angle preference when hook_angle is missing', () => {
+    const analysis = makeAnalysis({ hook_angle: undefined });
+    updateTasteFromAnalysis(analysis);
+    const taste = loadContentTaste();
+    expect(taste.angle_preferences).toEqual([]);
+  });
+
+  it('does not add topic preferences when topic_tags is empty', () => {
+    const analysis = makeAnalysis({ topic_tags: undefined });
+    updateTasteFromAnalysis(analysis);
+    const taste = loadContentTaste();
+    expect(taste.topic_preferences).toEqual([]);
+  });
+
+  it('buildTasteContext includes angle and topic preferences', () => {
+    saveContentTaste({
+      visual_styles: [],
+      hook_formulas: [],
+      tone_preferences: [],
+      engagement_drivers: [],
+      angle_preferences: [
+        { label: '反常识', affinity: 0.9, sample_count: 5, last_updated: new Date().toISOString() },
+        { label: '共鸣式', affinity: 0.7, sample_count: 3, last_updated: new Date().toISOString() },
+      ],
+      topic_preferences: [
+        { label: '赛事分析', affinity: 0.8, sample_count: 4, last_updated: new Date().toISOString() },
+      ],
+      persona_mode_preferences: [
+        { label: 'esports', affinity: 0.85, sample_count: 6, last_updated: new Date().toISOString() },
+      ],
+      anti_patterns: [],
+      last_updated: '',
+    });
+
+    const ctx = buildTasteContext();
+    expect(ctx).toContain('高效角度');
+    expect(ctx).toContain('反常识');
+    expect(ctx).toContain('共鸣式');
+    expect(ctx).toContain('热门话题');
+    expect(ctx).toContain('赛事分析');
+    expect(ctx).toContain('人设偏好');
+    expect(ctx).toContain('esports');
+  });
+
+  // ── Decay & Eviction tests ──
+
+  it('evicts preferences not updated for 30+ days', () => {
+    const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    const recent = new Date().toISOString();
+    const taste: typeof DEFAULT_CONTENT_TASTE = {
+      ...DEFAULT_CONTENT_TASTE,
+      hook_formulas: [
+        { label: '旧偏好', affinity: 0.9, sample_count: 5, last_updated: thirtyOneDaysAgo },
+        { label: '新偏好', affinity: 0.8, sample_count: 3, last_updated: recent },
+      ],
+    };
+
+    const result = runTasteDecay(taste);
+    const labels = result.hook_formulas.map(h => h.label);
+    expect(labels).not.toContain('旧偏好');
+    expect(labels).toContain('新偏好');
+  });
+
+  it('applies decay to preferences not updated for 14+ days', () => {
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
+    const recent = new Date().toISOString();
+    const taste: typeof DEFAULT_CONTENT_TASTE = {
+      ...DEFAULT_CONTENT_TASTE,
+      angle_preferences: [
+        { label: '衰减中', affinity: 0.9, sample_count: 5, last_updated: twentyDaysAgo },
+        { label: '新鲜的', affinity: 0.8, sample_count: 3, last_updated: recent },
+      ],
+    };
+
+    const result = runTasteDecay(taste);
+    const decaying = result.angle_preferences.find(a => a.label === '衰减中')!;
+    const fresh = result.angle_preferences.find(a => a.label === '新鲜的')!;
+    // 20 days since update, 6 days of decay: affinity * 0.9^6
+    const expectedDecayedAffinity = 0.9 * Math.pow(0.9, 6);
+    expect(decaying.affinity).toBeCloseTo(expectedDecayedAffinity, 3);
+    expect(fresh.affinity).toBe(0.8); // No decay
+  });
+
+  it('evicts low-sample low-affinity preferences', () => {
+    const recent = new Date().toISOString();
+    const taste: typeof DEFAULT_CONTENT_TASTE = {
+      ...DEFAULT_CONTENT_TASTE,
+      topic_preferences: [
+        { label: '噪声话题', affinity: 0.05, sample_count: 1, last_updated: recent },
+        { label: '有效话题', affinity: 0.8, sample_count: 1, last_updated: recent },
+        { label: '负向话题', affinity: -0.3, sample_count: 1, last_updated: recent },
+      ],
+    };
+
+    const result = runTasteDecay(taste);
+    const labels = result.topic_preferences.map(t => t.label);
+    // sample_count < 2 AND affinity < 0.1 → evicted
+    expect(labels).not.toContain('噪声话题');
+    expect(labels).not.toContain('负向话题');
+    // affinity 0.8 is above 0.1 threshold even with sample_count=1
+    expect(labels).toContain('有效话题');
+  });
+
+  it('decay pass runs automatically during updateTasteFromAnalysis', () => {
+    // Create a stale preference that should be evicted
+    const thirtyOneDaysAgo = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+    saveContentTaste({
+      ...DEFAULT_CONTENT_TASTE,
+      hook_formulas: [
+        { label: '过期偏好', affinity: 0.9, sample_count: 5, last_updated: thirtyOneDaysAgo },
+      ],
+    });
+
+    // Update should trigger decay
+    updateTasteFromAnalysis(makeAnalysis({
+      performance_tier: 'viral',
+      pattern_analysis: {
+        hook_effectiveness: 10, emotional_resonance: 10, trending_alignment: 10,
+        visual_impact: 10, call_to_action: 10,
+        key_success_factors: ['新偏好'], improvement_areas: [],
+      },
+    }));
+
+    const taste = loadContentTaste();
+    const labels = taste.hook_formulas.map(h => h.label);
+    expect(labels).not.toContain('过期偏好');
+    expect(labels).toContain('新偏好');
   });
 });

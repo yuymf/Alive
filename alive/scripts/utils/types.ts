@@ -1298,7 +1298,7 @@ export interface CompetitorLog {
 
 export interface CompetitorPost {
   readonly account_name: string;
-  readonly platform: 'xhs' | 'douyin' | 'instagram';
+  readonly platform: 'xhs' | 'douyin' | 'bilibili' | 'instagram';
   readonly post_id: string;
   readonly title: string;
   readonly engagement: number;
@@ -1809,6 +1809,9 @@ export const DEFAULT_CONTENT_TASTE: ContentTaste = {
   hook_formulas: [],
   tone_preferences: [],
   engagement_drivers: [],
+  angle_preferences: [],
+  topic_preferences: [],
+  persona_mode_preferences: [],
   anti_patterns: [],
   last_updated: '',
 };

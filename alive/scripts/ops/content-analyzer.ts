@@ -138,6 +138,12 @@ export function updatePatternSuccessRate(type: string, source: string, rate: num
   saveContentPatterns({ ...current, patterns: updatedPatterns });
 }
 
+/**
+ * @deprecated Use `syncCompetitorInsights()` from competitor-memory.ts instead.
+ * Competitor insights are now managed as part of the MD knowledge surface
+ * (competitor profiles) rather than stored in ContentPatterns JSON.
+ * This function is retained for JSON backward compatibility only.
+ */
 export function saveCompetitorInsights(insights: CompetitorInsight[]): void {
   const current = loadContentPatterns();
   saveContentPatterns({ ...current, competitor_insights: insights });

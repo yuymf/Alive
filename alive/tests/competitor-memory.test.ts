@@ -23,9 +23,12 @@ import {
   shouldAutoAnalyze,
   cleanupOldBreakdowns,
   trimObservationNotes,
+  syncCompetitorInsights,
+  upsertTakeaway,
+  upsertAvoid,
 } from '../scripts/ops/competitor-memory';
 
-import type { CompetitorProfile, CompetitorUpdate } from '../scripts/utils/types';
+import type { CompetitorProfile, CompetitorUpdate, CompetitorAnalysisStore } from '../scripts/utils/types';
 
 // ─── Mock time-utils ────────────────────────────────────────────────────────
 
@@ -427,5 +430,177 @@ describe('trimObservationNotes', () => {
       .split('\n')
       .filter(l => l.startsWith('- 2026-03-'));
     expect(noteLines.length).toBe(30);
+  });
+});
+
+// ─── syncCompetitorInsights tests ────────────────────────────────────────────
+
+describe('syncCompetitorInsights', () => {
+  it('syncs key_insight to 借鉴要点 and high-freq hooks', () => {
+    initProfilesFromPersona([sampleCompetitors[0]]);
+
+    const analysisStore: CompetitorAnalysisStore = {
+      version: 1,
+      analyses: {
+        '小田Elin:xhs': {
+          account_name: '小田Elin',
+          platform: 'xhs',
+          analyzed_at: '2026-04-02T10:00:00Z',
+          post_count: 10,
+          hook_patterns: [
+            { pattern: '数字冲击型', formula: '[数字]个[身份]不会告诉你的[场景]秘密', examples: ['5个电竞选手不会告诉你的训练秘密'], frequency: '高' },
+            { pattern: '反问句型', formula: '为什么[身份]都[行为]？', examples: ['为什么电竞选手都在用这个方法？'], frequency: '低' },
+          ],
+          cover_formulas: [],
+          topic_clusters: [],
+          engagement_pattern: {
+            best_performing_type: '赛事解说',
+            avg_engagement: 5000,
+            posting_frequency: '每天1-2条',
+            peak_days: ['周一', '周三'],
+          },
+          key_insight: '专业赛事分析搭配反差人设是核心流量密码',
+        },
+      },
+      insufficient_data: [],
+      last_analyzed: '2026-04-02T10:00:00Z',
+    };
+
+    const result = syncCompetitorInsights(sampleCompetitors, analysisStore);
+
+    expect(result.updated).toBe(1);
+    expect(result.takeaways).toBe(2); // key_insight + 1 high-freq hook
+    expect(result.observations).toBe(1);
+
+    const filePath = path.join(PATHS.competitorsDir, 'xhs', '小田Elin.md');
+    const content = fs.readFileSync(filePath, 'utf8');
+    expect(content).toContain('专业赛事分析搭配反差人设是核心流量密码');
+    expect(content).toContain('高频钩子「数字冲击型」：[数字]个[身份]不会告诉你的[场景]秘密');
+    expect(content).toContain('发布频率每天1-2条');
+    expect(content).toContain('周一、周三表现最佳');
+    // Low-frequency hook should NOT be synced
+    expect(content).not.toContain('反问句型');
+  });
+
+  it('routes negation-word insights to 避坑提醒', () => {
+    initProfilesFromPersona([sampleCompetitors[0]]);
+
+    const analysisStore: CompetitorAnalysisStore = {
+      version: 1,
+      analyses: {
+        '小田Elin:xhs': {
+          account_name: '小田Elin',
+          platform: 'xhs',
+          analyzed_at: '2026-04-02T10:00:00Z',
+          post_count: 10,
+          hook_patterns: [],
+          cover_formulas: [],
+          topic_clusters: [],
+          engagement_pattern: {
+            best_performing_type: '赛事解说',
+            avg_engagement: 5000,
+            posting_frequency: '',
+          },
+          key_insight: '避免过度专业术语导致受众流失',
+        },
+      },
+      insufficient_data: [],
+      last_analyzed: '2026-04-02T10:00:00Z',
+    };
+
+    const result = syncCompetitorInsights(sampleCompetitors, analysisStore);
+
+    expect(result.avoids).toBe(1);
+    expect(result.takeaways).toBe(0);
+
+    const filePath = path.join(PATHS.competitorsDir, 'xhs', '小田Elin.md');
+    const content = fs.readFileSync(filePath, 'utf8');
+    expect(content).toContain('避免过度专业术语导致受众流失');
+  });
+
+  it('deduplicates — second call does not append duplicates', () => {
+    initProfilesFromPersona([sampleCompetitors[0]]);
+
+    const analysisStore: CompetitorAnalysisStore = {
+      version: 1,
+      analyses: {
+        '小田Elin:xhs': {
+          account_name: '小田Elin',
+          platform: 'xhs',
+          analyzed_at: '2026-04-02T10:00:00Z',
+          post_count: 10,
+          hook_patterns: [],
+          cover_formulas: [],
+          topic_clusters: [],
+          engagement_pattern: {
+            best_performing_type: '赛事解说',
+            avg_engagement: 5000,
+            posting_frequency: '',
+          },
+          key_insight: '专业赛事分析是核心流量密码',
+        },
+      },
+      insufficient_data: [],
+      last_analyzed: '2026-04-02T10:00:00Z',
+    };
+
+    // First call
+    const result1 = syncCompetitorInsights(sampleCompetitors, analysisStore);
+    expect(result1.takeaways).toBe(1);
+
+    // Second call — should not add duplicates
+    const result2 = syncCompetitorInsights(sampleCompetitors, analysisStore);
+    expect(result2.takeaways).toBe(0);
+    expect(result2.updated).toBe(0);
+  });
+
+  it('skips profiles with no analysis data', () => {
+    initProfilesFromPersona([sampleCompetitors[0]]);
+
+    const analysisStore: CompetitorAnalysisStore = {
+      version: 1,
+      analyses: {},
+      insufficient_data: ['小田Elin:xhs'],
+      last_analyzed: '2026-04-02T10:00:00Z',
+    };
+
+    const result = syncCompetitorInsights(sampleCompetitors, analysisStore);
+    expect(result.updated).toBe(0);
+  });
+});
+
+describe('upsertTakeaway', () => {
+  it('adds a takeaway to existing profile', () => {
+    initProfilesFromPersona([sampleCompetitors[0]]);
+
+    upsertTakeaway('xhs', '小田Elin', '测试借鉴要点');
+
+    const filePath = path.join(PATHS.competitorsDir, 'xhs', '小田Elin.md');
+    const content = fs.readFileSync(filePath, 'utf8');
+    expect(content).toContain('- 测试借鉴要点');
+  });
+
+  it('does not duplicate on second call', () => {
+    initProfilesFromPersona([sampleCompetitors[0]]);
+
+    upsertTakeaway('xhs', '小田Elin', '测试借鉴要点');
+    upsertTakeaway('xhs', '小田Elin', '测试借鉴要点');
+
+    const filePath = path.join(PATHS.competitorsDir, 'xhs', '小田Elin.md');
+    const content = fs.readFileSync(filePath, 'utf8');
+    const matches = content.match(/- 测试借鉴要点/g);
+    expect(matches).toHaveLength(1);
+  });
+});
+
+describe('upsertAvoid', () => {
+  it('adds an avoid entry to existing profile', () => {
+    initProfilesFromPersona([sampleCompetitors[0]]);
+
+    upsertAvoid('xhs', '小田Elin', '测试避坑提醒');
+
+    const filePath = path.join(PATHS.competitorsDir, 'xhs', '小田Elin.md');
+    const content = fs.readFileSync(filePath, 'utf8');
+    expect(content).toContain('- 测试避坑提醒');
   });
 });

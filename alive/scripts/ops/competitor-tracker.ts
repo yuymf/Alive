@@ -11,8 +11,9 @@
 import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now, wallNow, getLocalDate } from '../utils/time-utils';
-import { CompetitorUpdate, CompetitorLog, OpsConfig, CompetitorProfile, IdentityMode } from '../utils/types';
+import { CompetitorUpdate, CompetitorLog, OpsConfig, CompetitorProfile, IdentityMode, CompetitorPostsStore, CompetitorPost } from '../utils/types';
 import { matchesTaxonomy } from './ops-taxonomy';
+import { loadCompetitorPosts } from './competitor-fetcher';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -510,6 +511,66 @@ main();
   }
 }
 
+// ─── Derive updates from posts store (avoids duplicate API calls) ──────────
+
+/**
+ * Derive CompetitorUpdate[] from a CompetitorPostsStore without calling any API.
+ * Transforms post data into the lightweight format used by competitor-log.json.
+ * Returns an empty array if the store has no accounts.
+ */
+export function deriveUpdatesFromPosts(
+  store: CompetitorPostsStore,
+  ops: OpsConfig,
+): CompetitorUpdate[] {
+  const updates: CompetitorUpdate[] = [];
+
+  for (const [accountKey, posts] of Object.entries(store.accounts)) {
+    if (posts.length === 0) continue;
+
+    // Parse account key: "name:platform"
+    const colonIdx = accountKey.lastIndexOf(':');
+    const accountName = colonIdx >= 0 ? accountKey.slice(0, colonIdx) : accountKey;
+    const platform = colonIdx >= 0 ? accountKey.slice(colonIdx + 1) : 'xhs';
+
+    // Resolve display name from ops config (tracker uses display names, not IDs)
+    const profile = ops.competitors?.find(
+      c => c.name === accountName && c.platform === platform,
+    );
+    const displayName = profile?.name ?? accountName;
+
+    const recentPosts = posts.slice(0, RECENT_POSTS_COUNT).map(p => postToRecentPost(p));
+    const latest = recentPosts[0];
+
+    if (!latest) continue;
+
+    const postedAt = latest.time ? new Date(latest.time) : null;
+    const daysSince = postedAt
+      ? Math.floor((now().getTime() - postedAt.getTime()) / (1000 * 60 * 60 * 24))
+      : UNKNOWN_POST_AGE_DAYS;
+
+    updates.push({
+      account: displayName,
+      platform: platform as CompetitorUpdate['platform'],
+      latest_post: latest,
+      recent_posts: recentPosts,
+      days_since_last_post: daysSince,
+      fetched_at: store.last_fetched || wallNow().toISOString(),
+    });
+  }
+
+  return updates;
+}
+
+function postToRecentPost(post: CompetitorPost): NonNullable<CompetitorUpdate['latest_post']> {
+  return {
+    time: post.posted_at ?? post.fetched_at,
+    content_type: post.platform === 'douyin' ? '视频' : '图文',
+    topic: post.title,
+    engagement: post.engagement,
+    summary: post.title,
+  };
+}
+
 // ─── TTL-based file cache ──────────────────────────────────────────────────
 // Replaces the old in-process daily cache which was useless under cron
 // (each cron invocation is a new process, so _cachedDay was always null).
@@ -522,6 +583,39 @@ let _cachedDay: string | null = null;
 let _cachedUpdates: CompetitorUpdate[] | null = null;
 
 // ─── Main export ─────────────────────────────────────────────────────────────
+
+/**
+ * Persist competitor updates to competitor-log.json.
+ * Handles legacy format dedup and today-entry merging.
+ */
+function persistLog(updates: CompetitorUpdate[], today: string): void {
+  const rawExisting = readJSON<Record<string, unknown>>(PATHS.competitorLog, {});
+  const existingEntries: CompetitorUpdate[] =
+    (rawExisting as any).entries ?? (rawExisting as any).competitors ?? [];
+  const withoutToday = existingEntries.filter(e => {
+    const entryDate = getLocalDate(new Date(e.fetched_at));
+    return entryDate !== today;
+  });
+
+  const todayExisting = existingEntries.filter(e => {
+    const entryDate = getLocalDate(new Date(e.fetched_at));
+    return entryDate === today;
+  });
+  const merged = new Map<string, CompetitorUpdate>();
+  for (const e of todayExisting) {
+    merged.set(`${e.account}|${e.platform}`, e);
+  }
+  for (const e of updates) {
+    merged.set(`${e.account}|${e.platform}`, e);
+  }
+  const todayEntries = [...merged.values()];
+
+  const log: CompetitorLog = {
+    entries: [...withoutToday, ...todayEntries].slice(-MAX_COMPETITOR_LOG_ENTRIES),
+    last_updated: wallNow().toISOString(),
+  };
+  writeJSON(PATHS.competitorLog, log);
+}
 
 export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
   const today = getLocalDate(now());
@@ -550,6 +644,27 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
     }
   }
 
+  // 3) Try deriving from competitor-posts.json (avoids duplicate API calls)
+  const postsStore = loadCompetitorPosts();
+  if (postsStore.last_fetched) {
+    const postsAge = now().getTime() - new Date(postsStore.last_fetched).getTime();
+    if (postsAge < COMPETITOR_CACHE_TTL_MS && Object.keys(postsStore.accounts).length > 0) {
+      const derived = deriveUpdatesFromPosts(postsStore, ops);
+      if (derived.length > 0) {
+        console.error(
+          `[competitor-tracker] Derived ${derived.length} updates from competitor-posts.json ` +
+          `(age: ${Math.round(postsAge / 60_000)}min, skipping API calls)`,
+        );
+        // Persist to competitor-log.json for downstream compatibility
+        persistLog(derived, today);
+        _cachedDay = today;
+        _cachedUpdates = derived;
+        return derived;
+      }
+    }
+  }
+
+  // 4) Fallback: full API fetch
   const accounts = resolveCompetitorAccounts(ops);
 
   // XHS accounts with url — precise fetch by user_id
@@ -596,38 +711,8 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
 
   const all = [...xhsUpdates, ...douyinUpdates, ...bilibiliUpdates];
 
-  // Persist (handle legacy format: { competitors, lastUpdate })
-  const rawExisting = readJSON<Record<string, unknown>>(PATHS.competitorLog, {});
-  const existingEntries: CompetitorUpdate[] =
-    (rawExisting as any).entries ?? (rawExisting as any).competitors ?? [];
-  // Use getLocalDate on fetched_at to ensure consistent timezone comparison
-  const withoutToday = existingEntries.filter(e => {
-    const entryDate = getLocalDate(new Date(e.fetched_at));
-    return entryDate !== today;
-  });
-
-  // Dedup today's entries: for the same account+platform, only keep the latest fetch
-  // (replaces older entries instead of appending duplicates)
-  const todayExisting = existingEntries.filter(e => {
-    const entryDate = getLocalDate(new Date(e.fetched_at));
-    return entryDate === today;
-  });
-  const merged = new Map<string, CompetitorUpdate>();
-  // First, populate with today's existing entries
-  for (const e of todayExisting) {
-    merged.set(`${e.account}|${e.platform}`, e);
-  }
-  // Then, overwrite with fresh data (keeps the most recent fetch)
-  for (const e of all) {
-    merged.set(`${e.account}|${e.platform}`, e);
-  }
-  const todayEntries = [...merged.values()];
-
-  const log: CompetitorLog = {
-    entries: [...withoutToday, ...todayEntries].slice(-MAX_COMPETITOR_LOG_ENTRIES), // keep last 200 entries
-    last_updated: wallNow().toISOString(),
-  };
-  writeJSON(PATHS.competitorLog, log);
+  // Persist
+  persistLog(all, today);
 
   // Update in-process cache
   _cachedDay = today;

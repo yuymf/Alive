@@ -8,18 +8,55 @@
 
 import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
-import { wallNow } from '../utils/time-utils';
-import { loadSkillEnvVars, setPersonaName, PATHS } from '../utils/file-utils';
+import { wallNow, now } from '../utils/time-utils';
+import { loadSkillEnvVars, setPersonaName, PATHS, readJSON } from '../utils/file-utils';
 import { analyzeTrends, buildPersonaIdentities } from '../ops/trend-analyzer';
 import { trackCompetitors } from '../ops/competitor-tracker';
 import { analyzeNewHits, cleanupOldBreakdowns, trimObservationNotes } from '../ops/competitor-memory';
-import { readJSON } from '../utils/file-utils';
 import { CompetitorLog } from '../utils/types';
 import { detectViral, TrendLikeItem } from '../ops/viral-detector';
 import { addManyToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
 import { dissectBatch } from '../ops/content-dissector';
 import { sendToWechatWork } from '../ops/brief-generator';
 import * as path from 'path';
+
+// ─── Cache TTL constants (must match trend-analyzer & competitor-tracker) ────
+const TRENDS_CACHE_TTL_MS = 4 * 60 * 60 * 1000;   // 4 hours
+const COMPETITOR_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+interface TrendsCacheData {
+  computed_at: string;
+  persona_identities?: string;
+  scoring_version?: number;
+  results: unknown[];
+}
+
+/** Check whether both trend and competitor caches are still within TTL (i.e. stale — no fresh data). */
+function isCacheStale(): { trendsFromCache: boolean; competitorsFromCache: boolean; trendsAgeMin: number; competitorsAgeMin: number } {
+  const result = { trendsFromCache: false, competitorsFromCache: false, trendsAgeMin: Infinity, competitorsAgeMin: Infinity };
+
+  // Check trends cache
+  try {
+    const tc = readJSON<TrendsCacheData>(PATHS.trendsCache, null as unknown as TrendsCacheData);
+    if (tc?.computed_at) {
+      const age = now().getTime() - new Date(tc.computed_at).getTime();
+      result.trendsAgeMin = Math.round(age / 60_000);
+      if (age < TRENDS_CACHE_TTL_MS) result.trendsFromCache = true;
+    }
+  } catch { /* cache file missing or corrupt — treat as not from cache */ }
+
+  // Check competitor cache
+  try {
+    const cl = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
+    if (cl.last_updated && cl.entries.length > 0) {
+      const age = now().getTime() - new Date(cl.last_updated).getTime();
+      result.competitorsAgeMin = Math.round(age / 60_000);
+      if (age < COMPETITOR_CACHE_TTL_MS) result.competitorsFromCache = true;
+    }
+  } catch { /* cache file missing or corrupt — treat as not from cache */ }
+
+  return result;
+}
 
 async function main(): Promise<void> {
   // Load environment variables from openclaw.json (needed for isolated cron sessions)
@@ -40,10 +77,54 @@ async function main(): Promise<void> {
     return;
   }
 
+  // ─── Skip brief if both caches are still within TTL ─────────────────────
+  // When trend + competitor data haven't been refreshed, the brief would be
+  // identical to the previous hour — skip it to avoid redundant notifications.
+  const cacheStatus = isCacheStale();
+  if (cacheStatus.trendsFromCache && cacheStatus.competitorsFromCache) {
+    console.log(`[${wallNow().toISOString()}] ops-trends: 数据未刷新，跳过速报推送（趋势缓存 ${cacheStatus.trendsAgeMin}min / 竞品缓存 ${cacheStatus.competitorsAgeMin}min，TTL=${TRENDS_CACHE_TTL_MS / 60_000}min）`);
+
+    // Still run viral KB processing (independent of brief) so we don't miss
+    // any candidate detection or batch dissection cycles.
+    const llmViral = createRealLLMClient('viral-dissector');
+    const basePath = path.dirname(PATHS.emotionState);
+    try {
+      const batchSize = ops.kb_dissect_batch ?? 3;
+      const toProcess = dequeueItems(basePath, batchSize);
+      if (toProcess.length > 0) {
+        const personaId = persona.meta.id ?? 'default';
+        const entries = await dissectBatch(toProcess, llmViral, personaId);
+        for (const entry of entries) {
+          upsertEntry(basePath, entry);
+          const result = checkFormulaPromotion(basePath, entry, PATHS.personaConfig);
+          if (result.promoted && result.formula) {
+            console.log(`[${wallNow().toISOString()}] [viral-kb] formula promoted: ${result.formula.content_type} + ${result.formula.hook_type} (${result.formula.platform})`);
+            try {
+              const f = result.formula;
+              const msg = [
+                '🔮 新通用公式升级！',
+                `  类型: ${f.content_type} + ${f.hook_type}`,
+                `  平台: ${f.platform}`,
+                `  累计出现: ${f.occurrence_count} 次`,
+                `  公式: ${f.formula_summary}`,
+              ].join('\n');
+              sendToWechatWork(msg);
+            } catch { /* notification failure is non-fatal */ }
+          }
+        }
+        console.log(`[${wallNow().toISOString()}] [viral-kb] ${entries.length} entries dissected`);
+      }
+    } catch (err) {
+      console.error(`[${wallNow().toISOString()}] [viral-kb] error:`, err);
+    }
+
+    return; // ← Skip the rest (trend/competitor fetch + brief output)
+  }
+
   const llm = createRealLLMClient('ops-trends');
   const identities = buildPersonaIdentities(persona);
 
-  console.log(`[${wallNow().toISOString()}] ops-trends: starting for ${persona.meta.id}`);
+  console.log(`[${wallNow().toISOString()}] ops-trends: starting for ${persona.meta.id} (trends cache ${cacheStatus.trendsAgeMin}min, competitors cache ${cacheStatus.competitorsAgeMin}min)`);
 
   // Periodic cleanup of old breakdowns and observation notes
   cleanupOldBreakdowns();

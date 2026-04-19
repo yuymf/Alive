@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildCompetitorSummary, buildCompetitorContext, resolveCompetitorAccounts,
+  buildCompetitorSummary, buildCompetitorContext, resolveCompetitorAccounts, deriveUpdatesFromPosts,
 } from '../../scripts/ops/competitor-tracker';
-import { CompetitorUpdate, CompetitorProfile, OpsConfig } from '../../scripts/utils/types';
+import { CompetitorUpdate, CompetitorProfile, CompetitorPostsStore, OpsConfig } from '../../scripts/utils/types';
 
 describe('buildCompetitorSummary', () => {
   it('returns summary string for active accounts', () => {
@@ -302,5 +302,114 @@ describe('bilibili platform contract', () => {
     expect(ctx).toContain('林离Olivia');
     expect(ctx).toContain('bilibili');
     expect(ctx).toContain('粉丝13w');
+  });
+});
+
+// ─── deriveUpdatesFromPosts tests ────────────────────────────────────────────
+
+describe('deriveUpdatesFromPosts', () => {
+  const ops: OpsConfig = {
+    enabled: true,
+    brief_time: '08:30',
+    competitor_accounts: { xhs: [], douyin: [] },
+    competitors: [
+      { name: '测试XHS', platform: 'xhs', tag: 't', tag_desc: 'd', reference_type: 'primary' },
+      { name: '测试抖音', platform: 'douyin', tag: 't', tag_desc: 'd', reference_type: 'primary' },
+      { name: '测试B站', platform: 'bilibili', tag: 't', tag_desc: 'd', reference_type: 'secondary' },
+    ],
+    trend_score_threshold: 1.8,
+    topic_count: 3,
+    topic_filter_prompt: '',
+    platforms: {},
+  };
+
+  it('derives CompetitorUpdate[] from CompetitorPostsStore', () => {
+    const store: CompetitorPostsStore = {
+      version: 1,
+      last_fetched: '2026-04-02T10:00:00Z',
+      accounts: {
+        '测试XHS:xhs': [
+          { account_name: '测试XHS', platform: 'xhs', post_id: 'p1', title: '测试帖子', engagement: 100, fetched_at: '2026-04-02T09:00:00Z', posted_at: '2026-04-01T08:00:00Z' },
+        ],
+        '测试抖音:douyin': [
+          { account_name: '测试抖音', platform: 'douyin', post_id: 'p2', title: '抖音帖子', engagement: 200, fetched_at: '2026-04-02T09:00:00Z', posted_at: '2026-04-02T06:00:00Z' },
+        ],
+      },
+    };
+
+    const updates = deriveUpdatesFromPosts(store, ops);
+
+    expect(updates).toHaveLength(2);
+    const xhs = updates.find(u => u.platform === 'xhs');
+    expect(xhs).toBeDefined();
+    expect(xhs!.account).toBe('测试XHS');
+    expect(xhs!.latest_post?.topic).toBe('测试帖子');
+    expect(xhs!.latest_post?.engagement).toBe(100);
+
+    const douyin = updates.find(u => u.platform === 'douyin');
+    expect(douyin).toBeDefined();
+    expect(douyin!.account).toBe('测试抖音');
+  });
+
+  it('returns empty array when store has no accounts', () => {
+    const store: CompetitorPostsStore = {
+      version: 1,
+      last_fetched: '',
+      accounts: {},
+    };
+
+    const updates = deriveUpdatesFromPosts(store, ops);
+    expect(updates).toHaveLength(0);
+  });
+
+  it('skips accounts with empty posts array', () => {
+    const store: CompetitorPostsStore = {
+      version: 1,
+      last_fetched: '2026-04-02T10:00:00Z',
+      accounts: {
+        '空账号:xhs': [],
+      },
+    };
+
+    const updates = deriveUpdatesFromPosts(store, ops);
+    expect(updates).toHaveLength(0);
+  });
+
+  it('handles bilibili platform posts', () => {
+    const store: CompetitorPostsStore = {
+      version: 1,
+      last_fetched: '2026-04-02T10:00:00Z',
+      accounts: {
+        '测试B站:bilibili': [
+          { account_name: '测试B站', platform: 'bilibili', post_id: 'bv123', title: 'B站视频', engagement: 5000, fetched_at: '2026-04-02T09:00:00Z', posted_at: '2026-04-01T12:00:00Z' },
+        ],
+      },
+    };
+
+    const updates = deriveUpdatesFromPosts(store, ops);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].platform).toBe('bilibili');
+    expect(updates[0].latest_post?.content_type).toBe('图文'); // bilili maps to 图文 in postToRecentPost (only douyin gets 视频)
+  });
+
+  it('sets content_type correctly for douyin (视频) vs xhs (图文)', () => {
+    const store: CompetitorPostsStore = {
+      version: 1,
+      last_fetched: '2026-04-02T10:00:00Z',
+      accounts: {
+        '测试抖音:douyin': [
+          { account_name: '测试抖音', platform: 'douyin', post_id: 'p1', title: '抖音视频', engagement: 300, fetched_at: '2026-04-02T09:00:00Z' },
+        ],
+        '测试XHS:xhs': [
+          { account_name: '测试XHS', platform: 'xhs', post_id: 'p2', title: '小红书图文', engagement: 100, fetched_at: '2026-04-02T09:00:00Z' },
+        ],
+      },
+    };
+
+    const updates = deriveUpdatesFromPosts(store, ops);
+    const douyin = updates.find(u => u.platform === 'douyin');
+    const xhs = updates.find(u => u.platform === 'xhs');
+    expect(douyin!.latest_post?.content_type).toBe('视频');
+    expect(xhs!.latest_post?.content_type).toBe('图文');
   });
 });

@@ -17,6 +17,7 @@ import { wallNow, getLocalWeekday } from '../utils/time-utils';
 import { resolveCompetitorAccounts } from '../ops/competitor-tracker';
 import { fetchCompetitorPosts, loadCompetitorPosts } from '../ops/competitor-fetcher';
 import { analyzeCompetitors, saveCompetitorAnalysis } from '../ops/competitor-analyzer';
+import { syncCompetitorInsights } from '../ops/competitor-memory';
 import { analyzePositioning, savePositioningReport } from '../ops/positioning-analyzer';
 import { sendToWechatWork } from '../ops/brief-generator';
 import { loadQueue } from '../ops/review-queue';
@@ -112,13 +113,24 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
   // 3. Resolve competitor accounts
   const accounts = resolveCompetitorAccounts(ops);
 
+  // Resolve bilibili accounts from competitors[] profiles
+  const bilibiliAccounts = (ops.competitors ?? [])
+    .filter(c => c.platform === 'bilibili')
+    .map(c => ({
+      mid: c.url?.match(/space\.bilibili\.com\/(\d+)/)?.[1] ?? '',
+      name: c.name,
+    }))
+    .filter(e => e.mid !== '');
+
+  const accountsWithBilibili = { ...accounts, bilibili: bilibiliAccounts };
+
   console.log(
     `[${wallNow().toISOString()}] ops-competitor-analysis: starting for ${persona.meta.id} ` +
-    `(${accounts.xhs.length} xhs-search, ${accounts.xhsUserIds.size} xhs-precise, ${accounts.douyin.length} douyin accounts)`,
+    `(${accounts.xhs.length} xhs-search, ${accounts.xhsUserIds.size} xhs-precise, ${accounts.douyin.length} douyin, ${bilibiliAccounts.length} bilibili accounts)`,
   );
 
   // ── Layer 1: Fetch posts ──────────────────────────────────────────────────
-  const fetchResult = await fetchCompetitorPosts(accounts, profiles, '');
+  const fetchResult = await fetchCompetitorPosts(accountsWithBilibili, profiles, '');
   console.log(
     `[${wallNow().toISOString()}] ops-competitor-analysis: Layer 1 done — ` +
     `${fetchResult.success.length} fetched, ${fetchResult.failed.length} failed`,
@@ -133,6 +145,14 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
   console.log(
     `[${wallNow().toISOString()}] ops-competitor-analysis: Layer 2 done — ` +
     `${analyzedCount} accounts analyzed, ${analysisStore.insufficient_data.length} insufficient data`,
+  );
+
+  // ── Layer 2.5: Sync insights to MD knowledge surface ─────────────────────
+  const syncResult = syncCompetitorInsights(profiles, analysisStore);
+  console.log(
+    `[${wallNow().toISOString()}] ops-competitor-analysis: Layer 2.5 done — ` +
+    `${syncResult.updated} profiles updated, ` +
+    `${syncResult.takeaways} takeaways, ${syncResult.avoids} avoids, ${syncResult.observations} observations synced`,
   );
 
   // ── Layer 3: Positioning (Monday only) ────────────────────────────────────

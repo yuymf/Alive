@@ -19,6 +19,7 @@ import {
   BreakdownDocFrontmatter,
   BreakdownInput,
   CompetitorUpdate,
+  CompetitorAnalysisStore,
   IdentityMode,
   OpsConfig,
 } from '../utils/types';
@@ -582,4 +583,158 @@ export function trimObservationNotes(): void {
     const updated = raw.replace(/(## 观察笔记\n)([\s\S]*?)(?=\n## |$)/, newSection);
     fs.writeFileSync(filePath, updated);
   }
+}
+
+// ─── Insight sync: JSON → MD knowledge surface ──────────────────────────────
+
+/** Negation words that indicate an insight should go to 避坑提醒 instead of 借鉴要点 */
+const AVOID_KEYWORDS = ['避免', '不要', '切勿', '别再', '千万别', '不可', '禁止', '忌'];
+
+/** Prefix length used for fuzzy dedup — avoids LLM rephrasing drift */
+const DEDUP_PREFIX_LEN = 20;
+
+function isAvoidInsight(text: string): boolean {
+  return AVOID_KEYWORDS.some(kw => text.includes(kw));
+}
+
+/**
+ * Extract existing bullet entries (without "- " prefix) from a heading section.
+ * Used for dedup: only append entries whose prefix doesn't already exist.
+ */
+function existingEntryPrefixes(content: string, heading: string): Set<string> {
+  const entries = extractSection(content, heading);
+  return new Set(entries.map(e => e.slice(0, DEDUP_PREFIX_LEN)));
+}
+
+/**
+ * Append entries to a heading section in a markdown file, deduplicating
+ * by prefix match. Returns the number of entries actually added.
+ */
+function appendToSection(filePath: string, heading: string, entries: string[]): number {
+  let content = fs.readFileSync(filePath, 'utf8');
+  const existing = existingEntryPrefixes(content, heading);
+  const newEntries = entries.filter(e => !existing.has(e.slice(0, DEDUP_PREFIX_LEN)));
+  if (newEntries.length === 0) return 0;
+
+  const bulletLines = newEntries.map(e => `- ${e}`).join('\n');
+
+  if (content.includes(`## ${heading}`)) {
+    const pattern = new RegExp(`(## ${heading}\\n)`);
+    content = content.replace(
+      pattern,
+      `$1${bulletLines}\n`,
+    );
+  } else {
+    content = content.trimEnd() + `\n\n## ${heading}\n${bulletLines}\n`;
+  }
+
+  // Update frontmatter updated_at
+  const { frontmatter, body } = parseFrontmatter(content);
+  const newFm = { ...frontmatter, updated_at: getLocalDate(wallNow()) };
+  fs.writeFileSync(filePath, buildFrontmatter(newFm) + body);
+
+  return newEntries.length;
+}
+
+/**
+ * Upsert a single entry to the 借鉴要点 section of a competitor profile.
+ * Deduplicates by prefix match.
+ */
+export function upsertTakeaway(platform: string, name: string, entry: string): void {
+  const dir = path.join(PATHS.competitorsDir, platform);
+  const filePath = path.join(dir, `${sanitizeFilename(name)}.md`);
+  if (!fs.existsSync(filePath)) return;
+  appendToSection(filePath, '借鉴要点', [entry]);
+}
+
+/**
+ * Upsert a single entry to the 避坑提醒 section of a competitor profile.
+ * Deduplicates by prefix match.
+ */
+export function upsertAvoid(platform: string, name: string, entry: string): void {
+  const dir = path.join(PATHS.competitorsDir, platform);
+  const filePath = path.join(dir, `${sanitizeFilename(name)}.md`);
+  if (!fs.existsSync(filePath)) return;
+  appendToSection(filePath, '避坑提醒', [entry]);
+}
+
+/** Result of syncing competitor insights from JSON to MD */
+export interface SyncResult {
+  updated: number;
+  takeaways: number;
+  avoids: number;
+  observations: number;
+}
+
+/**
+ * Sync competitor insights: aggregate analysis results from the JSON data layer
+ * into the MD knowledge surface. Idempotent — existing entries are not duplicated.
+ *
+ * Data source → target mapping:
+ *   key_insight        → 借鉴要点 (or 避坑提醒 if negation words present)
+ *   hook_patterns(高)  → 借鉴要点 (as "高频钩子「pattern」：formula")
+ *   engagement_pattern → 观察笔记 (as "发布频率X，Y表现最佳")
+ */
+export function syncCompetitorInsights(
+  profiles: readonly CompetitorProfile[],
+  analysisStore: CompetitorAnalysisStore,
+): SyncResult {
+  const result: SyncResult = { updated: 0, takeaways: 0, avoids: 0, observations: 0 };
+
+  for (const profile of profiles) {
+    const accountKey = `${profile.name}:${profile.platform}`;
+    const analysis = analysisStore.analyses[accountKey];
+    if (!analysis) continue;
+
+    const dir = path.join(PATHS.competitorsDir, profile.platform);
+    const filePath = path.join(dir, `${sanitizeFilename(profile.name)}.md`);
+    if (!fs.existsSync(filePath)) continue;
+
+    let profileUpdated = false;
+    const takeawayEntries: string[] = [];
+    const avoidEntries: string[] = [];
+    const observationEntries: string[] = [];
+
+    // 1. key_insight → 借鉴要点 or 避坑提醒
+    if (analysis.key_insight) {
+      const insight = analysis.key_insight;
+      if (isAvoidInsight(insight)) {
+        avoidEntries.push(insight);
+      } else {
+        takeawayEntries.push(insight);
+      }
+    }
+
+    // 2. High-frequency hook patterns → 借鉴要点
+    for (const hp of analysis.hook_patterns) {
+      if (hp.frequency === '高' && hp.formula) {
+        takeawayEntries.push(`高频钩子「${hp.pattern}」：${hp.formula}`);
+      }
+    }
+
+    // 3. engagement_pattern → 观察笔记
+    const ep = analysis.engagement_pattern;
+    if (ep.posting_frequency || ep.peak_days?.length) {
+      const parts: string[] = [];
+      if (ep.posting_frequency) parts.push(`发布频率${ep.posting_frequency}`);
+      if (ep.peak_days?.length) parts.push(`${ep.peak_days.join('、')}表现最佳`);
+      observationEntries.push(parts.join('，'));
+    }
+
+    // Apply changes
+    const takeawaysAdded = appendToSection(filePath, '借鉴要点', takeawayEntries);
+    const avoidsAdded = appendToSection(filePath, '避坑提醒', avoidEntries);
+    const observationsAdded = appendToSection(filePath, '观察笔记', observationEntries);
+
+    if (takeawaysAdded + avoidsAdded + observationsAdded > 0) {
+      profileUpdated = true;
+      result.takeaways += takeawaysAdded;
+      result.avoids += avoidsAdded;
+      result.observations += observationsAdded;
+    }
+
+    if (profileUpdated) result.updated++;
+  }
+
+  return result;
 }

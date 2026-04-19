@@ -949,18 +949,24 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
   // ── Ops: Content Taste ────────────────────────────────────────
   if (cmd === 'ops-taste') {
     const taste = loadContentTaste();
-    const visualCount = taste.visual_preferences?.length || 0;
-    const hookCount = taste.hook_preferences?.length || 0;
+    const visualCount = taste.visual_styles?.length || 0;
+    const hookCount = taste.hook_formulas?.length || 0;
     const toneCount = taste.tone_preferences?.length || 0;
+    const angleCount = taste.angle_preferences?.length || 0;
+    const topicCount = taste.topic_preferences?.length || 0;
+    const modeCount = taste.persona_mode_preferences?.length || 0;
     const antiCount = taste.anti_patterns?.length || 0;
     return {
       command: 'ops-taste',
-      message: `网感偏好: ${visualCount} 视觉, ${hookCount} 钩子, ${toneCount} 语调, ${antiCount} 反模式`,
+      message: `网感偏好: ${visualCount} 视觉, ${hookCount} 钩子, ${toneCount} 语调, ${angleCount} 角度, ${topicCount} 话题, ${modeCount} 人设模式, ${antiCount} 反模式`,
       taste,
       summary: {
         visual: visualCount,
         hook: hookCount,
         tone: toneCount,
+        angle: angleCount,
+        topic: topicCount,
+        persona_mode: modeCount,
         anti_patterns: antiCount,
         last_updated: taste.last_updated || null,
       },
