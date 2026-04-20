@@ -1308,10 +1308,20 @@ export interface CompetitorPost {
   readonly fetched_at: string;
 }
 
+export interface CompetitorAccountFetchStatus {
+  readonly canonical_key: string;
+  readonly fetch_id: string;
+  readonly status: 'success' | 'empty' | 'failed';
+  readonly platform: 'xhs' | 'douyin' | 'bilibili';
+  readonly last_attempted: string;
+  readonly error?: string;
+}
+
 export interface CompetitorPostsStore {
   readonly version: 1;
   readonly last_fetched: string;
   readonly accounts: Readonly<Record<string, readonly CompetitorPost[]>>;
+  readonly fetch_statuses?: Readonly<Record<string, CompetitorAccountFetchStatus>>;
 }
 
 export interface FetchResult {
@@ -1361,10 +1371,21 @@ export interface AccountAnalysis {
   readonly content_driven_factor?: number; // 0=账号驱动, 1=内容驱动 (CV/2, capped at 1)
 }
 
+export interface CompetitorAnalysisCoverage {
+  readonly configured_supported: readonly string[];
+  readonly fetched_posts: readonly string[];
+  readonly missing_posts: readonly string[];
+  readonly analyzed: readonly string[];
+  readonly failed_analysis: readonly string[];
+  readonly insufficient_data: readonly string[];
+}
+
 export interface CompetitorAnalysisStore {
   readonly version: 1;
   readonly analyses: Readonly<Record<string, AccountAnalysis>>;
   readonly insufficient_data: readonly string[];
+  readonly failed_analysis?: readonly string[];
+  readonly coverage?: CompetitorAnalysisCoverage;
   readonly last_analyzed: string;
 }
 
@@ -1513,6 +1534,8 @@ export interface BreakdownDocFrontmatter {
   readonly engagement: number;
   readonly content_type: string;
   readonly source: 'auto' | 'manual';
+  readonly post_key?: string;
+  readonly source_post_time?: string;
 }
 
 export interface BreakdownDoc {
@@ -1531,6 +1554,8 @@ export interface BreakdownInput {
   readonly source: 'auto' | 'manual';
   readonly body: string;
   readonly link?: string;
+  readonly post_key?: string;
+  readonly source_post_time?: string;
 }
 
 // ─── Content Template Types ─────────────────────────────────────────────────
@@ -1799,6 +1824,12 @@ export interface ContentTaste {
   tone_preferences: TastePreference[];
   /** Audience engagement preferences — what triggers saves/shares */
   engagement_drivers: TastePreference[];
+  /** Which narrative angles repeatedly perform well */
+  angle_preferences: TastePreference[];
+  /** Which topics repeatedly perform well */
+  topic_preferences: TastePreference[];
+  /** Which persona modes repeatedly perform well */
+  persona_mode_preferences: TastePreference[];
   /** Anti-patterns — styles that consistently underperform */
   anti_patterns: string[];
   last_updated: string;
@@ -1969,6 +2000,8 @@ export interface ContentAnalysis {
   platform: 'xhs' | 'douyin';
   identity_mode: IdentityMode;
   template_type: string;
+  hook_angle?: string;
+  topic_tags?: string[];
   pattern_analysis: PatternAnalysis;
   extracted_patterns?: ExtractedPattern[];
   persona_alignment: PersonaAlignment;

@@ -89,6 +89,10 @@ vi.mock('../scripts/ops/competitor-analyzer', () => ({
   saveCompetitorAnalysis: vi.fn(),
 }));
 
+vi.mock('../scripts/ops/competitor-memory', () => ({
+  syncCompetitorInsights: vi.fn(() => ({ updated: 0, takeaways: 0, avoids: 0, observations: 0 })),
+}));
+
 vi.mock('../scripts/ops/positioning-analyzer', () => ({
   analyzePositioning: vi.fn(async (): Promise<PositioningReport> => ({
     generated_at: '2026-04-06T10:00:00Z',
@@ -254,6 +258,28 @@ describe('runCompetitorAnalysisPipeline', () => {
     expect(analyzePositioning).toHaveBeenCalledOnce();
     expect(savePositioningReport).toHaveBeenCalledOnce();
     expect(sendToWechatWork).toHaveBeenCalledOnce();
+  });
+
+  it('reports configured, fetched, missing_posts, analyzed and failed_analysis coverage', async () => {
+    vi.mocked(loadPersona).mockResolvedValueOnce({
+      ...makePersona(true),
+      ops: {
+        ...makePersona(true).ops,
+        competitors: [
+          { name: '@testuser', platform: 'xhs', tag: 't', tag_desc: 'd', reference_type: 'primary' },
+          { name: '天云', platform: 'douyin', tag: 't', tag_desc: 'd', reference_type: 'primary' },
+        ],
+      },
+    } as PersonaConfig);
+
+    await runCompetitorAnalysisPipeline(false);
+
+    const saved = vi.mocked(saveCompetitorAnalysis).mock.calls[0][0] as any;
+    expect(saved.coverage?.configured_supported).toEqual(expect.arrayContaining(['@testuser:xhs', '天云:douyin']));
+    expect(saved.coverage?.fetched_posts).toContain('@testuser:xhs');
+    expect(saved.coverage?.missing_posts).toContain('天云:douyin');
+    expect(saved.coverage?.analyzed).toContain('@testuser:xhs');
+    expect(saved.coverage?.failed_analysis).toBeDefined();
   });
 
   it('skips Layer 3 when no accounts were analyzed', async () => {

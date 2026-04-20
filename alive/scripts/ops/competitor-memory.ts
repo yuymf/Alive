@@ -9,6 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import { PATHS } from '../utils/file-utils';
 import { now, wallNow, getLocalDate } from '../utils/time-utils';
 import {
@@ -24,14 +25,16 @@ import {
   OpsConfig,
 } from '../utils/types';
 import { matchesTaxonomy, OPS_IDENTITY_TAXONOMY } from './ops-taxonomy';
-import { LLMClient } from '../utils/llm-client';
+import { buildCompetitorKeyFromProfile } from './competitor-keys';
+import { extractJSON, LLMClient } from '../utils/llm-client';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const MAX_OBSERVATION_NOTES = 30;
 const BREAKDOWN_RETENTION_DAYS = 90;
-const MAX_AUTO_ANALYSES_PER_RUN = 2;
+const MAX_AUTO_ANALYSES_PER_RUN = 5;
 const AUTO_ANALYZE_MULTIPLIER = 2;
+const AUTO_ANALYZE_MIN_ENGAGEMENT = 5000;
 
 // ─── Frontmatter parsing ────────────────────────────────────────────────────
 
@@ -89,6 +92,23 @@ export function buildFrontmatter(data: Record<string, string | number>): string 
  */
 export function sanitizeFilename(name: string): string {
   return name.replace(/[/\\:*?"<>|]/g, '-').trim();
+}
+
+function shortHash(input: string): string {
+  return createHash('sha1').update(input).digest('hex').slice(0, 8);
+}
+
+export function buildBreakdownPostKey(
+  update: CompetitorUpdate,
+  post: CompetitorUpdate['recent_posts'][number],
+): string {
+  return `${update.account}|${update.platform}|${post.time}|${post.topic}`;
+}
+
+function buildBreakdownFilename(input: BreakdownInput, date: string): string {
+  const base = sanitizeFilename(input.title).slice(0, 40) || 'untitled';
+  const fingerprint = input.post_key ?? `${input.title}|${input.engagement}|${input.link ?? ''}`;
+  return `${date}-${base}-${shortHash(fingerprint)}.md`;
 }
 
 // ─── Section extraction helpers ─────────────────────────────────────────────
@@ -363,7 +383,7 @@ export function writeBreakdown(input: BreakdownInput): void {
   fs.mkdirSync(dir, { recursive: true });
 
   const date = getLocalDate(now());
-  const filename = `${date}-${sanitizeFilename(input.title).slice(0, 40)}.md`;
+  const filename = buildBreakdownFilename(input, date);
   const filePath = path.join(dir, filename);
 
   const frontmatter = buildFrontmatter({
@@ -374,6 +394,8 @@ export function writeBreakdown(input: BreakdownInput): void {
     engagement: input.engagement,
     content_type: input.content_type,
     source: input.source,
+    ...(input.post_key ? { post_key: input.post_key } : {}),
+    ...(input.source_post_time ? { source_post_time: input.source_post_time } : {}),
   });
 
   const body = [
@@ -387,53 +409,136 @@ export function writeBreakdown(input: BreakdownInput): void {
   fs.writeFileSync(filePath, frontmatter + body);
 }
 
+export function writeBreakdownFromPostAnalysis(input: {
+  title: string;
+  platform: 'xhs' | 'douyin';
+  engagement: number;
+  coreSellingPoints: readonly string[];
+  openingHook?: string;
+  bodyFlow?: string;
+  closingCta?: string;
+  visualStrategy?: string;
+  postKey: string;
+  link?: string;
+  competitor?: string;
+  track?: string;
+}): void {
+  const sections = [
+    '## 钩子拆解',
+    '',
+    `- ${input.openingHook || '见原文表现'}`,
+    '',
+    '## 内容结构',
+    '',
+    `- ${input.bodyFlow || input.visualStrategy || '结构信息缺失'}`,
+    '',
+    '## 可借鉴点',
+    '',
+    ...(input.coreSellingPoints.length > 0
+      ? input.coreSellingPoints.map(point => `- ${point}`)
+      : ['- 暂无结构化可借鉴点']),
+    '',
+    input.closingCta ? '## 结尾动作' : null,
+    input.closingCta ? '' : null,
+    input.closingCta ? `- ${input.closingCta}` : null,
+  ].filter((line): line is string => line !== null);
+
+  writeBreakdown({
+    platform: input.platform,
+    track: input.track ?? 'unknown',
+    competitor: input.competitor ?? 'discovery-pool',
+    title: input.title,
+    engagement: input.engagement,
+    content_type: input.platform === 'douyin' ? '视频' : '图文',
+    source: 'auto',
+    body: sections.join('\n'),
+    link: input.link,
+    post_key: input.postKey,
+  });
+}
+
 // ─── Auto-analysis logic ────────────────────────────────────────────────────
 
 /**
  * Determine whether a competitor update warrants automatic hit analysis.
  * Criteria: engagement > 2× historical average for same account.
  */
-export function shouldAutoAnalyze(
+function getHistoricalAverageEngagement(
   update: CompetitorUpdate,
   historicalEntries: readonly CompetitorUpdate[],
-): boolean {
-  if (!update.latest_post || update.latest_post.engagement <= 0) return false;
-
-  // Calculate average engagement from last 7 entries for same account,
-  // EXCLUDING the current update itself to avoid self-inflation.
+): number | null {
   const sameAccount = historicalEntries
     .filter(e => e.account === update.account && e.platform === update.platform)
     .filter(e => e.latest_post && e.latest_post.engagement > 0)
     .filter(e => e.fetched_at !== update.fetched_at)
-    .slice(-7); // only last 7 entries (consistent with comment)
+    .slice(-7);
 
-  if (sameAccount.length === 0) return false;
+  if (sameAccount.length === 0) return null;
 
   const avgEngagement = sameAccount.reduce(
     (sum, e) => sum + (e.latest_post?.engagement ?? 0), 0,
   ) / sameAccount.length;
 
-  if (avgEngagement <= 0) return false;
+  return avgEngagement > 0 ? avgEngagement : null;
+}
 
-  return update.latest_post.engagement > AUTO_ANALYZE_MULTIPLIER * avgEngagement;
+function shouldAutoAnalyzePost(
+  update: CompetitorUpdate,
+  post: CompetitorUpdate['recent_posts'][number] | null,
+  historicalEntries: readonly CompetitorUpdate[],
+): boolean {
+  if (!post || post.engagement <= 0) return false;
+
+  const avgEngagement = getHistoricalAverageEngagement(update, historicalEntries);
+  if (avgEngagement === null) {
+    return post.engagement >= AUTO_ANALYZE_MIN_ENGAGEMENT;
+  }
+
+  return post.engagement > AUTO_ANALYZE_MULTIPLIER * avgEngagement;
+}
+
+export function shouldAutoAnalyze(
+  update: CompetitorUpdate,
+  historicalEntries: readonly CompetitorUpdate[],
+): boolean {
+  return shouldAutoAnalyzePost(update, update.latest_post, historicalEntries);
 }
 
 /**
  * Use LLM to analyze a high-performing post and write a breakdown.
  */
+interface AutoAnalyzeResult {
+  hook_analysis: string;
+  structure: string;
+  reusable_points: string[];
+  non_reusable: string[];
+  summary: string;
+}
+
+function normalizeAutoAnalyzeResult(input: Partial<Record<keyof AutoAnalyzeResult, unknown>>): AutoAnalyzeResult {
+  return {
+    hook_analysis: typeof input.hook_analysis === 'string' ? input.hook_analysis : '',
+    structure: typeof input.structure === 'string' ? input.structure : '',
+    reusable_points: Array.isArray(input.reusable_points) ? input.reusable_points.map(String) : [],
+    non_reusable: Array.isArray(input.non_reusable) ? input.non_reusable.map(String) : [],
+    summary: typeof input.summary === 'string' ? input.summary : '',
+  };
+}
+
 export async function autoAnalyzeHit(
   update: CompetitorUpdate,
   profile: CompetitorProfile | undefined,
   llm: LLMClient,
+  post: CompetitorUpdate['recent_posts'][number] = update.latest_post ?? update.recent_posts[0],
 ): Promise<void> {
-  if (!update.latest_post) return;
+  if (!post) return;
 
   const prompt = `分析以下竞品爆款内容，提取关键成功因素。
 
 竞品：${update.account}（${update.platform}）
-标题：${update.latest_post.topic}
-互动量：${update.latest_post.engagement}
-内容类型：${update.latest_post.content_type}
+标题：${post.topic}
+互动量：${post.engagement}
+内容类型：${post.content_type}
 
 请分析并返回 JSON：
 {
@@ -444,15 +549,18 @@ export async function autoAnalyzeHit(
   "summary": "一句话总结这条内容为什么火"
 }`;
 
-  const result = await llm.callJSON<{
-    hook_analysis: string;
-    structure: string;
-    reusable_points: string[];
-    non_reusable: string[];
-    summary: string;
-  }>(prompt, 800);
+  let result: AutoAnalyzeResult;
+  try {
+    result = normalizeAutoAnalyzeResult(await llm.callJSON<AutoAnalyzeResult>(prompt, 800));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[competitor-memory] callJSON failed for ${update.account}, retrying with raw call: ${msg}`);
+    const raw = await llm.call(prompt, 800);
+    result = normalizeAutoAnalyzeResult(extractJSON<Partial<Record<keyof AutoAnalyzeResult, unknown>>>(raw));
+  }
 
   const track = profile?.group ?? profile?.tag ?? 'unknown';
+  const postKey = buildBreakdownPostKey(update, post);
 
   const body = [
     result.summary,
@@ -478,11 +586,13 @@ export async function autoAnalyzeHit(
     platform: update.platform,
     track,
     competitor: update.account,
-    title: update.latest_post.topic,
-    engagement: update.latest_post.engagement,
-    content_type: update.latest_post.content_type,
+    title: post.topic,
+    engagement: post.engagement,
+    content_type: post.content_type,
     source: 'auto',
     body,
+    post_key: postKey,
+    source_post_time: post.time,
   });
 }
 
@@ -497,32 +607,45 @@ export async function analyzeNewHits(
   llm: LLMClient,
 ): Promise<void> {
   let analyzed = 0;
-  const today = getLocalDate(now());
 
   // Check existing breakdowns to avoid duplicates
-  const existingBreakdowns = getHitBreakdowns({ limit: 100 });
+  const existingBreakdowns = getHitBreakdowns({ limit: 500 });
   const existingKeys = new Set(
     existingBreakdowns.map(bd =>
-      `${bd.frontmatter.competitor}:${bd.frontmatter.date}`,
+      String(bd.frontmatter.post_key ?? `${bd.frontmatter.competitor}:${bd.frontmatter.date}`),
     ),
   );
 
-  for (const update of updates) {
-    if (analyzed >= MAX_AUTO_ANALYSES_PER_RUN) break;
-    if (!shouldAutoAnalyze(update, historicalEntries)) continue;
+  const candidates = updates.flatMap(update =>
+    update.recent_posts.map(post => ({
+      update,
+      post,
+      postKey: buildBreakdownPostKey(update, post),
+      shouldAnalyze: shouldAutoAnalyzePost(update, post, historicalEntries),
+    })),
+  );
 
-    const key = `${update.account}:${today}`;
-    if (existingKeys.has(key)) continue;
+  const sortedCandidates = candidates
+    .filter(candidate => candidate.shouldAnalyze)
+    .sort((a, b) => {
+      if (b.post.engagement !== a.post.engagement) return b.post.engagement - a.post.engagement;
+      return new Date(b.post.time).getTime() - new Date(a.post.time).getTime();
+    });
+
+  for (const candidate of sortedCandidates) {
+    if (analyzed >= MAX_AUTO_ANALYSES_PER_RUN) break;
+    if (existingKeys.has(candidate.postKey)) continue;
 
     const profile = ops.competitors?.find(
-      c => c.name === update.account && c.platform === update.platform,
+      c => c.name === candidate.update.account && c.platform === candidate.update.platform,
     );
 
     try {
-      await autoAnalyzeHit(update, profile, llm);
+      await autoAnalyzeHit(candidate.update, profile, llm, candidate.post);
       analyzed++;
+      existingKeys.add(candidate.postKey);
     } catch (err) {
-      console.error(`[competitor-memory] autoAnalyzeHit failed for ${update.account}:`, err);
+      console.error(`[competitor-memory] autoAnalyzeHit failed for ${candidate.update.account}:`, err);
     }
   }
 
@@ -682,7 +805,7 @@ export function syncCompetitorInsights(
   const result: SyncResult = { updated: 0, takeaways: 0, avoids: 0, observations: 0 };
 
   for (const profile of profiles) {
-    const accountKey = `${profile.name}:${profile.platform}`;
+    const accountKey = buildCompetitorKeyFromProfile(profile);
     const analysis = analysisStore.analyses[accountKey];
     if (!analysis) continue;
 

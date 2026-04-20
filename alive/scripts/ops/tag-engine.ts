@@ -64,6 +64,33 @@ export function buildInitialEntry(
   };
 }
 
+function tagSourceKey(source: TagSource): string {
+  switch (source.type) {
+    case 'competitor':
+      return `competitor:${source.account}:${source.platform}`;
+    case 'keyword_search':
+      return `keyword:${source.keyword}:${source.platform}`;
+    case 'viral_kb':
+      return `viral:${source.entry_id}:${source.platform}`;
+  }
+}
+
+function mergeUniqueSources(
+  existing: readonly TagSource[],
+  incoming: readonly TagSource[],
+): TagSource[] {
+  const byKey = new Map<string, TagSource>();
+  for (const source of [...existing, ...incoming]) {
+    byKey.set(tagSourceKey(source), source);
+  }
+  return [...byKey.values()];
+}
+
+function hasSource(existing: readonly TagSource[], candidate: TagSource): boolean {
+  const key = tagSourceKey(candidate);
+  return existing.some(source => tagSourceKey(source) === key);
+}
+
 export function mergeTags(
   maps: Array<Map<string, { score: number; sources: TagSource[] }>>,
   timestamp: string,
@@ -75,10 +102,10 @@ export function mergeTags(
       const existing = combined.get(tag);
       if (existing) {
         existing.score += data.score;
-        existing.sources.push(...data.sources);
+        existing.sources = mergeUniqueSources(existing.sources, data.sources);
         existing.freq += 1;
       } else {
-        combined.set(tag, { score: data.score, sources: [...data.sources], freq: 1 });
+        combined.set(tag, { score: data.score, sources: mergeUniqueSources([], data.sources), freq: 1 });
       }
     }
   }
@@ -186,7 +213,7 @@ export async function runColdStart(ops: OpsConfig, timestamp: string): Promise<T
           const existing = tagMap.get(tag);
           if (existing) {
             existing.score += XHS_HIT_SCORE;
-            existing.sources.push(source);
+            existing.sources = mergeUniqueSources(existing.sources, [source]);
           } else {
             tagMap.set(tag, { score: XHS_HIT_SCORE, sources: [source] });
           }
@@ -202,7 +229,7 @@ export async function runColdStart(ops: OpsConfig, timestamp: string): Promise<T
           const existing = tagMap.get(tag);
           if (existing) {
             existing.score += DOUYIN_HIT_SCORE;
-            existing.sources.push(source);
+            existing.sources = mergeUniqueSources(existing.sources, [source]);
           } else {
             tagMap.set(tag, { score: DOUYIN_HIT_SCORE, sources: [source] });
           }
@@ -228,7 +255,7 @@ export async function runColdStart(ops: OpsConfig, timestamp: string): Promise<T
           const existing = tagMap.get(tag);
           if (existing) {
             existing.score += XHS_HIT_SCORE;
-            existing.sources.push(source);
+            existing.sources = mergeUniqueSources(existing.sources, [source]);
           } else {
             tagMap.set(tag, { score: XHS_HIT_SCORE, sources: [source] });
           }
@@ -468,6 +495,9 @@ export function boostTagsFromViralEntry(entry: ViralEntry): void {
   for (const tag of tags) {
     const activeEntry = activeMap.get(tag);
     if (activeEntry) {
+      if (hasSource(activeEntry.sources, source)) {
+        continue;
+      }
       // Boost existing active tag
       const newScore = activeEntry.score + BOOST_SCORE;
       activeMap.set(tag, {
@@ -476,13 +506,16 @@ export function boostTagsFromViralEntry(entry: ViralEntry): void {
         peak_score: Math.max(activeEntry.peak_score, newScore),
         hit_count: activeEntry.hit_count + 1,
         last_hit: timestamp,
-        sources: [...activeEntry.sources, source],
+        sources: mergeUniqueSources(activeEntry.sources, [source]),
       });
       continue;
     }
 
     const dormantEntry = dormantMap.get(tag);
     if (dormantEntry) {
+      if (hasSource(dormantEntry.sources, source)) {
+        continue;
+      }
       // Revive dormant tag → move to active
       dormantMap.delete(tag);
       activeMap.set(tag, {
@@ -491,7 +524,7 @@ export function boostTagsFromViralEntry(entry: ViralEntry): void {
         peak_score: Math.max(dormantEntry.peak_score, BOOST_SCORE),
         hit_count: dormantEntry.hit_count + 1,
         last_hit: timestamp,
-        sources: [...dormantEntry.sources, source],
+        sources: mergeUniqueSources(dormantEntry.sources, [source]),
       });
       continue;
     }

@@ -19,6 +19,7 @@ import {
   getHitBreakdowns,
   buildMemoryContext,
   writeBreakdown,
+  analyzeNewHits,
   appendObservation,
   shouldAutoAnalyze,
   cleanupOldBreakdowns,
@@ -316,6 +317,110 @@ describe('writeBreakdown', () => {
     expect(content).toContain('source: manual');
     expect(content).toContain('# 测试帖子标题');
     expect(content).toContain('原文：https://example.com/post');
+  });
+
+  it('creates unique filenames for same-day same-title posts', () => {
+    const input = {
+      platform: 'xhs',
+      track: '电竞解说',
+      competitor: '小田Elin',
+      title: '相同标题',
+      engagement: 3200,
+      content_type: '图文',
+      source: 'manual' as const,
+      body: '分析内容',
+    };
+
+    writeBreakdown({ ...input, post_key: 'p1' } as any);
+    writeBreakdown({ ...input, post_key: 'p2' } as any);
+
+    const dir = path.join(PATHS.hitBreakdownsDir, 'xhs');
+    expect(fs.readdirSync(dir)).toHaveLength(2);
+  });
+});
+
+describe('analyzeNewHits', () => {
+  it('can auto-analyze two different posts from the same competitor on the same day', async () => {
+    const updates: CompetitorUpdate[] = [
+      {
+        account: '天云',
+        platform: 'douyin',
+        latest_post: { time: '2026-04-02T09:00:00Z', content_type: '视频', topic: 'A', engagement: 3000, summary: '' },
+        recent_posts: [
+          { time: '2026-04-02T09:00:00Z', content_type: '视频', topic: 'A', engagement: 3000, summary: '' },
+          { time: '2026-04-02T12:00:00Z', content_type: '视频', topic: 'B', engagement: 4500, summary: '' },
+        ],
+        days_since_last_post: 0,
+        fetched_at: '2026-04-02T13:00:00Z',
+      },
+    ];
+    const history: CompetitorUpdate[] = [
+      { account: '天云', platform: 'douyin', latest_post: { time: '', content_type: '视频', topic: 'old-1', engagement: 1000, summary: '' }, recent_posts: [], days_since_last_post: 1, fetched_at: '2026-04-01T09:00:00Z' },
+      { account: '天云', platform: 'douyin', latest_post: { time: '', content_type: '视频', topic: 'old-2', engagement: 1200, summary: '' }, recent_posts: [], days_since_last_post: 1, fetched_at: '2026-04-01T10:00:00Z' },
+    ];
+    const ops = {
+      enabled: true,
+      brief_time: '09:00',
+      competitor_accounts: { xhs: [], douyin: [] },
+      competitors: [{ name: '天云', platform: 'douyin', tag: '硬核电竞解说', tag_desc: 'd', reference_type: 'primary' }],
+      trend_score_threshold: 1.8,
+      topic_count: 3,
+      topic_filter_prompt: '',
+      platforms: {},
+    } as any;
+    const llm = {
+      call: vi.fn(),
+      callJSON: vi.fn().mockResolvedValue({
+        hook_analysis: '强钩子',
+        structure: '强结构',
+        reusable_points: ['可借鉴点'],
+        non_reusable: ['不可复制因素'],
+        summary: '这条内容很火',
+      }),
+    } as any;
+
+    await analyzeNewHits(updates, ops, history, llm);
+
+    expect(getHitBreakdowns({ platform: 'douyin', limit: 10 })).toHaveLength(2);
+  });
+
+  it('falls back to llm.call when callJSON throws malformed JSON error', async () => {
+    const updates: CompetitorUpdate[] = [
+      {
+        account: '文徐允',
+        platform: 'douyin',
+        latest_post: { time: '2026-04-02T09:00:00Z', content_type: '视频', topic: '爆款复盘', engagement: 8000, summary: '' },
+        recent_posts: [
+          { time: '2026-04-02T09:00:00Z', content_type: '视频', topic: '爆款复盘', engagement: 8000, summary: '' },
+        ],
+        days_since_last_post: 0,
+        fetched_at: '2026-04-02T13:00:00Z',
+      },
+    ];
+    const history: CompetitorUpdate[] = [
+      { account: '文徐允', platform: 'douyin', latest_post: { time: '', content_type: '视频', topic: 'old-1', engagement: 1000, summary: '' }, recent_posts: [], days_since_last_post: 1, fetched_at: '2026-04-01T09:00:00Z' },
+      { account: '文徐允', platform: 'douyin', latest_post: { time: '', content_type: '视频', topic: 'old-2', engagement: 1200, summary: '' }, recent_posts: [], days_since_last_post: 1, fetched_at: '2026-04-01T10:00:00Z' },
+    ];
+    const ops = {
+      enabled: true,
+      brief_time: '09:00',
+      competitor_accounts: { xhs: [], douyin: [] },
+      competitors: [{ name: '文徐允', platform: 'douyin', tag: '硬核电竞解说', tag_desc: 'd', reference_type: 'primary' }],
+      trend_score_threshold: 1.8,
+      topic_count: 3,
+      topic_filter_prompt: '',
+      platforms: {},
+    } as any;
+    const llm = {
+      call: vi.fn().mockResolvedValue('{"hook_analysis":"强钩子","structure":"强结构","reusable_points":["可借鉴点"],"non_reusable":["不可复制因素"],"summary":"这条内容很火"}'),
+      callJSON: vi.fn().mockRejectedValue(new SyntaxError("Expected ',' or '}' after property value in JSON")),
+    } as any;
+
+    await analyzeNewHits(updates, ops, history, llm);
+
+    expect(llm.callJSON).toHaveBeenCalledOnce();
+    expect(llm.call).toHaveBeenCalledOnce();
+    expect(getHitBreakdowns({ platform: 'douyin', limit: 10 })).toHaveLength(1);
   });
 });
 

@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import { setBasePaths, resetBasePaths, PATHS, writeJSON, readJSON } from '../../scripts/utils/file-utils';
 import { clearPersonaCache } from '../../scripts/persona/persona-loader';
 import { loadDiscoveryPool, saveDiscoveryPool } from '../../scripts/ops/discovery-engine';
+import { getHitBreakdowns } from '../../scripts/ops/competitor-memory';
 import YAML from 'yaml';
 import type { PersonaConfig, TrendHistory, PostAnalysisLog, TagVocabulary } from '../../scripts/utils/types';
 
@@ -48,6 +49,7 @@ vi.mock('../../sub-skills/platform/xhs-bridge/scripts/xhs-client', () => ({
 
 vi.mock('../../sub-skills/platform/douyin-bridge/scripts/douyin-client', () => ({
   searchDouyinVideos: (...args: unknown[]) => mockSearchDouyinVideos(...args),
+  getDouyinRateLimitStatus: () => ({ in_cooldown: false, cooldown_remaining_s: 0 }),
 }));
 
 vi.mock('../../scripts/ops/viral-analyzer', () => ({
@@ -465,6 +467,31 @@ describe('runAutoBreakdown', () => {
     expect(result.titles).toContain('Viral Post 1');
     expect(mockAnalyzePost).toHaveBeenCalledTimes(1);
     expect(mockPersistAnalysis).toHaveBeenCalledTimes(1);
+  });
+
+  it('also writes a markdown breakdown for analyzed items', async () => {
+    writePersona();
+
+    const pool = loadDiscoveryPool();
+    pool.items.push({
+      title: 'Markdown Post',
+      author: 'author1',
+      source: 'viral-search:xhs',
+      engagement: 8800,
+      topic: 'topic1',
+      score: 88,
+      discovered_at: new Date().toISOString(),
+    });
+    saveDiscoveryPool(pool);
+
+    mockSearchXhsNotes.mockResolvedValue([
+      { id: 'note-markdown', xsec_token: 'token-markdown', title: 'Markdown Post', description: '', likes: 8800, user: 'author1', tags: [] },
+    ]);
+
+    const result = await runAutoBreakdown(mockLlm, { forceFresh: true });
+
+    expect(result.analyzed).toBe(1);
+    expect(getHitBreakdowns({ limit: 10 })).toHaveLength(1);
   });
 
   it('skips already-analyzed items', async () => {

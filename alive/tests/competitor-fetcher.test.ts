@@ -21,10 +21,15 @@ vi.mock('../sub-skills/platform/xhs-bridge/scripts/xhs-client', () => ({
   getUserProfileNotes: vi.fn(),
 }));
 
+vi.mock('../sub-skills/platform/douyin-bridge/scripts/douyin-client', () => ({
+  listDouyinUserPosts: vi.fn(),
+}));
+
 // ─── Lazy imports (after mocks are set up) ────────────────────────────────────
 
 const { execFileSync } = await import('child_process');
 const { getUserNotes, getUserProfileNotes } = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
+const { listDouyinUserPosts } = await import('../sub-skills/platform/douyin-bridge/scripts/douyin-client');
 const {
   buildAccountKey,
   mergeAndDedupPosts,
@@ -218,27 +223,36 @@ describe('fetchCompetitorPosts', () => {
     expect(store.accounts['@test_account:xhs']).toHaveLength(2);
   });
 
-  it('fetches Douyin posts via execFileSync', async () => {
-    const mockOutput = JSON.stringify({
+  it('stores douyin posts under display-name key instead of sec_uid', async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    vi.mocked(listDouyinUserPosts).mockReturnValue({
+      success: true,
       videos: [
-        { id: 'video_1', title: '抖音视频1', like_count: 50000, upload_date: '2026-04-01T00:00:00Z' },
-        { id: 'video_2', title: '抖音视频2', like_count: 30000, upload_date: '2026-04-01T00:00:00Z' },
+        { aweme_id: 'video_1', desc: '抖音视频1', digg_count: 50000, create_time: nowSeconds },
+        { aweme_id: 'video_2', desc: '抖音视频2', digg_count: 30000, create_time: nowSeconds - 3600 },
       ],
-    });
-    vi.mocked(execFileSync).mockReturnValue(mockOutput);
+    } as any);
 
     const result = await fetchCompetitorPosts(
-      { xhs: [], douyin: ['douyin_user_123'] },
-      [],
-      tmpDir
+      { xhs: [], xhsUserIds: new Map(), douyin: ['MS4wLjABAAAAXXX'] },
+      [{
+        name: '天云分享一切美好',
+        platform: 'douyin',
+        external_id: 'MS4wLjABAAAAXXX',
+        tag: '硬核电竞解说',
+        tag_desc: 'd',
+        reference_type: 'primary',
+      }],
+      tmpDir,
     );
 
-    expect(result.success).toContain('douyin_user_123:douyin');
+    expect(result.success).toContain('天云分享一切美好:douyin');
     expect(result.failed).toHaveLength(0);
 
     const store = readJSON<CompetitorPostsStore>(PATHS.competitorPosts, { version: 1, last_fetched: '', accounts: {} });
-    expect(store.accounts['douyin_user_123:douyin']).toBeDefined();
-    expect(store.accounts['douyin_user_123:douyin']).toHaveLength(2);
+    expect(store.accounts['天云分享一切美好:douyin']).toBeDefined();
+    expect(store.accounts['MS4wLjABAAAAXXX:douyin']).toBeUndefined();
+    expect((store as any).fetch_statuses?.['天云分享一切美好:douyin']?.fetch_id).toBe('MS4wLjABAAAAXXX');
   });
 
   it('tracks failed accounts when XHS fetch throws', async () => {
@@ -254,13 +268,13 @@ describe('fetchCompetitorPosts', () => {
     expect(result.success).toHaveLength(0);
   });
 
-  it('tracks failed accounts when Douyin execFileSync throws', async () => {
-    vi.mocked(execFileSync).mockImplementation(() => { throw new Error('yt-dlp failed'); });
+  it('tracks failed accounts when Douyin fetch fails', async () => {
+    vi.mocked(listDouyinUserPosts).mockReturnValue({ success: false, error: 'yt-dlp failed' } as any);
 
     const result = await fetchCompetitorPosts(
-      { xhs: [], douyin: ['bad_account'] },
+      { xhs: [], xhsUserIds: new Map(), douyin: ['bad_account'] },
       [],
-      tmpDir
+      tmpDir,
     );
 
     expect(result.failed).toContain('bad_account:douyin');
@@ -269,18 +283,17 @@ describe('fetchCompetitorPosts', () => {
 
   it('one failure does not block other accounts', async () => {
     vi.mocked(getUserNotes).mockRejectedValue(new Error('XHS down'));
-
-    const mockOutput = JSON.stringify({
+    vi.mocked(listDouyinUserPosts).mockReturnValue({
+      success: true,
       videos: [
-        { id: 'v1', title: '视频1', like_count: 10000 },
+        { aweme_id: 'v1', desc: '视频1', digg_count: 10000, create_time: Math.floor(Date.now() / 1000) },
       ],
-    });
-    vi.mocked(execFileSync).mockReturnValue(mockOutput);
+    } as any);
 
     const result = await fetchCompetitorPosts(
       { xhs: ['@broken_xhs'], xhsUserIds: new Map(), douyin: ['ok_douyin'] },
       [],
-      tmpDir
+      tmpDir,
     );
 
     expect(result.failed).toContain('@broken_xhs:xhs');

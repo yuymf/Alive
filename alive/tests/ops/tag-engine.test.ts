@@ -143,6 +143,15 @@ describe('mergeTags', () => {
     expect(active[0].score).toBe(25);
     expect(dormant).toHaveLength(0);
   });
+  it('deduplicates identical competitor sources when merging the same tag', () => {
+    const maps = [
+      new Map([['#电竞', { score: 10, sources: [{ type: 'competitor' as const, account: '天云', platform: 'douyin' }] }]]),
+      new Map([['#电竞', { score: 10, sources: [{ type: 'competitor' as const, account: '天云', platform: 'douyin' }] }]]),
+    ];
+
+    const { active } = mergeTags(maps, ts);
+    expect(active[0].sources).toHaveLength(1);
+  });
   it('puts single-source tags into dormant with score 5', () => {
     const maps = [
       new Map([['#新手标签', { score: 10, sources: [{ type: 'competitor' as const, account: 'a1', platform: 'xhs' }] }]]),

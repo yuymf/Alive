@@ -131,6 +131,34 @@ describe('boostTagsFromViralEntry', () => {
     expect((viralSource as { type: 'viral_kb'; entry_id: string }).entry_id).toBe('viral-001');
   });
 
+  it('does not re-boost the same viral_kb entry twice', () => {
+    const vocab = makeVocab([makeTag('#赛事解读类', 10)]);
+    writeVocab(vocab);
+
+    const entry = makeViralEntry({
+      title: '高能时刻 #赛事解读类',
+      description: '',
+      dissection: {
+        hook_type: '数字冲击',
+        content_type: '赛事解读类',
+        identity_mode: 'esports',
+        emotion_arc: '紧张→释放',
+        interaction_design: '投票',
+        visual_style: '动感',
+        cta_type: '评论',
+        summary: '赛事引爆互动',
+      },
+    });
+
+    boostTagsFromViralEntry(entry);
+    boostTagsFromViralEntry(entry);
+
+    const updated = readVocab();
+    const tag = updated.active.find(t => t.tag === '#赛事解读类');
+    expect(tag!.hit_count).toBe(2);
+    expect(tag!.sources.filter(s => s.type === 'viral_kb')).toHaveLength(1);
+  });
+
   it('复活 dormant tag → 移入 active', () => {
     const dormantTag = makeTag('#游戏', 3);
     const vocab = makeVocab([], [dormantTag]);

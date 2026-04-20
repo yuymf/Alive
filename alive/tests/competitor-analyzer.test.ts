@@ -353,6 +353,23 @@ describe('analyzeCompetitors', () => {
 
     const result = await analyzeCompetitors(store, profiles, llm);
     expect(Object.keys(result.analyses)).toHaveLength(0);
+    expect((result as any).failed_analysis).toContain('@v姐:xhs');
+  });
+
+  it('records failed_analysis when a sufficient account throws during LLM analysis', async () => {
+    const store = makePostsStore({
+      '@超时账号:xhs': makePosts(10, '@超时账号', 'xhs'),
+    });
+    const profiles = [makeProfile({ name: '@超时账号', platform: 'xhs' })];
+    const llm: LLMClient = {
+      call: vi.fn().mockRejectedValue(new Error('LLM timeout')),
+      callJSON: vi.fn(),
+    };
+
+    const result = await analyzeCompetitors(store, profiles, llm);
+
+    expect(result.analyses['@超时账号:xhs']).toBeUndefined();
+    expect((result as any).failed_analysis).toContain('@超时账号:xhs');
   });
 
   it('returns a valid CompetitorAnalysisStore shape', async () => {

@@ -18,6 +18,7 @@ import { resolveCompetitorAccounts } from '../ops/competitor-tracker';
 import { fetchCompetitorPosts, loadCompetitorPosts } from '../ops/competitor-fetcher';
 import { analyzeCompetitors, saveCompetitorAnalysis } from '../ops/competitor-analyzer';
 import { syncCompetitorInsights } from '../ops/competitor-memory';
+import { buildCompetitorKeyFromProfile } from '../ops/competitor-keys';
 import { analyzePositioning, savePositioningReport } from '../ops/positioning-analyzer';
 import { sendToWechatWork } from '../ops/brief-generator';
 import { loadQueue } from '../ops/review-queue';
@@ -138,14 +139,39 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
 
   // ── Layer 2: Per-account analysis ─────────────────────────────────────────
   const postsStore = loadCompetitorPosts();
-  const analysisStore = await analyzeCompetitors(postsStore, profiles, llm);
+  const analyzedStore = await analyzeCompetitors(postsStore, profiles, llm);
+  const configuredSupported = profiles
+    .filter(profile => profile.platform === 'xhs' || profile.platform === 'douyin' || profile.platform === 'bilibili')
+    .map(profile => buildCompetitorKeyFromProfile(profile));
+  const fetchedPosts = configuredSupported.filter(key => (postsStore.accounts[key] ?? []).length > 0);
+  const analyzedKeys = Object.keys(analyzedStore.analyses);
+  const coverage = {
+    configured_supported: configuredSupported,
+    fetched_posts: fetchedPosts,
+    missing_posts: configuredSupported.filter(key => !fetchedPosts.includes(key)),
+    analyzed: analyzedKeys,
+    failed_analysis: [...(analyzedStore.failed_analysis ?? [])],
+    insufficient_data: [...analyzedStore.insufficient_data],
+  };
+  const analysisStore = {
+    ...analyzedStore,
+    failed_analysis: coverage.failed_analysis,
+    coverage,
+  };
   saveCompetitorAnalysis(analysisStore);
 
-  const analyzedCount = Object.keys(analysisStore.analyses).length;
+  const analyzedCount = analyzedKeys.length;
   console.log(
     `[${wallNow().toISOString()}] ops-competitor-analysis: Layer 2 done — ` +
-    `${analyzedCount} accounts analyzed, ${analysisStore.insufficient_data.length} insufficient data`,
+    `${analyzedCount} accounts analyzed, ${analysisStore.insufficient_data.length} insufficient data, ` +
+    `${coverage.missing_posts.length} missing posts, ${coverage.failed_analysis.length} failed analysis`,
   );
+  if (coverage.missing_posts.length > 0) {
+    console.log(`[${wallNow().toISOString()}] ops-competitor-analysis: missing posts → ${coverage.missing_posts.join(', ')}`);
+  }
+  if (coverage.failed_analysis.length > 0) {
+    console.log(`[${wallNow().toISOString()}] ops-competitor-analysis: failed analysis → ${coverage.failed_analysis.join(', ')}`);
+  }
 
   // ── Layer 2.5: Sync insights to MD knowledge surface ─────────────────────
   const syncResult = syncCompetitorInsights(profiles, analysisStore);

@@ -179,6 +179,15 @@ describe('extractJSON', () => {
     expect(extractJSON(raw)).toEqual({ reason: 'line1\nline2\tOK', shots: [1, 2] });
   });
 
+  it('repairs truncated JSON by closing open strings and brackets', () => {
+    const raw = '{"summary":"火是因为前3秒钩子","reusable_points":["反差开场","情绪转折"],"nested":{"hook":"数字开头';
+    expect(extractJSON(raw)).toEqual({
+      summary: '火是因为前3秒钩子',
+      reusable_points: ['反差开场', '情绪转折'],
+      nested: { hook: '数字开头' },
+    });
+  });
+
   it('handles unclosed think then JSON', () => {
     // A closed think block, then JSON, then an unclosed think block
     const raw = '<think>ok</think>{"data":true}<think>oops truncated';

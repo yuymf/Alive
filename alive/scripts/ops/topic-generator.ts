@@ -21,6 +21,7 @@ import { buildCompetitorContext } from './competitor-tracker';
 import { buildMemoryContext } from './competitor-memory';
 import { loadCompetitorAnalysis } from './competitor-analyzer';
 import { parseAccountKey } from './competitor-fetcher';
+import { buildCompetitorKeyFromProfile } from './competitor-keys';
 import { incrementPatternUsage } from './content-analyzer';
 import { buildTasteContext } from './taste-engine';
 import { buildDiscoveryContext } from './discovery-engine';
@@ -272,7 +273,7 @@ export function buildCompetitorBenchmarks(
     })
     .map(p => {
       // A v2: prefer dynamic cluster context over static content_mix
-      const accountKey = `${p.name}:${p.platform}`;
+      const accountKey = buildCompetitorKeyFromProfile(p);
       const clusterCtx = analysisStore
         ? buildClusterContext(accountKey, analysisStore)
         : '';
@@ -363,7 +364,7 @@ export function buildContentDrivenContext(
 
   const factors: number[] = [];
   for (const p of profiles) {
-    const accountKey = `${p.name}:${p.platform}`;
+    const accountKey = buildCompetitorKeyFromProfile(p);
     const analysis = analysisStore.analyses[accountKey];
     if (analysis?.content_driven_factor !== undefined) {
       // Match by identity mode via group/tag

@@ -599,16 +599,78 @@ export function findBalancedJSON(text: string): string | null {
   return null;  // unbalanced
 }
 
+function sliceFromFirstJSONObjectOrArray(text: string): string | null {
+  const startIdx = text.search(/[\[{]/);
+  if (startIdx === -1) return null;
+  return text.slice(startIdx).trim();
+}
+
+function completeTruncatedJSON(input: string): string | null {
+  const trimmed = input.trimEnd();
+  if (!trimmed) return null;
+
+  const closers: string[] = [];
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === '{') closers.push('}');
+    else if (ch === '[') closers.push(']');
+    else if ((ch === '}' || ch === ']') && closers.length > 0) closers.pop();
+  }
+
+  if (!inString && closers.length === 0) return null;
+
+  let completed = trimmed.replace(/[,:]\s*$/, '');
+  if (inString) {
+    completed += '"';
+  }
+  if (completed.endsWith(',')) {
+    completed = completed.slice(0, -1).trimEnd();
+  }
+  for (let i = closers.length - 1; i >= 0; i--) {
+    completed += closers[i];
+  }
+  return completed;
+}
+
 function parseJSONWithRepair<T>(candidate: string): T {
   try {
     return JSON.parse(candidate) as T;
   } catch (parseErr) {
-    const repaired = repairJSON(candidate);
-    if (repaired === candidate) {
-      throw parseErr;
+    const attempts = [repairJSON(candidate)];
+    const completed = completeTruncatedJSON(attempts[0]);
+    if (completed) {
+      attempts.push(repairJSON(completed));
     }
-    debugLog('JSON_REPAIR_APPLIED', repaired);
-    return JSON.parse(repaired) as T;
+
+    const seen = new Set<string>();
+    for (const attempt of attempts) {
+      if (!attempt || attempt === candidate || seen.has(attempt)) continue;
+      seen.add(attempt);
+      try {
+        debugLog('JSON_REPAIR_APPLIED', attempt);
+        return JSON.parse(attempt) as T;
+      } catch {
+        // continue trying the next repair candidate
+      }
+    }
+
+    throw parseErr;
   }
 }
 
@@ -636,12 +698,19 @@ export function extractJSON<T>(raw: string): T {
 
   // Find balanced JSON object/array
   const jsonStr = findBalancedJSON(text);
-  if (!jsonStr) {
-    debugLog('JSON_PARSE_FAIL', `raw response:\n${raw}`);
-    throw new Error(`Could not parse JSON from LLM response: ${raw.slice(0, 200)}`);
+  if (jsonStr) {
+    debugLog('JSON_PARSED', jsonStr);
+    return parseJSONWithRepair<T>(jsonStr);
   }
-  debugLog('JSON_PARSED', jsonStr);
-  return parseJSONWithRepair<T>(jsonStr);
+
+  const truncatedCandidate = sliceFromFirstJSONObjectOrArray(text);
+  if (truncatedCandidate) {
+    debugLog('JSON_PARSED', truncatedCandidate);
+    return parseJSONWithRepair<T>(truncatedCandidate);
+  }
+
+  debugLog('JSON_PARSE_FAIL', `raw response:\n${raw}`);
+  throw new Error(`Could not parse JSON from LLM response: ${raw.slice(0, 200)}`);
 }
 
 /**

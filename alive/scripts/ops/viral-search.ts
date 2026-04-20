@@ -17,6 +17,7 @@ import { loadDiscoveryPool, saveDiscoveryPool, scoreContent } from './discovery-
 import { collectKeywords } from './keyword-tracker';
 import { calcKeywordTrackRelevance } from './keyword-tracker';
 import { analyzePost, persistAnalysis } from './viral-analyzer';
+import { writeBreakdownFromPostAnalysis } from './competitor-memory';
 import { loadPersona } from '../persona/persona-loader';
 import { detectKeywordLanguage } from '../utils/text-utils';
 import { getIdentityKeys } from '../utils/types';
@@ -647,6 +648,22 @@ export async function runAutoBreakdown(
       console.log(`[auto-breakdown] Analyzing: "${candidate.title}"`);
       const analysis = await analyzePost(url, persona, llm);
       persistAnalysis(analysis);
+      if (analysis.platform === 'xhs' || analysis.platform === 'douyin') {
+        writeBreakdownFromPostAnalysis({
+          title: analysis.title,
+          platform: analysis.platform,
+          engagement: candidate.engagement,
+          coreSellingPoints: analysis.core_selling_points,
+          openingHook: analysis.content_structure.opening_hook,
+          bodyFlow: analysis.content_structure.body_flow,
+          closingCta: analysis.content_structure.closing_cta,
+          visualStrategy: analysis.content_structure.visual_strategy,
+          postKey: analysis.url || `${analysis.platform}|${candidate.title}`,
+          link: analysis.url,
+          competitor: 'discovery-pool',
+          track: 'unknown',
+        });
+      }
 
       result.analyzed++;
       result.titles.push(candidate.title);

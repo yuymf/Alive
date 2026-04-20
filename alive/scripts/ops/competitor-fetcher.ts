@@ -10,8 +10,19 @@
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { wallNow } from '../utils/time-utils';
 import { execFileSync } from 'child_process';
-import type { CompetitorPost, CompetitorPostsStore, CompetitorProfile, FetchResult } from '../utils/types';
+import type {
+  CompetitorAccountFetchStatus,
+  CompetitorPost,
+  CompetitorPostsStore,
+  CompetitorProfile,
+  FetchResult,
+} from '../utils/types';
 import { listDouyinUserPosts } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
+import {
+  buildCompetitorKey,
+  buildCompetitorKeyFromProfile,
+  findProfileByFetchId,
+} from './competitor-keys';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -32,7 +43,7 @@ function jitter(minMs: number, maxMs: number): Promise<void> {
  * Format: "name:platform"
  */
 export function buildAccountKey(name: string, platform: string): string {
-  return `${name}:${platform}`;
+  return buildCompetitorKey(name, platform);
 }
 
 /**
@@ -84,6 +95,26 @@ export function pruneOldPosts(
     const postMs = new Date(dateStr).getTime();
     return postMs >= cutoffMs;
   });
+}
+
+function recordFetchStatus(
+  statuses: Record<string, CompetitorAccountFetchStatus>,
+  input: CompetitorAccountFetchStatus,
+): void {
+  statuses[input.canonical_key] = input;
+}
+
+function resolveCanonicalKey(
+  profiles: readonly CompetitorProfile[],
+  platform: 'xhs' | 'douyin' | 'bilibili',
+  fetchId: string,
+  fallbackName: string,
+): string {
+  const profile = findProfileByFetchId(profiles, platform, fetchId)
+    ?? profiles.find(p => p.platform === platform && p.name === fallbackName);
+
+  if (profile) return buildCompetitorKeyFromProfile(profile);
+  return buildCompetitorKey(fallbackName, platform);
 }
 
 // ─── Platform fetchers (private) ─────────────────────────────────────────────
@@ -251,7 +282,7 @@ main();
  */
 export async function fetchCompetitorPosts(
   accounts: { xhs: string[]; xhsUserIds: Map<string, string>; douyin: string[]; bilibili?: Array<{ mid: string; name: string }> },
-  _profiles: readonly CompetitorProfile[],
+  profiles: readonly CompetitorProfile[],
   _basePath: string,
 ): Promise<FetchResult> {
   const existing = readJSON<CompetitorPostsStore>(PATHS.competitorPosts, {
@@ -262,10 +293,12 @@ export async function fetchCompetitorPosts(
 
   // Work on a mutable copy of the accounts map
   const updatedAccounts: Record<string, readonly CompetitorPost[]> = { ...existing.accounts };
+  const fetchStatuses: Record<string, CompetitorAccountFetchStatus> = { ...(existing.fetch_statuses ?? {}) };
 
   const success: string[] = [];
   const failed: string[] = [];
   const now = wallNow();
+  const attemptedAt = now.toISOString();
 
   // Fetch XHS accounts by user_id (precise fetch)
   const xhsUserIdEntries = [...(accounts.xhsUserIds?.entries() ?? [])];
@@ -279,7 +312,16 @@ export async function fetchCompetitorPosts(
       const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
       const pruned = pruneOldPosts(merged, now);
       updatedAccounts[key] = pruned;
-      success.push(key);
+      const status = pruned.length > 0 ? 'success' : 'empty';
+      if (status === 'success') success.push(key);
+      else failed.push(key);
+      recordFetchStatus(fetchStatuses, {
+        canonical_key: key,
+        fetch_id: userId,
+        status,
+        platform: 'xhs',
+        last_attempted: attemptedAt,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('Not logged in')) {
@@ -293,11 +335,28 @@ export async function fetchCompetitorPosts(
           const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
           const pruned = pruneOldPosts(merged, now);
           updatedAccounts[key] = pruned;
-          success.push(key);
+          const status = pruned.length > 0 ? 'success' : 'empty';
+          if (status === 'success') success.push(key);
+          else failed.push(key);
+          recordFetchStatus(fetchStatuses, {
+            canonical_key: key,
+            fetch_id: userId,
+            status,
+            platform: 'xhs',
+            last_attempted: attemptedAt,
+          });
         } catch (fallbackErr) {
           const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
           console.warn(`[competitor-fetcher] XHS 搜索回退也失败 ${key}: ${fbMsg}`);
           failed.push(key);
+          recordFetchStatus(fetchStatuses, {
+            canonical_key: key,
+            fetch_id: userId,
+            status: 'failed',
+            platform: 'xhs',
+            last_attempted: attemptedAt,
+            error: fbMsg,
+          });
         }
       }
     }
@@ -315,7 +374,16 @@ export async function fetchCompetitorPosts(
       const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
       const pruned = pruneOldPosts(merged, now);
       updatedAccounts[key] = pruned;
-      success.push(key);
+      const status = pruned.length > 0 ? 'success' : 'empty';
+      if (status === 'success') success.push(key);
+      else failed.push(key);
+      recordFetchStatus(fetchStatuses, {
+        canonical_key: key,
+        fetch_id: accountName,
+        status,
+        platform: 'xhs',
+        last_attempted: attemptedAt,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('Not logged in')) {
@@ -325,26 +393,54 @@ export async function fetchCompetitorPosts(
       }
       // 保留历史数据，只标记失败
       failed.push(key);
+      recordFetchStatus(fetchStatuses, {
+        canonical_key: key,
+        fetch_id: accountName,
+        status: 'failed',
+        platform: 'xhs',
+        last_attempted: attemptedAt,
+        error: msg,
+      });
     }
   }
 
   // Fetch Douyin accounts
   for (let i = 0; i < accounts.douyin.length; i++) {
     const accountId = accounts.douyin[i];
-    const key = buildAccountKey(accountId, 'douyin');
+    const key = resolveCanonicalKey(profiles, 'douyin', accountId, accountId);
     // 账号间节流：随机等待 3~7s
     if (i > 0) await jitter(3000, 7000);
     try {
-      const incoming = fetchDouyinPosts(accountId);
+      const incoming = fetchDouyinPosts(accountId).map(post => ({
+        ...post,
+        account_name: parseAccountKey(key).name,
+      }));
       const existingPosts = updatedAccounts[key] ?? [];
       const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
       const pruned = pruneOldPosts(merged, now);
       updatedAccounts[key] = pruned;
-      success.push(key);
+      const status = pruned.length > 0 ? 'success' : 'empty';
+      if (status === 'success') success.push(key);
+      else failed.push(key);
+      recordFetchStatus(fetchStatuses, {
+        canonical_key: key,
+        fetch_id: accountId,
+        status,
+        platform: 'douyin',
+        last_attempted: attemptedAt,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[competitor-fetcher] Douyin 抓取失败 ${key}: ${msg}`);
       failed.push(key);
+      recordFetchStatus(fetchStatuses, {
+        canonical_key: key,
+        fetch_id: accountId,
+        status: 'failed',
+        platform: 'douyin',
+        last_attempted: attemptedAt,
+        error: msg,
+      });
     }
   }
 
@@ -359,12 +455,16 @@ export async function fetchCompetitorPosts(
       if (incoming.length === 0) {
         // No posts returned — keep existing data, just log
         console.warn(`[competitor-fetcher] Bilibili 抓取返回 0 条 ${key}`);
-        // Still mark success if we had existing data (no error thrown)
-        if (updatedAccounts[key]?.length) {
-          success.push(key);
-        } else {
-          failed.push(key);
-        }
+        const status = updatedAccounts[key]?.length ? 'success' : 'empty';
+        if (status === 'success') success.push(key);
+        else failed.push(key);
+        recordFetchStatus(fetchStatuses, {
+          canonical_key: key,
+          fetch_id: mid,
+          status,
+          platform: 'bilibili',
+          last_attempted: attemptedAt,
+        });
         continue;
       }
       const existingPosts = updatedAccounts[key] ?? [];
@@ -372,10 +472,25 @@ export async function fetchCompetitorPosts(
       const pruned = pruneOldPosts(merged, now);
       updatedAccounts[key] = pruned;
       success.push(key);
+      recordFetchStatus(fetchStatuses, {
+        canonical_key: key,
+        fetch_id: mid,
+        status: 'success',
+        platform: 'bilibili',
+        last_attempted: attemptedAt,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[competitor-fetcher] Bilibili 抓取失败 ${key}: ${msg}`);
       failed.push(key);
+      recordFetchStatus(fetchStatuses, {
+        canonical_key: key,
+        fetch_id: mid,
+        status: 'failed',
+        platform: 'bilibili',
+        last_attempted: attemptedAt,
+        error: msg,
+      });
     }
   }
 
@@ -383,6 +498,7 @@ export async function fetchCompetitorPosts(
     version: 1,
     last_fetched: wallNow().toISOString(),
     accounts: updatedAccounts,
+    fetch_statuses: fetchStatuses,
   };
   writeJSON(PATHS.competitorPosts, store);
 
@@ -397,5 +513,6 @@ export function loadCompetitorPosts(): CompetitorPostsStore {
     version: 1,
     last_fetched: '',
     accounts: {},
+    fetch_statuses: {},
   });
 }

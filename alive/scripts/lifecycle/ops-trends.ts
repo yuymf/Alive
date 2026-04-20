@@ -13,7 +13,7 @@ import { loadSkillEnvVars, setPersonaName, PATHS, readJSON } from '../utils/file
 import { analyzeTrends, buildPersonaIdentities } from '../ops/trend-analyzer';
 import { trackCompetitors } from '../ops/competitor-tracker';
 import { analyzeNewHits, cleanupOldBreakdowns, trimObservationNotes } from '../ops/competitor-memory';
-import { CompetitorLog } from '../utils/types';
+import { CompetitorLog, DissectQueueItem, ViralEntry } from '../utils/types';
 import { detectViral, TrendLikeItem } from '../ops/viral-detector';
 import { addManyToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
 import { dissectBatch } from '../ops/content-dissector';
@@ -150,6 +150,9 @@ async function main(): Promise<void> {
   // Derive the memory base path from any known PATHS property
   const basePath = path.dirname(PATHS.emotionState);
 
+  let viralCandidates: DissectQueueItem[] = [];
+  let dissectedEntries: ViralEntry[] = [];
+
   try {
     const threshold = ops.viral_threshold ?? 5000;
     const batchSize = ops.kb_dissect_batch ?? 3;
@@ -178,10 +181,10 @@ async function main(): Promise<void> {
       : [];
 
     // 2. 检测爆款候选
-    const candidates = detectViral(allItems, basePath, threshold);
-    if (candidates.length > 0) {
-      addManyToQueue(basePath, candidates);
-      console.log(`[${wallNow().toISOString()}] [viral-kb] ${candidates.length} candidates queued`);
+    viralCandidates = detectViral(allItems, basePath, threshold);
+    if (viralCandidates.length > 0) {
+      addManyToQueue(basePath, viralCandidates);
+      console.log(`[${wallNow().toISOString()}] [viral-kb] ${viralCandidates.length} candidates queued`);
     }
 
     // 3. 批量拆解
@@ -189,8 +192,8 @@ async function main(): Promise<void> {
     const toProcess = dequeueItems(basePath, batchSize);
     if (toProcess.length > 0) {
       const personaId = persona.meta.id ?? 'default';
-      const entries = await dissectBatch(toProcess, llmViral, personaId);
-      for (const entry of entries) {
+      dissectedEntries = await dissectBatch(toProcess, llmViral, personaId);
+      for (const entry of dissectedEntries) {
         upsertEntry(basePath, entry);
         const result = checkFormulaPromotion(basePath, entry, PATHS.personaConfig);
         if (result.promoted && result.formula) {
@@ -211,7 +214,7 @@ async function main(): Promise<void> {
           }
         }
       }
-      console.log(`[${wallNow().toISOString()}] [viral-kb] ${entries.length} entries dissected`);
+      console.log(`[${wallNow().toISOString()}] [viral-kb] ${dissectedEntries.length} entries dissected`);
     }
   } catch (err) {
     console.error(`[${wallNow().toISOString()}] [viral-kb] error:`, err);
@@ -229,6 +232,19 @@ async function main(): Promise<void> {
   if (competitorsResult.status === 'fulfilled' && competitorsResult.value.length > 0) {
     const topComp = competitorsResult.value.slice(0, 3);
     topComp.forEach((c) => console.log(`  · ${c.account}: ${c.latest_post?.topic ?? '无最新帖子'}`));
+  }
+  console.log(`- 爆款候选: ${viralCandidates.length} 条`);
+  if (viralCandidates.length > 0) {
+    const topViral = viralCandidates.slice(0, 5);
+    topViral.forEach((v, i) => console.log(`  ${i + 1}. ${v.title}（${v.platform} ${v.likes}赞）`));
+  }
+  console.log(`- 知识库拆解: ${dissectedEntries.length} 条`);
+  if (dissectedEntries.length > 0) {
+    const topEntries = dissectedEntries.filter(e => e.dissection_status === 'done').slice(0, 5);
+    topEntries.forEach((e, i) => {
+      const d = e.dissection;
+      console.log(`  ${i + 1}. ${e.title} → ${d.hook_type}+${d.content_type}（${d.summary}）`);
+    });
   }
 }
 

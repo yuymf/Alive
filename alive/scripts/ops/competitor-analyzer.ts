@@ -18,7 +18,8 @@ import type {
   HookFormula,
 } from '../utils/types';
 import type { LLMClient } from '../utils/llm-client';
-import { buildAccountKey, parseAccountKey } from './competitor-fetcher';
+import { parseAccountKey } from './competitor-fetcher';
+import { buildCompetitorKeyFromProfile } from './competitor-keys';
 import { loadFormulaStore, saveFormulaStore, mergeAccountFormulas } from './formula-store';
 import { identityModeForLabel, ALL_IDENTITY_MODES } from './ops-taxonomy';
 
@@ -63,6 +64,7 @@ function defaultStore(): CompetitorAnalysisStore {
     version: 1,
     analyses: {},
     insufficient_data: [],
+    failed_analysis: [],
     last_analyzed: wallNow().toISOString(),
   };
 }
@@ -209,6 +211,7 @@ export async function analyzeCompetitors(
 ): Promise<CompetitorAnalysisStore> {
   const analyses: Record<string, AccountAnalysis> = {};
   const insufficient_data: string[] = [];
+  const failed_analysis = new Set<string>();
   let formulaStore = loadFormulaStore();
 
   for (const [accountKey, posts] of Object.entries(postsStore.accounts)) {
@@ -222,7 +225,7 @@ export async function analyzeCompetitors(
 
     // Find matching profile
     const profile = profiles.find(
-      (p) => buildAccountKey(p.name, p.platform) === accountKey,
+      (p) => buildCompetitorKeyFromProfile(p) === accountKey,
     ) ?? {
       name: accountName,
       platform: platform as CompetitorProfile['platform'],
@@ -236,38 +239,42 @@ export async function analyzeCompetitors(
     try {
       const raw = await llm.call(prompt);
       const analysis = parseAnalysisResponse(raw, accountName, platform);
-      if (analysis !== null) {
-        // Compute content-driven factor from raw post data
-        const cdf = computeContentDrivenFactor(posts);
-        analyses[accountKey] = {
-          ...analysis,
-          auto_cluster: true,
-          content_driven_factor: cdf,
-        } as AccountAnalysis;
+      if (analysis === null) {
+        failed_analysis.add(accountKey);
+        continue;
+      }
 
-        // Determine identity mode(s) for this account
-        const label = (profile as { group?: string }).group ?? profile.tag;
-        const singleMode = identityModeForLabel(label);
-        const modes = singleMode ? [singleMode] : ALL_IDENTITY_MODES;
+      // Compute content-driven factor from raw post data
+      const cdf = computeContentDrivenFactor(posts);
+      analyses[accountKey] = {
+        ...analysis,
+        auto_cluster: true,
+        content_driven_factor: cdf,
+      } as AccountAnalysis;
 
-        // Map HookPatternAnalysis → HookFormula (skip patterns with no formula)
-        const formulas: HookFormula[] = analysis.hook_patterns
-          .filter(p => p.formula && p.formula.trim() !== '')
-          .map(p => ({
-            formula: p.formula,
-            examples: [...p.examples],
-            frequency: p.frequency as '高' | '中' | '低',
-            source_account: accountKey,
-            source_platform: profile.platform,
-            last_analyzed: analysis.analyzed_at,
-          }));
+      // Determine identity mode(s) for this account
+      const label = (profile as { group?: string }).group ?? profile.tag;
+      const singleMode = identityModeForLabel(label);
+      const modes = singleMode ? [singleMode] : ALL_IDENTITY_MODES;
 
-        if (formulas.length > 0) {
-          formulaStore = mergeAccountFormulas(formulaStore, modes, accountKey, formulas);
-        }
+      // Map HookPatternAnalysis → HookFormula (skip patterns with no formula)
+      const formulas: HookFormula[] = analysis.hook_patterns
+        .filter(p => p.formula && p.formula.trim() !== '')
+        .map(p => ({
+          formula: p.formula,
+          examples: [...p.examples],
+          frequency: p.frequency as '高' | '中' | '低',
+          source_account: accountKey,
+          source_platform: profile.platform,
+          last_analyzed: analysis.analyzed_at,
+        }));
+
+      if (formulas.length > 0) {
+        formulaStore = mergeAccountFormulas(formulaStore, modes, accountKey, formulas);
       }
     } catch {
       // Individual account failure never blocks the rest
+      failed_analysis.add(accountKey);
     }
   }
 
@@ -277,6 +284,7 @@ export async function analyzeCompetitors(
     version: 1,
     analyses,
     insufficient_data,
+    failed_analysis: [...failed_analysis],
     last_analyzed: wallNow().toISOString(),
   };
 }
