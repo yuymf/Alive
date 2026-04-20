@@ -8,9 +8,9 @@
 
 import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
-import { wallNow, now } from '../utils/time-utils';
+import { wallNow } from '../utils/time-utils';
 import { loadSkillEnvVars, setPersonaName, PATHS, readJSON } from '../utils/file-utils';
-import { analyzeTrends, buildPersonaIdentities } from '../ops/trend-analyzer';
+import { analyzeTrends, buildPersonaIdentities, TRENDS_CACHE_TTL_MS } from '../ops/trend-analyzer';
 import { trackCompetitors } from '../ops/competitor-tracker';
 import { analyzeNewHits, cleanupOldBreakdowns, trimObservationNotes } from '../ops/competitor-memory';
 import { CompetitorLog, DissectQueueItem, ViralEntry } from '../utils/types';
@@ -18,45 +18,8 @@ import { detectViral, TrendLikeItem } from '../ops/viral-detector';
 import { addManyToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
 import { dissectBatch } from '../ops/content-dissector';
 import { sendToWechatWork } from '../ops/brief-generator';
+import { getOpsTrendsCacheStatus } from './ops-trends-cache';
 import * as path from 'path';
-
-// ─── Cache TTL constants (must match trend-analyzer & competitor-tracker) ────
-const TRENDS_CACHE_TTL_MS = 4 * 60 * 60 * 1000;   // 4 hours
-const COMPETITOR_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
-
-interface TrendsCacheData {
-  computed_at: string;
-  persona_identities?: string;
-  scoring_version?: number;
-  results: unknown[];
-}
-
-/** Check whether both trend and competitor caches are still within TTL (i.e. stale — no fresh data). */
-function isCacheStale(): { trendsFromCache: boolean; competitorsFromCache: boolean; trendsAgeMin: number; competitorsAgeMin: number } {
-  const result = { trendsFromCache: false, competitorsFromCache: false, trendsAgeMin: Infinity, competitorsAgeMin: Infinity };
-
-  // Check trends cache
-  try {
-    const tc = readJSON<TrendsCacheData>(PATHS.trendsCache, null as unknown as TrendsCacheData);
-    if (tc?.computed_at) {
-      const age = now().getTime() - new Date(tc.computed_at).getTime();
-      result.trendsAgeMin = Math.round(age / 60_000);
-      if (age < TRENDS_CACHE_TTL_MS) result.trendsFromCache = true;
-    }
-  } catch { /* cache file missing or corrupt — treat as not from cache */ }
-
-  // Check competitor cache
-  try {
-    const cl = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
-    if (cl.last_updated && cl.entries.length > 0) {
-      const age = now().getTime() - new Date(cl.last_updated).getTime();
-      result.competitorsAgeMin = Math.round(age / 60_000);
-      if (age < COMPETITOR_CACHE_TTL_MS) result.competitorsFromCache = true;
-    }
-  } catch { /* cache file missing or corrupt — treat as not from cache */ }
-
-  return result;
-}
 
 async function main(): Promise<void> {
   // Load environment variables from openclaw.json (needed for isolated cron sessions)
@@ -77,10 +40,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  const identities = buildPersonaIdentities(persona);
+
   // ─── Skip brief if both caches are still within TTL ─────────────────────
   // When trend + competitor data haven't been refreshed, the brief would be
   // identical to the previous hour — skip it to avoid redundant notifications.
-  const cacheStatus = isCacheStale();
+  const cacheStatus = getOpsTrendsCacheStatus(identities);
   if (cacheStatus.trendsFromCache && cacheStatus.competitorsFromCache) {
     console.log(`[${wallNow().toISOString()}] ops-trends: 数据未刷新，跳过速报推送（趋势缓存 ${cacheStatus.trendsAgeMin}min / 竞品缓存 ${cacheStatus.competitorsAgeMin}min，TTL=${TRENDS_CACHE_TTL_MS / 60_000}min）`);
 
@@ -122,7 +87,6 @@ async function main(): Promise<void> {
   }
 
   const llm = createRealLLMClient('ops-trends');
-  const identities = buildPersonaIdentities(persona);
 
   console.log(`[${wallNow().toISOString()}] ops-trends: starting for ${persona.meta.id} (trends cache ${cacheStatus.trendsAgeMin}min, competitors cache ${cacheStatus.competitorsAgeMin}min)`);
 

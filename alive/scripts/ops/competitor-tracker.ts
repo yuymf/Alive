@@ -576,11 +576,42 @@ function postToRecentPost(post: CompetitorPost): NonNullable<CompetitorUpdate['l
 // (each cron invocation is a new process, so _cachedDay was always null).
 // Now reads competitor-log.json's last_updated for TTL check — works cross-process.
 
-const COMPETITOR_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+export const COMPETITOR_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 /** In-process cache (still useful for same-process repeated calls, e.g. cron + /brief) */
 let _cachedDay: string | null = null;
 let _cachedUpdates: CompetitorUpdate[] | null = null;
+let _cachedSourceAtMs: number | null = null;
+let _cachedSignature: string | null = null;
+
+export function resetCompetitorTrackerCache(): void {
+  _cachedDay = null;
+  _cachedUpdates = null;
+  _cachedSourceAtMs = null;
+  _cachedSignature = null;
+}
+
+function getOldestFetchedAtMs(updates: CompetitorUpdate[]): number | null {
+  const timestamps = updates
+    .map(update => Date.parse(update.fetched_at))
+    .filter(ts => Number.isFinite(ts));
+
+  return timestamps.length > 0 ? Math.min(...timestamps) : null;
+}
+
+function setInProcessCache(today: string, signature: string, updates: CompetitorUpdate[], sourceAtMs: number | null): void {
+  _cachedDay = today;
+  _cachedUpdates = updates;
+  _cachedSourceAtMs = sourceAtMs;
+  _cachedSignature = signature;
+}
+
+function buildCacheSignature(ops: OpsConfig): string {
+  return JSON.stringify({
+    competitor_accounts: ops.competitor_accounts ?? null,
+    competitors: ops.competitors ?? null,
+  });
+}
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
@@ -610,36 +641,43 @@ function persistLog(updates: CompetitorUpdate[], today: string): void {
   }
   const todayEntries = [...merged.values()];
 
+  const sourceAtMs = getOldestFetchedAtMs(todayEntries) ?? wallNow().getTime();
   const log: CompetitorLog = {
     entries: [...withoutToday, ...todayEntries].slice(-MAX_COMPETITOR_LOG_ENTRIES),
-    last_updated: wallNow().toISOString(),
+    last_updated: new Date(sourceAtMs).toISOString(),
   };
   writeJSON(PATHS.competitorLog, log);
 }
 
 export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
   const today = getLocalDate(now());
+  const cacheSignature = buildCacheSignature(ops);
 
-  // 1) In-process cache hit (same day, same process)
-  if (_cachedDay === today && _cachedUpdates !== null) {
-    console.error(`[competitor-tracker] Using in-process cached data for ${today}`);
-    return _cachedUpdates;
+  // 1) In-process cache hit (same day, same process) — must still respect TTL
+  if (
+    _cachedDay === today
+    && _cachedUpdates !== null
+    && _cachedSourceAtMs !== null
+    && _cachedSignature === cacheSignature
+  ) {
+    const age = now().getTime() - _cachedSourceAtMs;
+    if (age < COMPETITOR_CACHE_TTL_MS) {
+      console.error(`[competitor-tracker] Using in-process cached data for ${today} (age: ${Math.round(age / 60_000)}min)`);
+      return _cachedUpdates;
+    }
   }
 
   // 2) File-level TTL cache hit (cross-process, e.g. cron spawns new process)
   const existing = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
-  if (existing.last_updated && existing.entries.length > 0) {
-    const age = now().getTime() - new Date(existing.last_updated).getTime();
-    if (age < COMPETITOR_CACHE_TTL_MS) {
-      const freshEntries = existing.entries.filter(e => {
-        const entryDate = getLocalDate(new Date(e.fetched_at));
-        return entryDate === today;
-      });
-      if (freshEntries.length > 0) {
-        console.error(`[competitor-tracker] Using file-level cached data (age: ${Math.round(age / 60_000)}min, ${freshEntries.length} entries for today)`);
-        _cachedDay = today;
-        _cachedUpdates = freshEntries;
-        return freshEntries;
+  const todayEntries = existing.entries.filter(e => getLocalDate(new Date(e.fetched_at)) === today);
+  if (todayEntries.length > 0) {
+    const sourceAtMs = getOldestFetchedAtMs(todayEntries) ?? Date.parse(existing.last_updated);
+    if (Number.isFinite(sourceAtMs)) {
+      const age = now().getTime() - sourceAtMs;
+      if (age < COMPETITOR_CACHE_TTL_MS) {
+        console.error(`[competitor-tracker] Using file-level cached data (age: ${Math.round(age / 60_000)}min, ${todayEntries.length} entries for today)`);
+        setInProcessCache(today, cacheSignature, todayEntries, sourceAtMs);
+        return todayEntries;
       }
     }
   }
@@ -647,8 +685,9 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
   // 3) Try deriving from competitor-posts.json (avoids duplicate API calls)
   const postsStore = loadCompetitorPosts();
   if (postsStore.last_fetched) {
-    const postsAge = now().getTime() - new Date(postsStore.last_fetched).getTime();
-    if (postsAge < COMPETITOR_CACHE_TTL_MS && Object.keys(postsStore.accounts).length > 0) {
+    const postsSourceAtMs = Date.parse(postsStore.last_fetched);
+    const postsAge = now().getTime() - postsSourceAtMs;
+    if (Number.isFinite(postsSourceAtMs) && postsAge < COMPETITOR_CACHE_TTL_MS && Object.keys(postsStore.accounts).length > 0) {
       const derived = deriveUpdatesFromPosts(postsStore, ops);
       if (derived.length > 0) {
         console.error(
@@ -657,8 +696,7 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
         );
         // Persist to competitor-log.json for downstream compatibility
         persistLog(derived, today);
-        _cachedDay = today;
-        _cachedUpdates = derived;
+        setInProcessCache(today, cacheSignature, derived, postsSourceAtMs);
         return derived;
       }
     }
@@ -710,13 +748,13 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
   const bilibiliUpdates = bilibiliEntries.map(e => fetchBilibiliAccount(e.mid, e.name));
 
   const all = [...xhsUpdates, ...douyinUpdates, ...bilibiliUpdates];
+  const sourceAtMs = getOldestFetchedAtMs(all) ?? now().getTime();
 
   // Persist
   persistLog(all, today);
 
   // Update in-process cache
-  _cachedDay = today;
-  _cachedUpdates = all;
+  setInProcessCache(today, cacheSignature, all, sourceAtMs);
 
   return all;
 }

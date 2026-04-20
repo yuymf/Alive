@@ -1115,9 +1115,10 @@ interface TrendsCacheData {
   signal_pool?: { bucket: string; top: { keyword: string; platform: string; v: string; p: string }[] }[];
 }
 
-const TRENDS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours (non-empty results)
-const TRENDS_EMPTY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes for empty results
-const SCORING_VERSION = 3; // Bump when scoring model / prompt changes
+export const TRENDS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours (non-empty results)
+export const TRENDS_EMPTY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes for empty results
+export const TREND_SCORING_VERSION = 3;
+ // Bump when scoring model / prompt changes
 
 /** Build signal pool summary for /trends display — groups items by source_bucket, shows top 3 per group */
 function buildSignalPoolSummary(items: TrendItem[]): TrendsCacheData['signal_pool'] {
@@ -1146,7 +1147,7 @@ export async function analyzeTrends(
   // 0) Check file-level TTL cache — skip all API+LLM work if cache is fresh
   // Empty results use shorter TTL to avoid locking out fresh data
   const cached = readJSON<TrendsCacheData>(PATHS.trendsCache, null as unknown as TrendsCacheData);
-  if (cached?.computed_at && cached.persona_identities === personaIdentities && cached.scoring_version === SCORING_VERSION) {
+  if (cached?.computed_at && cached.persona_identities === personaIdentities && cached.scoring_version === TREND_SCORING_VERSION) {
     const age = now().getTime() - new Date(cached.computed_at).getTime();
     const ttl = cached.results.length === 0 ? TRENDS_EMPTY_CACHE_TTL_MS : TRENDS_CACHE_TTL_MS;
     if (age < ttl) {
@@ -1258,7 +1259,7 @@ export async function analyzeTrends(
     writeJSON(PATHS.trendsCache, {
       computed_at: new Date().toISOString(),
       persona_identities: personaIdentities,
-      scoring_version: SCORING_VERSION,
+      scoring_version: TREND_SCORING_VERSION,
       results: [],
       signal_pool: buildSignalPoolSummary(aboveThreshold),
     } satisfies TrendsCacheData);
@@ -1371,7 +1372,7 @@ export async function analyzeTrends(
     writeJSON(PATHS.trendsCache, {
       computed_at: new Date().toISOString(),
       persona_identities: personaIdentities,
-      scoring_version: SCORING_VERSION,
+      scoring_version: TREND_SCORING_VERSION,
       results: finalResults,
       signal_pool: buildSignalPoolSummary(aboveThreshold),
     } satisfies TrendsCacheData);
@@ -1391,7 +1392,7 @@ export async function analyzeTrends(
       writeJSON(PATHS.trendsCache, {
         computed_at: new Date().toISOString(),
         persona_identities: personaIdentities,
-        scoring_version: SCORING_VERSION,
+        scoring_version: TREND_SCORING_VERSION,
         results: fallback,
         signal_pool: buildSignalPoolSummary(aboveThreshold),
       } satisfies TrendsCacheData);
