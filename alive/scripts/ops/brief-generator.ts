@@ -5,7 +5,7 @@
  */
 
 import { execFileSync } from 'child_process';
-import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
+import { PATHS, readJSON, writeJSON, readTunableJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import { QueueItem, CompetitorUpdate, OpsBriefLog, ContentStrategy, PersonaAlignmentReport, CompetitorAnalysisStore, PerformanceLog, aggregateCommentInsights } from '../utils/types';
 import { FilteredTrend } from './trend-analyzer';
@@ -27,6 +27,88 @@ function fmtEngagement(n: number): string {
   if (n >= 10000) return `${(n / 10000).toFixed(1)}w`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return `${n}`;
+}
+
+// ─── Tunable display limits ─────────────────────────────────────────────────
+// Tunable override: harness/tunable/prompts/ops/brief-generator.limits.json
+// All fields optional; missing values fall back to defaults below.
+
+interface BriefLimitsTunable {
+  /** Number of trend entries shown per signal-kind section. */
+  trendsPerSection?: number;
+  /** Competitor becomes "stale" after this many days without a new post. */
+  staleThresholdDays?: number;
+  /** Max recent competitor posts shown per account (in addition to latest_post). */
+  maxRecentPosts?: number;
+  /** Max AI-recommended pending topics shown. */
+  maxActivePending?: number;
+  /** Topic title max chars before truncation "…" in competitor section. */
+  competitorTopicChars?: number;
+  /** Max top viral KB entries shown in brief. */
+  maxViralEntries?: number;
+  /** Max promoted viral formulas shown in brief. */
+  maxViralFormulas?: number;
+  /** Max review consensus reasons (approve/discard) shown. */
+  maxReviewReasons?: number;
+}
+
+interface ResolvedBriefLimits {
+  trendsPerSection: number;
+  staleThresholdDays: number;
+  maxRecentPosts: number;
+  maxActivePending: number;
+  competitorTopicChars: number;
+  maxViralEntries: number;
+  maxViralFormulas: number;
+  maxReviewReasons: number;
+}
+
+const DEFAULT_BRIEF_LIMITS: ResolvedBriefLimits = {
+  trendsPerSection: 3,
+  staleThresholdDays: 7,
+  maxRecentPosts: 2,
+  maxActivePending: Number.POSITIVE_INFINITY, // no cap by default
+  competitorTopicChars: 18,
+  maxViralEntries: 3,
+  maxViralFormulas: 2,
+  maxReviewReasons: 3,
+};
+
+function pickPositive(value: unknown, fallback: number): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return n;
+}
+
+/** Pure helper — exported for tests. */
+export function resolveBriefLimits(
+  override?: BriefLimitsTunable | null,
+): ResolvedBriefLimits {
+  const src = override ?? {};
+  return {
+    trendsPerSection: pickPositive(src.trendsPerSection, DEFAULT_BRIEF_LIMITS.trendsPerSection),
+    staleThresholdDays: pickPositive(src.staleThresholdDays, DEFAULT_BRIEF_LIMITS.staleThresholdDays),
+    maxRecentPosts: pickPositive(src.maxRecentPosts, DEFAULT_BRIEF_LIMITS.maxRecentPosts),
+    maxActivePending: pickPositive(src.maxActivePending, DEFAULT_BRIEF_LIMITS.maxActivePending),
+    competitorTopicChars: pickPositive(src.competitorTopicChars, DEFAULT_BRIEF_LIMITS.competitorTopicChars),
+    maxViralEntries: pickPositive(src.maxViralEntries, DEFAULT_BRIEF_LIMITS.maxViralEntries),
+    maxViralFormulas: pickPositive(src.maxViralFormulas, DEFAULT_BRIEF_LIMITS.maxViralFormulas),
+    maxReviewReasons: pickPositive(src.maxReviewReasons, DEFAULT_BRIEF_LIMITS.maxReviewReasons),
+  };
+}
+
+let _cachedBriefLimits: ResolvedBriefLimits | null = null;
+
+function getBriefLimits(): ResolvedBriefLimits {
+  if (_cachedBriefLimits) return _cachedBriefLimits;
+  const override = readTunableJSON<BriefLimitsTunable>('ops/brief-generator.limits.json');
+  _cachedBriefLimits = resolveBriefLimits(override);
+  return _cachedBriefLimits;
+}
+
+/** Test helper: force re-read of tunable on next access. */
+export function resetBriefLimitsCache(): void {
+  _cachedBriefLimits = null;
 }
 
 /** Convert ISO timestamp to relative time string (e.g. "3小时前", "昨天", "3天前") */
@@ -76,6 +158,7 @@ export function formatBriefCard(
   queueItems: QueueItem[],
   enrichment?: BriefEnrichment,
 ): string {
+  const limits = getBriefLimits();
   const lines: string[] = [`📊 今日简报  ${date}`, ''];
 
   // Trends — split by signal_kind for clear semantics
@@ -89,7 +172,7 @@ export function formatBriefCard(
 
     if (effectiveBreakout.length > 0) {
       lines.push('━━ 趋势加速 ━━');
-      for (const t of effectiveBreakout.slice(0, 3)) {
+      for (const t of effectiveBreakout.slice(0, limits.trendsPerSection)) {
         const icon = t.velocity_score >= 2.0 ? '🔥' : '⚡';
         lines.push(`${icon} ${t.keyword}  ${t.platform}  ${t.velocity_score.toFixed(1)}x  📰热榜`);
       }
@@ -98,7 +181,7 @@ export function formatBriefCard(
 
     if (searchDemand.length > 0) {
       lines.push('━━ 真实搜索 ━━');
-      for (const t of searchDemand.slice(0, 3)) {
+      for (const t of searchDemand.slice(0, limits.trendsPerSection)) {
         const metric = t.display_metric ?? `${t.velocity_score.toFixed(1)}x`;
         lines.push(`🔍 ${t.keyword}  ${t.platform}  ${metric}`);
       }
@@ -107,7 +190,7 @@ export function formatBriefCard(
 
     if (recommended.length > 0) {
       lines.push('━━ 平台持续推荐 ━━');
-      for (const t of recommended.slice(0, 3)) {
+      for (const t of recommended.slice(0, limits.trendsPerSection)) {
         const metric = t.display_metric ?? '赛道信号';
         lines.push(`🏷️ ${t.keyword}  ${t.platform}  ${metric}`);
       }
@@ -125,7 +208,7 @@ export function formatBriefCard(
 
   // Competitors — grouped by activity level
   if (competitors.length > 0) {
-    const STALE_THRESHOLD_DAYS = 7;
+    const STALE_THRESHOLD_DAYS = limits.staleThresholdDays;
     // Classify competitors into three tiers
     const active: CompetitorUpdate[] = [];
     const stale: CompetitorUpdate[] = [];
@@ -157,11 +240,11 @@ export function formatBriefCard(
       const engStr = fmtEngagement(engagement);
       const analysisKey = `${c.account}:${c.platform}`;
       const analysis = enrichment?.competitorAnalysis?.analyses?.[analysisKey];
-      const topicTruncated = topic.length > 18 ? topic.slice(0, 18) + '…' : topic;
+      const topicTruncated = topic.length > limits.competitorTopicChars ? topic.slice(0, limits.competitorTopicChars) + '…' : topic;
       lines.push(`@${c.account}${timeStr}「${topicTruncated}」互动${engStr}`);
-      // Show up to 2 more recent posts
+      // Show up to N more recent posts
       if (c.recent_posts?.length > 1) {
-        for (const rp of c.recent_posts.slice(1, 3)) {
+        for (const rp of c.recent_posts.slice(1, 1 + limits.maxRecentPosts)) {
           const rpTruncated = rp.topic.length > 15 ? rp.topic.slice(0, 15) + '…' : rp.topic;
           lines.push(`  ·「${rpTruncated}」互动${fmtEngagement(rp.engagement)}`);
         }
@@ -202,8 +285,11 @@ export function formatBriefCard(
       const bCb = b.trend_hook.includes('⚠️') ? 1 : 0;
       return aCb - bCb;
     });
-    lines.push(`━━ AI 今日推荐选题（${sortedPending.length}个）━━`);
-    sortedPending.forEach((item, idx) => {
+    const displayPending = Number.isFinite(limits.maxActivePending)
+      ? sortedPending.slice(0, limits.maxActivePending)
+      : sortedPending;
+    lines.push(`━━ AI 今日推荐选题（${displayPending.length}个）━━`);
+    displayPending.forEach((item, idx) => {
       lines.push(`${idx + 1}️⃣  ${item.topic}`);
       lines.push(`   ${item.trend_hook}`);
     });
@@ -409,22 +495,22 @@ export function formatBriefCard(
 
       const reviewLines: string[] = ['━━ ✅ 审核共识 ━━'];
       if (approveReasons.length > 0) {
-        const topApprove = [...new Set(approveReasons)].slice(-3);
+        const topApprove = [...new Set(approveReasons)].slice(-limits.maxReviewReasons);
         reviewLines.push(`通过理由：${topApprove.join('；')}`);
       }
       if (discardReasons.length > 0) {
-        const topDiscard = [...new Set(discardReasons)].slice(-3);
+        const topDiscard = [...new Set(discardReasons)].slice(-limits.maxReviewReasons);
         reviewLines.push(`淘汰原因：${topDiscard.join('；')}`);
       }
       if (deviationTags.size > 0) {
         const topTags = [...deviationTags.entries()]
           .sort((a, b) => b[1] - a[1])
-          .slice(0, 3)
+          .slice(0, limits.maxReviewReasons)
           .map(([t]) => t);
         reviewLines.push(`偏移标签：${topTags.join('、')}`);
       }
       if (directions.size > 0) {
-        reviewLines.push(`改进方向：${[...directions].slice(-3).join('；')}`);
+        reviewLines.push(`改进方向：${[...directions].slice(-limits.maxReviewReasons).join('；')}`);
       }
       lines.push(reviewLines.join('\n'));
       lines.push('');
@@ -461,7 +547,7 @@ export function formatBriefCard(
       const topEntries = enrichment?.viralKbTopEntries;
       if (topEntries && topEntries.length > 0) {
         kbLines.push('🔥 近期爆款经验：');
-        for (const [idx, e] of topEntries.slice(0, 3).entries()) {
+        for (const [idx, e] of topEntries.slice(0, limits.maxViralEntries).entries()) {
           const likesStr = e.likes >= 10000
             ? `${(e.likes / 10000).toFixed(1)}w`
             : e.likes >= 1000
@@ -491,7 +577,7 @@ export function formatBriefCard(
       if (formulas && formulas.length > 0) {
         const promotedFormulas = formulas.filter(f => f.injected_to_templates);
         if (promotedFormulas.length > 0) {
-          for (const f of promotedFormulas.slice(0, 2)) {
+          for (const f of promotedFormulas.slice(0, limits.maxViralFormulas)) {
             kbLines.push(`🔮 通用公式: [${f.content_type}+${f.hook_type}] × ${f.platform} (${f.occurrence_count}x↑)`);
             if (f.trigger_words && f.trigger_words.length > 0) {
               kbLines.push(`   触发词：${f.trigger_words.join('、')}`);

@@ -121,8 +121,8 @@ describe('autoresearch leaderboard', () => {
     const prompt = buildAutoresearchAdvisorPrompt({
       aggregate: {
         averageOpsScore: 72.5,
-        bestRun: { fixtureName: 'a', opsScore: 82 },
-        worstRun: { fixtureName: 'b', opsScore: 63 },
+        bestRun: { fixtureName: 'a', seed: 0, opsScore: 82 },
+        worstRun: { fixtureName: 'b', seed: 0, opsScore: 63 },
         issueFrequency: [
           { keyword: '标题偏抽象', count: 2 },
           { keyword: '正文信息密度不够', count: 1 },
@@ -131,6 +131,7 @@ describe('autoresearch leaderboard', () => {
           { keyword: '压缩标题抽象词', count: 2 },
           { keyword: '首段第一句给出反差感', count: 1 },
         ],
+        fixtureSeedAggregates: [],
       },
       tunableFiles: [
         'ops/persona-advisor.md',
@@ -178,6 +179,7 @@ describe('autoresearch leaderboard', () => {
       runs: [
         {
           fixtureName: 'a',
+          seed: 0,
           opsScore: 82,
           finalStatus: 'published',
           publishedUrl: 'https://example.com/a',
@@ -190,9 +192,13 @@ describe('autoresearch leaderboard', () => {
             issues: ['标题偏抽象'],
             improvement_hypotheses: ['压缩标题抽象词'],
           },
+          editConvergenceScore: 75,
+          costCheckScore: 100,
+          llmCalls: 5,
         },
         {
           fixtureName: 'b',
+          seed: 0,
           opsScore: 63,
           finalStatus: 'published',
           publishedUrl: 'https://example.com/b',
@@ -205,14 +211,18 @@ describe('autoresearch leaderboard', () => {
             issues: ['正文信息密度不够', '标题偏抽象'],
             improvement_hypotheses: ['增加具体场景'],
           },
+          editConvergenceScore: 60,
+          costCheckScore: 90,
+          llmCalls: 6,
         },
       ],
       aggregate: {
         averageOpsScore: 72.5,
-        bestRun: { fixtureName: 'a', opsScore: 82 },
-        worstRun: { fixtureName: 'b', opsScore: 63 },
+        bestRun: { fixtureName: 'a', seed: 0, opsScore: 82 },
+        worstRun: { fixtureName: 'b', seed: 0, opsScore: 63 },
         issueFrequency: [{ keyword: '标题偏抽象', count: 2 }],
         hypothesisFrequency: [{ keyword: '压缩标题抽象词', count: 1 }],
+        fixtureSeedAggregates: [],
       },
       suggestions: [
         {
@@ -224,10 +234,68 @@ describe('autoresearch leaderboard', () => {
       ],
     });
 
-    expect(report).toContain('Leaderboard');
+    expect(report).toContain('# Autoresearch Leaderboard Report');
     expect(report).toContain('averageOpsScore');
-    expect(report).toContain('标题偏抽象');
     expect(report).toContain('ops/topic-generator-content.md');
     expect(report).toContain('要求具体动作');
+    expect(report).toContain('## Ranking');
+  });
+
+  it('runs multiple seeds per fixture and aggregates stddev/best/worst seeds', async () => {
+    const workspaceA = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-leaderboard-multiseed-'));
+    tmpDirs.push(workspaceA);
+
+    // Three distinct judge scores across 3 seeds → non-zero stddev
+    const scripts = [
+      makeGenerationScript('v0-a', 'v0-b'),
+      makeGenerationScript('v1-a', 'v1-b'),
+      makeGenerationScript('v2-a', 'v2-b'),
+    ];
+    const judgeScores = [
+      { gq: 8.0, pa: 8.0, nt: 8.0, ifl: 8.0 },
+      { gq: 9.0, pa: 9.0, nt: 9.0, ifl: 9.0 },
+      { gq: 7.0, pa: 7.0, nt: 7.0, ifl: 7.0 },
+    ];
+
+    // Single LLM that serves all 3 seeds sequentially (each seed = script + 1 judge response)
+    const allScripts: string[] = [];
+    scripts.forEach((s, i) => {
+      allScripts.push(...s);
+      allScripts.push(JSON.stringify({
+        generation_quality: judgeScores[i].gq,
+        persona_alignment: judgeScores[i].pa,
+        naturalness: judgeScores[i].nt,
+        instruction_following: judgeScores[i].ifl,
+        strengths: [],
+        issues: [],
+        improvement_hypotheses: [],
+      }));
+    });
+    const llm = createMockLLMClient(allScripts);
+
+    const result = await runAutoresearchLeaderboard({
+      runs: [
+        {
+          fixture: AUTORESEARCH_DEFAULT_FIXTURE,
+          workspaceDir: workspaceA,
+          generationLlm: llm,
+          judgeLlm: llm,
+        },
+      ],
+      seedsPerFixture: 3,
+    });
+
+    expect(result.runs).toHaveLength(3);
+    expect(result.runs.map(r => r.seed).sort()).toEqual([0, 1, 2]);
+    expect(result.aggregate.fixtureSeedAggregates).toHaveLength(1);
+    const agg = result.aggregate.fixtureSeedAggregates[0];
+    expect(agg.seedCount).toBe(3);
+    expect(agg.fixtureName).toBe(AUTORESEARCH_DEFAULT_FIXTURE.name);
+    expect(agg.stddevOpsScore).toBeGreaterThan(0);
+    expect(agg.maxOpsScore).toBeGreaterThanOrEqual(agg.minOpsScore);
+    expect(agg.bestSeed).not.toBe(agg.worstSeed);
+    // bestRun should point at seed=1 (highest judge scores)
+    expect(result.aggregate.bestRun.seed).toBe(1);
+    expect(result.aggregate.worstRun.seed).toBe(2);
   });
 });

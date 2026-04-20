@@ -59,6 +59,24 @@ export function readTunablePrompt(relativePath: string): string | null {
   return fs.readFileSync(resolved, 'utf8');
 }
 
+/**
+ * Read and JSON.parse a tunable config file under harness/tunable/prompts/.
+ * Returns null (not throws) when the file is missing OR fails to parse — caller
+ * must supply its own defaults in that case. This keeps tunable overrides safe
+ * by construction: a broken tunable file never takes precedence over baked-in
+ * constants.
+ */
+export function readTunableJSON<T>(relativePath: string): T | null {
+  const raw = readTunablePrompt(relativePath);
+  if (raw == null) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    console.error(`[tunable] failed to parse ${relativePath}:`, err);
+    return null;
+  }
+}
+
 export function renderTunablePrompt(
   template: string,
   vars: Record<string, string | number | boolean | null | undefined>,
