@@ -43,6 +43,8 @@ import { getIdentityKeys, QueueItem } from '../utils/types';
 import { loadCandidateAccounts } from './discovery-engine';
 import { rankCandidates } from './candidate-scorer';
 import { getStats, queryAll, loadFormulas } from './viral-kb-store';
+import { generateProactiveAdvice } from './proactive-advisor';
+import { loadStrategy } from './strategy-engine';
 import { PATHS } from '../utils/file-utils';
 import * as path from 'path';
 
@@ -97,7 +99,16 @@ async function cmdBrief(): Promise<string> {
     // skip
   }
 
-  const enrichment: BriefEnrichment = { personaReport, fullQueueItems: activePending, identityKeys };
+  const enrichment: BriefEnrichment = {
+    personaReport,
+    fullQueueItems: activePending,
+    identityKeys,
+    proactiveAdvice: generateProactiveAdvice({
+      trends,
+      queueItems: queue.items,
+      strategy: loadStrategy(),
+    }),
+  };
 
   // Viral KB enrichment (best-effort)
   try {

@@ -540,11 +540,35 @@ export async function isXhsAvailable(): Promise<boolean> {
   }
 }
 
-/** Homepage recommendation feed — different content each call. */
+// ─── 首页 Feed 内存缓存（由 searchXhsNotes 写入，listXhsFeed 优先复用） ─────
+
+let _feedCache: { data: XhsNote[]; fetchedAt: number } | null = null;
+const FEED_CACHE_TTL_MS = 30 * 60 * 1000; // 30 分钟
+
+/** 由 searchXhsNotes 调用时写入缓存（搜索前浏览首页附带提取的 feeds） */
+export function setFeedCache(data: XhsNote[]): void {
+  _feedCache = { data, fetchedAt: Date.now() };
+}
+
+/** Homepage recommendation feed — 优先使用缓存，避免额外请求。 */
 export async function listXhsFeed(): Promise<XhsNote[]> {
+  // 优先检查内存缓存（来自 search 前的浏览行为）
+  if (_feedCache && Date.now() - _feedCache.fetchedAt < FEED_CACHE_TTL_MS) {
+    console.log('[xhs-bridge] listXhsFeed: 使用搜索前浏览的缓存');
+    return _feedCache.data;
+  }
+
+  // 缓存未命中，走原始请求
   const result = await callXhsCli('list-feeds') as Record<string, unknown>;
   const feeds = (result.feeds ?? []) as Array<Record<string, unknown>>;
-  return feeds.map(mapFeedToNote);
+  const notes = feeds.map(mapFeedToNote);
+
+  // 写入缓存
+  if (notes.length > 0) {
+    _feedCache = { data: notes, fetchedAt: Date.now() };
+  }
+
+  return notes;
 }
 
 /** Keyword search. Results are cached for 4 hours per (keyword, sortBy, publishTime) key. */
@@ -562,6 +586,13 @@ export async function searchXhsNotes(keyword: string, options: XhsSearchOptions 
     if (options.location) args.push('--location', options.location);
 
     const result = await callXhsCli('search-feeds', args) as Record<string, unknown>;
+
+    // ★ 提取搜索过程中缓存的首页 feeds（Python 端通过 cached_home_feeds 额外返回）
+    const cachedFeeds = result.cached_home_feeds as Array<Record<string, unknown>> | undefined;
+    if (cachedFeeds && cachedFeeds.length > 0) {
+      setFeedCache(cachedFeeds.map(mapFeedToNote));
+    }
+
     const feeds = (result.feeds ?? []) as Array<Record<string, unknown>>;
     return feeds.map(mapFeedToNote);
   });

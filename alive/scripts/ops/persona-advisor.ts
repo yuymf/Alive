@@ -5,7 +5,7 @@
  * to produce an alignment report with actionable topic suggestions.
  */
 
-import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
+import { PATHS, readJSON, renderTunablePrompt, writeJSON, readTunablePrompt } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import {
   PersonaConfig,
@@ -86,8 +86,18 @@ export function buildAlignmentPrompt(
     : '暂无今日热点数据';
 
   const competitorSection = competitorCtx
-    ? `\n【竞品参考】\n${competitorCtx}`
+    ? `【竞品参考】\n${competitorCtx}`
     : '';
+
+  const tunable = readTunablePrompt('ops/persona-advisor.md');
+  if (tunable) {
+    return renderTunablePrompt(tunable, {
+      identity_list: identityList,
+      voice_style: voiceStyle || '未指定',
+      trend_list: trendList,
+      competitor_section: competitorSection,
+    }).trim();
+  }
 
   return `你是虚拟人设运营顾问。请根据以下信息，输出人设×热点契合度诊断报告。
 
@@ -98,7 +108,7 @@ ${identityList}
 
 【今日热点】
 ${trendList}
-${competitorSection}
+${competitorSection ? `\n${competitorSection}` : ''}
 
 请分析：
 1. 每个身份与今日热点的契合度（0-10分），说明理由

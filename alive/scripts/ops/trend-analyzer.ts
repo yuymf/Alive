@@ -8,7 +8,7 @@
  * (Previously used ClawHub skills — migrated to direct API calls for reliability.)
  */
 
-import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
+import { PATHS, readJSON, readTunablePrompt, renderTunablePrompt, writeJSON } from '../utils/file-utils';
 import { now, getLocalDate } from '../utils/time-utils';
 import { TrendItem, TrendHistory, OpsConfig, PersonaConfig, TagVocabulary, TrendSourceType, TrendSourceBucket, TrendSignalKind, toSourceBucket, sourceWeight, classifySignalKind } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
@@ -366,12 +366,24 @@ export function buildRelevancePrompt(
   // Cold-start detection: if all velocities are 1.0x (no history yet), relax the velocity requirement
   const isColStart = capped.every(t => t.velocity_score === 1.0);
   // Also relax when max velocity is below 1.5 (data is early or flat — no clear breakout trends yet)
-  const maxVelocity = Math.max(...capped.map(t => t.velocity_score));
+  const maxVelocity = capped.length > 0 ? Math.max(...capped.map(t => t.velocity_score)) : 0;
   const velocityRequirement = isColStart
     ? '无历史数据，按热度排名选择'
     : maxVelocity < 1.5
       ? `当前最高速度分为 ${maxVelocity.toFixed(1)}x，按相关性和热度排名选择，不要求速度分门槛`
       : '平台正在助推（velocity > 1.5）';
+
+  const jsonSchema = '{"topics":[{"keyword":"...","platform":"...","velocity_score":0,"hook_angle":"...","identity_mode":"esports|singer|racer|daily"}]}';
+  const tunable = readTunablePrompt('ops/trend-analyzer.md');
+  if (tunable) {
+    return renderTunablePrompt(tunable, {
+      trend_list: trendList,
+      persona_identities: personaIdentities,
+      topic_count: topicCount,
+      velocity_requirement: velocityRequirement,
+      json_schema: jsonSchema,
+    }).trim();
+  }
 
   return `你是一个内容运营分析师。以下是今日平台趋势信号（包含三种来源）：
 
@@ -405,7 +417,7 @@ ${trendList}
 
 以 JSON 对象返回，格式：
 \`\`\`json
-{"topics":[{"keyword":"...","platform":"...","velocity_score":0,"hook_angle":"...","identity_mode":"esports|singer|racer|daily"}]}
+${jsonSchema}
 \`\`\``;
 }
 
@@ -1103,7 +1115,8 @@ interface TrendsCacheData {
   signal_pool?: { bucket: string; top: { keyword: string; platform: string; v: string; p: string }[] }[];
 }
 
-const TRENDS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const TRENDS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours (non-empty results)
+const TRENDS_EMPTY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes for empty results
 const SCORING_VERSION = 3; // Bump when scoring model / prompt changes
 
 /** Build signal pool summary for /trends display — groups items by source_bucket, shows top 3 per group */
@@ -1131,11 +1144,13 @@ export async function analyzeTrends(
   llm: LLMClient,
 ): Promise<FilteredTrend[]> {
   // 0) Check file-level TTL cache — skip all API+LLM work if cache is fresh
+  // Empty results use shorter TTL to avoid locking out fresh data
   const cached = readJSON<TrendsCacheData>(PATHS.trendsCache, null as unknown as TrendsCacheData);
   if (cached?.computed_at && cached.persona_identities === personaIdentities && cached.scoring_version === SCORING_VERSION) {
     const age = now().getTime() - new Date(cached.computed_at).getTime();
-    if (age < TRENDS_CACHE_TTL_MS) {
-      console.error(`[trend-analyzer] Using cached trends (age: ${Math.round(age / 60_000)}min, ${cached.results.length} topics)`);
+    const ttl = cached.results.length === 0 ? TRENDS_EMPTY_CACHE_TTL_MS : TRENDS_CACHE_TTL_MS;
+    if (age < ttl) {
+      console.error(`[trend-analyzer] Using cached trends (age: ${Math.round(age / 60_000)}min, ${cached.results.length} topics, ttl=${cached.results.length === 0 ? '30min' : '4h'})`);
       return cached.results;
     }
   }
@@ -1180,7 +1195,16 @@ export async function analyzeTrends(
   // These represent real user engagement, not potentially-inflated hot-list rankings
   const tagItems = injectTagVocabularyItems();
   const discoveryItems = injectDiscoveryPoolTrends();
-  const searchKeywordItems = loadCachedSearchKeywordTrends();
+  // If search-keyword cache is empty/stale, try to fetch fresh data (async)
+  let searchKeywordItems = loadCachedSearchKeywordTrends();
+  if (searchKeywordItems.length === 0) {
+    try {
+      console.log(`[trend-analyzer] search-keyword cache empty, fetching fresh data...`);
+      searchKeywordItems = await fetchSearchKeywordTrends();
+    } catch (err) {
+      console.warn(`[trend-analyzer] fetchSearchKeywordTrends failed:`, (err as Error).message);
+    }
+  }
   if (isDebug()) {
     console.log(`[trend-analyzer] DEBUG: Injecting ${tagItems.length} tag-engine signals, ${discoveryItems.length} discovery-pool signals, ${searchKeywordItems.length} search-keyword signals`);
   }
@@ -1330,18 +1354,49 @@ export async function analyzeTrends(
       })
       .filter((r): r is FilteredTrend => r !== null);
 
+    // Fallback: if LLM filtered everything out but we had input data,
+    // keep top 2 by priority_score as a safety net (prevents total trend blackout)
+    let finalResults = filtered;
+    if (finalResults.length === 0 && aboveThreshold.length > 0) {
+      const fallbackCount = Math.min(2, aboveThreshold.length);
+      finalResults = aboveThreshold.slice(0, fallbackCount).map(t => ({
+        ...t,
+        hook_angle: '自动保留（LLM未选中）',
+        identity_mode: normalizeIdentityMode('daily'),
+      }));
+      console.warn(`[trend-analyzer] LLM filtered all trends, keeping top ${fallbackCount} by priority as fallback`);
+    }
+
     // Write to TTL cache so subsequent cron runs skip API+LLM work
     writeJSON(PATHS.trendsCache, {
       computed_at: new Date().toISOString(),
       persona_identities: personaIdentities,
       scoring_version: SCORING_VERSION,
-      results: filtered,
+      results: finalResults,
       signal_pool: buildSignalPoolSummary(aboveThreshold),
     } satisfies TrendsCacheData);
 
-    return filtered;
+    return finalResults;
   } catch (err) {
     console.error(`[trend-analyzer] LLM call failed:`, err);
+    // Fallback: even on LLM failure, return top items by priority if we have data
+    if (aboveThreshold.length > 0) {
+      const fallbackCount = Math.min(2, aboveThreshold.length);
+      const fallback = aboveThreshold.slice(0, fallbackCount).map(t => ({
+        ...t,
+        hook_angle: '自动保留（LLM调用失败）',
+        identity_mode: normalizeIdentityMode('daily'),
+      }));
+      // Cache the fallback with short TTL
+      writeJSON(PATHS.trendsCache, {
+        computed_at: new Date().toISOString(),
+        persona_identities: personaIdentities,
+        scoring_version: SCORING_VERSION,
+        results: fallback,
+        signal_pool: buildSignalPoolSummary(aboveThreshold),
+      } satisfies TrendsCacheData);
+      return fallback;
+    }
     return [];
   }
 }

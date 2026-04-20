@@ -4,7 +4,7 @@
  * recommendations, ranks patterns, and produces actionable strategy.
  */
 
-import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
+import { PATHS, readJSON, readTunablePrompt, renderTunablePrompt, writeJSON } from '../utils/file-utils';
 import { now } from '../utils/time-utils';
 import { LLMClient } from '../utils/llm-client';
 import {
@@ -152,6 +152,60 @@ export function buildStrategyPrompt(input: StrategyPromptInput): string {
     ? `\n【运营审核共识】\n${input.reviewLearningSummary}`
     : '';
 
+  const jsonSchema = `{
+  "performance_summary": {
+    "engagement_trend": "rising|stable|declining",
+    "best_identity_mode": "最强身份"
+  },
+  "content_mix_recommendation": {
+    "recommended_mix": {"identity": 百分比},
+    "reasoning": "建议理由"
+  },
+  "top_patterns": [
+    {"pattern_type": "模式名", "recommended_frequency": "每周N次"}
+  ],
+  "persona_health": {
+    "overall_score": 0-10,
+    "drift_areas": ["偏移1"],
+    "correction_suggestions": ["建议1"],
+    "strongest_identity": "最强身份"
+  },
+  "next_week_recommendations": {
+    "recommended_templates": ["模板1"],
+    "avoid_templates": ["模板2"],
+    "content_direction": "总体方向",
+    "experiment_suggestion": "实验建议",
+    "recommended_patterns": ["推荐继续使用的模式"],
+    "declining_patterns": ["建议减少使用的衰减模式"]
+  },
+  "ops_suggestions": ["运营层面建议：发布节奏、平台侧重、热点借力等"],
+  "persona_suggestions": ["人设层面建议：语气修正、身份平衡、风格调整等"]
+}`;
+
+  const tunable = readTunablePrompt('ops/strategy-engine.md');
+  if (tunable) {
+    return renderTunablePrompt(tunable, {
+      persona_summary: personaSummary,
+      total_posts: totalPosts,
+      tier_distribution: tierStr,
+      week_over_week: `${weekOverWeek > 0 ? '+' : ''}${weekOverWeek}%`,
+      best_template: bestTemplate,
+      worst_template: worstTemplate,
+      current_mix: currentMixStr,
+      target_mix: targetMixStr,
+      pattern_list: patternStr,
+      rising_patterns: risingStr,
+      declining_patterns: decliningStr,
+      persona_alignment_avg: personaAlignmentAvg.toFixed(1),
+      drift_summary: driftStr,
+      competitor_summary: competitorSummary || '无竞品数据',
+      comment_section: commentSection,
+      review_section: reviewSection,
+      perception_section: perceptionSection,
+      json_schema: jsonSchema,
+    }).trim();
+  }
+
   return `你是虚拟偶像的内容策略顾问。请根据上周表现数据，给出下周内容策略建议。
 
 【人设】${personaSummary}
@@ -183,35 +237,7 @@ ${perceptionSection}
 
 请返回 JSON:
 \`\`\`json
-{
-  "performance_summary": {
-    "engagement_trend": "rising|stable|declining",
-    "best_identity_mode": "最强身份"
-  },
-  "content_mix_recommendation": {
-    "recommended_mix": {"identity": 百分比},
-    "reasoning": "建议理由"
-  },
-  "top_patterns": [
-    {"pattern_type": "模式名", "recommended_frequency": "每周N次"}
-  ],
-  "persona_health": {
-    "overall_score": 0-10,
-    "drift_areas": ["偏移1"],
-    "correction_suggestions": ["建议1"],
-    "strongest_identity": "最强身份"
-  },
-  "next_week_recommendations": {
-    "recommended_templates": ["模板1"],
-    "avoid_templates": ["模板2"],
-    "content_direction": "总体方向",
-    "experiment_suggestion": "实验建议",
-    "recommended_patterns": ["推荐继续使用的模式"],
-    "declining_patterns": ["建议减少使用的衰减模式"]
-  },
-  "ops_suggestions": ["运营层面建议：发布节奏、平台侧重、热点借力等"],
-  "persona_suggestions": ["人设层面建议：语气修正、身份平衡、风格调整等"]
-}
+${jsonSchema}
 \`\`\``;
 }
 

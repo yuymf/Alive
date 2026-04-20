@@ -26,7 +26,7 @@ import { incrementPatternUsage } from './content-analyzer';
 import { buildTasteContext } from './taste-engine';
 import { buildDiscoveryContext } from './discovery-engine';
 import { loadFormulaStore, queryFormulasByMode } from './formula-store';
-import { PATHS, readJSON } from '../utils/file-utils';
+import { PATHS, readJSON, readTunablePrompt, renderTunablePrompt } from '../utils/file-utils';
 import { CompetitorLog, CompetitorUpdate, ContentStrategy, ContentPatterns } from '../utils/types';
 import { now } from '../utils/time-utils';
 import { queryTrackInMemory, loadEntries, saveEntries, loadFormulas as loadViralFormulas } from './viral-kb-store';
@@ -755,6 +755,37 @@ export function buildContentPrompt(
 - 目标平台：${platform}
 - 平台风格：${platformStyle}`;
 
+  const outputFormat = isXhsVideo ? XHS_VIDEO_OUTPUT_FORMAT : platform === 'xhs' ? XHS_OUTPUT_FORMAT : DOUYIN_OUTPUT_FORMAT;
+  const tunable = readTunablePrompt('ops/topic-generator-content.md');
+  if (tunable) {
+    const rendered = renderTunablePrompt(tunable, {
+      persona_description: personaDescription,
+      persona_block: personaParts,
+      platform: platform,
+      platform_label: platformLabel,
+      platform_style: platformStyle,
+      trend_keyword: trend.keyword,
+      trend_platform: trend.platform,
+      trend_velocity: trend.velocity_score.toFixed(1),
+      trend_hook_angle: trend.hook_angle,
+      identity_mode: identityMode,
+      identity_label: identityLabel,
+      voice_style: voiceStyle,
+      identity_voice: identityVoice,
+      sample_lines: sampleLinesBlock,
+      trend_intel: trendIntel,
+      viral_framework: viralFramework,
+      guidelines: guidelines,
+      prohibitions: prohibitions,
+      output_format: outputFormat,
+      extra_context: extraContext ?? '',
+    }).trim();
+    if (extraContext && !tunable.includes('{{extra_context}}')) {
+      return `${rendered}\n\n${extraContext}`.trim();
+    }
+    return rendered;
+  }
+
   const base = `【角色】
 ${personaParts}
 
@@ -771,7 +802,7 @@ ${prohibitions}
 
 请严格按照以上写作规范和爆款思维框架，生成一条完整的 ${platformLabel} 内容草稿。
 
-${isXhsVideo ? XHS_VIDEO_OUTPUT_FORMAT : platform === 'xhs' ? XHS_OUTPUT_FORMAT : DOUYIN_OUTPUT_FORMAT}`;
+${outputFormat}`;
 
   return extraContext ? `${base}\n\n${extraContext}` : base;
 }
@@ -803,6 +834,21 @@ export function buildRegeneratePrompt(
   };
   const constraint = fieldConstraints[field] ?? '无特殊约束';
   const jsonKey = field.split('.').pop() ?? field;
+
+  const tunable = readTunablePrompt('ops/topic-regenerate.md');
+  if (tunable) {
+    return renderTunablePrompt(tunable, {
+      original_content: originalContent,
+      instruction: instruction,
+      field: field,
+      voice_style: voiceStyle,
+      platform_style: platformStyle,
+      constraint: constraint,
+      content_patterns: contentPatterns ?? '',
+      json_key: jsonKey,
+    }).trim();
+  }
+
   const parts: string[] = [
     `你是内容编辑助手。请根据修改指令重新生成内容。`,
     '',
@@ -870,7 +916,14 @@ async function generateHooksViaLLM(
   llm: LLMClient,
 ): Promise<string[]> {
   try {
-    const prompt = `你是短视频钩子公式专家。为「${niche}」赛道生成${count}个高转化的开头钩子公式。
+    const tunable = readTunablePrompt('ops/topic-hook-generator.md');
+    const prompt = tunable
+      ? renderTunablePrompt(tunable, {
+          niche,
+          count,
+          json_schema: '{"hooks":["钩子1","钩子2"]}',
+        }).trim()
+      : `你是短视频钩子公式专家。为「${niche}」赛道生成${count}个高转化的开头钩子公式。
 要求：每个钩子11-20字，使用反问/冲突/悬念/数字冲击手法。
 直接输出JSON：{"hooks":["钩子1","钩子2",...]}`;
     const result = await llm.callJSON<{ hooks?: string[] }>(prompt, 500);

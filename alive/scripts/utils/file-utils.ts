@@ -39,6 +39,36 @@ function getSkillBase(): string {
   return _skillBaseOverride ?? path.join(process.env.HOME!, '.openclaw', 'skills', 'alive');
 }
 
+function getRepoRoot(): string {
+  return path.join(__dirname, '..', '..', '..');
+}
+
+function resolveTunablePromptPath(relativePath: string): string | null {
+  const installedPath = path.join(getSkillBase(), 'tunable', 'prompts', relativePath);
+  if (fs.existsSync(installedPath)) return installedPath;
+
+  const devPath = path.join(getRepoRoot(), 'harness', 'tunable', 'prompts', relativePath);
+  if (fs.existsSync(devPath)) return devPath;
+
+  return null;
+}
+
+export function readTunablePrompt(relativePath: string): string | null {
+  const resolved = resolveTunablePromptPath(relativePath);
+  if (!resolved) return null;
+  return fs.readFileSync(resolved, 'utf8');
+}
+
+export function renderTunablePrompt(
+  template: string,
+  vars: Record<string, string | number | boolean | null | undefined>,
+): string {
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
+    const value = vars[key];
+    return value === null || value === undefined ? '' : String(value);
+  });
+}
+
 /** Override base paths for testing (sandbox isolation). */
 export function setBasePaths(memoryBase: string, skillBase: string): void {
   _memoryBaseOverride = memoryBase;
@@ -192,15 +222,23 @@ export function readText(filePath: string, fallback = ''): string {
 
 /**
  * Read a prompt template from templates/ directory.
+ *
+ * Tunable override priority:
+ * 1. <skillBase>/tunable/prompts/lifecycle/<templateName>
+ * 2. <repoRoot>/harness/tunable/prompts/lifecycle/<templateName>
+ * 3. legacy templates locations
  */
 export function readTemplate(templateName: string): string {
+  const tunablePath = resolveTunablePromptPath(path.join('lifecycle', templateName));
+  if (tunablePath) return fs.readFileSync(tunablePath, 'utf8');
+
   const installedPath = path.join(getSkillBase(), 'templates', templateName);
   if (fs.existsSync(installedPath)) return fs.readFileSync(installedPath, 'utf8');
 
   const devPath = path.join(__dirname, '..', '..', 'templates', templateName);
   if (fs.existsSync(devPath)) return fs.readFileSync(devPath, 'utf8');
 
-  throw new Error(`Template not found: ${templateName} (tried ${installedPath} and ${devPath})`);
+  throw new Error(`Template not found: ${templateName} (tried tunable override, ${installedPath} and ${devPath})`);
 }
 
 export function readAllJSON<T>(dirPath: string): T[] {
