@@ -1,0 +1,42 @@
+[
+  {
+    "relativePath": "ops/brief-generator.limits.json",
+    "sha256": "8b88627137489878b6fd8a446b628da729c2b5b1b8ff7cc8760ab85d24631f40",
+    "sizeBytes": 293
+  },
+  {
+    "relativePath": "ops/candidate-scorer.weights.json",
+    "sha256": "e1d98e09e76b84246fc24c558ec3d6a10b940529e3ad9148cfb7f3ca092e4035",
+    "sizeBytes": 416
+  },
+  {
+    "relativePath": "ops/persona-advisor.md",
+    "sha256": "2c5839daca4ca506183a902d02171058fe2aea70d8612fdc8874b7c52f9ba478",
+    "sizeBytes": 1307
+  },
+  {
+    "relativePath": "ops/strategy-engine.md",
+    "sha256": "0a89f78c3525da6063d945552e95c06466174b5ca1ece366f87beb17ab5c899e",
+    "sizeBytes": 1875
+  },
+  {
+    "relativePath": "ops/topic-generator-content.md",
+    "sha256": "1f24ccd99054914aadcc161c19ef35927994319dd58d3e94ff2b5530e665406d",
+    "sizeBytes": 1664
+  },
+  {
+    "relativePath": "ops/topic-hook-generator.md",
+    "sha256": "4345594cea782da32044582dddc4e1ff2f69e874175c937ae7772798ff03678f",
+    "sizeBytes": 525
+  },
+  {
+    "relativePath": "ops/topic-regenerate.md",
+    "sha256": "92a28eb25109fb777f0cc0c0941b4ac6ae7339b3b1f89f9fd86f18ce0f4c92e6",
+    "sizeBytes": 1096
+  },
+  {
+    "relativePath": "ops/trend-analyzer.md",
+    "sha256": "6ac964ae150bd390370e9edb37786686a5b2eed89e99de990283ccbfa5a69f49",
+    "sizeBytes": 2896
+  }
+]

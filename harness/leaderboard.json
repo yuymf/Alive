@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "bestPerFixture": {
+    "miss-v-natural-language-review-loop": {
+      "runId": "2026-04-20T13-19-48-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-20T13:19:48.683Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 67.2,
+      "judges": {
+        "generation_completed": 0,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 42.5,
+        "edit_convergence": 75,
+        "cost_check": 43
+      }
+    }
+  },
+  "recentRuns": [
+    {
+      "runId": "2026-04-20T13-19-48-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-20T13:19:48.683Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 67.2,
+      "judges": {
+        "generation_completed": 0,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 42.5,
+        "edit_convergence": 75,
+        "cost_check": 43
+      }
+    }
+  ],
+  "totalRuns": 1,
+  "updatedAt": "2026-04-20T13:19:48.692Z",
+  "baselineRun": {
+    "runId": "2026-04-20T13-19-48-miss-v-natural-language-review-loop-seed0",
+    "timestamp": "2026-04-20T13:19:48.683Z",
+    "fixtureName": "miss-v-natural-language-review-loop",
+    "seed": 0,
+    "opsScore": 67.2,
+    "judges": {
+      "generation_completed": 0,
+      "edit_applied": 100,
+      "approval_completed": 100,
+      "publish_recorded": 100,
+      "judge_composite": 42.5,
+      "edit_convergence": 75,
+      "cost_check": 43
+    }
+  },
+  "bestRun": {
+    "runId": "2026-04-20T13-19-48-miss-v-natural-language-review-loop-seed0",
+    "timestamp": "2026-04-20T13:19:48.683Z",
+    "fixtureName": "miss-v-natural-language-review-loop",
+    "seed": 0,
+    "opsScore": 67.2,
+    "judges": {
+      "generation_completed": 0,
+      "edit_applied": 100,
+      "approval_completed": 100,
+      "publish_recorded": 100,
+      "judge_composite": 42.5,
+      "edit_convergence": 75,
+      "cost_check": 43
+    }
+  }
+}
