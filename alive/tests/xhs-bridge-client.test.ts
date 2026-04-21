@@ -379,7 +379,7 @@ describe('xhs-bridge-client', () => {
       vi.useRealTimers();
     });
 
-    it('listXhsFeed bypasses cache and always calls CLI', async () => {
+    it('listXhsFeed honours the in-memory feed cache', async () => {
       vi.useFakeTimers();
       const response1 = { feeds: [{ id: 'f1', xsecToken: 't1', displayTitle: 'Feed1', user: { nickname: 'u' }, interactInfo: { likedCount: '10' } }] };
       const response2 = { feeds: [{ id: 'f2', xsecToken: 't2', displayTitle: 'Feed2', user: { nickname: 'u' }, interactInfo: { likedCount: '20' } }] };
@@ -398,9 +398,11 @@ describe('xhs-bridge-client', () => {
       await vi.advanceTimersByTimeAsync(20_000);
       const second = await p2;
 
+      // Second call must hit the in-memory cache populated by the first call;
+      // we asserted the old "always call CLI" contract which no longer holds.
       expect(first[0].id).toBe('f1');
-      expect(second[0].id).toBe('f2');
-      expect(mockExecFile.mock.calls.length).toBe(2);
+      expect(second[0].id).toBe('f1');
+      expect(mockExecFile.mock.calls.length).toBe(1);
       vi.useRealTimers();
     });
 

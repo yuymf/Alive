@@ -194,11 +194,19 @@ describe('Scenario 2: dissectBatch → entries.json', () => {
   });
 });
 
-// ─── Scenario 3: formula promotion → persona.yaml ────────────────────────────
+// ─── Scenario 3: formula promotion (no longer writes persona.yaml) ──────────
+//
+// In v1, a formula that crossed the promotion threshold was written straight
+// into `persona.yaml` under `ops.content_templates`. v2 changed the contract
+// (see note above `injectTemplateIntoPersona` in viral-kb-store.ts): formulas
+// stay in `universal-formulas.json` and are injected at runtime by
+// `buildViralFormulaContext()` instead. These tests were rewritten to assert
+// the new contract.
 
-describe('Scenario 3: 3rd occurrence → persona.yaml template injection', () => {
-  it('promotes formula when same combination appears 3 times and writes to persona.yaml', () => {
-    // Create a minimal persona.yaml
+describe('Scenario 3: 3rd occurrence → formula promotion', () => {
+  it('promotes formula when same combination appears 3 times', () => {
+    // Create a minimal persona.yaml so the test resembles production layout.
+    // It should NOT be modified by promotion anymore.
     const personaYamlPath = path.join(sandboxDir, 'persona.yaml');
     const minimalPersona = {
       meta: { name: 'TestPersona', id: 'test', tagline: 'test' },
@@ -227,34 +235,35 @@ describe('Scenario 3: 3rd occurrence → persona.yaml template injection', () =>
     const result3 = checkFormulaPromotion(sandboxDir, entry3, personaYamlPath);
     expect(result3.promoted).toBe(true);
     expect(result3.formula).toBeDefined();
+    expect(result3.formula!.occurrence_count).toBe(3);
 
-    // persona.yaml should now have 1 auto_promoted template
+    // persona.yaml must be untouched — v2 contract.
     const updatedYaml = YAML.parse(fs.readFileSync(personaYamlPath, 'utf8')) as {
-      ops: { content_templates: Array<{ source?: string }> };
+      ops: { content_templates: Array<unknown> };
     };
-    expect(updatedYaml.ops.content_templates).toHaveLength(1);
-    expect(updatedYaml.ops.content_templates[0].source).toBe('auto_promoted');
-
-    // Backup file should exist
-    expect(fs.existsSync(`${personaYamlPath}.bak`)).toBe(true);
+    expect(updatedYaml.ops.content_templates).toHaveLength(0);
   });
 
   it('does not promote twice for the same formula', () => {
     const personaYamlPath = path.join(sandboxDir, 'persona.yaml');
     fs.writeFileSync(personaYamlPath, YAML.stringify({ ops: { content_templates: [] } }), 'utf8');
 
-    // Cause 3 occurrences
+    // Cause 4 occurrences — only the 3rd should return `promoted: true`.
+    const promoteResults: boolean[] = [];
     for (let i = 1; i <= 4; i++) {
       const e = makeUniversalEntry({ id: `dup-e${i}` });
       upsertEntry(sandboxDir, e);
-      checkFormulaPromotion(sandboxDir, e, personaYamlPath);
+      const r = checkFormulaPromotion(sandboxDir, e, personaYamlPath);
+      promoteResults.push(r.promoted);
     }
 
-    // Should still only have 1 template (promotion fires once, then skipped)
+    expect(promoteResults).toEqual([false, false, true, false]);
+
+    // persona.yaml still untouched.
     const updatedYaml = YAML.parse(fs.readFileSync(personaYamlPath, 'utf8')) as {
       ops: { content_templates: Array<unknown> };
     };
-    expect(updatedYaml.ops.content_templates).toHaveLength(1);
+    expect(updatedYaml.ops.content_templates).toHaveLength(0);
   });
 });
 

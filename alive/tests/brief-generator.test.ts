@@ -84,7 +84,8 @@ describe('formatBriefCard', () => {
       fullQueueItems: [sampleQueueItem],
     };
     const card = formatBriefCard('2026-04-02', sampleTrends, [], [sampleQueueItem], enrichment);
-    expect(card).toContain('🎬 今日视频分镜');
+    // Storyboard heading is platform-tagged: "🎬 今日抖音视频分镜" / "🎬 今日小红书视频分镜".
+    expect(card).toMatch(/🎬 今日(抖音|小红书)?视频分镜/);
     expect(card).toContain('字幕1：开场');
     expect(card).toContain('字幕2：高潮');
     expect(card).toContain('字幕3：结尾');
@@ -118,7 +119,7 @@ describe('formatBriefCard', () => {
     };
     const card = formatBriefCard('2026-04-02', [], [], [emptyItem], enrichment);
     expect(card).not.toContain('🎨 今日生图 Prompt');
-    expect(card).not.toContain('🎬 今日视频分镜');
+    expect(card).not.toMatch(/🎬 今日(抖音|小红书)?视频分镜/);
     expect(card).not.toContain('💡人设建议');
   });
 
@@ -129,7 +130,7 @@ describe('formatBriefCard', () => {
     const card = formatBriefCard('2026-04-02', sampleTrends, [], [sampleQueueItem], enrichment);
     // Should still extract from pending items in queueItems
     expect(card).toContain('🎨 今日生图 Prompt');
-    expect(card).toContain('🎬 今日视频分镜');
+    expect(card).toMatch(/🎬 今日(抖音|小红书)?视频分镜/);
   });
 
   it('should include competitor analysis insights when provided', () => {

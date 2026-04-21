@@ -20,7 +20,7 @@ import { setBasePaths, resetBasePaths, writeJSON, PATHS } from '../../scripts/ut
 import { setTimeOverride, clearTimeOverride } from '../../scripts/utils/time-utils';
 import { LLMClient } from '../../scripts/utils/llm-client';
 import {
-  buildRelevancePrompt, filterByThreshold, computeVelocityScore,
+  buildRelevancePrompt, filterByThreshold, computeVelocityScore, computePriorityScores,
   FilteredTrend, buildPersonaIdentities, normalizeIdentityMode, VALID_IDENTITY_MODES,
 } from '../../scripts/ops/trend-analyzer';
 import {
@@ -198,10 +198,16 @@ async function collectRealTrends(): Promise<TrendCollectionResult> {
     return { ...item, avg_7d: baseline, velocity_score: velocity };
   });
 
-  const platformCounts: Record<string, number> = {};
-  for (const t of items) platformCounts[t.platform] = (platformCounts[t.platform] ?? 0) + 1;
+  // Fill in priority_score + source_type/bucket/kind. The fetch helpers above
+  // construct TrendItems by partial cast to avoid duplicating the full type
+  // surface, so priority_score ends up undefined unless we run the real
+  // scorer — and buildRelevancePrompt() reads it with `.toFixed(1)`.
+  const scoredItems = computePriorityScores(items);
 
-  return { items, platformCounts, diagnostics };
+  const platformCounts: Record<string, number> = {};
+  for (const t of scoredItems) platformCounts[t.platform] = (platformCounts[t.platform] ?? 0) + 1;
+
+  return { items: scoredItems, platformCounts, diagnostics };
 }
 
 // ═══════════════════════════════════════════════════════════════════
