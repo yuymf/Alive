@@ -26,5 +26,5 @@ e2e/harness/.env
 
 # Dev/test directories not needed by skill users (root-level only)
 /e2e/
-/scripts/
-harness/runs/
+/tools/
+eval/runs/
