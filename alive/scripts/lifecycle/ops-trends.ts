@@ -66,8 +66,10 @@ async function main(): Promise<void> {
   let trends: Awaited<ReturnType<typeof refreshTrends>> = [];
   let competitors: Awaited<ReturnType<typeof refreshCompetitors>> = [];
 
+  console.log(`[${wallNow().toISOString()}] ops-trends: calling refreshTrends…`);
   try {
     trends = await refreshTrends(ops, identities, llm);
+    console.log(`[${wallNow().toISOString()}] ops-trends: refreshTrends returned ${trends.length} trends`);
   } catch (err) {
     console.error(`[${wallNow().toISOString()}] ops-trends: refreshTrends failed:`, err);
   }

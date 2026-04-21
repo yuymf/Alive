@@ -118,7 +118,7 @@ describe('xhs-bridge-client', () => {
     });
   });
 
-  describe('getUserNotes', () => {
+  describe('getUserNotes', { timeout: 30_000 }, () => {
     it('should parse user notes from CLI response', async () => {
       vi.useFakeTimers();
       const cliResponse = {
@@ -159,6 +159,8 @@ describe('xhs-bridge-client', () => {
     });
 
     it('should fall back to search on CLI error', async () => {
+      // Rate limiter introduces ~10-15s real wall-clock delay even with fake timers,
+      // because the limiter uses Date.now() internally. Bump vitest timeout.
       vi.useFakeTimers();
       // Mock: 1st = check-login (success), 2nd = get-user-notes (fail), 3rd = search-feeds (success)
       mockExecFile

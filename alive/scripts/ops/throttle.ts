@@ -162,9 +162,6 @@ export async function sleepWithJitter(
   }
 
   await new Promise<void>(resolve => {
-    const timer = setTimeout(resolve, capped);
-    // If Node is closing and this timer is pending, don't keep the event
-    // loop alive just for a jitter sleep.
-    (timer as unknown as { unref?: () => void }).unref?.();
+    setTimeout(resolve, capped);
   });
 }
