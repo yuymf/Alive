@@ -125,3 +125,77 @@
 
 - 当前 suggestions 全部不可用，已重新评估一次。
 - 重新评估后仍未找到可用的 advisor suggestion，自动循环停止。
+
+## 2026-04-21 — Baseline
+
+- averageOpsScore: 91.4
+- report: /Users/halyu/Documents/Code/Alive/e2e/reports/autoresearch/autoresearch-leaderboard-2026-04-21T09-23-51.md
+- suggestions: 6
+
+## 2026-04-21 — Round 1 回退
+
+- file: `ops/strategy-engine.md`
+- change: 在审核流程规则中增加一条：运营每次反馈后，系统必须对【标题 + 正文 + 视频脚本】三段同步做改前改后对比，任何一段存在文案感/口语化问题未处理都不得标记通过。
+- score: 91.4 -> 78.5
+- action: reverted file to previous content
+
+## 2026-04-21 — Round 2 回退
+
+- file: `ops/persona-advisor.md`
+- change: 增加一条输出约束：正文输出必须通过'朋友圈口语化自检'——系统自检时若发现第一人称叙述偏编辑腔（如出现'不得不说'、'真心推荐'等文案感词汇），自动标记为需改写，并强制输出口语化候选版本。
+- reason: Unexpected token '\', "\n{\n  \"a"... is not valid JSON
+- action: reverted file to previous content
+
+## 2026-04-21 — Round 3 接受
+
+- file: `ops/topic-regenerate.md`
+- change: 在 regenerator 流程中增加：当运营反馈包含主观风格描述词（如'更像朋友聊天'、'口语化'、'轻松点'）时，系统不得仅修改标题或单一字段，必须追问确认修改范围是'仅标题'还是'标题+正文'，并在改前改后对比中展示各段改动。
+- score: 91.4 -> 91.7
+- report: /Users/halyu/Documents/Code/Alive/e2e/reports/autoresearch/autoresearch-leaderboard-2026-04-21T09-36-22.md
+
+## 2026-04-21 — Round 4 接受
+
+- file: `ops/topic-regenerate.md`
+- change: 加一条输出格式规则：regenerate后的回复必须直接呈现最终完整内容，禁止在开头或结尾标注「已修改」「✏️」「以下是修改版」等任何系统动作描述，禁止展示diff或原文→新文对比结构，只输出干净的最终内容
+- score: 91.7 -> 92.3
+- report: /Users/halyu/Documents/Code/Alive/e2e/reports/autoresearch/autoresearch-leaderboard-2026-04-21T09-42-26.md
+
+## 2026-04-21 — Round 5 回退
+
+- file: `ops/topic-hook-generator.md`
+- change: 在生成标题后增加一条『冲突感自检』规则：若标题缺乏对立/反转张力（如『不是XXX』结构或认知反差），强制重写或提供备选版本；蹭热点类 prompt 必须包含『从[女性电竞解说]具体第一人称视角切入』的规则，如『我作为解说在赛场/通勤中观察到……』禁止仅贴标签不写经历
+- score: 92.3 -> 79.1
+- action: reverted file to previous content
+
+## 2026-04-21 — Round 6 回退
+
+- file: `ops/topic-generator-content.md`
+- change: 在内容包生成规则中增加『信息密度下限』：正文须包含至少 2 个具体细节（如数据、场景、情绪），禁止通篇『你知道吗』『其实』等虚词填充；小红书正文须有『我看了三遍』『上周』等个性化锚点以增强真实性
+- score: 92.3 -> 90.8
+- action: reverted file to previous content
+
+## 2026-04-21 — Round 7 接受
+
+- file: `ops/trend-analyzer.md`
+- change: 热点关联性校验规则：分析热点与生成内容的相关度时，必须检查热点核心元素（如女性电竞解说）在正文中是否以『具体经历』形式出现，而非仅出现在标签或标题；若无具体内容支撑热点关键词，返回『热点落地不足，建议补充[热点视角]相关叙述』
+- score: 92.3 -> 93
+- report: /Users/halyu/Documents/Code/Alive/e2e/reports/autoresearch/autoresearch-leaderboard-2026-04-21T09-59-16.md
+
+## 2026-04-21 — Round 8 回退
+
+- file: `ops/trend-analyzer.md`
+- change: 在趋势分析规则中增加：分析热点时需主动识别「可参与争议点」而不仅仅是「可借用身份」，输出结构中增加「争议切入角度」字段，要求至少提供一个与主流观点不同或挑战现有认知的角度。
+- reason: Unexpected token '\', "\n{{json_schema}}\n" is not valid JSON
+- action: reverted file to previous content
+
+## 2026-04-21 — Round 9 回退
+
+- file: `ops/topic-regenerate.md`
+- change: 在重生成规则中增加：触发重生成时，模型必须跳过「正式分析」直接以「朋友私聊」口吻输出，语气标记为「在微信上跟闺蜜吐槽」，禁止以「我们来聊聊」「从XX角度分析」等开场，正式程度不得超过一条朋友圈的评论语气。
+- score: 93 -> 92.65
+- action: reverted file to previous content
+
+## 2026-04-21 — Round 10 停止
+
+- 当前 suggestions 全部不可用，已重新评估一次。
+- 重新评估后仍未找到可用的 advisor suggestion，自动循环停止。

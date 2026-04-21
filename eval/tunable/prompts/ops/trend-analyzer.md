@@ -39,6 +39,3 @@
 - identity_mode: 使用哪个身份，只能是以下四选一：esports（电竞解说）/ singer（歌手）/ racer（赛车手）/ daily（日常生活）
 
 以 JSON 对象返回，格式：
-```json
-{{json_schema}}
-```
