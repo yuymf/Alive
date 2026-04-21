@@ -153,6 +153,13 @@ export const PATHS = {
   get healthReport() { return path.join(getMemoryBase(), 'queues', 'health-report.json'); },
   get audiencePerception() { return path.join(getMemoryBase(), 'queues', 'audience-perception.json'); },
   get directionIdeaCache() { return path.join(getMemoryBase(), 'queues', 'direction-idea-cache.json'); },
+  /**
+   * Per-persona log of directions the user has explicitly queried via
+   * `/idea <direction>`. The ops-browse cron reads this file to pre-fetch
+   * those directions on the next round so subsequent `/idea <same>` calls
+   * hit the cache instead of running an inline search.
+   */
+  get activeDirections() { return path.join(getMemoryBase(), 'queues', 'active-directions.json'); },
 
   // === Social (unchanged) ===
   get socialMeta() { return path.join(getMemoryBase(), 'relations', 'social-meta.json'); },

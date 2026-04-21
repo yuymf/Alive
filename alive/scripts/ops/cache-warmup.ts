@@ -97,7 +97,7 @@ async function runWarmup(persona: PersonaConfig, ops: OpsConfig): Promise<void> 
     // Sequential, not parallel — minimise platform load during warmup,
     // and treat each failure independently.
     try {
-      await refreshSearchKeywordTrends();
+      await refreshSearchKeywordTrends(ops);
     } catch (err) {
       console.error('[cache-warmup] refreshSearchKeywordTrends failed:', err);
     }

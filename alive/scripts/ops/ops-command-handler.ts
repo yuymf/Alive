@@ -31,12 +31,14 @@ import {
   readCachedTrends,
   readCachedTrendsWithMeta,
   analyzeDirectionalTrends,
+  filterCachedTrendsByDirection,
   buildPersonaIdentities,
   FilteredTrend,
 } from '../ops/trend-analyzer';
 import { readCachedCompetitors, readCachedCompetitorsWithMeta } from '../ops/competitor-tracker';
 import { ensureOpsCachesWarm } from './cache-warmup';
 import { buildCacheFreshnessBanner } from './cache-age';
+import { recordActiveDirection } from './active-directions';
 import { generateTopics } from '../ops/topic-generator';
 import { formatBriefCard, formatContentPackage, BriefEnrichment } from './brief-generator';
 import { loadQueue, cleanupOldItems, markApproved, markDiscarded, addReviewFeedback, getActivePendingItems } from './review-queue';
@@ -235,16 +237,38 @@ async function cmdIdea(direction?: string): Promise<string> {
 
   // Trend material:
   //   - No direction: pure cache read (producer is the ops-trends cron).
-  //   - Direction: the directional pipeline is kept for now as the sole
-  //     consumer-side exception — a user-provided keyword is impossible to
-  //     pre-compute, so we run the search inline. PR-3 will add a loading
-  //     banner and a cached-direction pipeline for repeat directions.
+  //   - Direction: the sole consumer-side exception — a user-provided
+  //     keyword cannot be pre-computed, so we run inline. The pipeline
+  //     goes through three layers:
+  //       (a) direction-idea-cache (2h TTL, second call to same
+  //           direction should hit here).
+  //       (b) live XHS/Douyin search via analyzeDirectionalTrends.
+  //       (c) substring-filter fallback against the global trends cache
+  //           when (b) returns empty or is rate-limited.
+  //     The direction is also logged to active-directions.json so the
+  //     ops-browse cron can pre-fetch it next round (see
+  //     active-directions.ts for rationale).
   let trends: FilteredTrend[] = [];
+  let directionServedFromLiveSearch = false;
+  let directionFellBackToFilter = false;
+  const directionStart = Date.now();
+
   if (direction) {
+    recordActiveDirection(direction);
     try {
       trends = await analyzeDirectionalTrends(ops, identities, llm, direction);
-    } catch {
-      // proceed without trends
+      // Whether the 2h cache served or live search ran, analyzeDirectionalTrends
+      // is the authoritative source for directional results.
+      directionServedFromLiveSearch = trends.length > 0;
+    } catch (err) {
+      console.error('[cmdIdea] analyzeDirectionalTrends failed:', (err as Error).message);
+    }
+
+    if (trends.length === 0) {
+      // (c) Degrade: filter the global cache. Accuracy is lower (keyword
+      // substring vs. real engagement signal) but beats returning nothing.
+      trends = filterCachedTrendsByDirection(identities, direction);
+      directionFellBackToFilter = trends.length > 0;
     }
   } else {
     trends = readCachedTrends(identities);
@@ -267,10 +291,29 @@ async function cmdIdea(direction?: string): Promise<string> {
   const allPending = queueAfter.items.filter(i => i.status === 'pending');
   const newItems = allPending.filter(i => !existingIds.has(i.id));
 
+  // Build a trailing note explaining how the directional pipeline was
+  // resolved, so the user knows whether to expect a faster second call.
+  let directionNote = '';
+  if (direction) {
+    const elapsedSec = Math.round((Date.now() - directionStart) / 1000);
+    if (directionFellBackToFilter) {
+      directionNote = `\n⚠️ 「${direction}」实时搜索未返回结果（可能触发风控），已从最近热点缓存中按关键词匹配。该方向已加入后台预生产列表，下次相同查询将秒回。`;
+    } else if (directionServedFromLiveSearch) {
+      directionNote = `\n🔍 「${direction}」为即时搜索（耗时 ${elapsedSec}s）。该方向已加入后台预生产列表，下次相同查询将秒回（来自 2h 方向缓存）。`;
+    } else {
+      directionNote = `\n💡 「${direction}」方向暂无素材。该方向已加入后台预生产列表，建议 30–60 分钟后再试。`;
+    }
+  }
+
   if (newItems.length === 0) {
-    // Provide context-aware message when direction was specified
     if (direction) {
-      return `💡 暂未生成新选题——「${direction}」相关身份在当前队列中已较饱和，系统已放宽多样性限制仍无新选题通过。\n可尝试：\n1. 先清理部分待审核选题 (/post N → 修改/发布/弃置)\n2. 指定其他方向：/idea 美食`;
+      return [
+        `💡 暂未生成新选题——「${direction}」相关身份在当前队列中已较饱和，系统已放宽多样性限制仍无新选题通过。`,
+        '可尝试：',
+        '1. 先清理部分待审核选题 (/post N → 修改/发布/弃置)',
+        '2. 指定其他方向：/idea 美食',
+        directionNote,
+      ].filter(Boolean).join('\n');
     }
     return '💡 暂未生成新选题（可能与已有选题重复），试试指定新方向：/idea 美食';
   }
@@ -284,6 +327,7 @@ async function cmdIdea(direction?: string): Promise<string> {
     lines.push('', `📋 队列中还有 ${allPending.length - newItems.length} 个之前的选题`);
   }
   lines.push('', '回复 /post N 查看详情');
+  if (directionNote) lines.push(directionNote);
   return lines.join('\n');
 }
 

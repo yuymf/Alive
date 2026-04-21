@@ -16,6 +16,7 @@ import { loadDiscoveryPool, saveDiscoveryPool, scoreContent } from './discovery-
 import { normalizeKeyword } from '../utils/text-utils';
 import { IDENTITY_TOPIC_KEYWORDS } from './ops-taxonomy';
 import { getIdentityKeys } from '../utils/types';
+import { listFreshDirections } from './active-directions';
 import type { ContentProviderRegistry, ContentItem } from '../adapters/content-provider';
 import type { DiscoveryItem } from './discovery-engine';
 import type { CompetitorProfile } from '../utils/types';
@@ -30,8 +31,13 @@ const IDENTITY_KEYWORDS_LOWER: Record<string, string[]> = Object.fromEntries(
 export interface KeywordEntry {
   /** The keyword text */
   keyword: string;
-  /** Source of this keyword: persona config, trending, competitor */
-  source: 'persona' | 'trending' | 'competitor';
+  /**
+   * Source of this keyword. `user_direction` entries come from
+   * `/idea <direction>` user queries (see active-directions.ts) and are
+   * treated as high-priority: they never get the track-relevance gate
+   * applied, because the user explicitly asked for this direction.
+   */
+  source: 'persona' | 'trending' | 'competitor' | 'user_direction';
   /** How many times this keyword has been searched */
   search_count: number;
   /** How many content items were found in total across all searches */
@@ -143,9 +149,13 @@ export function collectKeywords(): KeywordEntry[] {
     });
     if (!normalized || seen.has(normalized)) return;
 
-    // Track relevance gate: skip trending/competitor keywords with zero track relevance
-    // Persona keywords are always trusted (manually configured by the user)
-    if (source !== 'persona' && identityKeys.length > 0) {
+    // Track relevance gate: skip trending/competitor keywords with zero track relevance.
+    // Persona and user_direction keywords are always trusted:
+    //   - persona: manually configured by the user
+    //   - user_direction: the user just asked for this direction in /idea,
+    //     so filtering it out would defeat the whole point.
+    const gateApplies = source !== 'persona' && source !== 'user_direction';
+    if (gateApplies && identityKeys.length > 0) {
       const relevance = calcKeywordTrackRelevance(normalized, identityKeys);
       if (relevance === 0) return; // completely off-track — skip
     }
@@ -206,6 +216,17 @@ export function collectKeywords(): KeywordEntry[] {
     }
   } catch {
     // Skip
+  }
+
+  // Source 4: user-queried directions from active-directions.json.
+  // These represent "what the user just asked /idea about" — cron should
+  // pre-fetch material for these so next-time queries become cache hits.
+  try {
+    for (const direction of listFreshDirections()) {
+      addKeyword(direction, 'user_direction');
+    }
+  } catch {
+    // active-directions log missing / unreadable — skip silently.
   }
 
   return entries;

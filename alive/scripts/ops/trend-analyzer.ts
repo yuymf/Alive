@@ -1222,6 +1222,36 @@ export function readCachedTrends(personaIdentities: string): FilteredTrend[] {
 }
 
 /**
+ * Pure-read fallback for direction-scoped queries when the directional
+ * pipeline (live XHS/Douyin search) fails or is rate-limited.
+ *
+ * Filters the global trends cache by substring match against the
+ * direction keyword — case-insensitive, also matches against hook_angle
+ * text since LLM-filtered trends often encode the direction there. The
+ * synthetic `hook_angle` / `identity_mode` fields are preserved on
+ * matched items so downstream topic generation still has a direction
+ * anchor to work with.
+ *
+ * Returns `[]` when nothing matches; callers surface the empty state.
+ */
+export function filterCachedTrendsByDirection(
+  personaIdentities: string,
+  direction: string,
+): FilteredTrend[] {
+  const cached = readCachedTrends(personaIdentities);
+  if (cached.length === 0 || !direction.trim()) return [];
+
+  const needle = direction.trim().toLowerCase();
+  return cached.filter(t => {
+    const keyword = (t.keyword ?? '').toLowerCase();
+    const hook = (t.hook_angle ?? '').toLowerCase();
+    return keyword.includes(needle)
+      || needle.includes(keyword)
+      || hook.includes(needle);
+  });
+}
+
+/**
  * Same as readCachedTrends() but also returns the cache timestamp and
  * signal-pool summary. Callers that want to display freshness banners or
  * render the signal-pool overview should use this variant.

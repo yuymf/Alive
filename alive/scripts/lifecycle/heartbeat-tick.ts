@@ -803,10 +803,12 @@ export async function regularTick(
             }
 
             // Search-keyword trend engine: pre-compute trend signals from keyword searches
-            // Results are cached and read by consumers via readCachedTrends() on next invocation
+            // Results are cached and read by consumers via readCachedTrends() on next invocation.
+            // Passing `persona.ops` lets the refresher honour the persona's
+            // throttle config (abort_on_status, keyword jitter, round cap).
             try {
               const { refreshSearchKeywordTrends } = await import('../ops/trend-analyzer');
-              const skItems = await refreshSearchKeywordTrends();
+              const skItems = await refreshSearchKeywordTrends(persona.ops);
               if (skItems.length > 0) {
                 console.log(`[search-keyword] Pre-computed ${skItems.length} trend items from keyword searches`);
               }
