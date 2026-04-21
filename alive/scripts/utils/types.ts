@@ -1627,6 +1627,8 @@ export interface OpsConfig {
   baseline_window_days?: number;
   /** Whether to register strategy/performance/analyze cron jobs. Default: false */
   strategy_enabled?: boolean;
+  /** Cron expression for ops-trends (trend collection). Defaults to hourly if omitted. */
+  trends_interval?: string;
   /** Cron expression for ops-browse (content browsing). Only used when heartbeat is disabled. */
   browse_interval?: string;
   /** Likes threshold above which a trend/competitor post is queued for viral KB dissection. Default: 5000 */

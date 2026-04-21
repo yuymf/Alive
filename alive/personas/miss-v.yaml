@@ -119,7 +119,8 @@ ops:
       enabled: true
       style: "视频脚本，前3秒必须有冲突感或反差，BGM卡点，字幕简洁，结尾引导互动"
   strategy_enabled: true
-  browse_interval: "0 */3 * * *"
+  trends_interval: "0 8,12,16,20 * * *"
+  browse_interval: "0 9,13,17,21 * * *"
   browse_sources:
     - platform: xhs
       count: 5
@@ -128,7 +129,7 @@ ops:
   automation:
     brief_delivery: session
     enable_heartbeat_cron: false
-    silent_background_jobs: false
+    silent_background_jobs: true
 
   # ─── 结构化对标账号画像 ─────────────────────────────────────────────────
   competitors:

@@ -380,6 +380,7 @@ schema:
       trend_score_threshold: { type: number, required: true }
       topic_count: { type: number, required: true }
       topic_filter_prompt: { type: string, required: true }
+      trends_interval: { type: string, required: false, description: "ops-trends 的 cron 表达式；未配置时默认每小时执行" }
       platforms:
         type: object
         required: true
