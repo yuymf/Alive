@@ -1627,10 +1627,30 @@ export interface OpsConfig {
   baseline_window_days?: number;
   /** Whether to register strategy/performance/analyze cron jobs. Default: false */
   strategy_enabled?: boolean;
-  /** Cron expression for ops-trends (trend collection). Defaults to hourly if omitted. */
+  /** Cron expression for ops-trends (trend collection). Defaults to "5 * * * *" (HH:05) if omitted. */
   trends_interval?: string;
-  /** Cron expression for ops-browse (content browsing). Only used when heartbeat is disabled. */
+  /** Cron expression for ops-browse (content browsing). Only used when heartbeat is disabled. Defaults to "25 * * * *" (HH:25) so it staggers with ops-trends. */
   browse_interval?: string;
+  /**
+   * Producer-side throttle configuration for platform IO.
+   *
+   * Under async decoupling no consumer waits on platform fetches, so the
+   * cron producers deliberately pace themselves to minimise rate-limit /
+   * risk-control exposure. All values are optional — omitted fields fall
+   * back to the safe defaults in `scripts/ops/throttle.ts`.
+   */
+  throttle?: {
+    /** Random sleep inserted between two platforms / accounts (ms, [min, max]). */
+    platform_gap_ms?: readonly [number, number];
+    /** Random sleep inserted between two keyword searches on the same platform (ms, [min, max]). */
+    keyword_gap_ms?: readonly [number, number];
+    /** Random sleep inserted between two competitor accounts (ms, [min, max]). */
+    account_gap_ms?: readonly [number, number];
+    /** HTTP status codes that immediately abort the entire refresh round. */
+    abort_on_status?: readonly number[];
+    /** Hard wall-clock ceiling for a single refresh round (ms). */
+    max_round_duration_ms?: number;
+  };
   /** Likes threshold above which a trend/competitor post is queued for viral KB dissection. Default: 5000 */
   viral_threshold?: number;
   /** Max items to dissect from the queue per ops-trends run (1-10). Default: 3 */

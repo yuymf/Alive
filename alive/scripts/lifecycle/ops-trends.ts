@@ -10,8 +10,8 @@ import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
 import { loadSkillEnvVars, setPersonaName, PATHS, readJSON } from '../utils/file-utils';
-import { analyzeTrends, buildPersonaIdentities, TRENDS_CACHE_TTL_MS } from '../ops/trend-analyzer';
-import { trackCompetitors } from '../ops/competitor-tracker';
+import { refreshTrends, buildPersonaIdentities, TRENDS_CACHE_TTL_MS } from '../ops/trend-analyzer';
+import { refreshCompetitors } from '../ops/competitor-tracker';
 import { analyzeNewHits, cleanupOldBreakdowns, trimObservationNotes } from '../ops/competitor-memory';
 import { CompetitorLog, DissectQueueItem, ViralEntry } from '../utils/types';
 import { detectViral, TrendLikeItem } from '../ops/viral-detector';
@@ -59,18 +59,32 @@ async function main(): Promise<void> {
   cleanupOldBreakdowns();
   trimObservationNotes();
 
-  const [trendsResult, competitorsResult] = await Promise.allSettled([
-    analyzeTrends(ops, identities, llm),
-    Promise.resolve(trackCompetitors(ops)),
-  ]);
+  // Refresh sequentially: trends first, then competitors. Running in parallel
+  // under the old Promise.allSettled was a latency optimisation for the
+  // synchronous /brief path — under async decoupling nobody is waiting and
+  // a calm, single-flight request stream is friendlier to platform anti-abuse.
+  let trends: Awaited<ReturnType<typeof refreshTrends>> = [];
+  let competitors: Awaited<ReturnType<typeof refreshCompetitors>> = [];
 
-  const trendCount = trendsResult.status === 'fulfilled' ? trendsResult.value.length : 0;
-  const competitorCount = competitorsResult.status === 'fulfilled' ? competitorsResult.value.length : 0;
+  try {
+    trends = await refreshTrends(ops, identities, llm);
+  } catch (err) {
+    console.error(`[${wallNow().toISOString()}] ops-trends: refreshTrends failed:`, err);
+  }
+
+  try {
+    competitors = await refreshCompetitors(ops);
+  } catch (err) {
+    console.error(`[${wallNow().toISOString()}] ops-trends: refreshCompetitors failed:`, err);
+  }
+
+  const trendCount = trends.length;
+  const competitorCount = competitors.length;
 
   // Auto-analyze high-engagement competitor posts
-  if (competitorsResult.status === 'fulfilled' && ops) {
+  if (competitorCount > 0 && ops) {
     const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
-    await analyzeNewHits(competitorsResult.value, ops, competitorLog.entries, llm);
+    await analyzeNewHits(competitors, ops, competitorLog.entries, llm);
   }
 
   console.log(`[${wallNow().toISOString()}] ops-trends: ${trendCount} trends, ${competitorCount} competitors tracked`);
@@ -154,12 +168,12 @@ async function main(): Promise<void> {
   console.log(`\n📊 运营趋势速报`);
   console.log(`- 热点趋势: ${trendCount} 条`);
   console.log(`- 竞品动态: ${competitorCount} 个账号有更新`);
-  if (trendsResult.status === 'fulfilled' && trendsResult.value.length > 0) {
-    const top = trendsResult.value.slice(0, 3);
+  if (trends.length > 0) {
+    const top = trends.slice(0, 3);
     top.forEach((t, i) => console.log(`  ${i + 1}. ${t.keyword}（热度: ${t.velocity_score}）`));
   }
-  if (competitorsResult.status === 'fulfilled' && competitorsResult.value.length > 0) {
-    const topComp = competitorsResult.value.slice(0, 3);
+  if (competitors.length > 0) {
+    const topComp = competitors.slice(0, 3);
     topComp.forEach((c) => console.log(`  · ${c.account}: ${c.latest_post?.topic ?? '无最新帖子'}`));
   }
   console.log(`- 爆款候选: ${viralCandidates.length} 条`);

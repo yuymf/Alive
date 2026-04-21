@@ -5,8 +5,8 @@
  */
 
 import { SubSkillContext, SubSkillResult } from '../../../scripts/utils/types';
-import { analyzeTrends } from '../../../scripts/ops/trend-analyzer';
-import { trackCompetitors } from '../../../scripts/ops/competitor-tracker';
+import { readCachedTrends } from '../../../scripts/ops/trend-analyzer';
+import { readCachedCompetitors } from '../../../scripts/ops/competitor-tracker';
 import { generateTopics } from '../../../scripts/ops/topic-generator';
 import { sendDailyBrief, sendToWechatWork } from '../../../scripts/ops/brief-generator';
 import { loadQueue, cleanupOldItems } from '../../../scripts/ops/review-queue';
@@ -26,9 +26,11 @@ async function actionRefreshTrends(ctx: SubSkillContext): Promise<SubSkillResult
     ...(persona.personality?.core_traits ?? []),
   ].join(', ');
 
-  const trends = await analyzeTrends(ops, identities, ctx.llm);
+  // ops-desk is a consumer — reads the trends cache produced by ops-trends cron.
+  // Refreshing is cron-only, never inline.
+  const trends = readCachedTrends(identities);
   return {
-    narrative: `热点监控完成，${trends.length} 个话题通过速度分过滤`,
+    narrative: `热点监控：从缓存读取到 ${trends.length} 个话题`,
     vitality_cost: 5,
   };
 }
@@ -41,14 +43,9 @@ async function actionGenerateTopics(ctx: SubSkillContext): Promise<SubSkillResul
   }
 
   const identities = (persona.personality?.core_traits ?? []).join('、');
-  const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
-  const [trendsResult] = await Promise.allSettled([
-    analyzeTrends(ops, identities, ctx.llm),
-    trackCompetitors(ops), // side effect: persist competitor log; result intentionally discarded
-  ]);
-
-  const trends = trendsResult.status === 'fulfilled' ? trendsResult.value : [];
+  // Pure cache reads. No inline fetch — producer is the ops-trends cron.
+  const trends = readCachedTrends(identities);
 
   await cleanupOldItems();
   await generateTopics(trends, ops, persona.meta.name, ctx.llm, persona.voice);
@@ -117,13 +114,8 @@ async function actionPersonaAdvice(ctx: SubSkillContext): Promise<SubSkillResult
   ].join(', ');
 
   try {
-    const [trendsResult, competitorsResult] = await Promise.allSettled([
-      analyzeTrends(ops, identities, ctx.llm),
-      Promise.resolve(trackCompetitors(ops)),
-    ]);
-
-    const trends = trendsResult.status === 'fulfilled' ? trendsResult.value : [];
-    const competitors = competitorsResult.status === 'fulfilled' ? competitorsResult.value : [];
+    const trends = readCachedTrends(identities);
+    const competitors = readCachedCompetitors();
 
     const report = await generatePersonaReport(persona, trends, competitors, ctx.llm);
     const card = formatAlignmentCard(report);

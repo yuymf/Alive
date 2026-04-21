@@ -47,7 +47,7 @@ function resolveTunablePromptPath(relativePath: string): string | null {
   const installedPath = path.join(getSkillBase(), 'tunable', 'prompts', relativePath);
   if (fs.existsSync(installedPath)) return installedPath;
 
-  const devPath = path.join(getRepoRoot(), 'harness', 'tunable', 'prompts', relativePath);
+  const devPath = path.join(getRepoRoot(), 'eval', 'tunable', 'prompts', relativePath);
   if (fs.existsSync(devPath)) return devPath;
 
   return null;
@@ -60,7 +60,7 @@ export function readTunablePrompt(relativePath: string): string | null {
 }
 
 /**
- * Read and JSON.parse a tunable config file under harness/tunable/prompts/.
+ * Read and JSON.parse a tunable config file under eval/tunable/prompts/.
  * Returns null (not throws) when the file is missing OR fails to parse — caller
  * must supply its own defaults in that case. This keeps tunable overrides safe
  * by construction: a broken tunable file never takes precedence over baked-in
@@ -243,7 +243,7 @@ export function readText(filePath: string, fallback = ''): string {
  *
  * Tunable override priority:
  * 1. <skillBase>/tunable/prompts/lifecycle/<templateName>
- * 2. <repoRoot>/harness/tunable/prompts/lifecycle/<templateName>
+ * 2. <repoRoot>/eval/tunable/prompts/lifecycle/<templateName>
  * 3. legacy templates locations
  */
 export function readTemplate(templateName: string): string {

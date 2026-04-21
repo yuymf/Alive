@@ -17,6 +17,7 @@ import { loadDiscoveryPool } from './discovery-engine';
 import type { DiscoveryItem } from './discovery-engine';
 import { searchXhsNotes } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 import { searchDouyinVideos, getDouyinRateLimitStatus } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
+import { RoundAbortController, resolveThrottleConfig, sleepWithJitter } from './throttle';
 
 const isDebug = () => process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true';
 
@@ -544,21 +545,28 @@ function extractTagsFromText(text: string): string[] {
  * This is designed to be called as a heartbeat post-hook, writing results to cache
  * that analyzeTrends() reads synchronously on the next invocation.
  */
-export async function fetchSearchKeywordTrends(): Promise<TrendItem[]> {
-  // 0) Check cache
-  const cached = readJSON<SearchKeywordCacheData>(PATHS.searchKeywordCache, null as unknown as SearchKeywordCacheData);
-  if (cached?.computed_at) {
-    const age = now().getTime() - new Date(cached.computed_at).getTime();
-    if (age < SEARCH_KEYWORD_CACHE_TTL_MS && cached.items.length > 0) {
-      if (isDebug()) console.log(`[trend-analyzer] Using cached search-keyword trends (age: ${Math.round(age / 60_000)}min, ${cached.items.length} items)`);
-      return cached.items;
-    }
-  }
+/**
+ * Refresh the search-keyword trend cache by searching XHS/Douyin for known
+ * relevant keywords, filtering by engagement thresholds, and extracting
+ * associated tags as TrendItem signals.
+ *
+ * This is the producer side of the async-decoupled search-keyword pipeline
+ * and should only run from the ops-browse cron (see scripts/lifecycle/
+ * ops-browse.ts). Consumers must call loadCachedSearchKeywordTrends()
+ * instead — they never trigger platform IO.
+ *
+ * No cache short-circuit: each cron invocation re-fetches so the cache
+ * reflects the latest signal. Searches run serially (XHS then Douyin,
+ * one keyword at a time) to minimize fingerprinting / rate-limit risk —
+ * there is no consumer waiting on latency.
+ */
+export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<TrendItem[]> {
+  const throttle = resolveThrottleConfig(ops);
+  const round = new RoundAbortController(throttle, 'search-keyword');
 
   // 1) Collect search keywords from tag-engine active tags + keyword-tracker
   const searchKeywords: string[] = [];
 
-  // Source A: tag-engine active tags (top 15 by score)
   const vocab = readJSON<TagVocabulary>(PATHS.tagVocabulary, null as unknown as TagVocabulary);
   if (vocab?.active?.length) {
     const topTags = [...vocab.active]
@@ -568,7 +576,6 @@ export async function fetchSearchKeywordTrends(): Promise<TrendItem[]> {
     searchKeywords.push(...topTags);
   }
 
-  // Source B: keyword-tracker
   try {
     const { collectKeywords } = await import('./keyword-tracker');
     const trackerKeywords = collectKeywords().slice(0, 10).map(k => k.keyword);
@@ -577,91 +584,114 @@ export async function fetchSearchKeywordTrends(): Promise<TrendItem[]> {
     // keyword-tracker not available — skip
   }
 
-  // Deduplicate
   const uniqueKeywords = [...new Set(searchKeywords)].slice(0, 20);
   if (uniqueKeywords.length === 0) {
+    // Still write an empty cache so readers see a valid computed_at timestamp.
+    writeJSON(PATHS.searchKeywordCache, {
+      computed_at: new Date().toISOString(),
+      items: [],
+    } satisfies SearchKeywordCacheData);
     return [];
   }
 
   if (isDebug()) console.log(`[trend-analyzer] Search-keyword engine: searching ${uniqueKeywords.length} keywords`);
 
-  // 2) Search each keyword on XHS and Douyin, collect tags from high-engagement results
   const tagFrequency = new Map<string, { count: number; totalEngagement: number; platforms: Set<string> }>();
 
-  // XHS searches (parallel)
-  const xhsResults = await Promise.allSettled(
-    uniqueKeywords.map(async (kw) => {
-      try {
-        const notes = await searchXhsNotes(kw, { sortBy: '最热', noteType: '全部' });
-        return notes
-          .filter(n => (n.likes ?? 0) >= SEARCH_KEYWORD_HIT_THRESHOLD_XHS)
-          .map(n => ({ tags: extractTagsFromText(`${n.title} ${n.description}`), engagement: n.likes ?? 0 }));
-      } catch {
-        return [];
-      }
-    }),
-  );
+  // XHS searches — serial with keyword-gap jitter to keep a calm fingerprint.
+  for (let i = 0; i < uniqueKeywords.length; i++) {
+    const kw = uniqueKeywords[i];
+    if (round.shouldAbort()) break;
+    if (i > 0) {
+      await sleepWithJitter(throttle.keyword_gap_ms, round, `xhs keyword ${kw}`);
+      if (round.shouldAbort()) break;
+    }
 
-  for (const result of xhsResults) {
-    if (result.status !== 'fulfilled') continue;
-    for (const hit of result.value) {
-      for (const tag of hit.tags) {
+    let notes: Awaited<ReturnType<typeof searchXhsNotes>>;
+    try {
+      notes = await searchXhsNotes(kw, { sortBy: '最热', noteType: '全部' });
+    } catch (err) {
+      console.warn(`[trend-analyzer] XHS search failed for "${kw}": ${(err as Error).message}`);
+      continue;
+    }
+    const hits = notes.filter(n => (n.likes ?? 0) >= SEARCH_KEYWORD_HIT_THRESHOLD_XHS);
+    for (const note of hits) {
+      const tags = extractTagsFromText(`${note.title} ${note.description}`);
+      const engagement = note.likes ?? 0;
+      for (const tag of tags) {
         const existing = tagFrequency.get(tag);
         if (existing) {
           existing.count++;
-          existing.totalEngagement += hit.engagement;
+          existing.totalEngagement += engagement;
           existing.platforms.add('xhs');
         } else {
-          tagFrequency.set(tag, { count: 1, totalEngagement: hit.engagement, platforms: new Set(['xhs']) });
+          tagFrequency.set(tag, { count: 1, totalEngagement: engagement, platforms: new Set(['xhs']) });
         }
       }
     }
   }
 
-  // Douyin searches (sync, best-effort) — 风控冷却期内跳过
-  for (const kw of uniqueKeywords) {
+  // Platform boundary: sleep before switching from XHS to Douyin so the
+  // two platforms don't see synchronised request patterns.
+  if (!round.shouldAbort()) {
+    await sleepWithJitter(throttle.platform_gap_ms, round, 'platform boundary xhs→douyin');
+  }
+
+  // Douyin searches — serial, abort the whole round on rate-limit rather
+  // than piling on more requests.
+  for (let i = 0; i < uniqueKeywords.length; i++) {
+    const kw = uniqueKeywords[i];
+    if (round.shouldAbort()) break;
+
     const rlStatus = getDouyinRateLimitStatus();
     if (rlStatus.in_cooldown) {
-      console.warn(`[trend-analyzer] Douyin 风控冷却中 (剩余 ${rlStatus.cooldown_remaining_s}s)，跳过剩余关键词`);
+      console.warn(`[trend-analyzer] Douyin 风控冷却中 (剩余 ${rlStatus.cooldown_remaining_s}s)，终止本轮 Douyin 搜索`);
       break;
     }
+
+    if (i > 0) {
+      await sleepWithJitter(throttle.keyword_gap_ms, round, `douyin keyword ${kw}`);
+      if (round.shouldAbort()) break;
+    }
+
+    let result: ReturnType<typeof searchDouyinVideos>;
     try {
-      const result = searchDouyinVideos(kw, 10);
-      if (!result.success || !result.videos) {
-        if (result.rate_limited) {
-          console.warn(`[trend-analyzer] Douyin 风控限流 for "${kw}": ${result.reason ?? 'cooldown'}`);
-          break; // 风控后不再继续搜索
-        }
-        continue;
+      result = searchDouyinVideos(kw, 10);
+    } catch (err) {
+      console.warn(`[trend-analyzer] Douyin search threw for "${kw}": ${(err as Error).message}`);
+      break;
+    }
+    if (!result.success || !result.videos) {
+      if (result.rate_limited) {
+        console.warn(`[trend-analyzer] Douyin 风控限流 for "${kw}": ${result.reason ?? 'cooldown'}`);
+        round.abort(`douyin rate_limited for "${kw}"`);
+        break;
       }
-      const hits = result.videos
-        .filter((v: { digg_count: number }) => v.digg_count >= SEARCH_KEYWORD_HIT_THRESHOLD_DOUYIN);
-      for (const v of hits) {
-        const tags = extractTagsFromText(v.desc as string);
-        for (const tag of tags) {
-          const existing = tagFrequency.get(tag);
-          if (existing) {
-            existing.count++;
-            existing.totalEngagement += (v as { digg_count: number }).digg_count;
-            existing.platforms.add('douyin');
-          } else {
-            tagFrequency.set(tag, { count: 1, totalEngagement: (v as { digg_count: number }).digg_count, platforms: new Set(['douyin']) });
-          }
+      continue;
+    }
+    const hits = result.videos.filter(v => v.digg_count >= SEARCH_KEYWORD_HIT_THRESHOLD_DOUYIN);
+    for (const v of hits) {
+      const tags = extractTagsFromText(v.desc as string);
+      for (const tag of tags) {
+        const existing = tagFrequency.get(tag);
+        if (existing) {
+          existing.count++;
+          existing.totalEngagement += v.digg_count;
+          existing.platforms.add('douyin');
+        } else {
+          tagFrequency.set(tag, { count: 1, totalEngagement: v.digg_count, platforms: new Set(['douyin']) });
         }
       }
-    } catch {
-      // Douyin search failed — skip
     }
   }
 
-  // 3) Convert high-frequency tags into TrendItem signals
-  //    Only keep tags that appeared in >=2 high-engagement results (signal reliability)
+  // Convert high-frequency tags into TrendItem signals
+  // (tags appearing in >=2 high-engagement results)
   const items: TrendItem[] = [];
   for (const [tag, data] of tagFrequency) {
-    if (data.count < 2) continue; // Not enough signal
+    if (data.count < 2) continue;
 
-    const platform = data.platforms.has('xhs') && data.platforms.has('douyin') ? 'xhs' : // Prefer xhs as primary
-      data.platforms.has('xhs') ? 'xhs' : 'douyin';
+    const platform = data.platforms.has('xhs') ? 'xhs' : 'douyin';
     const avgEngagement = data.totalEngagement / data.count;
 
     items.push({
@@ -685,13 +715,11 @@ export async function fetchSearchKeywordTrends(): Promise<TrendItem[]> {
     });
   }
 
-  // Sort by velocity desc, cap at 30
   items.sort((a, b) => b.velocity_score - a.velocity_score);
   const capped = items.slice(0, 30);
 
-  if (isDebug()) console.log(`[trend-analyzer] Search-keyword engine: ${capped.length} trend items from ${uniqueKeywords.length} keywords`);
+  if (isDebug()) console.log(`[trend-analyzer] Search-keyword engine: ${capped.length} trend items from ${uniqueKeywords.length} keywords — elapsed ${Math.round(round.getElapsedMs() / 1000)}s`);
 
-  // 4) Write cache
   writeJSON(PATHS.searchKeywordCache, {
     computed_at: new Date().toISOString(),
     items: capped,
@@ -699,6 +727,13 @@ export async function fetchSearchKeywordTrends(): Promise<TrendItem[]> {
 
   return capped;
 }
+
+/**
+ * @deprecated Alias preserved for existing callers/tests. Behaves
+ * identically to refreshSearchKeywordTrends() — always re-fetches and
+ * writes the cache.
+ */
+export const fetchSearchKeywordTrends = refreshSearchKeywordTrends;
 
 /**
  * Read cached search-keyword trends (synchronous, for use in analyzeTrends).
@@ -842,8 +877,16 @@ export function detectClickbait(title: string): { isClickbait: boolean; labels: 
 /**
  * Fetch hot topics from remote DailyHot API (async).
  * Supports: douyin, bilibili, weibo, toutiao, sina-news, etc.
+ *
+ * When `onStatus` is provided, the raw HTTP status code is reported back
+ * so the caller (typically the refresh round's abort controller) can
+ * decide whether to short-circuit the rest of the round.
  */
-async function callDailyHotNews(platform: string, limit = 30): Promise<TrendItem[]> {
+async function callDailyHotNews(
+  platform: string,
+  limit = 30,
+  onStatus?: (status: number) => void,
+): Promise<TrendItem[]> {
   const targetPlatform = DAILYHOT_AVAILABLE_PLATFORMS.has(platform) ? platform : null;
   if (!targetPlatform) return [];
   try {
@@ -853,6 +896,7 @@ async function callDailyHotNews(platform: string, limit = 30): Promise<TrendItem
       signal: controller.signal,
     });
     clearTimeout(timer);
+    onStatus?.(res.status);
     const parsed = await res.json() as DailyHotApiResponse;
     if (parsed.code !== 200) return [];
     return parsed.data.map((item, idx) => {
@@ -905,7 +949,7 @@ interface WeiboHotSearchResponse {
  * Fallback for weibo when DailyHot API fails: directly call weibo.com/ajax/side/hotSearch.
  * This is a public API that doesn't require authentication.
  */
-async function callWeiboDirectApi(limit = 30): Promise<TrendItem[]> {
+async function callWeiboDirectApi(limit = 30, onStatus?: (status: number) => void): Promise<TrendItem[]> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8_000);
@@ -918,6 +962,7 @@ async function callWeiboDirectApi(limit = 30): Promise<TrendItem[]> {
       },
     });
     clearTimeout(timer);
+    onStatus?.(res.status);
     const parsed = await res.json() as WeiboHotSearchResponse;
     if (parsed.ok !== 1 || !parsed.data?.realtime) return [];
     return parsed.data.realtime.slice(0, limit).map((item, idx) => {
@@ -1002,7 +1047,7 @@ async function callBilibiliDirectApi(limit = 20): Promise<TrendItem[]> {
  * Fallback for douyin: directly call douyin.com trending API via the
  * tophub aggregator endpoint (public, no auth required).
  */
-async function callDouyinDirectApi(limit = 30): Promise<TrendItem[]> {
+async function callDouyinDirectApi(limit = 30, onStatus?: (status: number) => void): Promise<TrendItem[]> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8_000);
@@ -1014,6 +1059,7 @@ async function callDouyinDirectApi(limit = 30): Promise<TrendItem[]> {
       },
     });
     clearTimeout(timer);
+    onStatus?.(res.status);
     const parsed = await res.json() as { data?: { items?: Array<{ title?: string; extra?: { hot?: number } }> } };
     const items = parsed.data?.items ?? [];
     if (items.length === 0) return [];
@@ -1038,23 +1084,30 @@ async function callDouyinDirectApi(limit = 30): Promise<TrendItem[]> {
 
 /**
  * Fetch platform data with fallback: try DailyHot first, then direct API.
+ * `onStatus` is forwarded to every HTTP call so the caller's refresh-round
+ * abort controller can react to 403 / 429 / 451 without waiting for the
+ * remaining fallbacks to finish.
  */
-async function fetchWithFallback(platform: string, limit = 30): Promise<TrendItem[]> {
-  const items = await callDailyHotNews(platform, limit);
+async function fetchWithFallback(
+  platform: string,
+  limit = 30,
+  onStatus?: (status: number) => void,
+): Promise<TrendItem[]> {
+  const items = await callDailyHotNews(platform, limit, onStatus);
   if (items.length > 0) return items;
 
   // Fallback to direct APIs for critical platforms
   if (platform === 'douyin') {
     if (isDebug()) console.log(`[trend-analyzer] DailyHot douyin returned 0 items, trying direct API fallback...`);
-    return callDouyinDirectApi(limit);
+    return callDouyinDirectApi(limit, onStatus);
   }
   if (platform === 'weibo') {
     if (isDebug()) console.log(`[trend-analyzer] DailyHot weibo returned 0 items, trying direct API fallback...`);
-    return callWeiboDirectApi(limit);
+    return callWeiboDirectApi(limit, onStatus);
   }
   if (platform === 'bilibili') {
     if (isDebug()) console.log(`[trend-analyzer] DailyHot bilibili returned 0 items, trying direct API fallback...`);
-    return callBilibiliDirectApi(limit);
+    return callBilibiliDirectApi(limit, onStatus);
   }
 
   return items;
@@ -1139,36 +1192,117 @@ function buildSignalPoolSummary(items: TrendItem[]): TrendsCacheData['signal_poo
   }));
 }
 
-export async function analyzeTrends(
+// ─── Async-decoupled consumer API (pure read) ─────────────────────────────
+//
+// Consumers (/brief, /trends, /idea without direction, topic-generator,
+// ops-desk) MUST call readCachedTrends() — never refreshTrends(). All
+// platform IO happens inside refreshTrends(), which is the exclusive
+// producer and only runs from the ops-trends cron.
+//
+// This is the sole contract between producer and consumer; there is no
+// fallback inline-fetch path. When the cache is missing or stale, the
+// consumer sees an empty list and the UI surfaces a "cache not ready"
+// banner via readCachedTrendsWithMeta().
+
+export interface CachedTrendsRead {
+  results: FilteredTrend[];
+  computed_at: string | null;
+  signal_pool: TrendsCacheData['signal_pool'];
+}
+
+/**
+ * Read the cached trend results produced by the ops-trends cron.
+ *
+ * Synchronous, zero-IO beyond a single JSON file read. Returns an empty
+ * list when the cache is missing, stale, or computed for a different
+ * persona identity — never throws, never triggers a fetch.
+ */
+export function readCachedTrends(personaIdentities: string): FilteredTrend[] {
+  return readCachedTrendsWithMeta(personaIdentities).results;
+}
+
+/**
+ * Same as readCachedTrends() but also returns the cache timestamp and
+ * signal-pool summary. Callers that want to display freshness banners or
+ * render the signal-pool overview should use this variant.
+ */
+export function readCachedTrendsWithMeta(personaIdentities: string): CachedTrendsRead {
+  const empty: CachedTrendsRead = { results: [], computed_at: null, signal_pool: undefined };
+
+  const cached = readJSON<TrendsCacheData>(PATHS.trendsCache, null as unknown as TrendsCacheData);
+  if (!cached?.computed_at) return empty;
+  if (cached.scoring_version !== TREND_SCORING_VERSION) return empty;
+  if (cached.persona_identities !== personaIdentities) return empty;
+
+  const age = now().getTime() - new Date(cached.computed_at).getTime();
+  const ttl = cached.results.length === 0 ? TRENDS_EMPTY_CACHE_TTL_MS : TRENDS_CACHE_TTL_MS;
+  if (age >= ttl) return empty;
+
+  return {
+    results: cached.results,
+    computed_at: cached.computed_at,
+    signal_pool: cached.signal_pool,
+  };
+}
+
+/**
+ * Refresh the trends cache by fetching raw data from all platforms,
+ * computing velocity / priority scores, and running the LLM relevance
+ * filter. This is the ONLY function that performs platform IO for trends.
+ *
+ * Intended to be called exclusively from the ops-trends cron. Consumers
+ * must never call this directly — use readCachedTrends() instead.
+ *
+ * No fallback safety nets: if the LLM returns nothing, we write an empty
+ * result and let the next cron attempt fill the cache. Consumers will
+ * surface the empty state with a "cache not ready" banner.
+ */
+export async function refreshTrends(
   ops: OpsConfig,
   personaIdentities: string,
   llm: LLMClient,
 ): Promise<FilteredTrend[]> {
-  // 0) Check file-level TTL cache — skip all API+LLM work if cache is fresh
-  // Empty results use shorter TTL to avoid locking out fresh data
-  const cached = readJSON<TrendsCacheData>(PATHS.trendsCache, null as unknown as TrendsCacheData);
-  if (cached?.computed_at && cached.persona_identities === personaIdentities && cached.scoring_version === TREND_SCORING_VERSION) {
-    const age = now().getTime() - new Date(cached.computed_at).getTime();
-    const ttl = cached.results.length === 0 ? TRENDS_EMPTY_CACHE_TTL_MS : TRENDS_CACHE_TTL_MS;
-    if (age < ttl) {
-      console.error(`[trend-analyzer] Using cached trends (age: ${Math.round(age / 60_000)}min, ${cached.results.length} topics, ttl=${cached.results.length === 0 ? '30min' : '4h'})`);
-      return cached.results;
+  const throttle = resolveThrottleConfig(ops);
+  const round = new RoundAbortController(throttle, 'trends');
+
+  // 1. Collect raw trends from remote DailyHot API sequentially, with a
+  //    randomised sleep between each platform. Platform anti-abuse systems
+  //    are far more sensitive to request bursts than to raw call volume;
+  //    under async decoupling no user is waiting, so we trade ~5 minutes
+  //    of round latency for a calmer, human-like fingerprint.
+  //
+  //    A single 403 / 429 / 451 aborts the rest of the round — retrying
+  //    when a platform is already flagging us is exactly how cookies get
+  //    burned. The next cron invocation will try again.
+  const platforms = ['douyin', 'weibo', 'bilibili', 'toutiao', 'baidu'] as const;
+  const rawByPlatform: Record<string, TrendItem[]> = Object.fromEntries(
+    platforms.map(p => [p, [] as TrendItem[]]),
+  );
+
+  for (let i = 0; i < platforms.length; i++) {
+    const platform = platforms[i];
+    if (round.shouldAbort()) {
+      console.warn(`[trend-analyzer] skipping ${platform} — ${round.getReason()}`);
+      continue;
+    }
+    if (i > 0) {
+      await sleepWithJitter(throttle.platform_gap_ms, round, `platform ${platform}`);
+      if (round.shouldAbort()) continue;
+    }
+    try {
+      rawByPlatform[platform] = await fetchWithFallback(platform, 10, status => {
+        round.observeStatus(status, `${platform} http`);
+      });
+    } catch (err) {
+      console.warn(`[trend-analyzer] fetch failed for ${platform}: ${(err as Error).message}`);
     }
   }
 
-  // 1. Collect raw trends from remote DailyHot API (with direct-API fallback)
-  // Parallel fetch: all 5 platforms at once (was serial, could take 5×20s=100s; now max ~12s)
-  const [douyinItems, weiboItems, bilibiliItems, toutiaoItems, baiduItems] =
-    await Promise.all([
-      fetchWithFallback('douyin', 10),
-      fetchWithFallback('weibo', 10),
-      fetchWithFallback('bilibili', 10),
-      fetchWithFallback('toutiao', 10),
-      fetchWithFallback('baidu', 10),
-    ]);
-  const rawAll = [...douyinItems, ...weiboItems, ...bilibiliItems, ...toutiaoItems, ...baiduItems];
-  if (isDebug()) console.log(`[trend-analyzer] DEBUG: rawAll items: ${rawAll.length} (douyin=${douyinItems.length}, weibo=${weiboItems.length}, bilibili=${bilibiliItems.length}, toutiao=${toutiaoItems.length}, baidu=${baiduItems.length})`);
-
+  const rawAll = platforms.flatMap(p => rawByPlatform[p]);
+  if (isDebug()) {
+    const parts = platforms.map(p => `${p}=${rawByPlatform[p].length}`).join(', ');
+    console.log(`[trend-analyzer] DEBUG: rawAll items: ${rawAll.length} (${parts}) — round elapsed ${Math.round(round.getElapsedMs() / 1000)}s`);
+  }
 
   // Deduplicate by keyword+platform
   const seen = new Set<string>();
@@ -1192,26 +1326,17 @@ export async function analyzeTrends(
   // 3. Persist today's data for future velocity calculations
   persistTodayTrends(withVelocity);
 
-  // Inject AUTHENTIC engagement signals BEFORE hot-list data (tag-engine + discovery-pool + search-keyword)
-  // These represent real user engagement, not potentially-inflated hot-list rankings
+  // Inject authentic engagement signals (tag-engine + discovery-pool +
+  // search-keyword). Each source reads its own cache produced by an
+  // independent cron; we NEVER inline-fetch missing data here.
   const tagItems = injectTagVocabularyItems();
   const discoveryItems = injectDiscoveryPoolTrends();
-  // If search-keyword cache is empty/stale, try to fetch fresh data (async)
-  let searchKeywordItems = loadCachedSearchKeywordTrends();
-  if (searchKeywordItems.length === 0) {
-    try {
-      console.log(`[trend-analyzer] search-keyword cache empty, fetching fresh data...`);
-      searchKeywordItems = await fetchSearchKeywordTrends();
-    } catch (err) {
-      console.warn(`[trend-analyzer] fetchSearchKeywordTrends failed:`, (err as Error).message);
-    }
-  }
+  const searchKeywordItems = loadCachedSearchKeywordTrends();
   if (isDebug()) {
     console.log(`[trend-analyzer] DEBUG: Injecting ${tagItems.length} tag-engine signals, ${discoveryItems.length} discovery-pool signals, ${searchKeywordItems.length} search-keyword signals`);
   }
 
-  // Combine: authentic signals first, then hot-list data
-  // Then compute priority_score (velocity × source_weight × quality_penalty)
+  // Combine and compute priority_score (velocity × source_weight × quality_penalty)
   const combined = [...tagItems, ...discoveryItems, ...searchKeywordItems, ...withVelocity];
   withVelocity = computePriorityScores(combined);
 
@@ -1235,7 +1360,6 @@ export async function analyzeTrends(
   const hasHistory = withVelocity.some(i => i.avg_7d > 0);
   if (isDebug()) console.log(`[trend-analyzer] DEBUG: hasHistory=${hasHistory}, threshold=${ops.trend_score_threshold}`);
 
-  // Sort by priority_score desc (was velocity_score desc)
   let aboveThreshold: TrendItem[];
   if (hasHistory) {
     aboveThreshold = filterByThreshold(withVelocity, ops.trend_score_threshold)
@@ -1253,9 +1377,9 @@ export async function analyzeTrends(
     for (const i of aboveThreshold) kindCounts.set(i.signal_kind ?? 'unknown', (kindCounts.get(i.signal_kind ?? 'unknown') ?? 0) + 1);
     console.log(`[trend-analyzer] DEBUG: aboveThreshold items: ${aboveThreshold.length} (${[...kindCounts.entries()].map(([k,v]) => `${k}=${v}`).join(', ')})`);
   }
+
   if (aboveThreshold.length === 0) {
-    if (isDebug()) console.log(`[trend-analyzer] DEBUG: No trends above threshold, returning empty`);
-    // Cache empty result to avoid re-fetching
+    if (isDebug()) console.log(`[trend-analyzer] DEBUG: No trends above threshold, writing empty cache`);
     writeJSON(PATHS.trendsCache, {
       computed_at: new Date().toISOString(),
       persona_identities: personaIdentities,
@@ -1266,7 +1390,10 @@ export async function analyzeTrends(
     return [];
   }
 
-  // 5. LLM relevance filter
+  // 5. LLM relevance filter — no safety-net fallback.
+  // If the LLM fails or filters everything out, we persist the empty
+  // result and let the next cron retry. Consumers will see no trends and
+  // the UI will say the cache isn't ready.
   const prompt = buildRelevancePrompt(aboveThreshold, personaIdentities, ops.topic_count);
   if (isDebug()) {
     const trendListDebug = aboveThreshold
@@ -1274,33 +1401,30 @@ export async function analyzeTrends(
       .join('\n');
     console.log(`[trend-analyzer] DEBUG: input trends (${aboveThreshold.length}):\n${trendListDebug}`);
   }
+
+  let finalResults: FilteredTrend[] = [];
   try {
     const envelope = await llm.callJSON<LLMTrendEnvelope>(prompt, 4000);
     if (isDebug()) console.log(`[trend-analyzer] DEBUG: LLM response received:`, envelope);
     const results = Array.isArray(envelope) ? envelope : (envelope.topics ?? []);
     if (isDebug()) console.log(`[trend-analyzer] DEBUG: LLM results count: ${results.length}`);
 
-    // Track used original trends to prevent multiple LLM results from mapping to the same one
     const usedOriginalKeys = new Set<string>();
 
-    const filtered = results
+    finalResults = results
       .map(r => {
         // Fuzzy match: LLM often returns shortened/cleaned keywords.
-        // Strategy: strip punctuation → substring check → keyword-overlap check.
         const normalize = (s: string) => s.replace(/[【】《》「」『』\[\]()（）⚡·、，。！？!?,.\-—\s#IGN]/g, '').toLowerCase();
         const rNorm = normalize(r.keyword);
 
-        // Score-based matching: count how many chars of rNorm appear in tNorm
         const overlapScore = (tNorm: string, rN: string): number => {
           if (tNorm === rN) return 1.0;
           if (tNorm.includes(rN) || rN.includes(tNorm)) return 0.9;
-          // Check if significant portion of one appears in the other (substring of ≥6 chars)
           for (let len = Math.min(rN.length, 8); len >= 6; len--) {
             for (let i = 0; i <= rN.length - len; i++) {
               if (tNorm.includes(rN.slice(i, i + len))) return 0.7;
             }
           }
-          // Split LLM keyword into 2-char segments and check overlap
           const segments: string[] = [];
           for (let i = 0; i < rN.length - 1; i++) segments.push(rN.slice(i, i + 2));
           if (segments.length === 0) return 0;
@@ -1308,8 +1432,7 @@ export async function analyzeTrends(
           return hits / segments.length;
         };
 
-        // IMPORTANT: Only match candidates from the SAME platform first.
-        // Fall back to cross-platform only if no same-platform match found.
+        // Prefer same-platform candidates; only widen the pool if nothing matches.
         const samePlatformCandidates = aboveThreshold.filter(t => t.platform === r.platform);
         const candidatePools = samePlatformCandidates.length > 0
           ? [samePlatformCandidates, aboveThreshold]
@@ -1319,11 +1442,11 @@ export async function analyzeTrends(
         let bestScore = 0;
 
         for (const pool of candidatePools) {
-          if (bestMatch && bestScore >= 0.45) break; // already found good match in same-platform pool
+          if (bestMatch && bestScore >= 0.45) break;
 
           for (const t of pool) {
             const tKey = `${t.platform}:${t.keyword}`;
-            if (usedOriginalKeys.has(tKey)) continue; // skip already-claimed originals
+            if (usedOriginalKeys.has(tKey)) continue;
 
             const tNorm = normalize(t.keyword);
             const platformBonus = t.platform === r.platform ? 0.15 : 0;
@@ -1335,13 +1458,11 @@ export async function analyzeTrends(
           }
         }
 
-        // Raised threshold from 0.35 → 0.45 to reduce false positives
         if (!bestMatch || bestScore < 0.45) {
           if (isDebug()) console.log(`[trend-analyzer] DEBUG: Fuzzy match failed for "${r.keyword}" (norm: "${rNorm}"), bestScore=${bestScore.toFixed(3)}`);
           return null;
         }
 
-        // Claim this original so subsequent LLM results won't map to it
         const matchKey = `${bestMatch.platform}:${bestMatch.keyword}`;
         usedOriginalKeys.add(matchKey);
         if (isDebug()) console.log(`[trend-analyzer] DEBUG: Matched "${r.keyword}" → "${bestMatch.keyword}" (score=${bestScore.toFixed(3)}`);
@@ -1354,52 +1475,34 @@ export async function analyzeTrends(
         };
       })
       .filter((r): r is FilteredTrend => r !== null);
-
-    // Fallback: if LLM filtered everything out but we had input data,
-    // keep top 2 by priority_score as a safety net (prevents total trend blackout)
-    let finalResults = filtered;
-    if (finalResults.length === 0 && aboveThreshold.length > 0) {
-      const fallbackCount = Math.min(2, aboveThreshold.length);
-      finalResults = aboveThreshold.slice(0, fallbackCount).map(t => ({
-        ...t,
-        hook_angle: '自动保留（LLM未选中）',
-        identity_mode: normalizeIdentityMode('daily'),
-      }));
-      console.warn(`[trend-analyzer] LLM filtered all trends, keeping top ${fallbackCount} by priority as fallback`);
-    }
-
-    // Write to TTL cache so subsequent cron runs skip API+LLM work
-    writeJSON(PATHS.trendsCache, {
-      computed_at: new Date().toISOString(),
-      persona_identities: personaIdentities,
-      scoring_version: TREND_SCORING_VERSION,
-      results: finalResults,
-      signal_pool: buildSignalPoolSummary(aboveThreshold),
-    } satisfies TrendsCacheData);
-
-    return finalResults;
   } catch (err) {
     console.error(`[trend-analyzer] LLM call failed:`, err);
-    // Fallback: even on LLM failure, return top items by priority if we have data
-    if (aboveThreshold.length > 0) {
-      const fallbackCount = Math.min(2, aboveThreshold.length);
-      const fallback = aboveThreshold.slice(0, fallbackCount).map(t => ({
-        ...t,
-        hook_angle: '自动保留（LLM调用失败）',
-        identity_mode: normalizeIdentityMode('daily'),
-      }));
-      // Cache the fallback with short TTL
-      writeJSON(PATHS.trendsCache, {
-        computed_at: new Date().toISOString(),
-        persona_identities: personaIdentities,
-        scoring_version: TREND_SCORING_VERSION,
-        results: fallback,
-        signal_pool: buildSignalPoolSummary(aboveThreshold),
-      } satisfies TrendsCacheData);
-      return fallback;
-    }
-    return [];
+    finalResults = [];
   }
+
+  writeJSON(PATHS.trendsCache, {
+    computed_at: new Date().toISOString(),
+    persona_identities: personaIdentities,
+    scoring_version: TREND_SCORING_VERSION,
+    results: finalResults,
+    signal_pool: buildSignalPoolSummary(aboveThreshold),
+  } satisfies TrendsCacheData);
+
+  return finalResults;
+}
+
+/**
+ * @deprecated Use readCachedTrends() in consumers, or refreshTrends() in
+ * the ops-trends cron. This wrapper is kept only so existing tests and
+ * third-party callers keep working during migration — it always behaves
+ * as a pure cache read and never performs platform IO.
+ */
+export async function analyzeTrends(
+  _ops: OpsConfig,
+  personaIdentities: string,
+  _llm: LLMClient,
+): Promise<FilteredTrend[]> {
+  return readCachedTrends(personaIdentities);
 }
 
 // ─── Directional Idea Material Pipeline ─────────────────────────────────────

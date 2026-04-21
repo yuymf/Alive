@@ -38,7 +38,9 @@ async function main(): Promise<void> {
 
   const count = await analyzePublishedPosts(llm, personaSummary, delayHours, baselineWindow);
 
-  console.log(`[${wallNow().toISOString()}] ops-analyze: analyzed ${count} posts`);
+  if (count > 0) {
+    console.log(`[${wallNow().toISOString()}] ops-analyze: analyzed ${count} posts`);
+  }
 }
 
 main().catch(err => {

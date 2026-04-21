@@ -27,7 +27,7 @@ All notable changes to Alive are documented here.
 - **`/alive setup` command** — in-chat env configuration: `/alive setup`, `/alive setup llm`, `/alive setup instagram`
 
 ### Changed
-- `.gitignore` now excludes `/e2e/` and `/scripts/` (root-level dev directories) from published repo
+- `.gitignore` now excludes `/e2e/` and `/tools/` (root-level dev directories) from published repo
 
 ---
 

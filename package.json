@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:harness": "vitest run --config e2e/harness/vitest.harness.config.ts",
+    "test:eval": "vitest run --config e2e/harness/vitest.harness.config.ts",
     "test:autoresearch": "vitest run alive/tests/autoresearch-fixture-runner.test.ts alive/tests/autoresearch-leaderboard.test.ts alive/tests/autoresearch-loop.test.ts",
     "autoresearch:fixture": "npx tsx e2e/autoresearch-fixture-runner.ts",
     "autoresearch:leaderboard": "npx tsx e2e/autoresearch-leaderboard.ts",

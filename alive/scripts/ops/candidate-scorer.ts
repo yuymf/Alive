@@ -35,7 +35,7 @@ const IDENTITY_KEYWORDS_LOWER: Record<string, string[]> = Object.fromEntries(
 );
 
 // ─── Weights ───────────────────────────────────────────────────────────────────
-// Tunable override: harness/tunable/prompts/ops/candidate-scorer.weights.json
+// Tunable override: eval/tunable/prompts/ops/candidate-scorer.weights.json
 // Schema: { weights: { track_overlap, burst_intensity, frequency, account_freshness, data_stability },
 //           burstCapRatio?: number,
 //           frequencySaturationCount?: number,

@@ -27,8 +27,16 @@ console.log = (...args: unknown[]) => console.error(...args);
 import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { loadSkillEnvVars } from '../utils/file-utils';
-import { analyzeTrends, analyzeDirectionalTrends, buildPersonaIdentities, FilteredTrend } from '../ops/trend-analyzer';
-import { trackCompetitors } from '../ops/competitor-tracker';
+import {
+  readCachedTrends,
+  readCachedTrendsWithMeta,
+  analyzeDirectionalTrends,
+  buildPersonaIdentities,
+  FilteredTrend,
+} from '../ops/trend-analyzer';
+import { readCachedCompetitors, readCachedCompetitorsWithMeta } from '../ops/competitor-tracker';
+import { ensureOpsCachesWarm } from './cache-warmup';
+import { buildCacheFreshnessBanner } from './cache-age';
 import { generateTopics } from '../ops/topic-generator';
 import { formatBriefCard, formatContentPackage, BriefEnrichment } from './brief-generator';
 import { loadQueue, cleanupOldItems, markApproved, markDiscarded, addReviewFeedback, getActivePendingItems } from './review-queue';
@@ -63,25 +71,21 @@ async function cmdBrief(): Promise<string> {
   const ops = persona.ops;
   if (!ops?.enabled) return '⚠️ ops 未启用，请在 persona.yaml 中设置 ops.enabled: true';
 
+  // Non-blocking cold-start warmup — if the caches are stale, this kicks
+  // off a background refresh that will land in time for the next /brief.
+  ensureOpsCachesWarm(persona, ops);
+
   const llm = createRealLLMClient('ops-brief-cmd');
   const identities = buildPersonaIdentities(persona);
   const identityKeys = getIdentityKeys(persona);
 
   await cleanupOldItems();
 
-  // Trends + competitors in parallel; competitors failure is non-fatal
-  let trends: FilteredTrend[] = [];
-  let competitors: import('../utils/types').CompetitorUpdate[] = [];
-  try {
-    const [trendsResult, competitorsResult] = await Promise.allSettled([
-      analyzeTrends(ops, identities, llm),
-      Promise.resolve(trackCompetitors(ops)),
-    ]);
-    trends = trendsResult.status === 'fulfilled' ? trendsResult.value : [];
-    competitors = competitorsResult.status === 'fulfilled' ? competitorsResult.value : [];
-  } catch {
-    // If even allSettled somehow throws, continue with empty data
-  }
+  // Read caches only — producer is the ops-trends cron. No inline fetch.
+  const trendsMeta = readCachedTrendsWithMeta(identities);
+  const competitorsMeta = readCachedCompetitorsWithMeta();
+  const trends = trendsMeta.results;
+  const competitors = competitorsMeta.updates;
 
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
   await generateTopics(trends, ops, persona.meta.name, llm, { style: imageStyle, sample_lines: persona.voice?.sample_lines });
@@ -123,7 +127,15 @@ async function cmdBrief(): Promise<string> {
     // viral-kb not available, skip
   }
   const date = now().toISOString().slice(0, 10);
-  return formatBriefCard(date, trends, competitors, pending, enrichment);
+  const card = formatBriefCard(date, trends, competitors, pending, enrichment);
+
+  // Append freshness banners so the user knows how old the underlying data
+  // is. Both come from async cron; they refresh independently.
+  const banners = [
+    buildCacheFreshnessBanner(trendsMeta.computed_at, '热点数据'),
+    buildCacheFreshnessBanner(competitorsMeta.computed_at, '竞品数据'),
+  ].filter(Boolean);
+  return banners.length > 0 ? `${card}\n\n${banners.join('\n')}` : card;
 }
 
 // ─── Command: /trends ─────────────────────────────────────────────────────────
@@ -134,12 +146,20 @@ async function cmdTrends(): Promise<string> {
   const ops = persona.ops;
   if (!ops?.enabled) return '⚠️ ops 未启用';
 
-  const llm = createRealLLMClient('ops-trends-cmd');
+  ensureOpsCachesWarm(persona, ops);
+
   const identities = buildPersonaIdentities(persona);
 
-  const trends = await analyzeTrends(ops, identities, llm);
+  const meta = readCachedTrendsWithMeta(identities);
+  const trends = meta.results;
 
-  if (trends.length === 0) return '📊 暂无通过过滤的热点话题';
+  if (trends.length === 0) {
+    return [
+      '📊 暂无通过过滤的热点话题',
+      '',
+      buildCacheFreshnessBanner(meta.computed_at, '热点数据'),
+    ].join('\n');
+  }
 
   // Group by source_bucket for sectioned display
   // Map internal bucket names to user-facing labels
@@ -181,23 +201,20 @@ async function cmdTrends(): Promise<string> {
   const distParts = [...bucketCounts.entries()].map(([b, c]) => `${bucketDisplay[b] ?? b}×${c}`);
   lines.push(`来源分布：${distParts.join(' · ')}`);
 
-  // Signal pool overview: show top items per source bucket from the cached signal pool
-  try {
-    const { readJSON, PATHS } = await import('../utils/file-utils');
-    const cache = readJSON<{ signal_pool?: { bucket: string; top: { keyword: string; platform: string; v: string; p: string }[] }[] }>(PATHS.trendsCache, {} as any);
-    if (cache?.signal_pool && cache.signal_pool.length > 0) {
-      lines.push('', '📋 信号池概览（按来源）');
-      for (const group of cache.signal_pool) {
-        const label = bucketDisplay[group.bucket] ?? `📰 ${group.bucket}`;
-        lines.push(`  ${label}:`);
-        for (const t of group.top) {
-          lines.push(`    · ${t.keyword}  ${t.platform}  v=${t.v}x  p=${t.p}`);
-        }
+  // Signal pool overview: reuse the cached summary so we don't re-read the
+  // trends cache file again here.
+  if (meta.signal_pool && meta.signal_pool.length > 0) {
+    lines.push('', '📋 信号池概览（按来源）');
+    for (const group of meta.signal_pool) {
+      const label = bucketDisplay[group.bucket] ?? `📰 ${group.bucket}`;
+      lines.push(`  ${label}:`);
+      for (const t of group.top) {
+        lines.push(`    · ${t.keyword}  ${t.platform}  v=${t.v}x  p=${t.p}`);
       }
     }
-  } catch {
-    // Non-fatal: signal pool overview is optional
   }
+
+  lines.push('', buildCacheFreshnessBanner(meta.computed_at, '热点数据'));
 
   return lines.join('\n');
 }
@@ -210,21 +227,27 @@ async function cmdIdea(direction?: string): Promise<string> {
   const ops = persona.ops;
   if (!ops?.enabled) return '⚠️ ops 未启用';
 
+  ensureOpsCachesWarm(persona, ops);
+
   const llm = createRealLLMClient('ops-idea-cmd');
   const identities = buildPersonaIdentities(persona);
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
 
-  // Get current trends — directional search when direction specified
+  // Trend material:
+  //   - No direction: pure cache read (producer is the ops-trends cron).
+  //   - Direction: the directional pipeline is kept for now as the sole
+  //     consumer-side exception — a user-provided keyword is impossible to
+  //     pre-compute, so we run the search inline. PR-3 will add a loading
+  //     banner and a cached-direction pipeline for repeat directions.
   let trends: FilteredTrend[] = [];
-  try {
-    if (direction) {
-      // Directional pipeline: cache → discovery-pool → platform search → LLM
+  if (direction) {
+    try {
       trends = await analyzeDirectionalTrends(ops, identities, llm, direction);
-    } else {
-      trends = await analyzeTrends(ops, identities, llm);
+    } catch {
+      // proceed without trends
     }
-  } catch {
-    // proceed without trends
+  } else {
+    trends = readCachedTrends(identities);
   }
 
   // Snapshot existing pending IDs before generation to diff later
@@ -489,28 +512,25 @@ async function cmdAdvice(): Promise<string> {
   const ops = persona.ops;
   if (!ops?.enabled) return '⚠️ ops 未启用';
 
+  ensureOpsCachesWarm(persona, ops);
+
   const llm = createRealLLMClient('ops-advice-cmd');
   const identities = buildPersonaIdentities(persona);
 
-  // Each step is independently fault-tolerant
-  let trends: FilteredTrend[] = [];
-  let competitors: import('../utils/types').CompetitorUpdate[] = [];
-
-  const [trendsResult, competitorsResult] = await Promise.allSettled([
-    analyzeTrends(ops, identities, llm),
-    Promise.resolve(trackCompetitors(ops)),
-  ]);
-  trends = trendsResult.status === 'fulfilled' ? trendsResult.value : [];
-  competitors = competitorsResult.status === 'fulfilled' ? competitorsResult.value : [];
+  // Read caches only — the ops-trends cron is the sole producer.
+  const trendsMeta = readCachedTrendsWithMeta(identities);
+  const competitorsMeta = readCachedCompetitorsWithMeta();
+  const trends: FilteredTrend[] = trendsMeta.results;
+  const competitors: import('../utils/types').CompetitorUpdate[] = competitorsMeta.updates;
 
   try {
     const report = await generatePersonaReport(persona, trends, competitors, llm);
     const card = formatAlignmentCard(report);
-    // Append note if data was partial
-    const warnings: string[] = [];
-    if (trendsResult.status === 'rejected') warnings.push('热点数据获取失败');
-    if (competitorsResult.status === 'rejected') warnings.push('竞品数据获取失败');
-    return warnings.length > 0 ? `${card}\n\n⚠️ 部分数据缺失：${warnings.join('、')}` : card;
+    const banners = [
+      buildCacheFreshnessBanner(trendsMeta.computed_at, '热点数据'),
+      buildCacheFreshnessBanner(competitorsMeta.computed_at, '竞品数据'),
+    ].filter(Boolean);
+    return banners.length > 0 ? `${card}\n\n${banners.join('\n')}` : card;
   } catch (err) {
     return `⚠️ 人设建议生成失败：${(err as Error).message}`;
   }

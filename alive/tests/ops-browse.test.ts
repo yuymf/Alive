@@ -62,6 +62,10 @@ vi.mock('../scripts/ops/keyword-tracker', () => ({
 
 const mockFetchSearchKeywordTrends = vi.fn(async () => []);
 vi.mock('../scripts/ops/trend-analyzer', () => ({
+  // ops-browse.ts imports refreshSearchKeywordTrends after the async-decoupling
+  // refactor. The alias fetchSearchKeywordTrends is kept exported for
+  // back-compat with older callers/tests.
+  refreshSearchKeywordTrends: (...args: unknown[]) => mockFetchSearchKeywordTrends(...args),
   fetchSearchKeywordTrends: (...args: unknown[]) => mockFetchSearchKeywordTrends(...args),
 }));
 

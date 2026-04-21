@@ -803,10 +803,10 @@ export async function regularTick(
             }
 
             // Search-keyword trend engine: pre-compute trend signals from keyword searches
-            // Results are cached and read by analyzeTrends() on next invocation
+            // Results are cached and read by consumers via readCachedTrends() on next invocation
             try {
-              const { fetchSearchKeywordTrends } = await import('../ops/trend-analyzer');
-              const skItems = await fetchSearchKeywordTrends();
+              const { refreshSearchKeywordTrends } = await import('../ops/trend-analyzer');
+              const skItems = await refreshSearchKeywordTrends();
               if (skItems.length > 0) {
                 console.log(`[search-keyword] Pre-computed ${skItems.length} trend items from keyword searches`);
               }

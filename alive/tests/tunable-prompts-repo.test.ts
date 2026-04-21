@@ -8,11 +8,11 @@ import { buildRelevancePrompt, type TrendItem } from '../scripts/ops/trend-analy
 import { buildRegeneratePrompt } from '../scripts/ops/topic-generator';
 
 /**
- * These tests verify the repo-level `harness/tunable/prompts/ops/*.md` files
+ * These tests verify the repo-level `eval/tunable/prompts/ops/*.md` files
  * are resolvable via the tunable-prompt loader, so that autoresearch agents
  * can rely on them as the default starting point when no skill-install exists.
  */
-describe('harness/tunable/prompts/ops/*.md — repo-level tunable resolution', () => {
+describe('eval/tunable/prompts/ops/*.md — repo-level tunable resolution', () => {
   const expectedFiles = [
     'ops/persona-advisor.md',
     'ops/strategy-engine.md',
@@ -26,7 +26,7 @@ describe('harness/tunable/prompts/ops/*.md — repo-level tunable resolution', (
     // __dirname 是 alive/tests/，向上两层到达 repo 根
     const repoRoot = path.resolve(__dirname, '..', '..');
     for (const rel of expectedFiles) {
-      const full = path.join(repoRoot, 'harness', 'tunable', 'prompts', rel);
+      const full = path.join(repoRoot, 'eval', 'tunable', 'prompts', rel);
       expect(fs.existsSync(full), `missing tunable prompt: ${full}`).toBe(true);
     }
   });

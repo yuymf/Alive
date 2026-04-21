@@ -10,8 +10,8 @@ import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
 import { loadSkillEnvVars, setPersonaName } from '../utils/file-utils';
-import { analyzeTrends, buildPersonaIdentities } from '../ops/trend-analyzer';
-import { trackCompetitors } from '../ops/competitor-tracker';
+import { readCachedTrends, buildPersonaIdentities } from '../ops/trend-analyzer';
+import { readCachedCompetitors } from '../ops/competitor-tracker';
 import { generateTopics } from '../ops/topic-generator';
 import { sendDailyBrief } from '../ops/brief-generator';
 import { loadQueue, cleanupOldItems, PENDING_EXPIRE_HOURS, hoursSinceCreated } from '../ops/review-queue';
@@ -51,13 +51,11 @@ async function main(): Promise<void> {
 
   await cleanupOldItems();
 
-  const [trendsResult, competitorsResult] = await Promise.allSettled([
-    analyzeTrends(ops, identities, llm),
-    Promise.resolve(trackCompetitors(ops)),
-  ]);
-
-  const trends = trendsResult.status === 'fulfilled' ? trendsResult.value : [];
-  const competitors = competitorsResult.status === 'fulfilled' ? competitorsResult.value : [];
+  // Read caches only — the ops-trends cron is the sole producer of this data.
+  // If the caches are empty, downstream generators will surface a "cache not
+  // ready" banner to the user rather than triggering inline fetches.
+  const trends = readCachedTrends(identities);
+  const competitors = readCachedCompetitors();
 
   console.log(`[${wallNow().toISOString()}] ops-brief: trends=${trends.length}, calling generateTopics...`);
   await generateTopics(trends, ops, persona.meta.name, llm, persona.voice);

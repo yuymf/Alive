@@ -70,11 +70,11 @@ async function main(): Promise<void> {
 
   console.log(`[${wallNow().toISOString()}] ops-performance: ${publishedItems.length} items checked, ${snapshotCount} snapshots appended`);
 
-  // === 摘要输出（cron deliver 会投递 stdout） ===
-  console.log(`\n📈 内容表现速报`);
-  console.log(`- 已发布内容: ${publishedItems.length} 篇`);
-  console.log(`- 本轮采集快照: ${snapshotCount} 条`);
-  if (snapshotCount > 0) {
+  // === 摘要输出（cron deliver 会投递 stdout；0 条内容时不推送） ===
+  if (publishedItems.length > 0 && snapshotCount > 0) {
+    console.log(`\n📈 内容表现速报`);
+    console.log(`- 已发布内容: ${publishedItems.length} 篇`);
+    console.log(`- 本轮采集快照: ${snapshotCount} 条`);
     const tracked = publishedItems.filter(it => it.published_urls).slice(0, 3);
     tracked.forEach(it => console.log(`  · ${it.topic}（${Object.keys(it.published_urls!).join('/')}）`));
   }

@@ -1,6 +1,0 @@
-{"step":1,"kind":"operator","content":"标题更像朋友聊天，别太像命题作文","meta":{"expectedIntent":"edit"}}
-{"step":1,"kind":"assistant","content":"✏️ 已修改「title」：title: \"...\" → \"春天上班穿简单点，比堆满更时髦...\"\n\n可以继续说修改意见，或回复\"好\"确认"}
-{"step":2,"kind":"operator","content":"好，这版可以发","meta":{"expectedIntent":"approve"}}
-{"step":2,"kind":"assistant","content":"✅ 已审批通过：蹭 春季通勤穿搭：不要堆满，反而更像现在的上班女生"}
-{"step":3,"kind":"operator","content":"已发 https://www.xiaohongshu.com/explore/fake-autoresearch-post","meta":{"expectedIntent":"publish"}}
-{"step":3,"kind":"assistant","content":"✅ 已记录发布链接：蹭 春季通勤穿搭：不要堆满，反而更像现在的上班女生\n📎 xhs: https://www.xiaohongshu.com/explore/fake-autoresearch-post"}

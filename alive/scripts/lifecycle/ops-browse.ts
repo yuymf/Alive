@@ -25,7 +25,7 @@ import { XhsProvider } from '../adapters/providers/xhs-provider';
 import { DouyinProvider } from '../adapters/providers/douyin-provider';
 import { exaWebSearch } from '../utils/exa-client';
 import { runKeywordSearch } from '../ops/keyword-tracker';
-import { fetchSearchKeywordTrends } from '../ops/trend-analyzer';
+import { refreshSearchKeywordTrends } from '../ops/trend-analyzer';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -223,7 +223,7 @@ export async function main(): Promise<void> {
   }
 
   try {
-    const skItems = await fetchSearchKeywordTrends();
+    const skItems = await refreshSearchKeywordTrends(ops);
     if (skItems.length > 0) {
       console.log(`[search-keyword] Pre-computed ${skItems.length} trend items from keyword searches`);
     }

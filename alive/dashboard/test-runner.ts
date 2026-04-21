@@ -45,8 +45,11 @@ import { hydrateEmotionState, VitalityState, ConfidenceState } from '../scripts/
 import { setTimeOverride, clearTimeOverride } from '../scripts/utils/time-utils';
 
 // ── Ops module imports ──────────────────────────────────────────────
-import { analyzeTrends, buildPersonaIdentities } from '../scripts/ops/trend-analyzer';
-import { trackCompetitors, buildCompetitorSummary } from '../scripts/ops/competitor-tracker';
+// The dashboard's test panel lets developers manually trigger producer-side
+// refreshes to validate the platform IO pipeline. Consumers in production
+// should import readCachedTrends / readCachedCompetitors instead.
+import { refreshTrends, buildPersonaIdentities } from '../scripts/ops/trend-analyzer';
+import { refreshCompetitors, buildCompetitorSummary } from '../scripts/ops/competitor-tracker';
 import { generateTopics } from '../scripts/ops/topic-generator';
 import { loadQueue, markApproved, markDiscarded, markPublished } from '../scripts/ops/review-queue';
 import { formatBriefCard, BriefEnrichment, formatStrategySection } from '../scripts/ops/brief-generator';
@@ -568,7 +571,7 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     if (!personaConfig.ops) return { error: '当前 persona 未启用 ops 功能 (ops.enabled: false)' };
     const llm = createRealLLMClient('test-ops-trends');
     const identities = buildPersonaIdentities(personaConfig);
-    const trends = await analyzeTrends(personaConfig.ops, identities, llm);
+    const trends = await refreshTrends(personaConfig.ops, identities, llm);
     // Also return signal_pool from cache for display
     const cache = readJSON<{ signal_pool?: { bucket: string; top: { keyword: string; platform: string; v: string; p: string }[] }[] }>(PATHS.trendsCache, {} as any);
     return {
@@ -584,7 +587,7 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
   if (cmd === 'ops-competitors') {
     const personaConfig = loadPersona();
     if (!personaConfig.ops) return { error: '当前 persona 未启用 ops 功能' };
-    const updates = trackCompetitors(personaConfig.ops);
+    const updates = refreshCompetitors(personaConfig.ops);
     const summary = buildCompetitorSummary(updates);
     return {
       command: 'ops-competitors',
@@ -601,7 +604,7 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     if (!personaConfig.ops) return { error: '当前 persona 未启用 ops 功能' };
     const llm = createRealLLMClient('test-ops-idea');
     const identities = buildPersonaIdentities(personaConfig);
-    const trends = await analyzeTrends(personaConfig.ops, identities, llm);
+    const trends = await refreshTrends(personaConfig.ops, identities, llm);
     const personaDescription = identities;
     await generateTopics(trends, personaConfig.ops, personaDescription, llm, personaConfig.voice);
     // After generation, load the queue to see new items
@@ -712,10 +715,10 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
 
     emitProgress('ops-brief', '正在分析趋势...', 10);
     const identities = buildPersonaIdentities(personaConfig);
-    const trends = await analyzeTrends(personaConfig.ops, identities, llm);
+    const trends = await refreshTrends(personaConfig.ops, identities, llm);
 
     emitProgress('ops-brief', '正在追踪竞品...', 30);
-    const competitors = trackCompetitors(personaConfig.ops);
+    const competitors = refreshCompetitors(personaConfig.ops);
 
     emitProgress('ops-brief', '正在加载审核队列...', 50);
     const queue = await loadQueue();
@@ -777,8 +780,8 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     if (!personaConfig.ops) return { error: '当前 persona 未启用 ops 功能' };
     const llm = createRealLLMClient('test-ops-advice');
     const identities = buildPersonaIdentities(personaConfig);
-    const trends = await analyzeTrends(personaConfig.ops, identities, llm);
-    const competitors = trackCompetitors(personaConfig.ops);
+    const trends = await refreshTrends(personaConfig.ops, identities, llm);
+    const competitors = await refreshCompetitors(personaConfig.ops);
     const report = await generatePersonaReport(personaConfig, trends, competitors, llm);
     const formatted = formatAlignmentCard(report);
     return {

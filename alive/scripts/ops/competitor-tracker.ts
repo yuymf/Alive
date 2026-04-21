@@ -13,7 +13,7 @@ import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { now, wallNow, getLocalDate } from '../utils/time-utils';
 import { CompetitorUpdate, CompetitorLog, OpsConfig, CompetitorProfile, IdentityMode, CompetitorPostsStore, CompetitorPost } from '../utils/types';
 import { matchesTaxonomy } from './ops-taxonomy';
-import { loadCompetitorPosts } from './competitor-fetcher';
+import { RoundAbortController, resolveThrottleConfig, sleepWithJitter } from './throttle';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -571,25 +571,13 @@ function postToRecentPost(post: CompetitorPost): NonNullable<CompetitorUpdate['l
   };
 }
 
-// ─── TTL-based file cache ──────────────────────────────────────────────────
-// Replaces the old in-process daily cache which was useless under cron
-// (each cron invocation is a new process, so _cachedDay was always null).
-// Now reads competitor-log.json's last_updated for TTL check — works cross-process.
+// ─── Competitor cache TTL (for cron-side staleness checks) ─────────────────
+//
+// In the async-decoupled architecture, consumers read the cache unconditionally
+// (see readCachedCompetitors below) and the producer cron decides when a
+// refresh is warranted via isCompetitorCacheStale().
 
 export const COMPETITOR_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
-
-/** In-process cache (still useful for same-process repeated calls, e.g. cron + /brief) */
-let _cachedDay: string | null = null;
-let _cachedUpdates: CompetitorUpdate[] | null = null;
-let _cachedSourceAtMs: number | null = null;
-let _cachedSignature: string | null = null;
-
-export function resetCompetitorTrackerCache(): void {
-  _cachedDay = null;
-  _cachedUpdates = null;
-  _cachedSourceAtMs = null;
-  _cachedSignature = null;
-}
 
 function getOldestFetchedAtMs(updates: CompetitorUpdate[]): number | null {
   const timestamps = updates
@@ -599,21 +587,13 @@ function getOldestFetchedAtMs(updates: CompetitorUpdate[]): number | null {
   return timestamps.length > 0 ? Math.min(...timestamps) : null;
 }
 
-function setInProcessCache(today: string, signature: string, updates: CompetitorUpdate[], sourceAtMs: number | null): void {
-  _cachedDay = today;
-  _cachedUpdates = updates;
-  _cachedSourceAtMs = sourceAtMs;
-  _cachedSignature = signature;
+export function resetCompetitorTrackerCache(): void {
+  // No in-process caching anymore — readCachedCompetitors/refreshCompetitors
+  // rely exclusively on competitor-log.json. The function is retained so
+  // existing test helpers remain callable as a no-op.
 }
 
-function buildCacheSignature(ops: OpsConfig): string {
-  return JSON.stringify({
-    competitor_accounts: ops.competitor_accounts ?? null,
-    competitors: ops.competitors ?? null,
-  });
-}
-
-// ─── Main export ─────────────────────────────────────────────────────────────
+// ─── Main exports ──────────────────────────────────────────────────────────
 
 /**
  * Persist competitor updates to competitor-log.json.
@@ -649,71 +629,89 @@ function persistLog(updates: CompetitorUpdate[], today: string): void {
   writeJSON(PATHS.competitorLog, log);
 }
 
-export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
+// ─── Async-decoupled consumer API (pure read) ──────────────────────────────
+
+export interface CachedCompetitorsRead {
+  updates: CompetitorUpdate[];
+  computed_at: string | null;
+}
+
+/**
+ * Read today's competitor updates from competitor-log.json.
+ *
+ * Synchronous, zero platform IO. Returns an empty list when the log is
+ * missing or when no entry exists for the current local date — callers
+ * (e.g. /brief) surface a "cache not ready" banner via
+ * readCachedCompetitorsWithMeta().
+ *
+ * This is the sole consumer entry point. Refreshing is the job of the
+ * ops-trends cron via refreshCompetitors().
+ */
+export function readCachedCompetitors(): CompetitorUpdate[] {
+  return readCachedCompetitorsWithMeta().updates;
+}
+
+export function readCachedCompetitorsWithMeta(): CachedCompetitorsRead {
+  const log = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
   const today = getLocalDate(now());
-  const cacheSignature = buildCacheSignature(ops);
-
-  // 1) In-process cache hit (same day, same process) — must still respect TTL
-  if (
-    _cachedDay === today
-    && _cachedUpdates !== null
-    && _cachedSourceAtMs !== null
-    && _cachedSignature === cacheSignature
-  ) {
-    const age = now().getTime() - _cachedSourceAtMs;
-    if (age < COMPETITOR_CACHE_TTL_MS) {
-      console.error(`[competitor-tracker] Using in-process cached data for ${today} (age: ${Math.round(age / 60_000)}min)`);
-      return _cachedUpdates;
-    }
-  }
-
-  // 2) File-level TTL cache hit (cross-process, e.g. cron spawns new process)
-  const existing = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
-  const todayEntries = existing.entries.filter(e => getLocalDate(new Date(e.fetched_at)) === today);
-  if (todayEntries.length > 0) {
-    const sourceAtMs = getOldestFetchedAtMs(todayEntries) ?? Date.parse(existing.last_updated);
-    if (Number.isFinite(sourceAtMs)) {
-      const age = now().getTime() - sourceAtMs;
-      if (age < COMPETITOR_CACHE_TTL_MS) {
-        console.error(`[competitor-tracker] Using file-level cached data (age: ${Math.round(age / 60_000)}min, ${todayEntries.length} entries for today)`);
-        setInProcessCache(today, cacheSignature, todayEntries, sourceAtMs);
-        return todayEntries;
-      }
-    }
-  }
-
-  // 3) Try deriving from competitor-posts.json (avoids duplicate API calls)
-  const postsStore = loadCompetitorPosts();
-  if (postsStore.last_fetched) {
-    const postsSourceAtMs = Date.parse(postsStore.last_fetched);
-    const postsAge = now().getTime() - postsSourceAtMs;
-    if (Number.isFinite(postsSourceAtMs) && postsAge < COMPETITOR_CACHE_TTL_MS && Object.keys(postsStore.accounts).length > 0) {
-      const derived = deriveUpdatesFromPosts(postsStore, ops);
-      if (derived.length > 0) {
-        console.error(
-          `[competitor-tracker] Derived ${derived.length} updates from competitor-posts.json ` +
-          `(age: ${Math.round(postsAge / 60_000)}min, skipping API calls)`,
-        );
-        // Persist to competitor-log.json for downstream compatibility
-        persistLog(derived, today);
-        setInProcessCache(today, cacheSignature, derived, postsSourceAtMs);
-        return derived;
-      }
-    }
-  }
-
-  // 4) Fallback: full API fetch
-  const accounts = resolveCompetitorAccounts(ops);
-
-  // XHS accounts with url — precise fetch by user_id
-  const xhsByIdUpdates = [...accounts.xhsUserIds.entries()].map(
-    ([userId, displayName]) => fetchXhsAccountByUserId(userId, displayName)
+  const todayEntries = log.entries.filter(
+    e => getLocalDate(new Date(e.fetched_at)) === today,
   );
 
-  // XHS accounts without url — search by name
-  const xhsSearchUpdates = accounts.xhs.map(fetchXhsAccount);
+  if (todayEntries.length === 0) {
+    return { updates: [], computed_at: null };
+  }
 
-  const xhsUpdates = [...xhsByIdUpdates, ...xhsSearchUpdates];
+  const oldestMs = getOldestFetchedAtMs(todayEntries);
+  const computedAt = oldestMs !== null
+    ? new Date(oldestMs).toISOString()
+    : log.last_updated || null;
+
+  return { updates: todayEntries, computed_at: computedAt };
+}
+
+/**
+ * Returns true when the competitor-log.json cache is older than
+ * COMPETITOR_CACHE_TTL_MS or has no entry for today. Used by the
+ * ops-trends cron to decide whether a refresh is needed.
+ */
+export function isCompetitorCacheStale(): boolean {
+  const meta = readCachedCompetitorsWithMeta();
+  if (!meta.computed_at) return true;
+  const age = now().getTime() - new Date(meta.computed_at).getTime();
+  return age >= COMPETITOR_CACHE_TTL_MS;
+}
+
+/**
+ * Refresh competitor tracking by calling every platform (XHS / Douyin /
+ * Bilibili) and persisting the result to competitor-log.json.
+ *
+ * The sole producer path — only the ops-trends cron should call this.
+ * Consumers must use readCachedCompetitors() and never trigger platform IO.
+ *
+ * Two architectural notes:
+ *
+ * 1. The previous "three-layer fallback" (in-process cache → file cache →
+ *    posts-store derivation → full fetch) existed to minimise latency when
+ *    a user was waiting on /brief. Under async decoupling nobody waits,
+ *    so the refresh is always a full fetch — simpler, more predictable,
+ *    and less likely to leak inconsistent partial data.
+ *
+ * 2. Accounts are fetched one-at-a-time with a random jitter between
+ *    each call (see `ops.throttle.account_gap_ms`). The rationale is the
+ *    same as for trend refresh: platform anti-abuse systems flag bursts
+ *    of requests far more readily than a calm, human-like cadence, and
+ *    no consumer is blocked on this round.
+ *
+ * Returns whatever was successfully fetched before the round was aborted
+ * or all accounts were visited. The cache is written with whatever was
+ * collected — partial rounds are acceptable.
+ */
+export async function refreshCompetitors(ops: OpsConfig): Promise<CompetitorUpdate[]> {
+  const throttle = resolveThrottleConfig(ops);
+  const round = new RoundAbortController(throttle, 'competitors');
+  const today = getLocalDate(now());
+  const accounts = resolveCompetitorAccounts(ops);
 
   // Build sec_uid → display name map for Douyin accounts
   const douyinDisplayNames = new Map<string, string>();
@@ -727,17 +725,6 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
     }
   }
 
-  const douyinUpdates = accounts.douyin.map(secUid => {
-    const update = fetchDouyinAccount(secUid);
-    // Replace sec_uid with human-readable display name
-    const displayName = douyinDisplayNames.get(secUid);
-    if (displayName && update.account !== displayName) {
-      return { ...update, account: displayName };
-    }
-    return update;
-  });
-
-  // Bilibili accounts from competitors[] with platform === 'bilibili'
   const bilibiliEntries = (ops.competitors ?? [])
     .filter(c => c.platform === 'bilibili')
     .map(c => ({
@@ -745,16 +732,75 @@ export function trackCompetitors(ops: OpsConfig): CompetitorUpdate[] {
       name: c.name,
     }))
     .filter(e => e.mid !== '');
-  const bilibiliUpdates = bilibiliEntries.map(e => fetchBilibiliAccount(e.mid, e.name));
 
-  const all = [...xhsUpdates, ...douyinUpdates, ...bilibiliUpdates];
-  const sourceAtMs = getOldestFetchedAtMs(all) ?? now().getTime();
+  // Flatten all accounts into a single ordered work list so the
+  // account-gap jitter spans the entire round, not per-platform loops.
+  // XHS-by-id first (most precise), then XHS-by-search, then Douyin,
+  // then Bilibili — platform transitions are naturally spread out.
+  type Work =
+    | { kind: 'xhs-id'; userId: string; displayName: string }
+    | { kind: 'xhs-search'; account: string }
+    | { kind: 'douyin'; secUid: string }
+    | { kind: 'bilibili'; mid: string; name: string };
 
-  // Persist
+  const workList: Work[] = [
+    ...[...accounts.xhsUserIds.entries()].map(
+      ([userId, displayName]) => ({ kind: 'xhs-id', userId, displayName } as Work),
+    ),
+    ...accounts.xhs.map(account => ({ kind: 'xhs-search', account } as Work)),
+    ...accounts.douyin.map(secUid => ({ kind: 'douyin', secUid } as Work)),
+    ...bilibiliEntries.map(e => ({ kind: 'bilibili', mid: e.mid, name: e.name } as Work)),
+  ];
+
+  const all: CompetitorUpdate[] = [];
+
+  for (let i = 0; i < workList.length; i++) {
+    if (round.shouldAbort()) {
+      console.warn(`[competitor-tracker] ${workList.length - i} account(s) skipped — ${round.getReason()}`);
+      break;
+    }
+    if (i > 0) {
+      await sleepWithJitter(throttle.account_gap_ms, round, `competitor #${i}`);
+      if (round.shouldAbort()) break;
+    }
+
+    const job = workList[i];
+    try {
+      if (job.kind === 'xhs-id') {
+        all.push(fetchXhsAccountByUserId(job.userId, job.displayName));
+      } else if (job.kind === 'xhs-search') {
+        all.push(fetchXhsAccount(job.account));
+      } else if (job.kind === 'douyin') {
+        const update = fetchDouyinAccount(job.secUid);
+        const displayName = douyinDisplayNames.get(job.secUid);
+        all.push(
+          displayName && update.account !== displayName
+            ? { ...update, account: displayName }
+            : update,
+        );
+      } else if (job.kind === 'bilibili') {
+        all.push(fetchBilibiliAccount(job.mid, job.name));
+      }
+    } catch (err) {
+      console.error(`[competitor-tracker] ${job.kind} fetch threw:`, (err as Error).message);
+    }
+  }
+
   persistLog(all, today);
 
-  // Update in-process cache
-  setInProcessCache(today, cacheSignature, all, sourceAtMs);
+  if (process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true') {
+    console.error(`[competitor-tracker] round elapsed ${Math.round(round.getElapsedMs() / 1000)}s, ${all.length}/${workList.length} accounts fetched`);
+  }
 
   return all;
+}
+
+/**
+ * @deprecated Use readCachedCompetitors() in consumers or refreshCompetitors()
+ * in the ops-trends cron. This wrapper now always behaves as a pure cache
+ * read and never fetches from platforms — it exists only so third-party
+ * callers and existing tests keep compiling during migration.
+ */
+export function trackCompetitors(_ops: OpsConfig): CompetitorUpdate[] {
+  return readCachedCompetitors();
 }

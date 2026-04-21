@@ -30,7 +30,7 @@ function fmtEngagement(n: number): string {
 }
 
 // ─── Tunable display limits ─────────────────────────────────────────────────
-// Tunable override: harness/tunable/prompts/ops/brief-generator.limits.json
+// Tunable override: eval/tunable/prompts/ops/brief-generator.limits.json
 // All fields optional; missing values fall back to defaults below.
 
 interface BriefLimitsTunable {
