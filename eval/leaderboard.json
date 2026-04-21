@@ -1,0 +1,553 @@
+{
+  "version": 1,
+  "bestPerFixture": {
+    "miss-v-natural-language-review-loop": {
+      "runId": "2026-04-21T04-41-23-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T04:41:23.132Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 94.5,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 86.3,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    "miss-v-esports-review-loop": {
+      "runId": "2026-04-21T05-58-19-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T05:58:19.934Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 93.6,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 82.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    }
+  },
+  "recentRuns": [
+    {
+      "runId": "2026-04-21T06-23-11-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T06:23:11.513Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 93.6,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 82.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T06-21-06-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T06:21:06.912Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 94.2,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 85,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T06-17-22-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T06:17:22.235Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 91.4,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 73.8,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T06-15-14-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T06:15:14.071Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 91.1,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 72.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T06-12-19-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T06:12:19.635Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 91.7,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 75,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T06-10-39-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T06:10:39.903Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 93,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 80,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T06-07-41-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T06:07:41.472Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 90.8,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 72.5,
+        "edit_convergence": 75,
+        "cost_check": 80
+      }
+    },
+    {
+      "runId": "2026-04-21T06-05-50-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T06:05:50.716Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 92.3,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 77.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T06-03-07-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T06:03:07.320Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 89.2,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 65,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T06-01-05-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T06:01:05.828Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 90.5,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 70,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T05-58-19-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T05:58:19.934Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 93.6,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 82.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T05-56-27-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T05:56:27.039Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 94.2,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 85,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T05-25-18-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T05:25:18.878Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 93,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 80,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T05-23-00-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T05:23:00.739Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 93.6,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 82.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T05-20-09-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T05:20:09.044Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 91.7,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 75,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T05-17-59-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T05:17:59.595Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 94.2,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 85,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T04-49-57-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T04:49:57.175Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 89.8,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 67.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T04-47-27-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T04:47:27.424Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 92.3,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 77.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T04-43-06-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T04:43:06.766Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 89.2,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 65,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T04-41-23-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T04:41:23.132Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 94.5,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 86.3,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T04-38-38-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-21T04:38:38.449Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 89.2,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 65,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-21T04-36-33-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-21T04:36:33.984Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 93,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 80,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-20T19-28-12-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-20T19:28:12.262Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 87.3,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 57.49999999999999,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-20T19-26-09-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-20T19:26:09.127Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 91.7,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 75,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-20T19-23-47-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-20T19:23:47.574Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 90.5,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 70,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-20T19-22-27-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-20T19:22:27.244Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 92.3,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 77.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-20T19-20-02-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-20T19:20:02.867Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 92.3,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 77.5,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-20T19-18-43-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-20T19:18:43.931Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 91.7,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 75,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-20T19-16-01-miss-v-esports-review-loop-seed0",
+      "timestamp": "2026-04-20T19:16:01.634Z",
+      "fixtureName": "miss-v-esports-review-loop",
+      "seed": 0,
+      "opsScore": 93.3,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 81.3,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    },
+    {
+      "runId": "2026-04-20T19-14-37-miss-v-natural-language-review-loop-seed0",
+      "timestamp": "2026-04-20T19:14:37.703Z",
+      "fixtureName": "miss-v-natural-language-review-loop",
+      "seed": 0,
+      "opsScore": 94.2,
+      "judges": {
+        "generation_completed": 100,
+        "edit_applied": 100,
+        "approval_completed": 100,
+        "publish_recorded": 100,
+        "judge_composite": 85,
+        "edit_convergence": 75,
+        "cost_check": 90
+      }
+    }
+  ],
+  "totalRuns": 32,
+  "updatedAt": "2026-04-21T06:23:11.515Z",
+  "baselineRun": {
+    "runId": "2026-04-20T13-19-48-miss-v-natural-language-review-loop-seed0",
+    "timestamp": "2026-04-20T13:19:48.683Z",
+    "fixtureName": "miss-v-natural-language-review-loop",
+    "seed": 0,
+    "opsScore": 67.2,
+    "judges": {
+      "generation_completed": 0,
+      "edit_applied": 100,
+      "approval_completed": 100,
+      "publish_recorded": 100,
+      "judge_composite": 42.5,
+      "edit_convergence": 75,
+      "cost_check": 43
+    }
+  },
+  "bestRun": {
+    "runId": "2026-04-21T04-41-23-miss-v-natural-language-review-loop-seed0",
+    "timestamp": "2026-04-21T04:41:23.132Z",
+    "fixtureName": "miss-v-natural-language-review-loop",
+    "seed": 0,
+    "opsScore": 94.5,
+    "judges": {
+      "generation_completed": 100,
+      "edit_applied": 100,
+      "approval_completed": 100,
+      "publish_recorded": 100,
+      "judge_composite": 86.3,
+      "edit_convergence": 75,
+      "cost_check": 90
+    }
+  }
+}

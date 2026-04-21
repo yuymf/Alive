@@ -1,0 +1,13 @@
+{
+  "_note": "Tunable weights for ops candidate-scorer. All fields optional — missing = baked-in default. Weights should sum to ~1.0 (not enforced) and be non-negative.",
+  "weights": {
+    "track_overlap": 0.30,
+    "burst_intensity": 0.25,
+    "frequency": 0.15,
+    "account_freshness": 0.15,
+    "data_stability": 0.15
+  },
+  "burstCapRatio": 5,
+  "frequencySaturationCount": 5,
+  "freshnessWindowDays": 730
+}
