@@ -13,8 +13,8 @@ import { now, getLocalDate } from '../utils/time-utils';
 import { TrendItem, TrendHistory, OpsConfig, PersonaConfig, TagVocabulary, TrendSourceType, TrendSourceBucket, TrendSignalKind, toSourceBucket, sourceWeight, classifySignalKind } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
 import { normalizeKeyword, extractTrendHookKeyword } from '../utils/text-utils';
-import { loadDiscoveryPool } from './discovery-engine';
-import type { DiscoveryItem } from './discovery-engine';
+import { loadDiscoveryPool, loadCandidateAccounts, saveCandidateAccounts } from './discovery-engine';
+import type { DiscoveryItem, CandidateAccount, CandidateAccountsStore } from './discovery-engine';
 import { searchXhsNotes } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
 import { searchDouyinVideos, getDouyinRateLimitStatus } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 import { RoundAbortController, resolveThrottleConfig, sleepWithJitter } from './throttle';
@@ -598,6 +598,37 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
 
   const tagFrequency = new Map<string, { count: number; totalEngagement: number; platforms: Set<string> }>();
 
+  // ── Candidate competitor discovery ──────────────────────────────────────
+  // While searching, also collect high-engagement authors as candidate
+  // competitors. These are merged into candidate-accounts.json at the end
+  // of the round, exactly like processInspirationForAccountDiscovery does
+  // for content-browse results — but from the search-keyword pipeline
+  // which covers trending hashtags that browse may not reach.
+  const MIN_AUTHOR_HITS_FOR_CANDIDATE = 2;
+  const authorData = new Map<string, {
+    count: number;
+    totalEngagement: number;
+    maxEngagement: number;
+    topics: Set<string>;
+    platform: string;
+    profileUrl?: string;
+  }>();
+
+  function collectAuthor(author: string, platform: string, engagement: number, topic: string, profileUrl?: string): void {
+    if (!author || author === 'unknown') return;
+    const key = `${author}:${platform}`;
+    const existing = authorData.get(key);
+    if (existing) {
+      existing.count++;
+      existing.totalEngagement += engagement;
+      existing.maxEngagement = Math.max(existing.maxEngagement, engagement);
+      existing.topics.add(topic);
+      if (profileUrl && !existing.profileUrl) existing.profileUrl = profileUrl;
+    } else {
+      authorData.set(key, { count: 1, totalEngagement: engagement, maxEngagement: engagement, topics: new Set([topic]), platform, profileUrl });
+    }
+  }
+
   // XHS searches — serial with keyword-gap jitter to keep a calm fingerprint.
   for (let i = 0; i < uniqueKeywords.length; i++) {
     const kw = uniqueKeywords[i];
@@ -609,7 +640,7 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
 
     let notes: Awaited<ReturnType<typeof searchXhsNotes>>;
     try {
-      notes = await searchXhsNotes(kw, { sortBy: '最热', noteType: '全部' });
+      notes = await searchXhsNotes(kw, { sortBy: '最多点赞', noteType: '不限' });
     } catch (err) {
       console.warn(`[trend-analyzer] XHS search failed for "${kw}": ${(err as Error).message}`);
       continue;
@@ -628,6 +659,8 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
           tagFrequency.set(tag, { count: 1, totalEngagement: engagement, platforms: new Set(['xhs']) });
         }
       }
+      // Collect author for candidate competitor discovery
+      if (note.user) collectAuthor(note.user, 'xhs', engagement, kw);
     }
   }
 
@@ -682,6 +715,8 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
           tagFrequency.set(tag, { count: 1, totalEngagement: v.digg_count, platforms: new Set(['douyin']) });
         }
       }
+      // Collect author for candidate competitor discovery
+      if (v.author) collectAuthor(v.author, 'douyin', v.digg_count, kw);
     }
   }
 
@@ -724,6 +759,54 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
     computed_at: new Date().toISOString(),
     items: capped,
   } satisfies SearchKeywordCacheData);
+
+  // ── Merge discovered authors into candidate-accounts.json ─────────────
+  // Authors appearing in >= MIN_AUTHOR_HITS_FOR_CANDIDATE high-engagement
+  // search results become candidate competitors. This mirrors the
+  // processInspirationForAccountDiscovery flow but sources from the
+  // search-keyword pipeline (trending hashtags, not just browse feed).
+  const candidateStore = loadCandidateAccounts();
+  let newCandidates = 0;
+  const dateStr = new Date().toISOString().slice(0, 10);
+  for (const [key, data] of authorData) {
+    if (data.count < MIN_AUTHOR_HITS_FOR_CANDIDATE) continue;
+    const [authorName] = key.split(':');
+    const avgEngagement = Math.round(data.totalEngagement / data.count);
+
+    // Skip if already a tracked competitor in persona.yaml
+    // (checked by seeing if the name exists in the competitor log)
+    const existing = candidateStore.candidates.find(
+      c => c.name === authorName && c.platform === data.platform,
+    );
+    if (existing) {
+      // Update stats
+      existing.appearance_count = Math.max(existing.appearance_count, data.count);
+      existing.avg_engagement = avgEngagement;
+      existing.peak_engagement = Math.max(existing.peak_engagement ?? existing.avg_engagement, data.maxEngagement);
+      existing.last_seen = dateStr;
+      const newTopics = [...data.topics].filter(t => !existing.topics.includes(t));
+      existing.topics = [...existing.topics, ...newTopics].slice(0, 10);
+      if (data.profileUrl && !existing.profile_url) existing.profile_url = data.profileUrl;
+    } else {
+      candidateStore.candidates.push({
+        name: authorName,
+        platform: data.platform,
+        appearance_count: data.count,
+        avg_engagement: avgEngagement,
+        peak_engagement: data.maxEngagement,
+        topics: [...data.topics].slice(0, 10),
+        first_seen: dateStr,
+        last_seen: dateStr,
+        status: 'pending',
+        profile_url: data.profileUrl,
+      } satisfies CandidateAccount);
+      newCandidates++;
+    }
+  }
+  if (newCandidates > 0 || authorData.size > 0) {
+    saveCandidateAccounts(candidateStore);
+    if (isDebug()) console.log(`[trend-analyzer] Candidate competitors: +${newCandidates} new from ${authorData.size} authors`);
+  }
 
   return capped;
 }

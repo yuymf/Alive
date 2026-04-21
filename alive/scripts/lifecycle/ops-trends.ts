@@ -10,7 +10,7 @@ import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
 import { loadSkillEnvVars, setPersonaName, PATHS, readJSON } from '../utils/file-utils';
-import { refreshTrends, buildPersonaIdentities, TRENDS_CACHE_TTL_MS } from '../ops/trend-analyzer';
+import { refreshTrends, refreshSearchKeywordTrends, buildPersonaIdentities, TRENDS_CACHE_TTL_MS } from '../ops/trend-analyzer';
 import { refreshCompetitors } from '../ops/competitor-tracker';
 import { analyzeNewHits, cleanupOldBreakdowns, trimObservationNotes } from '../ops/competitor-memory';
 import { CompetitorLog, DissectQueueItem, ViralEntry } from '../utils/types';
@@ -80,6 +80,16 @@ async function main(): Promise<void> {
     console.error(`[${wallNow().toISOString()}] ops-trends: refreshCompetitors failed:`, err);
   }
 
+  // Search-keyword trends (XHS/Douyin keyword search) — this also discovers
+  // candidate competitors from high-engagement search results.
+  let searchKeywordCount = 0;
+  try {
+    const skItems = await refreshSearchKeywordTrends(ops);
+    searchKeywordCount = skItems.length;
+  } catch (err) {
+    console.error(`[${wallNow().toISOString()}] ops-trends: refreshSearchKeywordTrends failed:`, err);
+  }
+
   const trendCount = trends.length;
   const competitorCount = competitors.length;
 
@@ -89,7 +99,7 @@ async function main(): Promise<void> {
     await analyzeNewHits(competitors, ops, competitorLog.entries, llm);
   }
 
-  console.log(`[${wallNow().toISOString()}] ops-trends: ${trendCount} trends, ${competitorCount} competitors tracked`);
+  console.log(`[${wallNow().toISOString()}] ops-trends: ${trendCount} trends, ${competitorCount} competitors, ${searchKeywordCount} search-keyword items tracked`);
 
   // === 爆款知识库处理 ===
   // Derive the memory base path from any known PATHS property
