@@ -1008,7 +1008,7 @@ interface BilibiliRankResponse {
 /**
  * Fallback for bilibili: directly call api.bilibili.com ranking API.
  */
-async function callBilibiliDirectApi(limit = 20): Promise<TrendItem[]> {
+async function callBilibiliDirectApi(limit = 20, onStatus?: (status: number) => void): Promise<TrendItem[]> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8_000);
@@ -1020,6 +1020,7 @@ async function callBilibiliDirectApi(limit = 20): Promise<TrendItem[]> {
       },
     });
     clearTimeout(timer);
+    onStatus?.(res.status);
     const parsed = await res.json() as BilibiliRankResponse;
     if (parsed.code !== 0 || !parsed.data?.list) return [];
     const st: TrendSourceType = 'hot_list';

@@ -104,24 +104,22 @@ async function main(): Promise<void> {
     // Trending keywords are 2-5 word labels, not real posts — dissecting them produces hollow analysis.
     // Only competitor posts (source_type: 'competitor') carry real title/description/engagement data.
     // The platform OR filter already restricts to 'xhs' | 'douyin' — no secondary Set filter needed.
-    const allItems: TrendLikeItem[] = competitorsResult.status === 'fulfilled'
-      ? competitorsResult.value
-          .filter(c => (c.platform === 'xhs' || c.platform === 'douyin') && c.latest_post !== null)
-          .flatMap(c => {
-            // 展开所有 recent_posts 为独立的 TrendLikeItem
-            const posts = c.recent_posts?.length ? c.recent_posts : [c.latest_post!];
-            return posts.map(post => ({
-              source_id: `${c.account}:${post.time}`,
-              platform: c.platform as 'xhs' | 'douyin',
-              title: post.topic,
-              description: post.summary,
-              likes: post.engagement,
-              comments: 0,
-              shares: 0,
-              source_type: 'competitor' as const,
-            }));
-          })
-      : [];
+    const allItems: TrendLikeItem[] = competitors
+      .filter(c => (c.platform === 'xhs' || c.platform === 'douyin') && c.latest_post !== null)
+      .flatMap(c => {
+        // 展开所有 recent_posts 为独立的 TrendLikeItem
+        const posts = c.recent_posts?.length ? c.recent_posts : [c.latest_post!];
+        return posts.map(post => ({
+          source_id: `${c.account}:${post.time}`,
+          platform: c.platform as 'xhs' | 'douyin',
+          title: post.topic,
+          description: post.summary,
+          likes: post.engagement,
+          comments: 0,
+          shares: 0,
+          source_type: 'competitor' as const,
+        }));
+      });
 
     // 2. 检测爆款候选
     viralCandidates = detectViral(allItems, basePath, threshold);
