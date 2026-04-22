@@ -45,22 +45,43 @@ import { hydrateEmotionState, VitalityState, ConfidenceState } from '../scripts/
 import { setTimeOverride, clearTimeOverride } from '../scripts/utils/time-utils';
 
 // ── Ops module imports ──────────────────────────────────────────────
-// The dashboard's test panel lets developers manually trigger producer-side
-// refreshes to validate the platform IO pipeline. Consumers in production
-// should import readCachedTrends / readCachedCompetitors instead.
-import { refreshTrends, buildPersonaIdentities } from '../scripts/ops/trend-analyzer';
-import { refreshCompetitors, buildCompetitorSummary } from '../scripts/ops/competitor-tracker';
+// The dashboard's test panel mirrors the CLI (/brief, /trends, /advice…) path:
+// consumers read from the trends/competitors caches only. The producer jobs
+// (refreshTrends / refreshCompetitors / runViralSearch / runCrossPlatformRadar /
+// runAutoBreakdown / computeStrategy) are owned by cron — doing them inline
+// under an SSE-backed HTTP request caused long silent windows and SIGTERM
+// 143 when the child process outlived the client window.
+//
+// The single exception is ops-idea when called with a direction: a
+// user-supplied keyword can't be pre-computed, so we run the directional
+// pipeline inline (matches CLI cmdIdea). ops-analyze is similarly an
+// intrinsic real-time operation (URL analysis).
+import {
+  buildPersonaIdentities,
+  readCachedTrends,
+  readCachedTrendsWithMeta,
+  analyzeDirectionalTrends,
+  filterCachedTrendsByDirection,
+  FilteredTrend,
+} from '../scripts/ops/trend-analyzer';
+import {
+  buildCompetitorSummary,
+  readCachedCompetitorsWithMeta,
+} from '../scripts/ops/competitor-tracker';
+import { ensureOpsCachesWarm } from '../scripts/ops/cache-warmup';
+import { buildCacheFreshnessBanner } from '../scripts/ops/cache-age';
+import { recordActiveDirection } from '../scripts/ops/active-directions';
 import { generateTopics } from '../scripts/ops/topic-generator';
 import { loadQueue, markApproved, markDiscarded, markPublished } from '../scripts/ops/review-queue';
 import { formatBriefCard, BriefEnrichment, formatStrategySection } from '../scripts/ops/brief-generator';
 import { runHealthCheck, formatHealthReport } from '../scripts/ops/health-check';
 import { analyzePost, formatAnalysisCard } from '../scripts/ops/viral-analyzer';
 import { generatePersonaReport, formatAlignmentCard } from '../scripts/ops/persona-advisor';
-import { loadStrategy, computeStrategy, confirmStrategy } from '../scripts/ops/strategy-engine';
+import { loadStrategy, confirmStrategy } from '../scripts/ops/strategy-engine';
 import { loadDiscoveryPool, loadCandidateAccounts, approveCandidate, dismissCandidate } from '../scripts/ops/discovery-engine';
 import { loadKeywordState, buildKeywordContext } from '../scripts/ops/keyword-tracker';
-import { runViralSearch, runCrossPlatformRadar, runAutoBreakdown } from '../scripts/ops/viral-search';
 import { loadContentPatterns, getRelevantPatterns } from '../scripts/ops/content-analyzer';
+import { readViralSearchState } from '../scripts/ops/viral-search';
 import { loadContentTaste } from '../scripts/ops/taste-engine';
 import { loadPerformanceLog } from '../scripts/ops/performance-tracker';
 import { loadAnalysisLog } from '../scripts/ops/post-analyzer';
@@ -566,56 +587,154 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
   }
 
   // ── Ops: Trend Analysis ───────────────────────────────────────
+  // Consumer-side read only — identical to the CLI /trends path.
+  // The producer is the ops-trends cron; calling refreshTrends() here
+  // was causing 3-5min platform IO with no progress events, tripping
+  // the SSE client timeout (exit 143 / SIGTERM).
   if (cmd === 'ops-trends') {
     const personaConfig = loadPersona();
     if (!personaConfig.ops) return { error: '当前 persona 未启用 ops 功能 (ops.enabled: false)' };
-    const llm = createRealLLMClient('test-ops-trends');
+
+    // Non-blocking: kicks off a background refresh when caches are cold,
+    // matching cmdTrends() behaviour so the next call lands fresh data.
+    ensureOpsCachesWarm(personaConfig, personaConfig.ops);
+
     const identities = buildPersonaIdentities(personaConfig);
-    const trends = await refreshTrends(personaConfig.ops, identities, llm);
-    // Also return signal_pool from cache for display
-    const cache = readJSON<{ signal_pool?: { bucket: string; top: { keyword: string; platform: string; v: string; p: string }[] }[] }>(PATHS.trendsCache, {} as any);
+    const meta = readCachedTrendsWithMeta(identities);
+    const trends = meta.results;
+    const freshnessBanner = buildCacheFreshnessBanner(meta.computed_at, '热点数据');
+
     return {
       command: 'ops-trends',
-      message: `趋势分析完成: 找到 ${trends.length} 个相关趋势`,
+      message: trends.length === 0
+        ? '暂无通过过滤的热点话题（缓存为空或已过期，后台任务将自动刷新）'
+        : `趋势分析完成: 找到 ${trends.length} 个相关趋势`,
       trends,
       count: trends.length,
-      signal_pool: cache?.signal_pool ?? [],
+      signal_pool: meta.signal_pool ?? [],
+      computed_at: meta.computed_at,
+      freshness: freshnessBanner,
     };
   }
 
   // ── Ops: Competitor Tracking ──────────────────────────────────
+  // Consumer-side read only — mirrors the CLI path. refreshCompetitors is
+  // a producer operation owned by the ops-competitors cron; running it
+  // inline under SSE caused multi-minute silent windows and SIGTERM 143.
   if (cmd === 'ops-competitors') {
     const personaConfig = loadPersona();
     if (!personaConfig.ops) return { error: '当前 persona 未启用 ops 功能' };
-    const updates = refreshCompetitors(personaConfig.ops);
+    ensureOpsCachesWarm(personaConfig, personaConfig.ops);
+    const competitorsMeta = readCachedCompetitorsWithMeta();
+    const updates = competitorsMeta.updates;
     const summary = buildCompetitorSummary(updates);
+    const freshnessBanner = buildCacheFreshnessBanner(competitorsMeta.computed_at, '竞品数据');
     return {
       command: 'ops-competitors',
-      message: `竞品追踪完成: ${updates.length} 个账号`,
+      message: updates.length === 0
+        ? '暂无竞品缓存数据（缓存为空或已过期，后台 ops-competitors cron 将自动刷新）'
+        : `竞品追踪: ${updates.length} 个账号（来自缓存）`,
       updates,
       summary,
       count: updates.length,
+      computed_at: competitorsMeta.computed_at,
+      freshness: freshnessBanner,
     };
   }
 
   // ── Ops: Topic Generation ─────────────────────────────────────
+  // Mirrors CLI cmdIdea exactly:
+  //   - No direction → pure cache read (ops-trends cron is the producer)
+  //   - With direction → analyzeDirectionalTrends (2h cache → live search →
+  //     filter fallback), the sole consumer-side exception for inline
+  //     platform IO. The direction is also recorded to active-directions
+  //     so the ops-browse cron pre-fetches it next round.
   if (cmd === 'ops-idea') {
     const personaConfig = loadPersona();
     if (!personaConfig.ops) return { error: '当前 persona 未启用 ops 功能' };
+
+    const paramJson = getArg('param');
+    const params = paramJson ? JSON.parse(paramJson) : {};
+    const direction: string | undefined = typeof params.direction === 'string' && params.direction.trim()
+      ? params.direction.trim()
+      : undefined;
+
     const llm = createRealLLMClient('test-ops-idea');
     const identities = buildPersonaIdentities(personaConfig);
-    const trends = await refreshTrends(personaConfig.ops, identities, llm);
-    const personaDescription = identities;
-    await generateTopics(trends, personaConfig.ops, personaDescription, llm, personaConfig.voice);
-    // After generation, load the queue to see new items
-    const queue = await loadQueue();
-    const pending = queue.items.filter(i => i.status === 'pending');
+    ensureOpsCachesWarm(personaConfig, personaConfig.ops);
+
+    let trends: FilteredTrend[] = [];
+    let directionServedFromLiveSearch = false;
+    let directionFellBackToFilter = false;
+    const directionStart = Date.now();
+
+    if (direction) {
+      recordActiveDirection(direction);
+      emitProgress('ops-idea', `「${direction}」方向实时分析中...`, 20);
+      try {
+        trends = await analyzeDirectionalTrends(personaConfig.ops, identities, llm, direction);
+        directionServedFromLiveSearch = trends.length > 0;
+      } catch (err) {
+        console.error('[ops-idea] analyzeDirectionalTrends failed:', (err as Error).message);
+      }
+      if (trends.length === 0) {
+        trends = filterCachedTrendsByDirection(identities, direction);
+        directionFellBackToFilter = trends.length > 0;
+      }
+    } else {
+      emitProgress('ops-idea', '读取热点缓存...', 20);
+      trends = readCachedTrends(identities);
+    }
+
+    // Snapshot existing pending IDs before generation to diff later
+    const queueBefore = await loadQueue();
+    const existingIds = new Set(queueBefore.items.filter(i => i.status === 'pending').map(i => i.id));
+
+    emitProgress('ops-idea', '生成选题中...', 60);
+    const effectiveOps = direction
+      ? { ...personaConfig.ops, topic_filter_prompt: `${personaConfig.ops.topic_filter_prompt}\n用户指定方向：${direction}` }
+      : personaConfig.ops;
+
+    await generateTopics(
+      trends,
+      effectiveOps,
+      personaConfig.meta.name,
+      llm,
+      personaConfig.voice,
+      direction ? { relaxedForDirection: true } : undefined,
+    );
+
+    const queueAfter = await loadQueue();
+    const allPending = queueAfter.items.filter(i => i.status === 'pending');
+    const newItems = allPending.filter(i => !existingIds.has(i.id));
+
+    let directionNote: string | undefined;
+    if (direction) {
+      const elapsedSec = Math.round((Date.now() - directionStart) / 1000);
+      if (directionFellBackToFilter) {
+        directionNote = `⚠️ 「${direction}」实时搜索未返回结果（可能触发风控），已从最近热点缓存中按关键词匹配。该方向已加入后台预生产列表，下次相同查询将秒回。`;
+      } else if (directionServedFromLiveSearch) {
+        directionNote = `🔍 「${direction}」为即时搜索（耗时 ${elapsedSec}s）。该方向已加入后台预生产列表，下次相同查询将秒回（来自 2h 方向缓存）。`;
+      } else {
+        directionNote = `💡 「${direction}」方向暂无素材。该方向已加入后台预生产列表，建议 30–60 分钟后再试。`;
+      }
+    }
+
+    emitProgress('ops-idea', '选题生成完成', 100);
     return {
       command: 'ops-idea',
-      message: `选题生成完成: 当前 ${pending.length} 条待审核`,
+      message: newItems.length > 0
+        ? `选题生成完成: 本次新增 ${newItems.length} 条，队列共 ${allPending.length} 条待审核`
+        : (direction
+            ? `暂未生成新选题（${direction} 方向）`
+            : '暂未生成新选题（可能与已有选题重复，试试指定方向）'),
+      direction,
       trends_used: trends.length,
-      pending_count: pending.length,
-      latest_items: pending.slice(-3),
+      pending_count: allPending.length,
+      new_count: newItems.length,
+      new_items: newItems,
+      latest_items: allPending.slice(-3),
+      note: directionNote,
     };
   }
 
@@ -708,17 +827,24 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
   }
 
   // ── Ops: Full Brief Pipeline ──────────────────────────────────
+  // Consumer-side read only — mirrors the CLI /brief path.
+  // refreshTrends/refreshCompetitors are producer operations owned by
+  // the ops-trends cron; inline fetching here duplicated platform IO
+  // and caused long silent windows even with progress events.
   if (cmd === 'ops-brief') {
     const personaConfig = loadPersona();
     if (!personaConfig.ops) return { error: '当前 persona 未启用 ops 功能' };
     const llm = createRealLLMClient('test-ops-brief');
 
-    emitProgress('ops-brief', '正在分析趋势...', 10);
+    emitProgress('ops-brief', '正在读取热点缓存...', 10);
     const identities = buildPersonaIdentities(personaConfig);
-    const trends = await refreshTrends(personaConfig.ops, identities, llm);
+    ensureOpsCachesWarm(personaConfig, personaConfig.ops);
+    const trendsMeta = readCachedTrendsWithMeta(identities);
+    const trends = trendsMeta.results;
 
-    emitProgress('ops-brief', '正在追踪竞品...', 30);
-    const competitors = refreshCompetitors(personaConfig.ops);
+    emitProgress('ops-brief', '正在读取竞品缓存...', 30);
+    const competitorsMeta = readCachedCompetitorsWithMeta();
+    const competitors = competitorsMeta.updates;
 
     emitProgress('ops-brief', '正在加载审核队列...', 50);
     const queue = await loadQueue();
@@ -740,7 +866,14 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
       fullQueueItems: queue.items,
       healthReport,
     };
-    const brief = formatBriefCard(today, trends, competitors, pendingItems, enrichment);
+    const briefCard = formatBriefCard(today, trends, competitors, pendingItems, enrichment);
+
+    // Append freshness banners (consumer-side contract: surface staleness).
+    const banners = [
+      buildCacheFreshnessBanner(trendsMeta.computed_at, '热点数据'),
+      buildCacheFreshnessBanner(competitorsMeta.computed_at, '竞品数据'),
+    ].filter(Boolean);
+    const brief = banners.length > 0 ? `${briefCard}\n\n${banners.join('\n')}` : briefCard;
 
     emitProgress('ops-brief', '简报生成完成', 100);
 
@@ -753,6 +886,8 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
         competitors_count: competitors.length,
         queue_count: pendingItems.length,
         health: healthReport.summary,
+        trends_computed_at: trendsMeta.computed_at,
+        competitors_computed_at: competitorsMeta.computed_at,
       },
     };
   }
@@ -775,21 +910,47 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
   }
 
   // ── Ops: Persona Advice ───────────────────────────────────────
+  // Consumer-side read only — mirrors CLI cmdAdvice. The trends/competitors
+  // caches are populated by their respective cron producers; the LLM call
+  // to generatePersonaReport is the only inline work (1–2 min, safe under
+  // SSE 15s heartbeat, no platform IO).
   if (cmd === 'ops-advice') {
     const personaConfig = loadPersona();
     if (!personaConfig.ops) return { error: '当前 persona 未启用 ops 功能' };
     const llm = createRealLLMClient('test-ops-advice');
     const identities = buildPersonaIdentities(personaConfig);
-    const trends = await refreshTrends(personaConfig.ops, identities, llm);
-    const competitors = await refreshCompetitors(personaConfig.ops);
-    const report = await generatePersonaReport(personaConfig, trends, competitors, llm);
-    const formatted = formatAlignmentCard(report);
-    return {
-      command: 'ops-advice',
-      message: `人设建议已生成: ${report.identity_analysis.length} 个身份评估`,
-      report,
-      formatted,
-    };
+    ensureOpsCachesWarm(personaConfig, personaConfig.ops);
+
+    emitProgress('ops-advice', '读取热点与竞品缓存...', 20);
+    const trendsMeta = readCachedTrendsWithMeta(identities);
+    const competitorsMeta = readCachedCompetitorsWithMeta();
+    const trends = trendsMeta.results;
+    const competitors = competitorsMeta.updates;
+
+    emitProgress('ops-advice', '生成人设契合度报告...', 50);
+    try {
+      const report = await generatePersonaReport(personaConfig, trends, competitors, llm);
+      const card = formatAlignmentCard(report);
+      const banners = [
+        buildCacheFreshnessBanner(trendsMeta.computed_at, '热点数据'),
+        buildCacheFreshnessBanner(competitorsMeta.computed_at, '竞品数据'),
+      ].filter(Boolean);
+      const formatted = banners.length > 0 ? `${card}\n\n${banners.join('\n')}` : card;
+      emitProgress('ops-advice', '人设建议生成完成', 100);
+      return {
+        command: 'ops-advice',
+        message: `人设建议已生成: ${report.identity_analysis.length} 个身份评估`,
+        report,
+        formatted,
+        trends_computed_at: trendsMeta.computed_at,
+        competitors_computed_at: competitorsMeta.computed_at,
+      };
+    } catch (err) {
+      return {
+        command: 'ops-advice',
+        error: `人设建议生成失败: ${(err as Error).message}`,
+      };
+    }
   }
 
   // ── Ops: Strategy Engine ──────────────────────────────────────
@@ -811,17 +972,24 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     };
   }
 
+  // ── Ops: Strategy Compute (read-only snapshot) ───────────────────
+  // Producer is the strategy cron that runs computeStrategy (multiple LLM
+  // calls, 1–2 min). Here we return the current strategy.json along with
+  // its generated_at timestamp so the dashboard can verify the producer
+  // without triggering inline compute.
   if (cmd === 'ops-strategy-compute') {
-    const personaConfig = loadPersona();
-    const llm = createRealLLMClient('test-ops-strategy');
-    const identities = buildPersonaIdentities(personaConfig);
-    const success = await computeStrategy(llm, identities, {});
     const strategy = loadStrategy();
+    const banner = strategy?.generated_at
+      ? buildCacheFreshnessBanner(strategy.generated_at, '策略数据')
+      : null;
     return {
       command: 'ops-strategy-compute',
-      message: success ? '策略计算完成' : '策略计算失败',
-      success,
+      message: strategy
+        ? `策略已计算（生成于 ${strategy.generated_at || 'unknown'}）`
+        : '暂无策略数据（等待 strategy cron 生成，或在 CLI 运行 `/strategy-compute`）',
+      success: Boolean(strategy),
       strategy,
+      freshness: banner,
     };
   }
 
@@ -894,34 +1062,72 @@ export async function dispatch(cmd: string): Promise<Record<string, unknown>> {
     };
   }
 
-  // ── Ops: Viral Search ────────────────────────────────────────────
+  // ── Ops: Viral Search (read-only snapshot) ───────────────────────
+  // Producer is the heartbeat post-hook cron. Here we surface the last-run
+  // timestamp + current KB/discovery-pool size so the dashboard can verify
+  // the producer is working without re-running the 3–5 min platform fetch.
   if (cmd === 'ops-viral-search') {
-    const result = await runViralSearch({ forceFresh: true });
+    const { getStats } = await import('../scripts/ops/viral-kb-store');
+    const kbBasePath = PATHS.emotionState.replace(/\/[^/]+$/, '');
+    const stats = getStats(kbBasePath);
+    const state = readViralSearchState();
+    const pool = loadDiscoveryPool();
+    const banner = buildCacheFreshnessBanner(state.last_viral_search, '爆款搜索');
     return {
       command: 'ops-viral-search',
-      message: `爆款搜索完成: ${result.xhs_found} XHS + ${result.douyin_found} 抖音, 注入 ${result.injected} 条`,
-      ...result,
+      message: state.last_viral_search
+        ? `上次爆款搜索: ${state.last_viral_search}（KB ${stats.total} 条，发现池 ${pool.items.length} 条）`
+        : '尚未运行过爆款搜索（等待 heartbeat 后台任务触发）',
+      last_run: state.last_viral_search,
+      kb_total: stats.total,
+      kb_queue_length: stats.queue_length,
+      discovery_pool_size: pool.items.length,
+      freshness: banner,
     };
   }
 
-  // ── Ops: Cross-Platform Radar ────────────────────────────────────
+  // ── Ops: Cross-Platform Radar (read-only snapshot) ───────────────
   if (cmd === 'ops-radar') {
-    const result = await runCrossPlatformRadar({ forceFresh: true });
+    const { getStats } = await import('../scripts/ops/viral-kb-store');
+    const kbBasePath = PATHS.emotionState.replace(/\/[^/]+$/, '');
+    const stats = getStats(kbBasePath);
+    const state = readViralSearchState();
+    const pool = loadDiscoveryPool();
+    const banner = buildCacheFreshnessBanner(state.last_radar_run, '跨平台雷达');
     return {
       command: 'ops-radar',
-      message: `跨平台雷达完成: ${result.xhs_found} XHS + ${result.douyin_found} 抖音, 注入 ${result.injected} 条`,
-      ...result,
+      message: state.last_radar_run
+        ? `上次跨平台雷达: ${state.last_radar_run}（KB ${stats.total} 条，发现池 ${pool.items.length} 条）`
+        : '尚未运行过跨平台雷达（等待 heartbeat 后台任务触发）',
+      last_run: state.last_radar_run,
+      kb_total: stats.total,
+      discovery_pool_size: pool.items.length,
+      freshness: banner,
     };
   }
 
-  // ── Ops: Auto-Breakdown ──────────────────────────────────────────
+  // ── Ops: Auto-Breakdown (read-only snapshot) ─────────────────────
+  // Producer is the heartbeat post-hook cron that runs runAutoBreakdown.
+  // Its product is post-analysis-log.json (PostAnalysisResult[]); we surface
+  // the last-run timestamp + most-recent titles so the dashboard can verify
+  // the producer without re-running the 3–5 min LLM loop.
   if (cmd === 'ops-auto-breakdown') {
-    const llm = createRealLLMClient('test-ops-auto-breakdown');
-    const result = await runAutoBreakdown(llm, { forceFresh: true });
+    const postLog = readJSON<{ entries: Array<{ title: string; url: string; platform: string }> }>(
+      PATHS.postAnalysisLog,
+      { entries: [] },
+    );
+    const state = readViralSearchState();
+    const banner = buildCacheFreshnessBanner(state.last_auto_breakdown, '自动拆解');
+    const recent = postLog.entries.slice(-5);
     return {
       command: 'ops-auto-breakdown',
-      message: `自动拆解完成: ${result.analyzed}/${result.candidates_found} 条已分析`,
-      ...result,
+      message: state.last_auto_breakdown
+        ? `上次自动拆解: ${state.last_auto_breakdown}（拆解日志共 ${postLog.entries.length} 条）`
+        : '尚未运行过自动拆解（等待 heartbeat 后台任务触发）',
+      last_run: state.last_auto_breakdown,
+      analyzed_count: postLog.entries.length,
+      recent_titles: recent.map(e => e.title),
+      freshness: banner,
     };
   }
 

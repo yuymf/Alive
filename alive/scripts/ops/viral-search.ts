@@ -100,6 +100,15 @@ function loadViralSearchState(): ViralSearchState {
   });
 }
 
+/**
+ * Read-only accessor for viral-search-state.json.
+ * Exposed so consumer-side callers (dashboard /test panel, UIs) can surface
+ * last-run timestamps without triggering the actual producer pipeline.
+ */
+export function readViralSearchState(): ViralSearchState {
+  return loadViralSearchState();
+}
+
 function saveViralSearchState(state: ViralSearchState): void {
   writeJSON(getStatePath(), state);
 }

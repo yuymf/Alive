@@ -734,6 +734,291 @@ body::after {
   font-size: 7px;
   color: var(--text-dim);
 }
+
+/* === DARK MODE === */
+body.dark {
+  --bg-page: #1E1A15;
+  --bg-panel: #27221C;
+  --bg-inset: #2F2921;
+  --bg-deep: #3A332A;
+  --brown-dark: #E8DAC4;
+  --brown-mid: #C8B092;
+  --brown-light: #8A7856;
+  --green-leaf: #8BC074;
+  --green-soft: #A8D090;
+  --green-pale: #3A4A30;
+  --terra: #E89060;
+  --terra-soft: #F0A880;
+  --blue-sky: #90B8D8;
+  --blue-soft: #5A7A9A;
+  --gold-warm: #E8B850;
+  --gold-pale: #5A4A20;
+  --pink-blossom: #E898A8;
+  --pink-soft: #8A5A68;
+  --purple-berry: #B098CA;
+  --text-primary: #F3EDE3;
+  --text-secondary: #C8BCA8;
+  --text-dim: #8A8070;
+  --border-main: #5A4E3A;
+  --border-dark: #7A6E5A;
+}
+body.dark::after {
+  background-image:
+    linear-gradient(rgba(232,218,196,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232,218,196,0.015) 1px, transparent 1px);
+}
+body.dark .ops-data-card-body { color: var(--text-secondary); }
+body.dark .ops-badge.pending { background: #4A3A10; color: #F0C860; border-color: var(--gold-warm); }
+body.dark .ops-badge.approved { background: #2A4020; color: #A8D090; border-color: var(--green-leaf); }
+body.dark .ops-badge.discarded { background: #4A2818; color: #F0A080; border-color: var(--terra); }
+
+/* === DEMO WORKFLOW BANNER === */
+.demo-banner {
+  margin: 6px 16px 0;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(112,140,90,0.15), rgba(104,144,176,0.12));
+  border: 2px solid var(--green-leaf);
+  box-shadow: 2px 2px 0 0 var(--border-dark);
+  font-size: 11px;
+  color: var(--text-primary);
+}
+.demo-banner-title {
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: var(--green-leaf);
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+}
+.demo-banner-steps {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.demo-run-btn {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  background: var(--green-leaf);
+  color: white;
+  border: 2px solid var(--brown-dark);
+  box-shadow: 2px 2px 0 0 var(--brown-dark);
+  cursor: pointer;
+  font-family: var(--font-pixel-jp);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.demo-run-btn:hover { background: var(--green-soft); transform: translate(1px, 1px); box-shadow: 1px 1px 0 0 var(--brown-dark); }
+.demo-run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* === DEMO PROGRESS OVERLAY === */
+.demo-progress {
+  display: none;
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-main);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+.demo-progress.visible { display: block; }
+.demo-progress-step { padding: 2px 0; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+.demo-progress-step.done { color: var(--green-leaf); }
+.demo-progress-step.active { color: var(--terra); font-weight: 700; }
+.demo-progress-step.active::before { content: '⟳'; animation: spin 1.2s linear infinite; }
+.demo-progress-step.done::before { content: '✓'; }
+.demo-progress-step.pending::before { content: '○'; }
+.demo-progress-step.error::before { content: '✗'; color: var(--terra); }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* === SERVER STATUS INDICATOR === */
+.server-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  padding: 4px 8px;
+  border: 2px solid var(--border-main);
+  background: var(--bg-panel);
+  box-shadow: 2px 2px 0 0 var(--border-dark);
+}
+.server-status.ok { border-color: var(--green-leaf); color: var(--green-leaf); }
+.server-status.ok::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--green-leaf); animation: pulse-dot 2s ease-in-out infinite; }
+.server-status.err { border-color: var(--terra); color: var(--terra); }
+.server-status.err::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--terra); }
+.server-status.checking { border-color: var(--gold-warm); color: var(--gold-warm); }
+.server-status.checking::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--gold-warm); animation: pulse-dot 0.8s ease-in-out infinite; }
+@keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* === OPS INLINE PROGRESS (for non-SSE commands) === */
+.ops-running-progress {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: var(--green-leaf);
+  width: 0%;
+  transition: width 0.2s ease-out;
+}
+.action-btn.running .ops-running-progress { width: 90%; transition: width 8s linear; }
+
+/* === LOG SEARCH BAR === */
+.log-search {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--bg-deep);
+  background: var(--bg-inset);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.log-search input {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  outline: none;
+}
+.log-search input:focus { border-color: var(--blue-sky); }
+.log-search select {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  padding: 3px 4px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+}
+.log-search-btn {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.log-search-btn:hover { background: var(--bg-deep); }
+
+/* === BATCH ACTION BAR (queue full view) === */
+.batch-action-bar {
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-main);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+}
+.batch-action-bar label { display: flex; align-items: center; gap: 4px; color: var(--text-secondary); }
+.batch-action-bar .batch-spacer { flex: 1; }
+
+/* === RERUN BUTTON (ops result) === */
+.ops-rerun-btn {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+  margin-left: auto;
+}
+.ops-rerun-btn:hover { background: var(--green-pale); color: var(--green-leaf); border-color: var(--green-leaf); }
+
+/* === ANALYZE TABS === */
+.analyze-mode-tabs { display: flex; gap: 2px; margin-bottom: 6px; }
+.analyze-mode-tab {
+  flex: 1;
+  padding: 4px 8px;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border-main);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.analyze-mode-tab.active { background: var(--blue-sky); color: white; border-color: var(--blue-sky); }
+.analyze-textarea {
+  font-family: var(--font-body);
+  font-size: 12px;
+  padding: 6px 10px;
+  border: 2px solid var(--border-main);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+  margin-bottom: 6px;
+  display: none;
+}
+.analyze-textarea.visible { display: block; }
+.ops-url-input.hidden { display: none; }
+
+/* === SIGNAL POOL TABLE === */
+.signal-pool-section {
+  margin-top: 12px;
+  padding: 8px;
+  background: var(--bg-inset);
+  border: 1px dashed var(--border-main);
+}
+.signal-pool-title {
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  color: var(--purple-berry);
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+/* === STATE BAR COMPACT MODE === */
+.state-bar.compact .state-chips { max-height: 22px; overflow: hidden; }
+.state-bar-toggle {
+  float: right;
+  font-family: var(--font-pixel);
+  font-size: 7px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  padding: 0 4px;
+}
+.state-bar-toggle:hover { color: var(--terra); }
+
+/* === ADVANCED GROUP COLLAPSE (inside section-body) === */
+.subgroup-divider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 2px;
+  cursor: pointer;
+  user-select: none;
+  font-family: var(--font-pixel);
+  font-size: 8px;
+  color: var(--text-dim);
+  border-top: 1px dashed var(--bg-deep);
+  margin-top: 6px;
+}
+.subgroup-divider:hover { color: var(--terra); }
+.subgroup-divider .subgroup-chev { transition: transform 0.2s; }
+.subgroup-collapsed .subgroup-chev { transform: rotate(-90deg); }
+.subgroup-collapsed ~ .subgroup-item { display: none; }
+
+/* === RESPONSIVE === */
+@media (max-width: 900px) {
+  .main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .control-panel { max-height: 40vh; border-right: none; border-bottom: var(--px) solid var(--border-main); }
+  .ops-stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .header { padding: 8px 12px; flex-wrap: wrap; gap: 6px; }
+  .header-title { font-size: 8px; }
+}
+@media (max-width: 600px) {
+  .nav-link { font-size: 7px; padding: 3px 6px; }
+  .ops-stat-grid { grid-template-columns: 1fr 1fr; }
+  body { font-size: 12px; }
+}
 </style>
 </head>
 <body>
@@ -743,6 +1028,10 @@ body::after {
       <span class="header-title"><span class="leaf"></span>ALIVE E2E TEST</span>
     </div>
     <div class="header-right">
+      <div class="server-status checking" id="serverStatus" title="服务器连接状态" onclick="checkServerHealth(true)">
+        <span id="serverStatusText">CHECK...</span>
+      </div>
+      <button class="nav-link" id="themeToggle" onclick="toggleTheme()" title="切换暗色 / 亮色模式">🌙 暗色</button>
       <a href="/" class="nav-link">主面板</a>
       <a href="/debug" class="nav-link">LLM 日志</a>
       <a href="/photos" class="nav-link">相册</a>
@@ -753,6 +1042,16 @@ body::after {
   <div class="main">
     <!-- Left: Control Panel -->
     <div class="control-panel">
+
+      <!-- Demo Workflow Banner -->
+      <div class="demo-banner" id="demoBanner">
+        <div class="demo-banner-title">🎬 推荐演示流程 (一键全跑)</div>
+        <div class="demo-banner-steps">
+          健康 → 趋势 → 竞品 → 选题 → 队列 → 简报
+        </div>
+        <button class="demo-run-btn" id="btn-demo-run" onclick="runDemoWorkflow()">▶️ 开始演示流程</button>
+        <div class="demo-progress" id="demoProgress"></div>
+      </div>
 
       <!-- Full Day Simulation Section -->
       <div class="section" id="sectionFullDay">
@@ -962,7 +1261,12 @@ body::after {
           <div class="section-chevron">▼</div>
         </div>
         <div class="section-body">
+          <div class="analyze-mode-tabs">
+            <button class="analyze-mode-tab active" id="tabAnalyzeUrl" onclick="switchAnalyzeMode('url')">🔗 URL 深度分析</button>
+            <button class="analyze-mode-tab" id="tabAnalyzeText" onclick="switchAnalyzeMode('text')">📝 文本快速诊断</button>
+          </div>
           <input class="ops-url-input" type="text" id="analyzeUrl" placeholder="输入帖子 URL (小红书/抖音/Instagram)">
+          <textarea class="analyze-textarea" id="analyzeText" placeholder="粘贴帖子标题 + 正文（前 500 字即可），快速拆解 Hook / 情感触发 / 结构"></textarea>
           <button class="action-btn ops-btn ops-action" onclick="runViralAnalysis()" id="btn-ops-analyze">
             <div class="btn-icon">🔍</div>
             <div class="btn-text">
@@ -981,112 +1285,123 @@ body::after {
           <div class="section-chevron">▼</div>
         </div>
         <div class="section-body">
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-strategy', this)" id="btn-ops-strategy">
+          <div class="subgroup-divider" id="subgroupCommon" onclick="toggleSubgroup('subgroupCommon')">
+            <span>◆ 常用</span>
+            <span style="flex:1;"></span>
+            <span class="subgroup-chev">▾</span>
+          </div>
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-common" onclick="runOps('ops-strategy', this)" id="btn-ops-strategy">
             <div class="btn-icon">🎲</div>
             <div class="btn-text">
               <span class="btn-label">查看当前策略</span>
               <span class="btn-desc">内容比例 / 模式排名 / 行动建议</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-action" onclick="runOps('ops-strategy-compute', this)" id="btn-ops-strategy-compute">
+          <button class="action-btn ops-btn ops-action subgroup-item subgroup-common" onclick="runOps('ops-strategy-compute', this)" id="btn-ops-strategy-compute">
             <div class="btn-icon">⚙️</div>
             <div class="btn-text">
               <span class="btn-label">重新计算策略</span>
               <span class="btn-desc">基于分析数据 LLM 生成新策略</span>
             </div>
           </button>
-          <button class="action-btn ops-btn" onclick="runOps('ops-strategy-confirm', this)" id="btn-ops-strategy-confirm">
+          <button class="action-btn ops-btn subgroup-item subgroup-common" onclick="runOps('ops-strategy-confirm', this)" id="btn-ops-strategy-confirm">
             <div class="btn-icon">✅</div>
             <div class="btn-text">
               <span class="btn-label">确认策略</span>
               <span class="btn-desc">将最新策略标记为已确认</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-discovery', this)" id="btn-ops-discovery">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-common" onclick="runOps('ops-discovery', this)" id="btn-ops-discovery">
             <div class="btn-icon">🌐</div>
             <div class="btn-text">
               <span class="btn-label">发现池 & 候选账号</span>
               <span class="btn-desc">高互动内容发现 + 对标账号自动推荐</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-keywords', this)" id="btn-ops-keywords">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-common" onclick="runOps('ops-keywords', this)" id="btn-ops-keywords">
             <div class="btn-icon">🔑</div>
             <div class="btn-text">
               <span class="btn-label">关键词追踪</span>
               <span class="btn-desc">主动搜索关键词状态 / 速度追踪</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-viral-search', this)" id="btn-ops-viral-search">
+
+          <div class="subgroup-divider subgroup-collapsed" id="subgroupAdvanced" onclick="toggleSubgroup('subgroupAdvanced')">
+            <span>◆ 高级</span>
+            <span style="flex:1;color:var(--text-dim);">(9 项)</span>
+            <span class="subgroup-chev">▾</span>
+          </div>
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-viral-search', this)" id="btn-ops-viral-search">
             <div class="btn-icon">🔥</div>
             <div class="btn-text">
               <span class="btn-label">爆款搜索</span>
               <span class="btn-desc">按互动量阈值主动搜索 XHS/抖音爆款</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-radar', this)" id="btn-ops-radar">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-radar', this)" id="btn-ops-radar">
             <div class="btn-icon">📡</div>
             <div class="btn-text">
               <span class="btn-label">跨平台雷达</span>
               <span class="btn-desc">热搜话题 → 跨平台爆款匹配</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-auto-breakdown', this)" id="btn-ops-auto-breakdown">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-auto-breakdown', this)" id="btn-ops-auto-breakdown">
             <div class="btn-icon">🧪</div>
             <div class="btn-text">
               <span class="btn-label">自动拆解</span>
               <span class="btn-desc">对高互动内容自动触发爆款拆解</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-patterns', this)" id="btn-ops-patterns">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-patterns', this)" id="btn-ops-patterns">
             <div class="btn-icon">🧬</div>
             <div class="btn-text">
               <span class="btn-label">内容模式</span>
               <span class="btn-desc">爆款规律 / 竞品洞察 / 封面趋势</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-taste', this)" id="btn-ops-taste">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-taste', this)" id="btn-ops-taste">
             <div class="btn-icon">🎨</div>
             <div class="btn-text">
               <span class="btn-label">网感偏好</span>
               <span class="btn-desc">视觉 / 钩子 / 语调 / 反模式 EMA 仪表盘</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-performance', this)" id="btn-ops-performance">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-performance', this)" id="btn-ops-performance">
             <div class="btn-icon">📉</div>
             <div class="btn-text">
               <span class="btn-label">发布效果追踪</span>
               <span class="btn-desc">已发布内容互动数据 / Tier 归类</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-analysis-log', this)" id="btn-ops-analysis-log">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-analysis-log', this)" id="btn-ops-analysis-log">
             <div class="btn-icon">🔬</div>
             <div class="btn-text">
               <span class="btn-label">分析日志</span>
               <span class="btn-desc">Post-analysis 记录 / Tier 分布 / 网感更新</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-perception', this)" id="btn-ops-perception">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-perception', this)" id="btn-ops-perception">
             <div class="btn-icon">👁️</div>
             <div class="btn-text">
               <span class="btn-label">受众感知</span>
               <span class="btn-desc">观众画像特质 / 渴望信号 / 抵触信号</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-tags', this)" id="btn-ops-tags">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-tags', this)" id="btn-ops-tags">
             <div class="btn-icon">🏷️</div>
             <div class="btn-text">
               <span class="btn-label">Tag 热度追踪</span>
               <span class="btn-desc">Active/Dormant 分布 / 衰减周期 / KB 回流</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-viral-kb', this)" id="btn-ops-viral-kb">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-viral-kb', this)" id="btn-ops-viral-kb">
             <div class="btn-icon">🧠</div>
             <div class="btn-text">
               <span class="btn-label">爆款知识库</span>
               <span class="btn-desc">6维拆解统计 / 公式晋升 / 审计修复</span>
             </div>
           </button>
-          <button class="action-btn ops-btn ops-data" onclick="runOps('ops-perception-flow', this)" id="btn-ops-perception-flow">
+          <button class="action-btn ops-btn ops-data subgroup-item subgroup-advanced" onclick="runOps('ops-perception-flow', this)" id="btn-ops-perception-flow">
             <div class="btn-icon">🔄</div>
             <div class="btn-text">
               <span class="btn-label">受众感知回流</span>
@@ -1156,8 +1471,11 @@ body::after {
       </div>
 
       <!-- State Summary Bar -->
-      <div class="state-bar" id="stateBar">
-        <div class="state-bar-title">CURRENT STATE</div>
+      <div class="state-bar compact" id="stateBar">
+        <div class="state-bar-title">
+          CURRENT STATE
+          <span class="state-bar-toggle" id="stateBarToggle" onclick="toggleStateBar()">展开 ▾</span>
+        </div>
         <div class="state-chips" id="stateChips">
           <div class="state-chip">加载中...</div>
         </div>
@@ -1172,7 +1490,27 @@ body::after {
         <button class="log-tab" onclick="switchTab('diary')">日记</button>
         <button class="log-tab" onclick="switchTab('ops')">Ops 数据</button>
         <span class="log-tab-spacer"></span>
+        <button class="log-clear-btn" onclick="exportLogs()" title="下载当前日志为 JSON + Markdown">📥 导出</button>
         <button class="log-clear-btn" onclick="clearLog()">清空日志</button>
+      </div>
+
+      <!-- Log search bar (only visible on logs tab) -->
+      <div class="log-search" id="logSearchBar">
+        <input type="text" id="logSearchInput" placeholder="🔍 搜索命令 / 日志内容…" oninput="renderLog()">
+        <select id="logStatusFilter" onchange="renderLog()">
+          <option value="">全部状态</option>
+          <option value="success">✓ 成功</option>
+          <option value="error">✗ 错误</option>
+          <option value="running">⟳ 运行中</option>
+        </select>
+        <select id="logKindFilter" onchange="renderLog()">
+          <option value="">全部类别</option>
+          <option value="ops">Ops</option>
+          <option value="lifecycle">生命周期</option>
+          <option value="skill">子技能</option>
+          <option value="state">状态</option>
+        </select>
+        <button class="log-search-btn" onclick="clearLogFilters()">重置</button>
       </div>
 
       <!-- Tab: Logs -->
@@ -1254,6 +1592,9 @@ function switchTab(tabName) {
     }
   });
   document.getElementById('tab-' + tabName).classList.add('active');
+  // Only show log search bar on logs tab
+  var searchBar = document.getElementById('logSearchBar');
+  if (searchBar) searchBar.style.display = (tabName === 'logs') ? 'flex' : 'none';
 }
 
 // === API helper ===
@@ -1509,6 +1850,8 @@ async function runSkill(skillName, actionName) {
 
 // === Log Management ===
 var logCounter = 0;
+var LOG_STORAGE_KEY = 'aliveTestLogs';
+var LOG_PERSIST_MAX = 50;
 
 function addLogEntry(command, status) {
   var id = 'log-' + (++logCounter);
@@ -1517,8 +1860,10 @@ function addLogEntry(command, status) {
     command: command,
     status: status,
     time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    timestamp: Date.now(),
     data: null,
     elapsed: null,
+    progress: null,
   };
   logEntries.unshift(entry);
   renderLog();
@@ -1535,25 +1880,74 @@ function updateLogEntry(id, status, data, elapsed) {
     }
   }
   renderLog();
+  persistLogs();
 }
 
 function clearLog() {
   logEntries = [];
+  try { localStorage.removeItem(LOG_STORAGE_KEY); } catch (e) {}
   document.getElementById('logScroll').innerHTML =
     '<div style="text-align:center;padding:40px;color:var(--text-dim);font-family:var(--font-pixel-jp);font-size:13px;">' +
     '日志已清空 🗑️</div>';
 }
 
+function classifyCommand(cmd) {
+  if (!cmd) return '';
+  if (cmd.indexOf('ops-') === 0 || cmd.indexOf('ops:') === 0) return 'ops';
+  if (cmd === 'heartbeat' || cmd === 'morning' || cmd === 'night' || cmd.indexOf('full-day') === 0) return 'lifecycle';
+  if (cmd.indexOf('skill/') === 0) return 'skill';
+  if (cmd.indexOf('set-state') === 0 || cmd.indexOf('get-state') === 0 || cmd.indexOf('reset-state') === 0) return 'state';
+  return '';
+}
+
+function clearLogFilters() {
+  var s = document.getElementById('logSearchInput'); if (s) s.value = '';
+  var st = document.getElementById('logStatusFilter'); if (st) st.value = '';
+  var k = document.getElementById('logKindFilter'); if (k) k.value = '';
+  renderLog();
+}
+
 function renderLog() {
   var el = document.getElementById('logScroll');
-  if (logEntries.length === 0) return;
+  if (!el) return;
 
-  el.innerHTML = logEntries.map(function(entry) {
+  // Filters
+  var searchEl = document.getElementById('logSearchInput');
+  var statusEl = document.getElementById('logStatusFilter');
+  var kindEl = document.getElementById('logKindFilter');
+  var q = (searchEl && searchEl.value || '').trim().toLowerCase();
+  var statusFilter = statusEl && statusEl.value || '';
+  var kindFilter = kindEl && kindEl.value || '';
+
+  var filtered = logEntries.filter(function(entry) {
+    if (statusFilter && entry.status !== statusFilter) return false;
+    if (kindFilter && classifyCommand(entry.command) !== kindFilter) return false;
+    if (q) {
+      var hay = (entry.command || '') + ' ' + (entry.data ? JSON.stringify(entry.data) : '');
+      if (hay.toLowerCase().indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+
+  if (logEntries.length === 0) return;
+  if (filtered.length === 0) {
+    el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-dim);font-size:11px;">无匹配日志（共 ' + logEntries.length + ' 条）</div>';
+    return;
+  }
+
+  el.innerHTML = filtered.map(function(entry) {
     var statusClass = entry.status === 'success' ? 'ok' : entry.status === 'error' ? 'err' : 'running';
     var statusLabel = entry.status === 'success' ? '✓ OK' : entry.status === 'error' ? '✗ ERR' : '⟳ RUN';
     var entryClass = entry.status === 'error' ? 'error' : entry.status === 'success' ? 'success' : '';
 
     var bodyHtml = '';
+    // Live progress display while running
+    if (entry.status === 'running' && entry.progress) {
+      bodyHtml += '<div class="log-entry-message" style="color:var(--blue-sky);font-family:var(--font-mono);font-size:11px;">→ '
+        + escHtml((entry.progress.step || '') + ' · ' + (entry.progress.detail || ''))
+        + (entry.progress.progress != null ? ' (' + Math.round(entry.progress.progress) + '%)' : '')
+        + '</div>';
+    }
     if (entry.data) {
       if (entry.data.message) {
         bodyHtml += '<div class="log-entry-message">' + escHtml(entry.data.message) + '</div>';
@@ -1566,7 +1960,7 @@ function renderLog() {
         var tlSummary = entry.data.timeline.map(function(t) {
           var icon = t.phase === 'morning' ? '🌅' : t.phase === 'night' ? '🌙' : '💓';
           var status = t.error ? '✗' : '✓';
-          return icon + ' ' + t.hour + ':00 ' + status + ' ' + t.summary.slice(0, 80);
+          return icon + ' ' + t.hour + ':00 ' + status + ' ' + (t.summary || '').slice(0, 80);
         }).join('\n');
         bodyHtml += '<div class="log-entry-body">' + escHtml(tlSummary) + '</div>';
       }
@@ -1595,6 +1989,75 @@ function renderLog() {
       + bodyHtml
       + '</div>';
   }).join('');
+}
+
+/** Persist latest N log entries to localStorage (best-effort) */
+function persistLogs() {
+  try {
+    var snapshot = logEntries.slice(0, LOG_PERSIST_MAX).map(function(e) {
+      // Truncate `data` to avoid quota errors
+      var d = e.data;
+      if (d && typeof d === 'object') {
+        var s = JSON.stringify(d);
+        if (s.length > 8000) d = { message: (d.message || '(truncated)'), _truncated: true };
+      }
+      return {
+        id: e.id, command: e.command, status: e.status, time: e.time,
+        timestamp: e.timestamp, data: d, elapsed: e.elapsed,
+      };
+    });
+    localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (e) { /* quota exceeded — ignore */ }
+}
+
+function restoreLogs() {
+  try {
+    var raw = localStorage.getItem(LOG_STORAGE_KEY);
+    if (!raw) return;
+    var saved = JSON.parse(raw);
+    if (!Array.isArray(saved) || saved.length === 0) return;
+    // Mark all non-final entries as error (they were interrupted by reload)
+    logEntries = saved.map(function(e) {
+      if (e.status === 'running') e.status = 'error';
+      return e;
+    });
+    logCounter = Math.max.apply(null, logEntries.map(function(e) {
+      var m = /log-(\d+)/.exec(e.id || ''); return m ? parseInt(m[1], 10) : 0;
+    }).concat([0]));
+    renderLog();
+  } catch (e) { /* corrupt — ignore */ }
+}
+
+/** Export logs as JSON + Markdown (downloads two files) */
+function exportLogs() {
+  if (logEntries.length === 0) { alert('暂无日志可导出'); return; }
+  var stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  // JSON
+  var jsonBlob = new Blob([JSON.stringify(logEntries, null, 2)], { type: 'application/json' });
+  downloadBlob(jsonBlob, 'alive-logs-' + stamp + '.json');
+  // Markdown
+  var md = '# Alive Test Panel Logs\n\n生成时间: ' + new Date().toLocaleString('zh-CN') + '\n\n共 ' + logEntries.length + ' 条\n\n---\n\n';
+  md += logEntries.map(function(e) {
+    var status = e.status === 'success' ? '✅' : e.status === 'error' ? '❌' : '⏳';
+    var head = '## ' + status + ' `' + e.command + '` — ' + e.time + (e.elapsed != null ? ' (' + formatDuration(e.elapsed) + ')' : '');
+    var body = '';
+    if (e.data) {
+      if (e.data.message) body += '\n**消息**: ' + e.data.message + '\n';
+      if (e.data.error) body += '\n**错误**: `' + e.data.error + '`\n';
+      if (e.data.log) body += '\n```\n' + e.data.log + '\n```\n';
+    }
+    return head + body;
+  }).join('\n\n');
+  var mdBlob = new Blob([md], { type: 'text/markdown' });
+  downloadBlob(mdBlob, 'alive-logs-' + stamp + '.md');
+}
+
+function downloadBlob(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(function() { URL.revokeObjectURL(url); document.body.removeChild(a); }, 100);
 }
 
 function formatDuration(ms) {
@@ -1881,6 +2344,36 @@ function escAttr(s) { return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#
 // ═══ OPS CONSOLE FUNCTIONS ═══════════════════════════════════
 // ═══════════════════════════════════════════════════════════════
 
+// Commands that use SSE streaming for progress reporting
+var SSE_COMMANDS = new Set([
+  'full-day',
+  'ops-brief',
+  'ops-trends',
+  'ops-competitors',
+  'ops-idea',
+  'ops-advice',
+  'ops-analyze',
+  'ops-strategy-compute',
+  'ops-viral-search',
+  'ops-radar',
+  'ops-auto-breakdown',
+  'ops-viral-kb',
+]);
+
+/** Elapsed-time ticker attached to a running log entry */
+function startElapsedTicker(logId, startTime) {
+  var timer = setInterval(function() {
+    var entry = null;
+    for (var i = 0; i < logEntries.length; i++) {
+      if (logEntries[i].id === logId) { entry = logEntries[i]; break; }
+    }
+    if (!entry || entry.status !== 'running') { clearInterval(timer); return; }
+    entry.elapsed = Date.now() - startTime;
+    renderLog();
+  }, 1000);
+  return timer;
+}
+
 /** Generic Ops command runner — logs + auto renders structured data in Ops tab */
 async function runOps(command, btnEl) {
   var btnId = btnEl ? btnEl.id : ('btn-' + command);
@@ -1895,14 +2388,14 @@ async function runOps(command, btnEl) {
 
   var logId = addLogEntry(command, 'running');
   var startTime = Date.now();
+  var ticker = startElapsedTicker(logId, startTime);
 
-  // Use SSE for ops-brief
-  var useSSE = command === 'ops-brief';
+  var useSSE = SSE_COMMANDS.has(command);
 
   try {
     var data;
     if (useSSE) {
-      data = await runOpsSSE(command);
+      data = await runOpsSSE(command, logId);
     } else {
       var res = await fetch(apiUrl(command), { method: 'POST' });
       data = await res.json();
@@ -1915,6 +2408,10 @@ async function runOps(command, btnEl) {
       // Render structured data in Ops tab
       renderOpsData(command, data);
       switchTab('ops');
+      // Auto-refresh queue when ops-idea generates new drafts
+      if (command === 'ops-idea') {
+        setTimeout(function() { loadOpsQueue(); }, 250);
+      }
     } else {
       updateLogEntry(logId, 'error', data, elapsed);
       if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
@@ -1925,6 +2422,7 @@ async function runOps(command, btnEl) {
     if (btn) { btn.classList.remove('running'); btn.classList.add('error'); }
   }
 
+  clearInterval(ticker);
   runningActions.delete(command);
   allBtns.forEach(function(b) { b.disabled = false; });
 
@@ -1933,10 +2431,15 @@ async function runOps(command, btnEl) {
   }, 3000);
 }
 
-/** SSE streaming for heavy ops commands */
-async function runOpsSSE(command) {
+/** SSE streaming for heavy ops commands — updates log entry progress inline */
+async function runOpsSSE(command, logId) {
   var url = apiUrlWithStream(command);
   var response = await fetch(url, { method: 'POST' });
+  if (!response.ok && response.status !== 200) {
+    // Server rejected SSE — fall back to regular fetch.
+    var fallback = await fetch(apiUrl(command), { method: 'POST' });
+    return await fallback.json();
+  }
   var reader = response.body.getReader();
   var decoder = new TextDecoder();
   var buffer = '';
@@ -1959,7 +2462,12 @@ async function runOpsSSE(command) {
         if (lines[j].startsWith('event: ')) eventType = lines[j].slice(7);
         else if (lines[j].startsWith('data: ')) eventData = lines[j].slice(6);
       }
-      if (eventType === 'done') {
+      if (eventType === 'progress') {
+        try {
+          var ev = JSON.parse(eventData);
+          updateLogProgress(logId, ev);
+        } catch (e) { /* skip */ }
+      } else if (eventType === 'done') {
         try { finalResult = JSON.parse(eventData); } catch (e) { finalResult = { ok: false, error: 'Parse error' }; }
       } else if (eventType === 'error') {
         try { finalResult = JSON.parse(eventData); finalResult.ok = false; } catch (e) { finalResult = { ok: false, error: 'Stream error' }; }
@@ -1969,10 +2477,34 @@ async function runOpsSSE(command) {
   return finalResult || { ok: false, error: 'No result' };
 }
 
+/** Update inline progress detail in a running log entry */
+function updateLogProgress(logId, event) {
+  for (var i = 0; i < logEntries.length; i++) {
+    if (logEntries[i].id === logId) {
+      logEntries[i].progress = event;
+      break;
+    }
+  }
+  renderLog();
+}
+
 /** Render structured ops data in the Ops tab */
 function renderOpsData(command, data) {
   var el = document.getElementById('opsDataScroll');
   var html = '';
+
+  // Header with rerun button
+  var rerunCmd = command;
+  var rerunnable = rerunCmd && rerunCmd.indexOf('ops-') === 0 && rerunCmd !== 'ops-queue';
+  var headerHtml = '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg-inset);border:1px dashed var(--border-main);margin-bottom:8px;font-size:11px;">';
+  headerHtml += '<span style="font-family:var(--font-pixel);font-size:8px;color:var(--text-dim);">LAST CMD</span>';
+  headerHtml += '<code style="font-family:var(--font-mono);color:var(--brown-dark);">' + escHtml(command) + '</code>';
+  headerHtml += '<span style="color:var(--text-dim);">·</span>';
+  headerHtml += '<span style="color:var(--text-dim);font-size:10px;">' + new Date().toLocaleTimeString('zh-CN') + '</span>';
+  if (rerunnable) {
+    headerHtml += '<button class="ops-rerun-btn" onclick="rerunOps(\'' + escAttr(rerunCmd) + '\')">🔄 重跑</button>';
+  }
+  headerHtml += '</div>';
 
   if (command === 'ops-status') {
     html = renderOpsStatus(data);
@@ -2026,7 +2558,13 @@ function renderOpsData(command, data) {
       + '</div>';
   }
 
-  el.innerHTML = html;
+  el.innerHTML = headerHtml + html;
+}
+
+/** Rerun the last ops command from the "重跑" button in Ops tab */
+function rerunOps(command) {
+  var btn = document.getElementById('btn-' + command);
+  runOps(command, btn);
 }
 
 function renderOpsStatus(data) {
@@ -2096,6 +2634,38 @@ function renderOpsTrends(data) {
     });
     h += '</tbody></table>';
   }
+
+  // Signal pool (趋势信号池) — 后端会返回 signal_pool, 但之前没有渲染
+  var pool = data.signal_pool || data.signals || null;
+  if (pool) {
+    var items = Array.isArray(pool) ? pool : (pool.items || pool.signals || []);
+    if (items && items.length > 0) {
+      h += '<div class="signal-pool-section">';
+      h += '<div class="signal-pool-title">🧲 信号池 (' + items.length + ' 条原始信号)</div>';
+      h += '<table class="ops-queue-table"><thead><tr><th>关键词</th><th>平台</th><th>热度</th><th>来源</th></tr></thead><tbody>';
+      items.slice(0, 30).forEach(function(s) {
+        var kw = s.keyword || s.topic || s.title || s.term || '-';
+        var plat = s.platform || s.source || '-';
+        var heat = s.hot_score != null ? s.hot_score
+          : s.heat != null ? s.heat
+          : s.score != null ? s.score
+          : s.rank != null ? ('#' + s.rank) : '-';
+        var src = s.source || s.origin || s.provider || '';
+        h += '<tr>'
+          + '<td>' + escHtml(String(kw).slice(0, 50)) + '</td>'
+          + '<td>' + escHtml(plat) + '</td>'
+          + '<td>' + (typeof heat === 'number' ? heat.toFixed(1) : escHtml(String(heat))) + '</td>'
+          + '<td style="color:var(--text-dim);font-size:10px;">' + escHtml(src) + '</td>'
+          + '</tr>';
+      });
+      h += '</tbody></table>';
+      if (items.length > 30) {
+        h += '<div style="font-size:10px;color:var(--text-dim);margin-top:4px;">… 还有 ' + (items.length - 30) + ' 条未显示</div>';
+      }
+      h += '</div>';
+    }
+  }
+
   h += '</div>';
   return h;
 }
@@ -2181,10 +2751,25 @@ function renderOpsQueueFull(data) {
   if (items.length === 0) {
     h += '<div class="ops-data-card-body">队列为空</div>';
   } else {
+    var pendingCount = items.filter(function(i) { return i.status === 'pending'; }).length;
+    // Batch action bar (only shown when there are pending items)
+    if (pendingCount > 0) {
+      h += '<div class="batch-action-bar">';
+      h += '<label><input type="checkbox" id="queueSelectAll" onchange="queueToggleAll(this)"> <span>全选待审 (' + pendingCount + ')</span></label>';
+      h += '<span class="batch-spacer"></span>';
+      h += '<span style="color:var(--text-dim);">已选 <strong id="queueSelectedCount">0</strong></span>';
+      h += '<button class="ops-mini-btn approve" onclick="queueBatchAction(\'approve\')">✓ 批量通过</button>';
+      h += '<button class="ops-mini-btn discard" onclick="queueBatchAction(\'discard\')">✗ 批量废弃</button>';
+      h += '</div>';
+    }
+
     items.forEach(function(item) {
       var statusClass = item.status || 'pending';
       h += '<div style="padding:8px;margin-bottom:6px;border:1px solid var(--bg-deep);background:var(--bg-inset);">';
       h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">';
+      if (item.status === 'pending') {
+        h += '<input type="checkbox" class="queue-checkbox" data-item-id="' + escAttr(item.id) + '" onchange="queueUpdateSelected()">';
+      }
       h += '<span class="ops-badge ' + escAttr(statusClass) + '">' + escHtml(item.status) + '</span>';
       h += '<strong style="font-size:12px;">' + escHtml(item.topic || 'untitled') + '</strong>';
       if (item.identity_mode) h += ' <span class="ops-badge">' + escHtml(item.identity_mode) + '</span>';
@@ -2879,6 +3464,12 @@ async function verifyPersonaCompetitors() {
 
 /** Viral post analysis */
 async function runViralAnalysis() {
+  var mode = window.__analyzeMode || 'url';
+  if (mode === 'text') {
+    runViralTextDiagnosis();
+    return;
+  }
+
   var url = document.getElementById('analyzeUrl').value.trim();
   if (!url) { alert('请输入帖子 URL'); return; }
 
@@ -3105,10 +3696,275 @@ function renderOpsPerceptionFlow(data) {
 // ═══ END OPS CONSOLE ═════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════
+// ═══ UX ENHANCEMENTS (added in optimization pass) ════════════
+// ═══════════════════════════════════════════════════════════════
+
+// --- Theme toggle ---
+function toggleTheme() {
+  var body = document.body;
+  var btn = document.getElementById('themeToggle');
+  var isDark = body.classList.toggle('dark');
+  try { localStorage.setItem('aliveTheme', isDark ? 'dark' : 'light'); } catch (e) {}
+  if (btn) btn.textContent = isDark ? '☀️ 亮色' : '🌙 暗色';
+}
+
+function restoreTheme() {
+  try {
+    var saved = localStorage.getItem('aliveTheme');
+    if (saved === 'dark') {
+      document.body.classList.add('dark');
+      var btn = document.getElementById('themeToggle');
+      if (btn) btn.textContent = '☀️ 亮色';
+    }
+  } catch (e) {}
+}
+
+// --- Server health probe ---
+var healthTimer = null;
+async function checkServerHealth(manual) {
+  var el = document.getElementById('serverStatus');
+  var txt = document.getElementById('serverStatusText');
+  if (!el) return;
+  if (manual) { el.className = 'server-status checking'; if (txt) txt.textContent = 'CHECKING...'; }
+  try {
+    var res = await fetch('/api/health', { cache: 'no-store' });
+    if (res.ok) {
+      var data = await res.json();
+      el.className = 'server-status ok';
+      if (txt) txt.textContent = 'ONLINE · ' + Math.floor((data.uptime_sec || 0) / 60) + 'm';
+    } else {
+      el.className = 'server-status err';
+      if (txt) txt.textContent = 'HTTP ' + res.status;
+    }
+  } catch (err) {
+    el.className = 'server-status err';
+    if (txt) txt.textContent = 'OFFLINE';
+    if (manual) alert('⚠️ 无法连接后端\n请确认 dashboard server 已启动：\n\n  npm run dashboard');
+  }
+}
+
+function startHealthMonitor() {
+  checkServerHealth(false);
+  if (healthTimer) clearInterval(healthTimer);
+  healthTimer = setInterval(function() { checkServerHealth(false); }, 30000);
+}
+
+// --- State bar toggle (compact / expanded) ---
+function toggleStateBar() {
+  var bar = document.getElementById('stateBar');
+  var btn = document.getElementById('stateBarToggle');
+  if (!bar) return;
+  bar.classList.toggle('compact');
+  if (btn) btn.textContent = bar.classList.contains('compact') ? '展开 ▾' : '收起 ▴';
+}
+
+// --- Subgroup (inside strategy & data section) toggle ---
+function toggleSubgroup(id) {
+  var divider = document.getElementById(id);
+  if (!divider) return;
+  divider.classList.toggle('subgroup-collapsed');
+  // Find subgroup items belonging to this divider
+  var groupName = id === 'subgroupCommon' ? 'subgroup-common' : 'subgroup-advanced';
+  var isCollapsed = divider.classList.contains('subgroup-collapsed');
+  var items = document.querySelectorAll('.' + groupName);
+  items.forEach(function(el) { el.style.display = isCollapsed ? 'none' : ''; });
+}
+
+// --- Analyze mode switcher (URL / Text) ---
+function switchAnalyzeMode(mode) {
+  window.__analyzeMode = mode;
+  var urlInput = document.getElementById('analyzeUrl');
+  var textArea = document.getElementById('analyzeText');
+  var tabUrl = document.getElementById('tabAnalyzeUrl');
+  var tabText = document.getElementById('tabAnalyzeText');
+  if (mode === 'url') {
+    urlInput.classList.remove('hidden');
+    textArea.classList.remove('visible');
+    tabUrl.classList.add('active');
+    tabText.classList.remove('active');
+  } else {
+    urlInput.classList.add('hidden');
+    textArea.classList.add('visible');
+    tabUrl.classList.remove('active');
+    tabText.classList.add('active');
+  }
+}
+
+/** Client-side quick Hook / pattern detection (no server round-trip) */
+function runViralTextDiagnosis() {
+  var text = document.getElementById('analyzeText').value.trim();
+  if (!text) { alert('请先粘贴文本'); return; }
+  var logId = addLogEntry('text-analyze (local)', 'running');
+
+  // Lightweight heuristic: detect common hook patterns
+  var patterns = [
+    { name: '疑问钩', re: /[?？]|怎么|为什么|是不是|真的吗|到底/, weight: 1 },
+    { name: '数字列表', re: /^\s*\d+[、\.\)]|\d+\s*(个|招|点|步|种|条|种类)/m, weight: 1 },
+    { name: '痛点锚定', re: /踩雷|坑|后悔|避雷|千万别|别再/, weight: 1.3 },
+    { name: '身份共鸣', re: /我(也|是|曾|发现)|作为|打工人|i人|e人|妈妈|女生|男生/, weight: 1 },
+    { name: '权威感', re: /(内部|业内|医生|老师|专家|研究)说|科学|实验|数据|【.{1,10}】/, weight: 1 },
+    { name: '紧迫性', re: /今天|最后|仅剩|马上|立刻|赶紧|错过/, weight: 0.8 },
+    { name: '反差钩', re: /原来|没想到|竟然|居然|万万没想到|翻车/, weight: 1.2 },
+    { name: '清单感', re: /盘点|合集|超全|必看|收藏|保姆级|攻略/, weight: 1 },
+    { name: '情绪词', re: /绝了|爱了|救命|泪目|破防|太|真的|好治愈|好温柔/, weight: 0.9 },
+  ];
+  var hits = [];
+  patterns.forEach(function(p) {
+    var m = text.match(p.re);
+    if (m) hits.push({ name: p.name, sample: m[0], weight: p.weight });
+  });
+
+  var firstLine = text.split(/\n/).find(function(l) { return l.trim().length > 0; }) || '';
+  var hookStrength = hits.reduce(function(sum, h) { return sum + h.weight; }, 0);
+
+  var data = {
+    mode: 'text',
+    ok: true,
+    message: '文本快速诊断完成 · 命中 ' + hits.length + ' 个钩子模式',
+    diagnosis: {
+      first_line: firstLine.slice(0, 80),
+      first_line_length: firstLine.length,
+      total_chars: text.length,
+      detected_patterns: hits,
+      hook_strength: hookStrength,
+      verdict: hookStrength >= 3 ? '🔥 强钩子（多重触发）'
+             : hookStrength >= 1.5 ? '⚡ 中等钩子'
+             : '💤 钩子偏弱（建议补强）',
+      suggestions: buildTextSuggestions(hits, firstLine, text),
+    },
+  };
+  updateLogEntry(logId, 'success', data, 0);
+  renderOpsData('ops-analyze', data);
+  switchTab('ops');
+}
+
+function buildTextSuggestions(hits, firstLine, text) {
+  var s = [];
+  var names = hits.map(function(h) { return h.name; });
+  if (firstLine.length > 30) s.push('首行过长 (' + firstLine.length + ' 字)，建议压缩到 20 字以内');
+  if (names.indexOf('疑问钩') < 0 && names.indexOf('反差钩') < 0) s.push('缺少疑问/反差钩子 — 可加入"为什么…"、"没想到…"');
+  if (names.indexOf('身份共鸣') < 0) s.push('缺少身份共鸣 — 点明"我也是…"、"作为 xxx"');
+  if (names.indexOf('数字列表') < 0 && text.length > 200) s.push('长文本但无数字列表结构 — 考虑用"3 个要点"来分块');
+  if (names.indexOf('情绪词') < 0) s.push('情绪浓度偏低 — 可加入"绝了 / 救命 / 好治愈"等社交平台常见词');
+  if (s.length === 0) s.push('✅ 结构完整，建议直接用 URL 深度分析进一步获取评论情绪');
+  return s;
+}
+
+// --- Queue batch actions ---
+function queueToggleAll(el) {
+  var checkboxes = document.querySelectorAll('.queue-checkbox');
+  checkboxes.forEach(function(cb) { cb.checked = el.checked; });
+  queueUpdateSelected();
+}
+
+function queueUpdateSelected() {
+  var checked = document.querySelectorAll('.queue-checkbox:checked');
+  var countEl = document.getElementById('queueSelectedCount');
+  if (countEl) countEl.textContent = checked.length;
+}
+
+async function queueBatchAction(action) {
+  var checked = Array.from(document.querySelectorAll('.queue-checkbox:checked'));
+  if (checked.length === 0) { alert('请先勾选至少一条待审项'); return; }
+  var verb = action === 'approve' ? '通过' : '废弃';
+  if (!confirm('确认批量' + verb + ' ' + checked.length + ' 条？')) return;
+  var reason = prompt('批量' + verb + '理由（应用于全部选中项）：', action === 'approve' ? '运营批量确认' : '运营批量否决');
+  if (reason === null) return;
+
+  var logId = addLogEntry('ops-queue-' + action + ' (batch:' + checked.length + ')', 'running');
+  var startTime = Date.now();
+  var done = 0, failed = 0;
+
+  for (var i = 0; i < checked.length; i++) {
+    var itemId = checked[i].getAttribute('data-item-id');
+    try {
+      var res = await fetch(apiUrl('ops-queue-' + action), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: itemId, reason_summary: reason }),
+      });
+      var data = await res.json();
+      if (data.success) done++; else failed++;
+    } catch (e) { failed++; }
+  }
+
+  updateLogEntry(logId, failed === 0 ? 'success' : 'error', {
+    message: '批量' + verb + '完成: ' + done + ' 成功 / ' + failed + ' 失败',
+    done: done, failed: failed,
+  }, Date.now() - startTime);
+  loadOpsQueue();
+}
+
+// --- One-click demo workflow (orchestrated ops command chain) ---
+var DEMO_STEPS = [
+  { cmd: 'ops-health', label: '链路健康检查' },
+  { cmd: 'ops-trends', label: '趋势 & 信号池扫描' },
+  { cmd: 'ops-competitors', label: '竞品追踪抓取' },
+  { cmd: 'ops-idea', label: '选题生成 → 入队列' },
+  { cmd: 'ops-queue', label: '加载审核队列' },
+  { cmd: 'ops-brief', label: '今日简报生成' },
+];
+
+async function runDemoWorkflow() {
+  var btn = document.getElementById('btn-demo-run');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ 运行中...';
+
+  var progEl = document.getElementById('demoProgress');
+  progEl.classList.add('visible');
+  progEl.innerHTML = DEMO_STEPS.map(function(s, i) {
+    return '<div class="demo-progress-step pending" id="demo-step-' + i + '">' + s.label + '</div>';
+  }).join('');
+
+  var anyError = false;
+  for (var i = 0; i < DEMO_STEPS.length; i++) {
+    var step = DEMO_STEPS[i];
+    var stepEl = document.getElementById('demo-step-' + i);
+    stepEl.className = 'demo-progress-step active';
+
+    try {
+      if (step.cmd === 'ops-queue') {
+        await loadOpsQueue();
+      } else {
+        var fakeBtn = document.getElementById('btn-' + step.cmd);
+        await runOps(step.cmd, fakeBtn);
+      }
+      stepEl.className = 'demo-progress-step done';
+    } catch (e) {
+      stepEl.className = 'demo-progress-step error';
+      anyError = true;
+      console.error('Demo step failed:', step.cmd, e);
+    }
+    // small gap between steps for visibility
+    await new Promise(function(r) { setTimeout(r, 300); });
+  }
+
+  btn.disabled = false;
+  btn.textContent = anyError ? '⚠️ 重跑演示（上次有错）' : '✅ 再跑一次';
+  setTimeout(function() { btn.textContent = '▶️ 开始演示流程'; }, 6000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ═══ END UX ENHANCEMENTS ═════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+
 // === Boot ===
+restoreTheme();
+restoreLogs();
+switchAnalyzeMode('url');
+// Sync initial subgroup collapsed state (CSS sibling selector不适用 flex 布局)
+(function syncInitialSubgroups() {
+  var advDivider = document.getElementById('subgroupAdvanced');
+  if (advDivider && advDivider.classList.contains('subgroup-collapsed')) {
+    document.querySelectorAll('.subgroup-advanced').forEach(function(el) { el.style.display = 'none'; });
+  }
+})();
 initPersona().then(function() {
   refreshState();
   loadSkills();
+  startHealthMonitor();
 });
 </script>
 </body>

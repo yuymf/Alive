@@ -688,6 +688,18 @@ function createServer(options = {}) {
     // --- API routes ---
     const urlObj = new URL(req.url, 'http://0.0.0.0');
 
+    // Lightweight health probe for the test panel to detect backend availability
+    if (req.method === 'GET' && urlObj.pathname === '/api/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({
+        ok: true,
+        time: new Date().toISOString(),
+        uptime_sec: Math.round(process.uptime()),
+        pid: process.pid,
+      }));
+      return;
+    }
+
     if (req.method === 'GET' && urlObj.pathname === '/api/personas') {
       try {
         const personas = listPersonas(memoryBase);
@@ -1010,6 +1022,10 @@ function createServer(options = {}) {
           command = 'ops-verify-persona';
         } else if (subPath === 'ops-status') {
           command = 'ops-status';
+        } else if (subPath === 'ops-trends') {
+          command = 'ops-trends';
+        } else if (subPath === 'ops-tags') {
+          command = 'ops-tags';
         } else {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Unknown test command: ' + subPath }));
@@ -1028,16 +1044,35 @@ function createServer(options = {}) {
 
         // Timeout for non-SSE mode: heavy ops 10 min, standard 5 min.
         // SSE mode relies on client-disconnect cleanup instead of spawn timeout.
-        const heavyCommands = new Set(['full-day', 'ops-brief', 'ops-idea', 'ops-advice', 'ops-strategy-compute', 'ops-analyze']);
-        const timeoutMs = heavyCommands.has(command) ? 600000 : 300000;
+        const heavyCommands = new Set(['full-day', 'ops-brief', 'ops-idea', 'ops-advice', 'ops-strategy-compute', 'ops-analyze', 'ops-trends']);
+        const heavySkillPrefixes = ['skill:content-browse', 'skill:web-search'];
+        const timeoutMs = (heavyCommands.has(command) || heavySkillPrefixes.some(p => command.startsWith(p))) ? 600000 : 300000;
 
         // Find tsx binary: try npx tsx, then global tsx
         const { spawn } = require('child_process');
         const npxPath = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
-        // For SSE streaming mode (full-day / ops-brief)
-        const sseCommands = new Set(['full-day', 'ops-brief']);
-        if (wantSSE && sseCommands.has(command)) {
+        // For SSE streaming mode — extended to heavy ops commands.
+        // Non-brief heavy commands may emit few progress events; SSE still
+        // gives the frontend reliable start/done signaling and client-cancel.
+        const sseCommands = new Set([
+          'full-day',
+          'ops-brief',
+          'ops-trends',
+          'ops-competitors',
+          'ops-idea',
+          'ops-advice',
+          'ops-analyze',
+          'ops-strategy-compute',
+          'ops-viral-search',
+          'ops-radar',
+          'ops-auto-breakdown',
+          'ops-viral-kb',
+        ]);
+        // Skill commands that support SSE (matched by prefix)
+        const sseSkillPrefixes = ['skill:content-browse', 'skill:web-search'];
+        const isSSE = wantSSE && (sseCommands.has(command) || sseSkillPrefixes.some(p => command.startsWith(p)));
+        if (isSSE) {
           res.writeHead(200, {
             'Content-Type': 'text/event-stream',
             'Cache-Control': 'no-cache',
@@ -1054,6 +1089,19 @@ function createServer(options = {}) {
 
           let stdout = '';
           let stderr = '';
+
+          // SSE heartbeat — send a comment line every 15s so the connection
+          // stays alive even when the child process doesn't emit __PROGRESS__
+          // events for long periods (e.g. ops-trends during platform jitter
+          // sleeps or LLM calls). Without heartbeat, browsers/proxies may
+          // close idle SSE connections after ~2-5 min, triggering
+          // attachSseChildCleanup → SIGTERM → exit code 143.
+          const heartbeatTimer = setInterval(() => {
+            try {
+              res.write(': keep-alive\n\n');
+            } catch { /* response already closed */ }
+          }, 15000);
+          const clearHeartbeat = () => clearInterval(heartbeatTimer);
 
           child.stderr.on('data', (data) => {
             const text = data.toString();
@@ -1073,6 +1121,7 @@ function createServer(options = {}) {
           child.stdout.on('data', (data) => { stdout += data.toString(); });
 
           child.on('close', (code) => {
+            clearHeartbeat();
             const lines = stdout.trim().split('\n');
             const lastLine = lines[lines.length - 1] || '';
             let result;
@@ -1093,6 +1142,7 @@ function createServer(options = {}) {
           });
 
           child.on('error', (err) => {
+            clearHeartbeat();
             res.write('event: error\ndata: ' + JSON.stringify({ error: err.message }) + '\n\n');
             res.end();
           });

@@ -20,21 +20,10 @@
 {{competitor_section}}
 
 请分析：
+0. **人设锚点校验**：检视上述人设是否包含至少1个标志性特征（固定开场白、习惯性手势、专属BGM cue、口头禅），若缺失则标记「人设单薄」风险并建议补充
 1. 每个身份与今日热点的契合度（0-10分），说明理由
 2. 综合契合度评分（0-10）
 3. 恰好 3 条选题方向建议，每条需指定使用哪个身份模式和切入钩子
 4. 风险/注意事项（如人设偏移风险、争议话题等）
 
 返回 JSON：
-```json
-{
-  "alignment_score": 7,
-  "identity_analysis": [
-    {"identity":"身份名","fit_score":8,"reasoning":"原因"}
-  ],
-  "topic_suggestions": [
-    {"direction":"选题方向","identity_mode":"身份模式","hook":"切入钩子","reasoning":"理由"}
-  ],
-  "warnings": ["注意事项1"]
-}
-```
