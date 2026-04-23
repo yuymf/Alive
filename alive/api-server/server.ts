@@ -4,6 +4,9 @@ import cors from 'cors';
 import { authMiddleware } from './middleware/auth';
 import statusRouter from './routes/status';
 import queueRouter from './routes/queue';
+import trendsRouter from './routes/trends';
+import briefRouter from './routes/brief';
+import adviceRouter from './routes/advice';
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
@@ -26,6 +29,9 @@ app.use(authMiddleware);
 
 app.use('/api/status', statusRouter);
 app.use('/api/queue', queueRouter);
+app.use('/api/trends', trendsRouter);
+app.use('/api/brief', briefRouter);
+app.use('/api/advice', adviceRouter);
 
 // 404 catch-all
 app.use((_req: Request, res: Response) => {
