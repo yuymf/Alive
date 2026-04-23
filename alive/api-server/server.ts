@@ -10,6 +10,7 @@ import adviceRouter from './routes/advice';
 import competitorsRouter from './routes/competitors';
 import viralKbRouter from './routes/viral-kb';
 import analyzeRouter from './routes/analyze';
+import healthRouter from './routes/health';
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
@@ -38,6 +39,7 @@ app.use('/api/advice', adviceRouter);
 app.use('/api/competitors', competitorsRouter);
 app.use('/api/viral-kb', viralKbRouter);
 app.use('/api/analyze', analyzeRouter);
+app.use('/api/health', healthRouter);
 
 // 404 catch-all
 app.use((_req: Request, res: Response) => {
