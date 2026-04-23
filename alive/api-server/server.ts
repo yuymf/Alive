@@ -13,6 +13,7 @@ import analyzeRouter from './routes/analyze';
 import healthRouter from './routes/health';
 import strategyRouter from './routes/strategy';
 import intelRouter from './routes/intel';
+import analyticsRouter from './routes/analytics';
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
@@ -44,6 +45,7 @@ app.use('/api/analyze', analyzeRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/strategy', strategyRouter);
 app.use('/api/intel', intelRouter);
+app.use('/api/analytics', analyticsRouter);
 
 // 404 catch-all
 app.use((_req: Request, res: Response) => {

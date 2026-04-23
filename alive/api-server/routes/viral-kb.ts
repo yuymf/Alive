@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { loadSkillEnvVars, PATHS } from '../../scripts/utils/file-utils';
-import { queryAll, loadFormulas, getStats } from '../../scripts/ops/viral-kb-store';
+import { queryAll, loadFormulas, getStats, auditEntries, requeueEntriesForRepair } from '../../scripts/ops/viral-kb-store';
 import * as path from 'path';
 
 loadSkillEnvVars('alive');
@@ -41,6 +41,42 @@ router.get('/formulas', (_req: Request, res: Response) => {
     res.json({ formulas });
   } catch (err) {
     console.error('[viral-kb GET /formulas]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /viral-kb/stats — KB statistics (aggregates)
+router.get('/stats', (_req: Request, res: Response) => {
+  try {
+    const stats = getStats(getKbBasePath());
+    res.json(stats);
+  } catch (err) {
+    console.error('[viral-kb GET /stats]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /viral-kb/audit — KB audit report (READ-ONLY, no side effects)
+router.get('/audit', (_req: Request, res: Response) => {
+  try {
+    const report = auditEntries(getKbBasePath());
+    res.json(report);
+  } catch (err) {
+    console.error('[viral-kb GET /audit]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /viral-kb/repair — requeue hollow entries for re-dissection
+router.post('/repair', (req: Request, res: Response) => {
+  try {
+    const limitRaw = req.body?.limit;
+    const limit = typeof limitRaw === 'number' && limitRaw > 0 ? Math.min(limitRaw, 100) : undefined;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason : 'dashboard-triggered repair';
+    const result = requeueEntriesForRepair(getKbBasePath(), { limit, reason });
+    res.json(result);
+  } catch (err) {
+    console.error('[viral-kb POST /repair]', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
