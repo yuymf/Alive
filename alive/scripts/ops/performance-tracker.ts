@@ -185,3 +185,71 @@ export function cleanupOldEntries(): void {
     writeJSON(PATHS.performanceLog, { entries: kept, last_updated: now().toISOString() });
   }
 }
+
+/**
+ * Fetch live metrics for a published queue item and record a snapshot for each
+ * platform URL present. Returns a summary describing what was refreshed.
+ *
+ * - Requires item.status === 'published' and at least one URL in published_urls.
+ * - Marks performance_tracked = true after at least one successful fetch.
+ * - Per-platform failures are captured in `failures`; they do not abort the whole refresh.
+ */
+export async function refreshMetricsForQueueItem(id: string): Promise<{
+  ok: boolean;
+  item_id: string;
+  refreshed: { platform: 'xhs' | 'douyin'; url: string; metrics: PerformanceMetrics }[];
+  failures: { platform: 'xhs' | 'douyin' | ''; url: string; reason: string }[];
+}> {
+  const { getItem, markPerformanceTracked } = await import('./review-queue');
+  const item = await getItem(id);
+  if (!item) {
+    return { ok: false, item_id: id, refreshed: [], failures: [{ platform: '', url: '', reason: 'item not found' }] };
+  }
+  if (item.status !== 'published') {
+    return { ok: false, item_id: id, refreshed: [], failures: [{ platform: '', url: '', reason: `status is ${item.status}, not published` }] };
+  }
+  const urls = item.published_urls ?? {};
+  const platforms: ('xhs' | 'douyin')[] = [];
+  if (urls.xhs) platforms.push('xhs');
+  if (urls.douyin) platforms.push('douyin');
+  if (platforms.length === 0) {
+    return { ok: false, item_id: id, refreshed: [], failures: [{ platform: '', url: '', reason: 'no published_urls' }] };
+  }
+
+  const publishedAt = item.published_at ?? now().toISOString();
+  const templateType = item.template_spec?.content_type ?? 'unknown';
+  const refreshed: { platform: 'xhs' | 'douyin'; url: string; metrics: PerformanceMetrics }[] = [];
+  const failures: { platform: 'xhs' | 'douyin' | ''; url: string; reason: string }[] = [];
+
+  for (const platform of platforms) {
+    const url = urls[platform]!;
+    const tagsUsed: string[] = platform === 'xhs'
+      ? (item.content?.xhs?.tags ?? [])
+      : (item.content?.douyin?.key_captions ?? []);
+    try {
+      const metrics = fetchMetrics(platform, url);
+      if (!metrics) {
+        failures.push({ platform, url, reason: 'fetchMetrics returned null' });
+        continue;
+      }
+      appendSnapshot({
+        item_id: item.id,
+        identity_mode: item.identity_mode,
+        template_type: templateType,
+        topic: item.topic,
+        platform,
+        url,
+        published_at: publishedAt,
+        tags_used: tagsUsed,
+      }, metrics);
+      refreshed.push({ platform, url, metrics });
+    } catch (err) {
+      failures.push({ platform, url, reason: (err as Error).message ?? String(err) });
+    }
+  }
+
+  if (refreshed.length > 0) {
+    await markPerformanceTracked(id);
+  }
+  return { ok: refreshed.length > 0, item_id: id, refreshed, failures };
+}

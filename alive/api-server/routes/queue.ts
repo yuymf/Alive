@@ -4,9 +4,11 @@ import {
   loadQueue,
   markApproved,
   markDiscarded,
+  markPublished,
   addReviewFeedback,
   updateItemContent,
 } from '../../scripts/ops/review-queue';
+import { refreshMetricsForQueueItem } from '../../scripts/ops/performance-tracker';
 import { QueueItemContent } from '../../scripts/utils/types';
 import { spawnCli } from '../lib/cli-runner';
 
@@ -115,6 +117,49 @@ router.put('/:id', async (req: Request, res: Response) => {
     res.json(item);
   } catch (err) {
     console.error('[queue PUT /:id]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /queue/:id/publish — mark as published with platform+url
+router.post('/:id/publish', async (req: Request, res: Response) => {
+  try {
+    const platform = req.body?.platform;
+    const url = req.body?.url;
+    const publishedAt = typeof req.body?.publishedAt === 'string' ? req.body.publishedAt : undefined;
+
+    if (platform !== 'xhs' && platform !== 'douyin') {
+      res.status(400).json({ error: 'platform must be "xhs" or "douyin"' });
+      return;
+    }
+    if (typeof url !== 'string' || !url.startsWith('http')) {
+      res.status(400).json({ error: 'url must be a valid http(s) URL' });
+      return;
+    }
+
+    const item = await markPublished(req.params.id, { platform, url, publishedAt });
+    if (!item) {
+      res.status(404).json({ error: 'Item not found or not in a publishable state' });
+      return;
+    }
+    res.json(item);
+  } catch (err) {
+    console.error('[queue POST /:id/publish]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /queue/:id/refresh-metrics — fetch live metrics and append snapshot
+router.post('/:id/refresh-metrics', async (req: Request, res: Response) => {
+  try {
+    const result = await refreshMetricsForQueueItem(req.params.id);
+    if (!result.ok && result.refreshed.length === 0) {
+      res.status(400).json(result);
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    console.error('[queue POST /:id/refresh-metrics]', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
