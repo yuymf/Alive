@@ -3,6 +3,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { authMiddleware } from './middleware/auth';
 import statusRouter from './routes/status';
+import queueRouter from './routes/queue';
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
@@ -24,6 +25,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(authMiddleware);
 
 app.use('/api/status', statusRouter);
+app.use('/api/queue', queueRouter);
 
 // 404 catch-all
 app.use((_req: Request, res: Response) => {
