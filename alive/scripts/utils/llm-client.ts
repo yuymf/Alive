@@ -506,12 +506,33 @@ export function stripThinkBlocks(raw: string): string {
 export function repairJSON(input: string): string {
   if (!input) return input;
 
+  // Pass 0: replace Chinese/curly quotation marks inside string values with
+  // their escaped ASCII equivalents, so they don't confuse the JSON parser.
+  // Strategy: scan char-by-char tracking inString state (ASCII " only),
+  // and replace curly quotes found inside strings with \" (escaped ASCII quote).
+  const pass0: string[] = [];
+  let inStr0 = false;
+  let esc0 = false;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (esc0) { pass0.push(ch); esc0 = false; continue; }
+    if (ch === '\\' && inStr0) { pass0.push(ch); esc0 = true; continue; }
+    if (ch === '"') { inStr0 = !inStr0; pass0.push(ch); continue; }
+    // Inside a JSON string, curly quotes would break the parser — escape them.
+    if (inStr0 && (ch === '\u201c' || ch === '\u201d' || ch === '\u2018' || ch === '\u2019')) {
+      pass0.push('\\"');
+      continue;
+    }
+    pass0.push(ch);
+  }
+  const afterPass0 = pass0.join('');
+
   // Pass 1: escape raw control chars inside string literals
   const escapedControlChars: string[] = [];
   let inString = false;
   let escape = false;
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i];
+  for (let i = 0; i < afterPass0.length; i++) {
+    const ch = afterPass0[i];
 
     if (escape) {
       escapedControlChars.push(ch);

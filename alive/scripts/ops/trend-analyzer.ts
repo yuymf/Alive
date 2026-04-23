@@ -1292,6 +1292,8 @@ export interface CachedTrendsRead {
   results: FilteredTrend[];
   computed_at: string | null;
   signal_pool: TrendsCacheData['signal_pool'];
+  /** True when the cache exists but has exceeded its TTL — data is returned as a fallback. */
+  stale?: boolean;
 }
 
 /**
@@ -1350,7 +1352,20 @@ export function readCachedTrendsWithMeta(personaIdentities: string): CachedTrend
 
   const age = now().getTime() - new Date(cached.computed_at).getTime();
   const ttl = cached.results.length === 0 ? TRENDS_EMPTY_CACHE_TTL_MS : TRENDS_CACHE_TTL_MS;
-  if (age >= ttl) return empty;
+
+  // When the cache has exceeded its TTL but results are non-empty, return the
+  // stale data as a degraded fallback rather than discarding it entirely. The
+  // `stale` flag lets callers surface a "data is stale" banner and still give
+  // the LLM something meaningful to work with while the next cron runs.
+  if (age >= ttl) {
+    if (cached.results.length === 0) return empty;
+    return {
+      results: cached.results,
+      computed_at: cached.computed_at,
+      signal_pool: cached.signal_pool,
+      stale: true,
+    };
+  }
 
   return {
     results: cached.results,
@@ -1581,9 +1596,14 @@ export async function refreshTrends(
         usedOriginalKeys.add(matchKey);
         if (isDebug()) console.log(`[trend-analyzer] DEBUG: Matched "${r.keyword}" → "${bestMatch.keyword}" (score=${bestScore.toFixed(3)}`);
 
+        const mergedVelocity = Number.isFinite(r.velocity_score) && r.velocity_score > 0
+          ? r.velocity_score
+          : Number.isFinite(bestMatch.velocity_score) && bestMatch.velocity_score > 0
+            ? bestMatch.velocity_score
+            : 1.0;
         return {
           ...bestMatch,
-          velocity_score: r.velocity_score || bestMatch.velocity_score,
+          velocity_score: mergedVelocity,
           hook_angle: r.hook_angle,
           identity_mode: normalizeIdentityMode(r.identity_mode),
         };
@@ -1908,9 +1928,14 @@ export async function analyzeDirectionalTrends(
         if (!bestMatch || bestScore < 0.35) return null;
         usedOriginalKeys.add(`${bestMatch.platform}:${bestMatch.keyword}`);
 
+        const mergedVelocity2 = Number.isFinite(r.velocity_score) && r.velocity_score > 0
+          ? r.velocity_score
+          : Number.isFinite(bestMatch.velocity_score) && bestMatch.velocity_score > 0
+            ? bestMatch.velocity_score
+            : 1.0;
         return {
           ...bestMatch,
-          velocity_score: r.velocity_score || bestMatch.velocity_score,
+          velocity_score: mergedVelocity2,
           hook_angle: r.hook_angle,
           identity_mode: normalizeIdentityMode(r.identity_mode),
         };

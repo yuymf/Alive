@@ -13,7 +13,7 @@ import {
   PersonaReportLog,
   CompetitorUpdate,
 } from '../utils/types';
-import { LLMClient } from '../utils/llm-client';
+import { LLMClient, extractJSON } from '../utils/llm-client';
 import { FilteredTrend } from './trend-analyzer';
 import { buildCompetitorContext } from './competitor-tracker';
 
@@ -81,7 +81,7 @@ export function buildAlignmentPrompt(
 
   const trendList = trends.length > 0
     ? trends.slice(0, 8).map(t =>
-        `- ${t.keyword}（${t.platform}，velocity=${t.velocity_score.toFixed(1)}x，角度：${t.hook_angle}）`,
+        `- ${t.keyword}（${t.platform}，velocity=${(Number.isFinite(t.velocity_score) ? t.velocity_score : 1.0).toFixed(1)}x，角度：${t.hook_angle}）`,
       ).join('\n')
     : '暂无今日热点数据';
 
@@ -251,12 +251,16 @@ export async function generatePersonaReport(
 
   const prompt = buildAlignmentPrompt(identities, trends, competitorCtx, voiceStyle);
 
-  const raw = await llm.callJSON<{
+  // Use llm.call + extractJSON instead of callJSON to avoid json_object responseFormat,
+  // which causes some LLM backends to skip the code-block wrapper and return raw JSON
+  // with unescaped newlines inside string values → JSON.parse failure.
+  const rawText = await llm.call(prompt, 4000);
+  const raw = extractJSON<{
     alignment_score: number;
     identity_analysis: PersonaAlignmentReport['identity_analysis'];
     topic_suggestions: PersonaAlignmentReport['topic_suggestions'];
     warnings: string[];
-  }>(prompt, 4000);
+  }>(rawText);
 
   // Clamp score 0-10
   const clampedScore = Math.max(0, Math.min(10, raw.alignment_score ?? 5));

@@ -749,7 +749,7 @@ export function buildContentPrompt(
 
   // ── Trend intelligence ──
   const trendIntel = `【热点情报】
-- 热点：${trend.keyword}（${trend.platform}，速度分 ${trend.velocity_score.toFixed(1)}x）
+- 热点：${trend.keyword}（${trend.platform}，速度分 ${Number.isFinite(trend.velocity_score) ? trend.velocity_score.toFixed(1) : '1.0'}x）
 - 切入角度：${trend.hook_angle}
 - 身份模式：${identityLabel}
 - 目标平台：${platform}
@@ -766,7 +766,7 @@ export function buildContentPrompt(
       platform_style: platformStyle,
       trend_keyword: trend.keyword,
       trend_platform: trend.platform,
-      trend_velocity: trend.velocity_score.toFixed(1),
+      trend_velocity: (Number.isFinite(trend.velocity_score) ? trend.velocity_score : 1.0).toFixed(1),
       trend_hook_angle: trend.hook_angle,
       identity_mode: identityMode,
       identity_label: identityLabel,
@@ -1228,7 +1228,7 @@ export async function generateTopics(
 
     await addItem({
       topic: `蹭 ${trend.keyword}：${trend.hook_angle}`,
-      trend_hook: `${trend.keyword} (${trend.platform}, ${trend.velocity_score.toFixed(1)}x, ${trend.source_bucket ?? '热榜'})${trend.clickbait_labels && trend.clickbait_labels.length >= 2 ? ' ⚠️疑似标题党' : ''}${trend.is_ad ? ' 📢广告' : ''}`,
+      trend_hook: `${trend.keyword} (${trend.platform}, ${(Number.isFinite(trend.velocity_score) ? trend.velocity_score : 1.0).toFixed(1)}x, ${trend.source_bucket ?? '热榜'})${trend.clickbait_labels && trend.clickbait_labels.length >= 2 ? ' ⚠️疑似标题党' : ''}${trend.is_ad ? ' 📢广告' : ''}`,
       identity_mode: identityMode,
       content: {
         xhs: {

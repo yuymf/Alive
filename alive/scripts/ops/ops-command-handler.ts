@@ -26,7 +26,7 @@ console.log = (...args: unknown[]) => console.error(...args);
 
 import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
-import { loadSkillEnvVars } from '../utils/file-utils';
+import { loadSkillEnvVars, setPersonaName } from '../utils/file-utils';
 import {
   readCachedTrends,
   readCachedTrendsWithMeta,
@@ -89,20 +89,33 @@ async function cmdBrief(): Promise<string> {
   const trends = trendsMeta.results;
   const competitors = competitorsMeta.updates;
 
+  // Cold-cache short-circuit. When both caches are empty, there is nothing
+  // for generateTopics to iterate over and nothing meaningful for the
+  // persona alignment LLM call to reason about. Running those paths anyway
+  // wastes 1–2 min of LLM budget and risks blowing the CLI's 360s timeout.
+  // Return a banner instead so the user knows to wait for cron to populate.
+  const coldCache = trends.length === 0 && competitors.length === 0;
+
   const imageStyle = (persona as { image_style?: { base_prompt?: string } }).image_style?.base_prompt ?? '';
-  await generateTopics(trends, ops, persona.meta.name, llm, { style: imageStyle, sample_lines: persona.voice?.sample_lines });
+  if (!coldCache) {
+    await generateTopics(trends, ops, persona.meta.name, llm, { style: imageStyle, sample_lines: persona.voice?.sample_lines });
+  }
 
   const queue = await loadQueue();
   const pending = queue.items.filter(i => i.status === 'pending');
   // 只将 48h 内活跃的 pending items 传入 LLM 上下文，expired 内容不参与
   const activePending = pending.filter(i => hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
 
-  // Persona alignment report (best-effort)
+  // Persona alignment report (best-effort). Skip entirely on cold cache —
+  // generatePersonaReport unconditionally calls the LLM, which takes 30–120s
+  // per attempt and would be reasoning over zero input.
   let personaReport = null;
-  try {
-    personaReport = await generatePersonaReport(persona, trends, competitors, llm);
-  } catch {
-    // skip
+  if (!coldCache) {
+    try {
+      personaReport = await generatePersonaReport(persona, trends, competitors, llm);
+    } catch {
+      // skip
+    }
   }
 
   const enrichment: BriefEnrichment = {
@@ -134,7 +147,7 @@ async function cmdBrief(): Promise<string> {
   // Append freshness banners so the user knows how old the underlying data
   // is. Both come from async cron; they refresh independently.
   const banners = [
-    buildCacheFreshnessBanner(trendsMeta.computed_at, '热点数据'),
+    buildCacheFreshnessBanner(trendsMeta.computed_at, '热点数据', trendsMeta.stale),
     buildCacheFreshnessBanner(competitorsMeta.computed_at, '竞品数据'),
   ].filter(Boolean);
   return banners.length > 0 ? `${card}\n\n${banners.join('\n')}` : card;
@@ -159,7 +172,7 @@ async function cmdTrends(): Promise<string> {
     return [
       '📊 暂无通过过滤的热点话题',
       '',
-      buildCacheFreshnessBanner(meta.computed_at, '热点数据'),
+      buildCacheFreshnessBanner(meta.computed_at, '热点数据', meta.stale),
     ].join('\n');
   }
 
@@ -216,7 +229,7 @@ async function cmdTrends(): Promise<string> {
     }
   }
 
-  lines.push('', buildCacheFreshnessBanner(meta.computed_at, '热点数据'));
+  lines.push('', buildCacheFreshnessBanner(meta.computed_at, '热点数据', meta.stale));
 
   return lines.join('\n');
 }
@@ -567,11 +580,18 @@ async function cmdAdvice(): Promise<string> {
   const trends: FilteredTrend[] = trendsMeta.results;
   const competitors: import('../utils/types').CompetitorUpdate[] = competitorsMeta.updates;
 
+  // Cold cache: nothing for the alignment LLM to reason about. Skip the
+  // 30–120s LLM call and return a banner telling the user to wait for
+  // the cron producer.
+  if (trends.length === 0 && competitors.length === 0) {
+    return '⚠️ 热点与竞品缓存均为空，人设建议需要至少一项数据支撑。\n请等待后台 ops-trends / ops-competitors cron 完成首次数据拉取（通常 2–5 分钟），或在 dashboard 触发 warmup 后重试。';
+  }
+
   try {
     const report = await generatePersonaReport(persona, trends, competitors, llm);
     const card = formatAlignmentCard(report);
     const banners = [
-      buildCacheFreshnessBanner(trendsMeta.computed_at, '热点数据'),
+      buildCacheFreshnessBanner(trendsMeta.computed_at, '热点数据', trendsMeta.stale),
       buildCacheFreshnessBanner(competitorsMeta.computed_at, '竞品数据'),
     ].filter(Boolean);
     return banners.length > 0 ? `${card}\n\n${banners.join('\n')}` : card;
@@ -796,7 +816,33 @@ async function dispatchCommand(command: string, args: string[]): Promise<string>
 }
 
 async function main(): Promise<void> {
-  const [command, ...args] = process.argv.slice(2);
+  // CLI is a short-lived one-shot process. Disable the background cache
+  // warmup hook — otherwise its setImmediate-scheduled refreshTrends/
+  // refreshCompetitors keep the event loop alive for minutes after the
+  // command result is written, and the parent harness kills the process
+  // with SIGALRM (exit 142) before it can exit naturally.
+  process.env.ALIVE_DISABLE_WARMUP = '1';
+
+  // Support `--persona <slug>` so callers (shell, IDE, OpenClaw) can target a
+  // specific persona without exporting ALIVE_PERSONA. Strip the flag + value
+  // from argv so the downstream command parser doesn't see them as sub-args.
+  const rawArgs = process.argv.slice(2);
+  const cleanedArgs: string[] = [];
+  for (let i = 0; i < rawArgs.length; i++) {
+    const tok = rawArgs[i];
+    if (tok === '--persona' && rawArgs[i + 1]) {
+      setPersonaName(rawArgs[i + 1]);
+      i++;
+      continue;
+    }
+    if (tok.startsWith('--persona=')) {
+      setPersonaName(tok.slice('--persona='.length));
+      continue;
+    }
+    cleanedArgs.push(tok);
+  }
+
+  const [command, ...args] = cleanedArgs;
 
   if (!command) {
     printAndExit(cmdHelp());

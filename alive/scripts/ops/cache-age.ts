@@ -41,13 +41,20 @@ export function formatCacheAge(computedAt: string | null | undefined): string | 
 /**
  * Build a single-line cache freshness banner suitable for appending to
  * command output, e.g. `📊 数据更新于 23 分钟前（来自后台定时任务）`.
- * Returns empty string when no valid timestamp is available.
+ *
+ * @param computedAt  - ISO timestamp of the data currently in use (fresh or stale).
+ *                      Pass `null` when no cache file exists at all.
+ * @param kind        - Display name of the data type, e.g. "热点数据".
+ * @param isStale     - When `true`, the timestamp is valid but the cache has expired
+ *                      (age ≥ TTL). The banner will say "已过期" instead of "更新于".
  */
 export function buildCacheFreshnessBanner(
   computedAt: string | null | undefined,
   kind = '数据',
+  isStale = false,
 ): string {
   const age = formatCacheAge(computedAt);
   if (!age) return `📊 ${kind}暂未就绪（后台定时任务尚未完成首轮采集）`;
+  if (isStale) return `📊 ${kind}已过期（最后更新于 ${age}，等待后台定时任务刷新）`;
   return `📊 ${kind}更新于 ${age}（来自后台定时任务）`;
 }

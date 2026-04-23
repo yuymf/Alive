@@ -65,6 +65,14 @@ function needsWarmup(): boolean {
  * their second call (a few minutes later) finds a freshly warmed cache.
  */
 export function ensureOpsCachesWarm(persona: PersonaConfig, ops: OpsConfig): void {
+  // Opt-out switch for CLI/one-shot processes. Warmup is a fire-and-forget
+  // operation that keeps the event loop alive for several minutes while it
+  // fetches platform data + calls LLMs. That's fine for long-lived hosts
+  // (dashboard, cron daemon) but fatal for the CLI, where it prevents the
+  // process from exiting after the command result is written — the parent
+  // harness then kills it with SIGALRM (exit 142) after the hard timeout.
+  // The CLI entrypoint sets ALIVE_DISABLE_WARMUP=1 to short-circuit here.
+  if (process.env.ALIVE_DISABLE_WARMUP === '1') return;
   if (_warmupInFlight) return;
   if (wallNow().getTime() - _lastWarmupAtMs < WARMUP_COOLDOWN_MS) return;
   if (!needsWarmup()) return;

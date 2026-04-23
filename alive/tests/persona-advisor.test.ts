@@ -224,10 +224,16 @@ describe('formatAlignmentBriefSection', () => {
 // ─── generatePersonaReport integration ───────────────────────────────────────
 
 describe('generatePersonaReport', () => {
+  // Helper: wrap an object as a JSON code block string, mimicking LLM output.
+  // generatePersonaReport now calls llm.call() + extractJSON() instead of
+  // callJSON(), so mocks must return a raw string, not a parsed object.
+  function mockCallReturning(obj: unknown) {
+    return vi.fn().mockResolvedValue('```json\n' + JSON.stringify(obj) + '\n```');
+  }
+
   it('should produce a valid report with mocked LLM', async () => {
     const mockLlm = {
-      call: vi.fn(),
-      callJSON: vi.fn().mockResolvedValue({
+      call: mockCallReturning({
         alignment_score: 8,
         identity_analysis: [
           { identity: 'esports', fit_score: 9, reasoning: '今日LOL热度高' },
@@ -240,6 +246,7 @@ describe('generatePersonaReport', () => {
         ],
         warnings: ['注意版权'],
       }),
+      callJSON: vi.fn(),
     };
 
     const report = await generatePersonaReport(missVPersona, sampleTrends, [], mockLlm);
@@ -253,8 +260,7 @@ describe('generatePersonaReport', () => {
 
   it('should clamp alignment_score to 0-10', async () => {
     const mockLlm = {
-      call: vi.fn(),
-      callJSON: vi.fn().mockResolvedValue({
+      call: mockCallReturning({
         alignment_score: 15,
         identity_analysis: [],
         topic_suggestions: [
@@ -262,6 +268,7 @@ describe('generatePersonaReport', () => {
         ],
         warnings: [],
       }),
+      callJSON: vi.fn(),
     };
 
     const report = await generatePersonaReport(missVPersona, sampleTrends, [], mockLlm);
@@ -270,8 +277,7 @@ describe('generatePersonaReport', () => {
 
   it('should pad to exactly 3 suggestions when LLM returns fewer', async () => {
     const mockLlm = {
-      call: vi.fn(),
-      callJSON: vi.fn().mockResolvedValue({
+      call: mockCallReturning({
         alignment_score: 5,
         identity_analysis: [],
         topic_suggestions: [
@@ -279,6 +285,7 @@ describe('generatePersonaReport', () => {
         ],
         warnings: [],
       }),
+      callJSON: vi.fn(),
     };
 
     const report = await generatePersonaReport(missVPersona, sampleTrends, [], mockLlm);
@@ -289,8 +296,7 @@ describe('generatePersonaReport', () => {
 
   it('should persist report to log', async () => {
     const mockLlm = {
-      call: vi.fn(),
-      callJSON: vi.fn().mockResolvedValue({
+      call: mockCallReturning({
         alignment_score: 7,
         identity_analysis: [],
         topic_suggestions: [
@@ -300,6 +306,7 @@ describe('generatePersonaReport', () => {
         ],
         warnings: [],
       }),
+      callJSON: vi.fn(),
     };
 
     await generatePersonaReport(missVPersona, sampleTrends, [], mockLlm);

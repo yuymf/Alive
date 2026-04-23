@@ -12,6 +12,7 @@ import viralKbRouter from './routes/viral-kb';
 import analyzeRouter from './routes/analyze';
 import healthRouter from './routes/health';
 import strategyRouter from './routes/strategy';
+import intelRouter from './routes/intel';
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
@@ -42,6 +43,7 @@ app.use('/api/viral-kb', viralKbRouter);
 app.use('/api/analyze', analyzeRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/strategy', strategyRouter);
+app.use('/api/intel', intelRouter);
 
 // 404 catch-all
 app.use((_req: Request, res: Response) => {

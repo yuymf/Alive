@@ -1026,6 +1026,12 @@ function createServer(options = {}) {
           command = 'ops-trends';
         } else if (subPath === 'ops-tags') {
           command = 'ops-tags';
+        } else if (subPath === 'ops-perception') {
+          command = 'ops-perception';
+        } else if (subPath === 'ops-viral-kb') {
+          command = 'ops-viral-kb';
+        } else if (subPath === 'ops-perception-flow') {
+          command = 'ops-perception-flow';
         } else {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Unknown test command: ' + subPath }));

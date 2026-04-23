@@ -1853,6 +1853,11 @@ var logCounter = 0;
 var LOG_STORAGE_KEY = 'aliveTestLogs';
 var LOG_PERSIST_MAX = 50;
 
+// === Ops Data Persistence ===
+// Per-command last successful result, so the Ops tab survives page reload.
+var OPS_DATA_KEY = 'aliveOpsData';
+var OPS_DATA_MAX = 30;
+
 function addLogEntry(command, status) {
   var id = 'log-' + (++logCounter);
   var entry = {
@@ -2025,6 +2030,63 @@ function restoreLogs() {
       var m = /log-(\d+)/.exec(e.id || ''); return m ? parseInt(m[1], 10) : 0;
     }).concat([0]));
     renderLog();
+  } catch (e) { /* corrupt — ignore */ }
+}
+
+/** Persist last successful result per ops command to localStorage */
+function persistOpsData(command, data) {
+  try {
+    var store = {};
+    try { store = JSON.parse(localStorage.getItem(OPS_DATA_KEY) || '{}'); } catch (e) { store = {}; }
+    // Truncate data to avoid quota errors (keep message + key summary fields)
+    var d = data;
+    if (d && typeof d === 'object') {
+      var s = JSON.stringify(d);
+      if (s.length > 50000) {
+        // For very large payloads, strip verbose arrays but keep counts
+        d = Object.assign({}, d);
+        ['trends', 'updates', 'queue', 'items', 'entries', 'pool', 'candidates', 'vocab', 'formulas', 'audit', 'signal_pool', 'signals', 'new_items', 'latest_items'].forEach(function(k) {
+          if (Array.isArray(d[k]) && d[k].length > 20) {
+            d[k] = d[k].slice(0, 20);
+            d[k + '_truncated'] = true;
+          }
+        });
+        s = JSON.stringify(d);
+        if (s.length > 50000) {
+          d = { message: (d.message || '(truncated)'), command: d.command, _truncated: true };
+        }
+      }
+    }
+    store[command] = { data: d, timestamp: Date.now() };
+    // Evict oldest entries if over limit
+    var keys = Object.keys(store);
+    if (keys.length > OPS_DATA_MAX) {
+      keys.sort(function(a, b) { return (store[a].timestamp || 0) - (store[b].timestamp || 0); });
+      while (keys.length > OPS_DATA_MAX) {
+        delete store[keys.shift()];
+      }
+    }
+    localStorage.setItem(OPS_DATA_KEY, JSON.stringify(store));
+  } catch (e) { /* quota exceeded — ignore */ }
+}
+
+/** Restore last ops data from localStorage and re-render the Ops tab */
+function restoreOpsData() {
+  try {
+    var raw = localStorage.getItem(OPS_DATA_KEY);
+    if (!raw) return;
+    var store = JSON.parse(raw);
+    var commands = Object.keys(store);
+    if (commands.length === 0) return;
+
+    // Find the most recent command
+    var latest = commands.reduce(function(a, b) {
+      return (store[a].timestamp || 0) > (store[b].timestamp || 0) ? a : b;
+    });
+    var entry = store[latest];
+    if (entry && entry.data) {
+      renderOpsData(latest, entry.data, entry.timestamp);
+    }
   } catch (e) { /* corrupt — ignore */ }
 }
 
@@ -2489,7 +2551,7 @@ function updateLogProgress(logId, event) {
 }
 
 /** Render structured ops data in the Ops tab */
-function renderOpsData(command, data) {
+function renderOpsData(command, data, savedTimestamp) {
   var el = document.getElementById('opsDataScroll');
   var html = '';
 
@@ -2500,7 +2562,11 @@ function renderOpsData(command, data) {
   headerHtml += '<span style="font-family:var(--font-pixel);font-size:8px;color:var(--text-dim);">LAST CMD</span>';
   headerHtml += '<code style="font-family:var(--font-mono);color:var(--brown-dark);">' + escHtml(command) + '</code>';
   headerHtml += '<span style="color:var(--text-dim);">·</span>';
-  headerHtml += '<span style="color:var(--text-dim);font-size:10px;">' + new Date().toLocaleTimeString('zh-CN') + '</span>';
+  var displayTime = savedTimestamp
+    ? new Date(savedTimestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : new Date().toLocaleTimeString('zh-CN');
+  var isRestored = !!savedTimestamp && (Date.now() - savedTimestamp > 60000);
+  headerHtml += '<span style="color:' + (isRestored ? 'var(--gold-warm)' : 'var(--text-dim)') + ';font-size:10px;">' + escHtml(displayTime) + (isRestored ? ' (历史)' : '') + '</span>';
   if (rerunnable) {
     headerHtml += '<button class="ops-rerun-btn" onclick="rerunOps(\'' + escAttr(rerunCmd) + '\')">🔄 重跑</button>';
   }
@@ -2559,6 +2625,15 @@ function renderOpsData(command, data) {
   }
 
   el.innerHTML = headerHtml + html;
+
+  // Persist successful ops result so it survives page reload (skip if restoring from history)
+  if (command && command.indexOf('ops-') === 0 && !savedTimestamp) {
+    persistOpsData(command, data);
+  }
+
+  // Remember last-rendered command for restore
+  window.__lastOpsCommand = command;
+  window.__lastOpsTimestamp = savedTimestamp || Date.now();
 }
 
 /** Rerun the last ops command from the "重跑" button in Ops tab */
@@ -3953,6 +4028,7 @@ async function runDemoWorkflow() {
 // === Boot ===
 restoreTheme();
 restoreLogs();
+restoreOpsData();
 switchAnalyzeMode('url');
 // Sync initial subgroup collapsed state (CSS sibling selector不适用 flex 布局)
 (function syncInitialSubgroups() {
