@@ -8,10 +8,9 @@ loadSkillEnvVars('alive');
 const router = Router();
 
 function getKbBasePath(): string {
-  // PATHS.emotionState = {memoryBase}/state/emotion-state.json
-  // viral-kb-store expects basePath = {memoryBase}/state so that
-  // kbDir(basePath) = {memoryBase}/state/viral-kb (confirmed by on-disk layout)
-  return path.dirname(PATHS.emotionState);
+  // PATHS.stateDir = {memoryBase}/state
+  // kbDir(basePath) = {memoryBase}/state/viral-kb
+  return path.dirname(PATHS.emotionState); // equivalent to PATHS.stateDir
 }
 
 // GET /viral-kb?sort=likes&limit=100&hook_type=...&identity_mode=...
@@ -21,7 +20,7 @@ router.get('/', (_req: Request, res: Response) => {
     const basePath = getKbBasePath();
     const entries = queryAll(basePath, {
       sort: (sort === 'date' ? 'date' : 'likes') as 'likes' | 'date',
-      limit: limit ? Math.min(Number(limit), 500) : 200,
+      limit: limit ? (isNaN(Number(limit)) ? 200 : Math.min(Number(limit), 500)) : 200,
     }).filter(e => {
       if (hook_type && e.dissection.hook_type !== hook_type) return false;
       if (identity_mode && e.dissection.identity_mode !== identity_mode) return false;

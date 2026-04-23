@@ -70,12 +70,11 @@ export function upsertOverride(entry: CompetitorOverrideEntry): CompetitorOverri
   const key = `${entry.name}::${entry.platform}`;
   const existing = file.entries.findIndex(e => `${e.name}::${e.platform}` === key);
   const ts = new Date().toISOString();
-  const updated = { ...entry, _updated_at: ts };
   const newEntries = existing === -1
-    ? [...file.entries, { ...updated, _added_at: ts }]
+    ? [...file.entries, { ...entry, _added_at: ts, _updated_at: ts }]
     : [
         ...file.entries.slice(0, existing),
-        updated,
+        { ...file.entries[existing], ...entry, _updated_at: ts }, // preserves _added_at
         ...file.entries.slice(existing + 1),
       ];
   return { ...file, entries: newEntries };
