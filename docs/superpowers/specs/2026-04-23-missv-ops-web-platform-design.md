@@ -146,9 +146,9 @@ Base URL: `https://<alive-machine>/api`
 | PUT | `/queue/:id` | 修改选题字段 | 直接写 `review-queue.json` |
 | GET | `/trends` | 读热点缓存 | 直接读 `trend-cache.json` |
 | GET | `/competitors` | 读竞品列表 | 读 `competitor-log.json` + persona.yaml |
-| POST | `/competitors` | 添加竞品 | 写入 persona.yaml `ops.competitors[]` |
-| PUT | `/competitors/:id` | 编辑竞品 | 更新 persona.yaml 对应条目 |
-| DELETE | `/competitors/:id` | 删除竞品 | 从 persona.yaml 移除 |
+| POST | `/competitors` | 添加竞品 | 写入 `competitors-override.json` |
+| PUT | `/competitors/:id` | 编辑竞品 | 更新 `competitors-override.json` 对应条目 |
+| DELETE | `/competitors/:id` | 删除竞品 | 从 `competitors-override.json` 移除 |
 | POST | `/analyze` | 爆款拆解 | 调用 `ops-command-handler.js analyze <url>` |
 | GET | `/viral-kb` | 读爆款条目 | 直接读 `viral-kb/entries.json` |
 | GET | `/viral-kb/formulas` | 读通用公式 | 直接读 `viral-kb/formulas.json` |
@@ -234,6 +234,12 @@ Base URL: `https://<alive-machine>/api`
 - 可学习要点（绿色卡片）/ 避坑点（红色卡片）
 - 最近内容列表，每条有「拆解分析」按钮（触发 `/analyze`，结果展示在弹出层）
 - 「✏ 编辑」打开同页内联表单，修改所有字段后调用 `PUT /competitors/:id`
+
+**竞品数据来源合并策略：**
+- `persona.yaml` 里的 `ops.competitors[]` 作为**只读基准**（随代码版本管理）
+- `competitors-override.json`（存放在 `{MEMORY_BASE}/competitors-override.json`）保存运营通过 Web 添加/编辑的竞品
+- API Server 读取时将两者合并，override 文件中的条目以 `name + platform` 为 key 覆盖 yaml 基准；删除操作在 override 文件中标记 `_deleted: true`
+- 这样 persona.yaml 永远不被 Web 平台修改，重新部署也不会丢失运营录入的竞品
 
 **添加竞品表单：** 侧边滑入抽屉，字段：平台 / URL / 账号名 / Tag / 分组 / 内容比例 / 受众 / 互动风格 / 可学习 / 避坑点
 
