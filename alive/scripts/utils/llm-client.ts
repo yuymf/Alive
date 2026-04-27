@@ -395,7 +395,23 @@ export async function callLLMJSON<T>(
     throw new Error(msg);
   }
 
-  return extractJSON<T>(result.content);
+  try {
+    return extractJSON<T>(result.content);
+  } catch (firstErr) {
+    // One retry with a stronger JSON-only directive to recover from
+    // conversational replies (e.g. persona agents that reply with prose
+    // like "收到，已记录到 workspace。..." instead of raw JSON).
+    const hardenedPrompt =
+      `${prompt}\n\n` +
+      `【重要】请只输出 JSON 对象，不要任何解释、问候或前后文。` +
+      `直接以 { 或 [ 开头，以 } 或 ] 结尾。不要使用 markdown 围栏。`;
+    console.error(`[llm-client] JSON parse failed, retrying with JSON-only hint. First attempt content head: ${result.content.slice(0, 120).replace(/\s+/g, ' ')}`);
+    const retry = await callLLM(hardenedPrompt, caller ? `${caller}:retry` : 'callLLMJSON:retry', effectiveOptions);
+    if (!retry.content.trim()) {
+      throw firstErr;
+    }
+    return extractJSON<T>(retry.content);
+  }
 }
 
 // === Factory: Real LLM Client ===

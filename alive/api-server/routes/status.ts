@@ -51,6 +51,7 @@ router.get('/', async (_req: Request, res: Response) => {
         ok: healthReport.summary.ok,
         warn: healthReport.summary.warn,
         missing: healthReport.summary.missing,
+        pending: healthReport.summary.pending,
       } : null,
       discovery: {
         pool_size: (pool as { items?: unknown[] }).items?.length ?? 0,

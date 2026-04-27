@@ -4,7 +4,7 @@
  * and structured diagnostics. Used by both adapter providers and test helpers.
  */
 
-const DAILYHOT_DEFAULT_URL = 'https://dailyhot-rho-nine.vercel.app';
+const DAILYHOT_DEFAULT_URL = 'https://hot.imsyy.top';
 const FETCH_TIMEOUT = 10_000;
 const RETRY_DELAY_MS = 2_000;
 

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { loadSkillEnvVars } from '../../scripts/utils/file-utils';
+import * as path from 'path';
+import { loadSkillEnvVars, PATHS } from '../../scripts/utils/file-utils';
 import {
   loadDiscoveryPool,
   loadCandidateAccounts,
@@ -7,8 +8,9 @@ import {
   dismissCandidate,
 } from '../../scripts/ops/discovery-engine';
 import { loadKeywordState } from '../../scripts/ops/keyword-tracker';
-import { loadContentPatterns } from '../../scripts/ops/content-analyzer';
+import { loadContentPatterns, seedPatternsFromFormulas } from '../../scripts/ops/content-analyzer';
 import { readViralSearchState } from '../../scripts/ops/viral-search';
+import { loadFormulas } from '../../scripts/ops/viral-kb-store';
 
 loadSkillEnvVars('alive');
 
@@ -109,6 +111,26 @@ router.get('/patterns', (_req: Request, res: Response) => {
     res.json(patterns);
   } catch (err) {
     console.error('[intel GET /patterns]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /intel/patterns/seed — top up patterns from viral-KB UniversalFormula pool
+// Useful when competitor-analysis has produced few patterns and operators want
+// meaningful material available to topic-generator right away.
+router.post('/patterns/seed', (req: Request, res: Response) => {
+  try {
+    const topN = Math.min(Math.max(Number(req.body?.topN ?? 10), 1), 30);
+    // loadFormulas expects the state-dir base (which contains the viral-kb/ subdir).
+    // PATHS.emotionState -> {memoryBase}/state/emotion-state.json, so its dirname
+    // gives us the state dir, consistent with status.ts getKbBasePath().
+    const basePath = path.dirname(PATHS.emotionState);
+    const formulas = loadFormulas(basePath);
+    const added = seedPatternsFromFormulas(formulas, topN);
+    const after = loadContentPatterns();
+    res.json({ ok: true, added, total: after.patterns.length, topN });
+  } catch (err) {
+    console.error('[intel POST /patterns/seed]', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

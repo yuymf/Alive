@@ -11,12 +11,20 @@ dist-alive/
 .env
 !.env.example
 
+# Build output
+alive/api-server/dist/
+*.map
+# Compiled JS artifacts (source is .ts, build goes to dist-alive/)
+alive/scripts/**/*.js
+alive/sub-skills/**/*.js
+
 # Runtime data
 ig-session.json
 __pycache__/
 *.pyc
 alive/cron-schedule.json
 alive/cron-schedule.json.bak
+alive/api-server/logs/
 openspec
 docs/
 e2e/harness/.env

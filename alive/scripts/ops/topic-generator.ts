@@ -1227,7 +1227,7 @@ export async function generateTopics(
       : undefined;
 
     await addItem({
-      topic: `蹭 ${trend.keyword}：${trend.hook_angle}`,
+      topic: `${trend.keyword}：${trend.hook_angle}`,
       trend_hook: `${trend.keyword} (${trend.platform}, ${(Number.isFinite(trend.velocity_score) ? trend.velocity_score : 1.0).toFixed(1)}x, ${trend.source_bucket ?? '热榜'})${trend.clickbait_labels && trend.clickbait_labels.length >= 2 ? ' ⚠️疑似标题党' : ''}${trend.is_ad ? ' 📢广告' : ''}`,
       identity_mode: identityMode,
       content: {

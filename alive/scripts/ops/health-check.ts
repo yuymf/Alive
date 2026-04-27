@@ -13,14 +13,14 @@ import { loadQueue, PENDING_EXPIRE_HOURS, hoursSinceCreated } from './review-que
 
 export interface HealthCheckItem {
   name: string;
-  status: 'ok' | 'warn' | 'missing';
+  status: 'ok' | 'warn' | 'missing' | 'pending-publish';
   detail: string;
 }
 
 export interface HealthReport {
   timestamp: string;
   items: HealthCheckItem[];
-  summary: { ok: number; warn: number; missing: number };
+  summary: { ok: number; warn: number; missing: number; pending: number };
 }
 
 const STALE_DAYS = 7;
@@ -40,8 +40,9 @@ export async function runHealthCheck(): Promise<HealthReport> {
   const activePending = allPending.filter(i => hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
   const stalePending = allPending.filter(i => hoursSinceCreated(i) >= PENDING_EXPIRE_HOURS);
   const expired = queue.items.filter(i => i.status === 'expired');
+  const hasAnyPublished = published.length > 0;
 
-  if (published.length > 0) {
+  if (hasAnyPublished) {
     items.push({ name: '发布记录', status: 'ok', detail: `${published.length} 条已发布` });
   } else if (activePending.length > 0) {
     items.push({ name: '发布记录', status: 'warn', detail: `${activePending.length} 条待审核，0 条已发布` });
@@ -52,7 +53,7 @@ export async function runHealthCheck(): Promise<HealthReport> {
     items.push({ name: '发布记录', status: 'missing', detail: '审核队列为空' });
   }
 
-  // 2. Performance log
+  // 2. Performance log — depends on published items
   const perfLog = readJSON<PerformanceLog>(PATHS.performanceLog, { entries: [], last_updated: '' });
   if (perfLog.entries.length > 0) {
     const latest = perfLog.entries[perfLog.entries.length - 1];
@@ -62,11 +63,13 @@ export async function runHealthCheck(): Promise<HealthReport> {
       status: age <= STALE_DAYS ? 'ok' : 'warn',
       detail: `${perfLog.entries.length} 条记录，最近 ${age} 天前`,
     });
-  } else {
+  } else if (hasAnyPublished) {
     items.push({ name: '表现追踪', status: 'missing', detail: '无表现数据' });
+  } else {
+    items.push({ name: '表现追踪', status: 'pending-publish', detail: '等待首次发布后回填' });
   }
 
-  // 3. Analysis log
+  // 3. Analysis log — depends on published items
   const analysisLog = readJSON<AnalysisLog>(PATHS.analysisLog, { entries: [], last_updated: '' });
   if (analysisLog.entries.length > 0) {
     const latest = analysisLog.entries[analysisLog.entries.length - 1];
@@ -76,8 +79,10 @@ export async function runHealthCheck(): Promise<HealthReport> {
       status: age <= STALE_DAYS ? 'ok' : 'warn',
       detail: `${analysisLog.entries.length} 条分析，最近 ${age} 天前`,
     });
-  } else {
+  } else if (hasAnyPublished) {
     items.push({ name: '内容分析', status: 'missing', detail: '无分析数据' });
+  } else {
+    items.push({ name: '内容分析', status: 'pending-publish', detail: '等待首次发布后回填' });
   }
 
   // 4. Content patterns
@@ -126,7 +131,7 @@ export async function runHealthCheck(): Promise<HealthReport> {
     items.push({ name: '灵感浏览', status: 'missing', detail: '从未浏览过内容' });
   }
 
-  // 7. Content strategy
+  // 7. Content strategy — depends on published items (needs perf data)
   const strategy = readJSON<{ status?: string; generated_at?: string } | null>(
     PATHS.contentStrategy, null,
   );
@@ -138,21 +143,29 @@ export async function runHealthCheck(): Promise<HealthReport> {
       status: strategy.status === 'confirmed' && age <= STALE_DAYS ? 'ok' : 'warn',
       detail: `${statusLabel}，${age} 天前生成`,
     });
-  } else {
+  } else if (hasAnyPublished) {
     items.push({ name: '内容策略', status: 'missing', detail: '无策略数据' });
+  } else {
+    items.push({ name: '内容策略', status: 'pending-publish', detail: '等待有发布内容后计算' });
   }
 
   const summary = {
     ok: items.filter(i => i.status === 'ok').length,
     warn: items.filter(i => i.status === 'warn').length,
     missing: items.filter(i => i.status === 'missing').length,
+    pending: items.filter(i => i.status === 'pending-publish').length,
   };
 
   return { timestamp: now().toISOString(), items, summary };
 }
 
 export function formatHealthReport(report: HealthReport): string {
-  const statusIcon = { ok: '✅', warn: '⚠️', missing: '❌' };
+  const statusIcon: Record<HealthCheckItem['status'], string> = {
+    ok: '✅',
+    warn: '⚠️',
+    missing: '❌',
+    'pending-publish': '⏳',
+  };
   const lines: string[] = [
     `🏥 链路健康检查  ${report.timestamp.slice(0, 10)}`,
     '',
@@ -163,7 +176,10 @@ export function formatHealthReport(report: HealthReport): string {
   }
 
   lines.push('');
-  lines.push(`总计：${report.summary.ok} 正常 / ${report.summary.warn} 警告 / ${report.summary.missing} 缺失`);
+  const { ok, warn, missing, pending } = report.summary;
+  lines.push(
+    `总计：${ok} 正常 / ${warn} 警告 / ${missing} 缺失${pending ? ` / ${pending} 待发布回填` : ''}`,
+  );
 
   return lines.join('\n');
 }

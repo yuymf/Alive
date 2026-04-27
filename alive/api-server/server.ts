@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { authMiddleware } from './middleware/auth';
+import { fetchCronStatus } from './lib/cron-status';
 import statusRouter from './routes/status';
 import queueRouter from './routes/queue';
 import trendsRouter from './routes/trends';
@@ -60,6 +61,21 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
 const server = app.listen(PORT, () => {
   console.log(`[alive-api] listening on port ${PORT}`);
+  // Warm the cron-status cache: first-call to `openclaw cron list --json` can
+  // be flaky (exit 1 with empty stdout during config rewrites). Doing it once
+  // on boot gives the UI a known-good fallback immediately.
+  setTimeout(() => {
+    try {
+      const snapshot = fetchCronStatus({ timeoutMs: 12_000 });
+      if (snapshot.available) {
+        console.log(`[alive-api] cron-status warmup: ${snapshot.total} jobs (ok=${snapshot.ok} err=${snapshot.error} delivery-err=${snapshot.deliveryError} idle=${snapshot.idle})`);
+      } else {
+        console.warn(`[alive-api] cron-status warmup failed: ${snapshot.error_reason}`);
+      }
+    } catch (err) {
+      console.warn(`[alive-api] cron-status warmup exception: ${(err as Error).message}`);
+    }
+  }, 1500);
 });
 
 server.on('error', (err) => {

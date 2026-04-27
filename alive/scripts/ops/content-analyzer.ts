@@ -74,6 +74,32 @@ interface AddPatternInput {
 
 export function addPattern(input: AddPatternInput): void {
   const current = loadContentPatterns();
+
+  // De-dupe:
+  // 1. Exact (source + type) collision — increment usage instead of creating a new entry
+  // 2. Same source_post already contributed N patterns — cap at MAX_PATTERNS_PER_SOURCE_POST
+  //    This prevents a single viral post from monopolising the library (the 2026-04-22
+  //    regression that produced 2 near-identical patterns both from "Secret | 快一点，时间会听见").
+  const MAX_PATTERNS_PER_SOURCE_POST = 1;
+  const exactMatchIdx = current.patterns.findIndex(
+    p => p.source === input.source && p.type === input.type,
+  );
+  if (exactMatchIdx !== -1) {
+    const updated = current.patterns.map((p, i) =>
+      i === exactMatchIdx ? { ...p, times_used: p.times_used + 1 } : p,
+    );
+    saveContentPatterns({ ...current, patterns: updated });
+    return;
+  }
+  const sameSourcePostCount = current.patterns.filter(
+    p => p.source_post === input.source_post,
+  ).length;
+  if (sameSourcePostCount >= MAX_PATTERNS_PER_SOURCE_POST) {
+    // Skip — we already extracted a pattern from this post; adding another
+    // would just be a near-duplicate of the same observation.
+    return;
+  }
+
   const newPattern: ContentPattern = {
     type: input.type,
     source: input.source,
@@ -161,6 +187,74 @@ export function getRelevantPatterns(): string {
     .slice(0, 5)
     .map(p => `- ${p.type}：${p.formula}（来源：${p.source}，使用${p.times_used}次${p.success_rate !== null ? `，成功率${(p.success_rate * 100).toFixed(0)}%` : ''}）`)
     .join('\n');
+}
+
+/**
+ * Top up the content-patterns library from the viral KB's UniversalFormula
+ * pool. Helpful when competitor-analysis has produced few patterns and we
+ * still want meaningful material to inject into topic-generator prompts.
+ *
+ * Rules:
+ * - Skip formulas whose (source_post, type) already exist
+ * - Skip once patterns.length >= MAX_PATTERNS
+ * - New entries are flagged with source = "viral-kb:<platform>:<content_type>"
+ *   so operators can trace back to the formula table
+ *
+ * Returns the number of patterns added.
+ */
+export function seedPatternsFromFormulas(
+  formulas: Array<{
+    hook_type: string;
+    formula_summary: string;
+    platform: string;
+    content_type: string;
+    example_titles?: string[];
+    representative_titles?: string[];
+    occurrence_count?: number;
+  }>,
+  topN: number = 10,
+): number {
+  if (!formulas || formulas.length === 0) return 0;
+  const current = loadContentPatterns();
+
+  // Sort by occurrence_count desc so we seed the strongest formulas first
+  const ranked = [...formulas].sort(
+    (a, b) => (b.occurrence_count ?? 0) - (a.occurrence_count ?? 0),
+  );
+
+  const patterns = [...current.patterns];
+  const seen = new Set(patterns.map(p => `${p.source}::${p.type}`));
+  let added = 0;
+
+  for (const f of ranked) {
+    if (patterns.length >= MAX_PATTERNS) break;
+    if (added >= topN) break;
+
+    const source = `viral-kb:${f.platform}:${f.content_type}`;
+    const key = `${source}::${f.hook_type}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const examples = f.representative_titles ?? f.example_titles ?? [];
+    const representative = examples[0] ?? f.formula_summary.slice(0, 40);
+
+    patterns.push({
+      type: f.hook_type,
+      source,
+      source_post: representative,
+      formula: f.formula_summary,
+      success_rate: null,
+      times_used: 0,
+      examples,
+      discovered_at: now().toISOString().slice(0, 10),
+    });
+    added++;
+  }
+
+  if (added > 0) {
+    saveContentPatterns({ ...current, patterns });
+  }
+  return added;
 }
 
 interface CompetitorInfo {
