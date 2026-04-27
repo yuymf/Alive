@@ -8,14 +8,16 @@
  * and competitor benchmarks into LLM prompts for better-targeted content.
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import {
   OpsConfig, ContentTemplate, CompetitorProfile, IdentityMode,
   QueueItemTemplateSpec, QueueItemCompetitorBenchmark, QueueItem, QueueItemContent,
-  CompetitorAnalysisStore, ViralEntry,
+  CompetitorAnalysisStore, ViralEntry, RiskLevel,
 } from '../utils/types';
 import { LLMClient } from '../utils/llm-client';
 import { FilteredTrend } from './trend-analyzer';
+import { scoreTopics, ScoredTrend } from './topic-scorer';
 import { addItem, getItem, updateItemContent } from './review-queue';
 import { buildCompetitorContext } from './competitor-tracker';
 import { buildMemoryContext } from './competitor-memory';
@@ -34,6 +36,28 @@ import { queryTrackInMemory, loadEntries, saveEntries, loadFormulas as loadViral
 import { matchesTaxonomy } from './ops-taxonomy';
 import { buildOpsMemoryContext } from './ops-memory';
 import { filterByDiversity, DiversityGateOptions } from './diversity-gate';
+
+// ─── Title skeleton loader ──────────────────────────────────────────────────
+
+/**
+ * Load title skeleton library from templates/ops/title-skeletons.md.
+ * Returns the content as a string for LLM prompt injection.
+ * Returns '' if the file doesn't exist (graceful degradation).
+ */
+export function loadTitleSkeletons(): string {
+  // Try installed path first (skill base), then dev path (repo root)
+  const skillBase = path.join(__dirname, '..', '..', '..'); // dist-alive -> alive root
+  const candidates = [
+    path.join(skillBase, 'templates', 'ops', 'title-skeletons.md'),
+    path.join(skillBase, '..', 'alive', 'templates', 'ops', 'title-skeletons.md'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      return fs.readFileSync(p, 'utf8');
+    }
+  }
+  return '';
+}
 
 // ─── Viral KB context builder ────────────────────────────────────────────────
 
@@ -672,6 +696,8 @@ export interface ContentPromptOptions {
   identityMode?: string;
   /** Content template — used to determine XHS video_post format */
   template?: ContentTemplate | null;
+  /** Platform-specific voice override */
+  platformVoice?: import('../utils/types').PlatformVoice;
 }
 
 /** Identity-mode → voice personality mapping for prompt injection */
@@ -723,12 +749,23 @@ export function buildContentPrompt(
     ? `标志性语录（感受语气，不要照搬）：\n${sampleLines.map(l => `  - "${l}"`).join('\n')}`
     : '';
 
+  // ── Platform voice variant injection ──
+  const platformVoice = options?.platformVoice;
+  const platformVoiceBlock = platformVoice ? [
+    platformVoice.style ? `平台语感：${platformVoice.style}` : '',
+    platformVoice.reply_structure ? `回复结构：${platformVoice.reply_structure}` : '',
+    platformVoice.anti_patterns?.length ? `禁忌表达：${platformVoice.anti_patterns.join('、')}` : '',
+    platformVoice.catchphrases?.length ? `标志口头禅：${platformVoice.catchphrases.join('、')}` : '',
+    platformVoice.sample_lines?.length ? `平台台词参考：\n${platformVoice.sample_lines.map(l => `  - "${l}"`).join('\n')}` : '',
+  ].filter(Boolean).join('\n') : '';
+
   const personaParts = [
     `你是 ${personaDescription}。`,
     identityLabel ? `当前以【${identityLabel}】身份切入。` : '',
     voiceBlock,
     identityVoiceBlock,
     sampleLinesBlock,
+    platformVoiceBlock,
   ].filter(Boolean).join('\n');
 
   // ── Viral thinking framework ──
@@ -737,6 +774,12 @@ export function buildContentPrompt(
 2. 情绪弧：好奇/共鸣 → 反转/干货 → 情绪高点 → 行动引导
 3. 互动设计：评论区最可能聊什么？内容里预留什么"钩"让人想评论/收藏？
 4. 差异化：同热点下大部分人会怎么写？你怎么写得不一样？`;
+
+  // ── Title skeleton library ──
+  const titleSkeletons = loadTitleSkeletons();
+  const skeletonBlock = titleSkeletons
+    ? `【标题骨架库（选择合适的骨架填充内容，不要照搬）】\n${titleSkeletons}`
+    : '';
 
   // ── Hard prohibitions ──
   const prohibitions = `【绝对禁止】
@@ -775,6 +818,7 @@ export function buildContentPrompt(
       sample_lines: sampleLinesBlock,
       trend_intel: trendIntel,
       viral_framework: viralFramework,
+      title_skeletons: skeletonBlock,
       guidelines: guidelines,
       prohibitions: prohibitions,
       output_format: outputFormat,
@@ -796,7 +840,7 @@ ${trendIntel}
 
 ${viralFramework}
 
-${guidelines}
+${skeletonBlock ? `${skeletonBlock}\n\n` : ''}${guidelines}
 
 ${prohibitions}
 
@@ -1034,7 +1078,7 @@ export async function generateTopics(
   ops: OpsConfig,
   personaDescription: string,
   llm: LLMClient,
-  voice?: { style?: string; sample_lines?: string[] },
+  voice?: { style?: string; sample_lines?: string[]; platform_voices?: Record<string, import('../utils/types').PlatformVoice> },
   diversityOptions?: DiversityGateOptions,
 ): Promise<void> {
   const topN = trends.slice(0, ops.topic_count);
@@ -1055,6 +1099,23 @@ export async function generateTopics(
     }
   } catch {
     // diversity gate not available, proceed with original list
+  }
+
+  // ── Topic scoring gate: evaluate potential before generation ──
+  let scoredTrends: ScoredTrend[] = [];
+  try {
+    scoredTrends = await scoreTopics(diverseTopN, llm, personaDescription);
+    if (scoredTrends.length < diverseTopN.length) {
+      console.log(`[topic-generator] Scoring gate: ${diverseTopN.length} → ${scoredTrends.length} topics (threshold filter)`);
+    }
+    // Replace diverseTopN with scored+filtered trends
+    diverseTopN = scoredTrends.map(s => s.trend);
+  } catch {
+    // scoring gate not available, proceed with original list
+    scoredTrends = diverseTopN.map(t => ({
+      trend: t,
+      score: { articulability: 1, controversy: 1, serialization: 1, shareability: 1, executability: 1, risk: 0, total: 5 },
+    }));
   }
 
   // Derive memory base path for viral KB queries
@@ -1191,6 +1252,7 @@ export async function generateTopics(
           sampleLines: voice?.sample_lines,
           identityMode,
           template,
+          platformVoice: voice?.platform_voices?.xhs,
         }), 4000,
       );
     } catch (err) {
@@ -1207,6 +1269,7 @@ export async function generateTopics(
           voiceStyle: voice?.style,
           sampleLines: voice?.sample_lines,
           identityMode,
+          platformVoice: voice?.platform_voices?.douyin,
         }), 3000,
       );
     } catch (err) {
@@ -1285,6 +1348,10 @@ export async function generateTopics(
       },
       template_spec: templateSpec,
       competitor_benchmarks: benchmarks.length > 0 ? benchmarks : undefined,
+      risk_level: ((scoredTrends.find(s => s.trend.keyword === trend.keyword)?.score.risk ?? 0) >= 2 ? 'high'
+        : (scoredTrends.find(s => s.trend.keyword === trend.keyword)?.score.risk ?? 0) >= 1 ? 'medium'
+        : 'low') as RiskLevel,
+      risk_detail: scoredTrends.find(s => s.trend.keyword === trend.keyword)?.trend.risk_detail,
     });
 
     // Track which patterns were injected into the prompt for this generation

@@ -26,6 +26,20 @@ export interface ConversationExample {
   good: string;
 }
 
+/** Platform-specific voice configuration for content operations */
+export interface PlatformVoice {
+  /** Platform-specific style description */
+  style: string;
+  /** Reply structure pattern (e.g., "接梗 → 立场 → 有用一句 → 收尾") */
+  reply_structure?: string;
+  /** Explicit anti-patterns for this platform */
+  anti_patterns?: string[];
+  /** Catchphrases for this platform voice */
+  catchphrases?: string[];
+  /** Sample lines specific to this platform */
+  sample_lines?: string[];
+}
+
 // === Persona Configuration ===
 export interface PersonaConfig {
   meta: {
@@ -65,6 +79,8 @@ export interface PersonaConfig {
     banned_expressions?: string[];
     conversation_examples?: ConversationExample[];
     session_greeting_examples?: string;
+    /** Per-platform voice variants for content operations */
+    platform_voices?: Record<string, PlatformVoice>;
   };
   intimacy?: {
     levels: number;
@@ -1150,6 +1166,9 @@ export interface QueueItemCompetitorBenchmark {
   interaction_style: string;
 }
 
+/** Risk level for content review queue items */
+export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
 export interface QueueItem {
   id: string;
   status: QueueItemStatus;
@@ -1173,6 +1192,10 @@ export interface QueueItem {
   published_at?: string;
   /** AI image generation prompts for human use */
   image_prompts?: string[];
+  /** Risk assessment level for content review */
+  risk_level?: RiskLevel;
+  /** Risk detail description (e.g., "涉及竞品比较，可能引战") */
+  risk_detail?: string;
   /** Whether performance tracking has started for this item */
   performance_tracked?: boolean;
   /** Structured review feedback entries (one per approve/discard/edit decision) */
@@ -2065,6 +2088,12 @@ export interface AudiencePerceptionStore {
 
 // ─── Viral Knowledge Base Types ──────────────────────────────────────────────
 
+/** Lifecycle status for viral KB entries */
+export type ViralEntryStatus = 'active' | 'deprecated' | 'experimental';
+
+/** Confidence level for viral KB entries (human-assessable) */
+export type ViralConfidenceLevel = 'low' | 'medium' | 'high';
+
 /** Platforms supported by the viral knowledge base. */
 export type ViralPlatform = 'douyin' | 'xhs';
 
@@ -2112,6 +2141,8 @@ export interface ViralEntry {
       transition_style: string;
       dominant_moves: string[];
     };
+    /** 5-template structural extraction (actionable templates for topic-generator) */
+    viral_templates?: ViralTemplates;
   };
 
   dissection_status: 'done' | 'failed';
@@ -2124,6 +2155,26 @@ export interface ViralEntry {
   repair_count?: number;                // how many times this entry has been re-queued for repair
   last_repaired_at?: string;            // ISO timestamp of last repair attempt
   quality_score?: number;               // 0-1 quality assessment (future use)
+
+  // Lifecycle metadata
+  /** Lifecycle status: active entries are used in generation, deprecated are kept for history */
+  entry_status?: ViralEntryStatus;
+  /** Human-assessable confidence level for this entry's dissection quality */
+  confidence_level?: ViralConfidenceLevel;
+}
+
+/** 5-template structural extraction from viral content (actionable, not analytical) */
+export interface ViralTemplates {
+  /** Title formula pattern, e.g. "[年份]+[动作词]+[情绪词]+[疑问句式]" */
+  title_template: string;
+  /** Cover layout description: main text, hierarchy, color scheme */
+  cover_template: string;
+  /** Body structure: opening hook, argument count, CTA position */
+  body_template: string;
+  /** Engagement mechanism: action word, participation barrier */
+  engagement_template: string;
+  /** Tag strategy: core topic tags + long-tail tags */
+  tag_template: string;
 }
 
 /**

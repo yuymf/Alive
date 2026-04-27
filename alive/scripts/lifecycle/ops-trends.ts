@@ -32,6 +32,8 @@ async function main(): Promise<void> {
     setPersonaName(process.argv[personaArgIdx + 1]);
   }
 
+  const forceRun = process.argv.includes('--force');
+
   const persona = await loadPersona();
   const ops = persona.ops;
 
@@ -46,9 +48,12 @@ async function main(): Promise<void> {
   // When trend + competitor data haven't been refreshed, the brief would be
   // identical to the previous hour — skip it to avoid redundant notifications.
   const cacheStatus = getOpsTrendsCacheStatus(identities);
-  if (cacheStatus.trendsFromCache && cacheStatus.competitorsFromCache) {
+  if (!forceRun && cacheStatus.trendsFromCache && cacheStatus.competitorsFromCache) {
     console.log(`[${wallNow().toISOString()}] ops-trends: 数据未刷新，跳过本轮执行（趋势缓存 ${cacheStatus.trendsAgeMin}min / 竞品缓存 ${cacheStatus.competitorsAgeMin}min，TTL=${TRENDS_CACHE_TTL_MS / 60_000}min）`);
     return;
+  }
+  if (forceRun) {
+    console.log(`[${wallNow().toISOString()}] ops-trends: --force 已设置，跳过缓存检查强制执行（趋势缓存 ${cacheStatus.trendsAgeMin}min / 竞品缓存 ${cacheStatus.competitorsAgeMin}min）`);
   }
 
   const llm = createRealLLMClient('ops-trends');

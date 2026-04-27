@@ -4,6 +4,31 @@ All notable changes to Alive are documented here.
 
 ---
 
+## [1.3.0] — 2026-04-27
+
+### Added
+- **Title Skeleton Library** — 28 proven title bone structures across 7 hook types (反问式/数字冲击/指令式/悬念留白/对比反转/身份共鸣/痛点直击) + 8 interaction hook templates. Loaded from `templates/ops/title-skeletons.md` and injected into content generation prompts. Shifts content generation from "LLM invents structure" to "LLM fills proven skeletons." (`topic-generator.ts`, `templates/ops/title-skeletons.md`)
+- **5-Template Viral Decomposition** — content dissector now extracts 5 reusable structural templates (title/cover/body/engagement/tag) alongside the existing 6-dimension analysis. Templates use `[placeholder]` syntax for direct reuse in content generation. New `ViralTemplates` type and `viral_templates` field on `ViralEntry.dissection`. (`content-dissector.ts`, `types.ts`)
+- **6-Factor Topic Scoring Gate** — pre-generation quality filter evaluating articulability, controversy, serialization potential, shareability, executability, and risk (0-2 each). Topics below threshold (default 6) are filtered out before expensive LLM draft generation, saving tokens and improving hit rate. New `topic-scorer.ts` module with `TopicScore` and `ScoredTrend` types. (`topic-scorer.ts`, `topic-generator.ts`)
+- **Risk Annotations on Review Queue** — every content draft now carries `risk_level` (low/medium/high/critical) and `risk_detail` (human-readable risk description). Derived from topic scoring and passed through to the review queue for informed human approval decisions. New `RiskLevel` type. (`types.ts`, `review-queue.ts`, `topic-generator.ts`)
+- **4 SOP Template Documents** — standalone markdown Standard Operating Procedures for ops workflows, versioned independently from code:
+  - `topic-scoring-sop.md` — 6-dimension scoring rubric with detailed 0/1/2 criteria
+  - `viral-decompose-sop.md` — 5-template extraction framework with examples
+  - `content-draft-sop.md` — end-to-end draft generation workflow with quality checklist
+  - `feed-analysis-sop.md` — 7-dimension feed analysis framework with signal thresholds
+- **Viral KB Entry Lifecycle** — entries now have `entry_status` (active/deprecated/experimental) and `confidence_level` (low/medium/high). Deprecated entries are excluded from generation context but preserved for learning history. New `deprecateEntry()` and `setEntryConfidence()` functions. KB stats now include `by_status` breakdown. (`viral-kb-store.ts`, `types.ts`)
+- **Per-Platform Voice Variants** — persona config now supports `platform_voices` map (keyed by platform: xhs/douyin/wechat) with platform-specific style, reply structure, anti-patterns, catchphrases, and sample lines. Voice variants are injected into content generation prompts per platform. New `PlatformVoice` interface. (`types.ts`, `persona-schema.yaml`, `topic-generator.ts`)
+
+### Changed
+- Content dissector max tokens increased from 1200/800 to 1500/1000 to accommodate viral template extraction output
+- `queryTrackInMemory()` and `queryAll()` now exclude deprecated entries by default (use `include_deprecated: true` to override)
+- Topic generation pipeline now runs scoring gate → diversity gate → content generation (was diversity gate → content generation)
+
+### Architecture Notes
+Inspired by the [xiaohongshu-ops-skill](https://github.com/Xiangyu-CAS/xiaohongshu-ops-skill) project's SOP-as-prompt architecture and multi-dimensional scoring framework. Key design principle: **skeleton filling > open generation** — provide proven structures for LLM to fill rather than generating from scratch.
+
+---
+
 ## [1.2.0] — 2026-04-10
 
 ### Added

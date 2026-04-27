@@ -102,6 +102,27 @@ schema:
       required: false
       auto_generated: true
       description: "自动从 sample_lines 生成，带「」包裹的台词列表"
+    platform_voices:
+      type: object
+      required: false
+      description: "平台特定语音风格，key 为平台名（xhs/douyin/wechat），value 为 PlatformVoice"
+      additionalProperties:
+        type: object
+        properties:
+          style: { type: string, description: "平台特定的语言风格描述" }
+          reply_structure: { type: string, description: "回复结构模式，如'接梗→立场→有用一句→收尾'" }
+          anti_patterns:
+            type: array
+            items: string
+            description: "该平台应避免的表达方式"
+          catchphrases:
+            type: array
+            items: string
+            description: "平台特定的口头禅"
+          sample_lines:
+            type: array
+            items: string
+            description: "该平台的示例台词"
 
   intimacy:
     levels: { type: number, required: false, default: 5 }

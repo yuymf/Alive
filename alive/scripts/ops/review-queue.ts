@@ -12,7 +12,7 @@ import { extractTrendHookKeyword } from '../utils/text-utils';
 import {
   QueueItem, QueueItemStatus, IdentityMode, QueueItemContent,
   ReviewQueue, QueueItemTemplateSpec, QueueItemCompetitorBenchmark,
-  QueueItemReviewFeedback,
+  QueueItemReviewFeedback, RiskLevel,
 } from '../utils/types';
 
 export { ReviewQueue };
@@ -53,6 +53,8 @@ export interface AddItemInput {
   template_spec?: QueueItemTemplateSpec;
   competitor_benchmarks?: QueueItemCompetitorBenchmark[];
   image_prompts?: string[];
+  risk_level?: RiskLevel;
+  risk_detail?: string;
 }
 
 export async function addItem(input: AddItemInput): Promise<QueueItem> {
@@ -84,6 +86,8 @@ export async function addItem(input: AddItemInput): Promise<QueueItem> {
     ...(input.template_spec ? { template_spec: input.template_spec } : {}),
     ...(input.competitor_benchmarks ? { competitor_benchmarks: input.competitor_benchmarks } : {}),
     ...(input.image_prompts?.length ? { image_prompts: input.image_prompts } : {}),
+    ...(input.risk_level ? { risk_level: input.risk_level } : {}),
+    ...(input.risk_detail ? { risk_detail: input.risk_detail } : {}),
   };
   await saveQueue({ ...queue, items: [...queue.items, item] });
   return item;

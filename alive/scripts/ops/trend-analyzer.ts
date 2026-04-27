@@ -1237,6 +1237,8 @@ interface LLMTrendEnvelope {
 export interface FilteredTrend extends TrendItem {
   hook_angle: string;
   identity_mode: 'esports' | 'singer' | 'racer' | 'daily';
+  /** Risk detail description from topic scoring (e.g., "涉及竞品比较，可能引战") */
+  risk_detail?: string;
 }
 
 // ─── TTL cache for analyzeTrends results ───────────────────────────────────

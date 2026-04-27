@@ -160,6 +160,17 @@ function normalizeDissection(parsed: DissectionJSON): {
     };
   }
 
+  // Pass through viral_templates if present and non-empty
+  if (parsed.viral_templates && parsed.viral_templates.title_template) {
+    dissection.viral_templates = {
+      title_template: (parsed.viral_templates.title_template ?? '').trim(),
+      cover_template: (parsed.viral_templates.cover_template ?? '').trim(),
+      body_template: (parsed.viral_templates.body_template ?? '').trim(),
+      engagement_template: (parsed.viral_templates.engagement_template ?? '').trim(),
+      tag_template: (parsed.viral_templates.tag_template ?? '').trim(),
+    };
+  }
+
   // Hollow check: at minimum, hook_type + content_type + summary must be non-empty
   const hollowFields = [hook_type, content_type, dissection.summary].filter(v => !v);
   if (hollowFields.length > 0 || !isMeaningfulSummary(dissection.summary)) {
@@ -191,6 +202,14 @@ interface DissectionJSON {
     top_keywords: string[];
     emotional_triggers: string[];
     desire_signals: string[];
+  };
+  /** 5-template structural extraction (actionable, not analytical) */
+  viral_templates?: {
+    title_template: string;
+    cover_template: string;
+    body_template: string;
+    engagement_template: string;
+    tag_template: string;
   };
 }
 
@@ -251,6 +270,7 @@ ${CANONICAL_CTA_TYPES.map(label => `- ${label}`).join('\n')}
 7. identity_mode 仅在内容明显属于特定垂直赛道时填写，否则返回 null。
 8. summary 必须是非空的一句话，概括爆款逻辑，不要写成"无法判断"。
 9. 若该内容为视频类型（抖音或小红书视频），必须填写 video_structure 字段，分析其镜头结构。
+10. viral_templates 是从内容中提取的可复用结构模板，用[占位符]标记可替换的部分。目标是让其他内容可以直接套用这个结构。
 
 请输出 JSON（字段说明见下）：
 {
@@ -267,7 +287,14 @@ ${CANONICAL_CTA_TYPES.map(label => `- ${label}`).join('\n')}
     "pacing": "节奏特征：slow/medium/fast/variable",
     "transition_style": "转场风格描述（如：快切为主/变装匹配剪辑/叠化过渡）",
     "dominant_moves": ["主要运镜方式1", "主要运镜方式2"]
-  }` : ''}${audienceResponseField}
+  }` : ''}${audienceResponseField},
+  "viral_templates": {
+    "title_template": "标题句式模板，用[占位符]表示可替换部分，如'[数字]个[对象]，[反转结论]'",
+    "cover_template": "封面布局描述：主文案位置、信息层级、配色特征",
+    "body_template": "正文结构：开场方式(金句/数据/故事) + 观点段数 + 结尾CTA类型",
+    "engagement_template": "互动机制：触发动作(站队/求助/共鸣) + 参与门槛(高/中/低)",
+    "tag_template": "标签策略：核心话题标签 + 长尾精准标签 + 热门流量标签"
+  }
 }
 
 只输出 JSON，不要任何解释或 markdown。`;
@@ -348,7 +375,7 @@ async function dissectOne(
 
   const prompt = buildDissectPrompt(item);
   const hasComments = item.comment_texts && item.comment_texts.length > 0;
-  const maxTokens = hasComments ? 1200 : 800;
+  const maxTokens = hasComments ? 1500 : 1000;
 
   try {
     const parsed = await llm.callJSON<DissectionJSON>(prompt, maxTokens);

@@ -14,7 +14,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { readJSON, writeJSON } from '../utils/file-utils';
 import { wallNow } from '../utils/time-utils';
-import { ViralEntry, UniversalFormula, DissectQueueItem, ViralPlatform } from '../utils/types';
+import { ViralEntry, UniversalFormula, DissectQueueItem, ViralPlatform, ViralConfidenceLevel } from '../utils/types';
 
 // ─── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -81,6 +81,7 @@ export interface KBStats {
   total: number;
   by_platform: Record<string, number>;
   by_tier: Record<string, number>;
+  by_status: Record<string, number>;
   queue_length: number;
   formula_count: number;
   failed_count: number;
@@ -408,6 +409,47 @@ export function upsertEntry(basePath: string, entry: ViralEntry): void {
   }
 }
 
+// ─── Lifecycle operations ───────────────────────────────────────────────────
+
+/**
+ * Mark an entry as deprecated instead of deleting it.
+ * Deprecated entries are excluded from generation context but preserved for learning history.
+ */
+export function deprecateEntry(basePath: string, entryId: string): boolean {
+  const entries = loadEntries(basePath);
+  const idx = entries.findIndex(e => e.id === entryId);
+  if (idx === -1) return false;
+
+  const updated = [
+    ...entries.slice(0, idx),
+    { ...entries[idx], entry_status: 'deprecated' as const },
+    ...entries.slice(idx + 1),
+  ];
+  saveEntries(basePath, updated);
+  return true;
+}
+
+/**
+ * Set the confidence level for an entry's dissection quality.
+ */
+export function setEntryConfidence(
+  basePath: string,
+  entryId: string,
+  confidence: ViralConfidenceLevel,
+): boolean {
+  const entries = loadEntries(basePath);
+  const idx = entries.findIndex(e => e.id === entryId);
+  if (idx === -1) return false;
+
+  const updated = [
+    ...entries.slice(0, idx),
+    { ...entries[idx], confidence_level: confidence },
+    ...entries.slice(idx + 1),
+  ];
+  saveEntries(basePath, updated);
+  return true;
+}
+
 // ─── Formula promotion ────────────────────────────────────────────────────────
 
 /** Minimum promotion threshold — same combo must appear ≥ this many times */
@@ -648,6 +690,9 @@ export function queryTrack(basePath: string, opts: QueryTrackOptions): ViralEntr
 export function queryTrackInMemory(entries: ViralEntry[], opts: QueryTrackOptions): ViralEntry[] {
   let filtered = entries.filter(e => e.kb_tier === 'track');
 
+  // Exclude deprecated entries by default
+  filtered = filtered.filter(e => e.entry_status !== 'deprecated');
+
   if (opts.platform) {
     filtered = filtered.filter(e => e.platform === opts.platform);
   }
@@ -666,6 +711,8 @@ export interface QueryAllOptions {
   keyword?: string;
   source?: ViralEntry['source_type'];
   status?: 'done' | 'failed' | 'hollow';
+  /** Include deprecated entries in results (default: false) */
+  include_deprecated?: boolean;
   limit?: number;
   sort?: 'recency' | 'likes';
 }
@@ -675,6 +722,11 @@ export interface QueryAllOptions {
  */
 export function queryAll(basePath: string, opts: QueryAllOptions = {}): ViralEntry[] {
   let entries = loadEntries(basePath);
+
+  // Exclude deprecated entries unless explicitly requested
+  if (!opts.include_deprecated) {
+    entries = entries.filter(e => e.entry_status !== 'deprecated');
+  }
 
   if (opts.platform) {
     entries = entries.filter(e => e.platform === opts.platform);
@@ -733,6 +785,7 @@ export function getStats(basePath: string): KBStats {
 
   const by_platform: Record<string, number> = {};
   const by_tier: Record<string, number> = {};
+  const by_status: Record<string, number> = {};
   const by_content_type: Record<string, number> = {};
   const by_hook_type: Record<string, number> = {};
 
@@ -743,6 +796,9 @@ export function getStats(basePath: string): KBStats {
   for (const e of entries) {
     by_platform[e.platform] = (by_platform[e.platform] ?? 0) + 1;
     by_tier[e.kb_tier] = (by_tier[e.kb_tier] ?? 0) + 1;
+
+    const status = e.entry_status ?? 'active';
+    by_status[status] = (by_status[status] ?? 0) + 1;
 
     if (e.dissection_status === 'failed') {
       failed_count += 1;
@@ -771,6 +827,7 @@ export function getStats(basePath: string): KBStats {
     total: entries.length,
     by_platform,
     by_tier,
+    by_status,
     queue_length: queueItems.length,
     formula_count: formulas.length,
     failed_count,
