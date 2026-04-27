@@ -157,15 +157,20 @@ export async function scoreTopics(
 
     let normalizedResults = results;
     if (!Array.isArray(results)) {
-      const candidate =
-        (results as Record<string, unknown>)?.results ??
-        (results as Record<string, unknown>)?.data ??
-        (results as Record<string, unknown>)?.topics ??
-        (results as Record<string, unknown>)?.scores;
-      if (Array.isArray(candidate)) {
-        normalizedResults = candidate as typeof results;
+      // Some models (e.g. hy3-preview) return a single object instead of an array when batch size is 1
+      if (results && typeof results === 'object' && 'index' in results) {
+        normalizedResults = [results] as typeof results;
       } else {
-        throw new Error(`Expected JSON array from LLM, got ${typeof results}`);
+        const candidate =
+          (results as Record<string, unknown>)?.results ??
+          (results as Record<string, unknown>)?.data ??
+          (results as Record<string, unknown>)?.topics ??
+          (results as Record<string, unknown>)?.scores;
+        if (Array.isArray(candidate)) {
+          normalizedResults = candidate as typeof results;
+        } else {
+          throw new Error(`Expected JSON array from LLM, got ${typeof results}`);
+        }
       }
     }
 

@@ -17,7 +17,7 @@ import { CompetitorLog, DissectQueueItem, ViralEntry } from '../utils/types';
 import { detectViral, TrendLikeItem } from '../ops/viral-detector';
 import { addManyToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
 import { dissectBatch } from '../ops/content-dissector';
-import { sendToWechatWork } from '../ops/brief-generator';
+import { sendToWechatWork, deliverOpsResult } from '../ops/brief-generator';
 import { getOpsTrendsCacheStatus } from './ops-trends-cache';
 import * as path from 'path';
 
@@ -179,31 +179,34 @@ async function main(): Promise<void> {
     // Non-fatal: viral KB errors should not fail the main ops-trends job
   }
 
-  // === 摘要输出（cron deliver 会投递 stdout） ===
-  console.log(`\n📊 运营趋势速报`);
-  console.log(`- 热点趋势: ${trendCount} 条`);
-  console.log(`- 竞品动态: ${competitorCount} 个账号有更新`);
+  // === 摘要输出 & IM 投递 ===
+  const summaryLines: string[] = [`📊 运营趋势速报`];
+  summaryLines.push(`- 热点趋势: ${trendCount} 条`);
+  summaryLines.push(`- 竞品动态: ${competitorCount} 个账号有更新`);
   if (trends.length > 0) {
     const top = trends.slice(0, 3);
-    top.forEach((t, i) => console.log(`  ${i + 1}. ${t.keyword}（热度: ${t.velocity_score}）`));
+    top.forEach((t, i) => summaryLines.push(`  ${i + 1}. ${t.keyword}（热度: ${t.velocity_score}）`));
   }
   if (competitors.length > 0) {
     const topComp = competitors.slice(0, 3);
-    topComp.forEach((c) => console.log(`  · ${c.account}: ${c.latest_post?.topic ?? '无最新帖子'}`));
+    topComp.forEach((c) => summaryLines.push(`  · ${c.account}: ${c.latest_post?.topic ?? '无最新帖子'}`));
   }
-  console.log(`- 爆款候选: ${viralCandidates.length} 条`);
+  summaryLines.push(`- 爆款候选: ${viralCandidates.length} 条`);
   if (viralCandidates.length > 0) {
     const topViral = viralCandidates.slice(0, 5);
-    topViral.forEach((v, i) => console.log(`  ${i + 1}. ${v.title}（${v.platform} ${v.likes}赞）`));
+    topViral.forEach((v, i) => summaryLines.push(`  ${i + 1}. ${v.title}（${v.platform} ${v.likes}赞）`));
   }
-  console.log(`- 知识库拆解: ${dissectedEntries.length} 条`);
+  summaryLines.push(`- 知识库拆解: ${dissectedEntries.length} 条`);
   if (dissectedEntries.length > 0) {
     const topEntries = dissectedEntries.filter(e => e.dissection_status === 'done').slice(0, 5);
     topEntries.forEach((e, i) => {
       const d = e.dissection;
-      console.log(`  ${i + 1}. ${e.title} → ${d.hook_type}+${d.content_type}（${d.summary}）`);
+      summaryLines.push(`  ${i + 1}. ${e.title} → ${d.hook_type}+${d.content_type}（${d.summary}）`);
     });
   }
+  const summary = summaryLines.join('\n');
+  console.log('\n' + summary);
+  deliverOpsResult(summary, ops);
 }
 
 main().catch(err => {

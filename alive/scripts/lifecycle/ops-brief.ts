@@ -74,6 +74,11 @@ async function main(): Promise<void> {
     console.error(`[${wallNow().toISOString()}] ops-brief: persona report failed:`, (err as Error).message);
   }
 
+  if (ops?.automation?.silent_background_jobs) {
+    console.log(`[${wallNow().toISOString()}] ops-brief: silent_background_jobs=true, skipping brief delivery`);
+    return;
+  }
+
   const deliveryMode = ops.automation?.brief_delivery ?? 'wecom-target';
 
   // Viral KB enrichment (best-effort)

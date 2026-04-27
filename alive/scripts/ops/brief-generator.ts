@@ -898,6 +898,18 @@ export function deliverBrief(message: string, mode: BriefDeliveryMode): boolean 
   return sendToWechatWork(message);
 }
 
+/**
+ * Unified ops result delivery helper.
+ * Respects `ops.automation.silent_background_jobs` to suppress IM delivery.
+ */
+export function deliverOpsResult(message: string, ops?: { automation?: { silent_background_jobs?: boolean } }): boolean {
+  if (ops?.automation?.silent_background_jobs) {
+    console.log('[deliverOpsResult] silent_background_jobs=true, skipping IM delivery');
+    return false;
+  }
+  return sendToWechatWork(message);
+}
+
 // ─── Log ─────────────────────────────────────────────────────────────────────
 
 function logBriefSent(date: string, topicCount: number): void {

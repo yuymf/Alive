@@ -11,6 +11,7 @@ import { loadPersona } from '../persona/persona-loader';
 import { setTimezone, wallNow } from '../utils/time-utils';
 import { getPublishedItemsWithUrls } from '../ops/review-queue';
 import { appendSnapshot, fetchMetrics, cleanupOldEntries } from '../ops/performance-tracker';
+import { deliverOpsResult } from '../ops/brief-generator';
 
 async function main(): Promise<void> {
   const persona = await loadPersona();
@@ -70,13 +71,18 @@ async function main(): Promise<void> {
 
   console.log(`[${wallNow().toISOString()}] ops-performance: ${publishedItems.length} items checked, ${snapshotCount} snapshots appended`);
 
-  // === 摘要输出（cron deliver 会投递 stdout；0 条内容时不推送） ===
+  // === 摘要输出 & IM 投递（0 条内容时不推送） ===
   if (publishedItems.length > 0 && snapshotCount > 0) {
-    console.log(`\n📈 内容表现速报`);
-    console.log(`- 已发布内容: ${publishedItems.length} 篇`);
-    console.log(`- 本轮采集快照: ${snapshotCount} 条`);
+    const summaryLines = [
+      `📈 内容表现速报`,
+      `- 已发布内容: ${publishedItems.length} 篇`,
+      `- 本轮采集快照: ${snapshotCount} 条`,
+    ];
     const tracked = publishedItems.filter(it => it.published_urls).slice(0, 3);
-    tracked.forEach(it => console.log(`  · ${it.topic}（${Object.keys(it.published_urls!).join('/')}）`));
+    tracked.forEach(it => summaryLines.push(`  · ${it.topic}（${Object.keys(it.published_urls!).join('/')}）`));
+    const summary = summaryLines.join('\n');
+    console.log('\n' + summary);
+    deliverOpsResult(summary, ops);
   }
 }
 

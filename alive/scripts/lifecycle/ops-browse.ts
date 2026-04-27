@@ -26,6 +26,7 @@ import { DouyinProvider } from '../adapters/providers/douyin-provider';
 import { exaWebSearch } from '../utils/exa-client';
 import { runKeywordSearch } from '../ops/keyword-tracker';
 import { refreshSearchKeywordTrends } from '../ops/trend-analyzer';
+import { deliverOpsResult } from '../ops/brief-generator';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -254,6 +255,12 @@ export async function main(): Promise<void> {
     retention_days: log.retention_days,
   };
   writeJSON(PATHS.heartbeatLog, updatedLog);
+
+  // IM 投递
+  if (summary) {
+    const imSummary = `📰 定时浏览速报\n${summary}`;
+    deliverOpsResult(imSummary, ops);
+  }
 
   console.log(`[${wallNow().toISOString()}] ops-browse: completed`);
 }
