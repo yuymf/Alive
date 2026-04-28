@@ -368,29 +368,37 @@ export async function callLLM(
 
 /**
  * Call LLM and parse response as JSON.
- * Sets response_format to json_object.
+ *
+ * Design: We do NOT default to response_format: json_object because some
+ * backends (e.g. GLM-5.1 via Venus/OpenClaw Gateway) ignore or mishandle
+ * it when agentic behaviour is enabled, returning prose, markdown, or
+ * file-operation summaries instead of valid JSON.
+ *
+ * Instead we inject a terse system message and rely on extractJSON for
+ * robust post-processing (markdown fences, trailing commas, unescaped
+ * newlines, etc.).
+ *
+ * Callers that explicitly pass options.responseFormat will still have
+ * it forwarded to the backend.
  */
 export async function callLLMJSON<T>(
   prompt: string,
   caller?: string,
   options?: LLMCallOptions,
 ): Promise<T> {
-  const effectiveOptions: LLMCallOptions = {
-    responseFormat: { type: 'json_object' },
-    ...options,
-  };
-  const result = await callLLM(prompt, caller, effectiveOptions);
+  const system = options?.system ?? 'Return valid JSON only. No prose, no markdown fences, no explanations.';
+  const fullPrompt = `${system}\n\n${prompt}`;
 
-  // Check for empty response
+  const result = await callLLM(fullPrompt, caller, options);
+
   if (!result.content.trim()) {
-    let msg = '';
-    if (result.finishReason === 'length') {
-      msg = `[llm-client] LLM returned empty content with finish_reason=length. This usually indicates an upstream issue.`;
-    } else if (result.finishReason === 'unknown') {
-      msg = `[llm-client] LLM returned empty content with finish_reason=unknown. The backend may have encountered an internal error or the API endpoint is misconfigured.`;
-    } else {
-      msg = `[llm-client] LLM returned empty content with finish_reason=${result.finishReason}.`;
-    }
+    const reason = result.finishReason;
+    const msg =
+      reason === 'length'
+        ? '[llm-client] LLM returned empty content with finish_reason=length.'
+        : reason === 'unknown'
+          ? '[llm-client] LLM returned empty content with finish_reason=unknown.'
+          : `[llm-client] LLM returned empty content with finish_reason=${reason}.`;
     console.error(msg);
     throw new Error(msg);
   }
@@ -398,15 +406,16 @@ export async function callLLMJSON<T>(
   try {
     return extractJSON<T>(result.content);
   } catch (firstErr) {
-    // One retry with a stronger JSON-only directive to recover from
-    // conversational replies (e.g. persona agents that reply with prose
-    // like "收到，已记录到 workspace。..." instead of raw JSON).
-    const hardenedPrompt =
-      `${prompt}\n\n` +
-      `【重要】请只输出 JSON 对象，不要任何解释、问候或前后文。` +
-      `直接以 { 或 [ 开头，以 } 或 ] 结尾。不要使用 markdown 围栏。`;
-    console.error(`[llm-client] JSON parse failed, retrying with JSON-only hint. First attempt content head: ${result.content.slice(0, 120).replace(/\s+/g, ' ')}`);
-    const retry = await callLLM(hardenedPrompt, caller ? `${caller}:retry` : 'callLLMJSON:retry', effectiveOptions);
+    const retryPrompt =
+      'You are in JSON-only mode. Any non-JSON output is an error.\n\n' + fullPrompt;
+    console.error(
+      `[llm-client] JSON parse failed, retrying. First attempt head: ${result.content.slice(0, 120).replace(/\s+/g, ' ')}`,
+    );
+    const retry = await callLLM(
+      retryPrompt,
+      caller ? `${caller}:retry` : 'callLLMJSON:retry',
+      options,
+    );
     if (!retry.content.trim()) {
       throw firstErr;
     }

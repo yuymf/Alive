@@ -133,7 +133,7 @@ function aggregateBy(
 export function fetchXhsMetrics(url: string): PerformanceMetrics | null {
   try {
     const raw = execFileSync('openclaw', [
-      'skill', 'run', 'xhs-bridge',
+      'skills', 'run', 'xhs-bridge',
       '--args', JSON.stringify({ action: 'get_note_details', url }),
     ], { timeout: 30_000, encoding: 'utf8' });
     const result = JSON.parse(raw) as {

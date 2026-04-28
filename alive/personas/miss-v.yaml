@@ -105,7 +105,7 @@ ops:
     xhs: []
     douyin: []
   trend_score_threshold: 0.6
-  topic_count: 3
+  topic_count: 10
   topic_filter_prompt: |
     与以下任一赛道相关或可借势：电竞、音乐/歌手、赛车/运动、女性力量/大女主、轻奢生活
     可用V姐任意一个身份切入解读

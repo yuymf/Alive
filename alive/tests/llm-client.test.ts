@@ -351,29 +351,6 @@ describe('callLLMJSON', () => {
     });
   }
 
-  it('automatically sends response_format: json_object', async () => {
-    mockFetchOk('{"wantToPost":true}');
-    await callLLMJSON('test prompt');
-
-    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.response_format).toEqual({ type: 'json_object' });
-  });
-
-  it('allows overriding response_format via options', async () => {
-    const customSchema = {
-      type: 'json_schema' as const,
-      json_schema: {
-        name: 'post_intent',
-        schema: { type: 'object', properties: { wantToPost: { type: 'boolean' } } },
-      },
-    };
-    mockFetchOk('{"wantToPost":false}');
-    await callLLMJSON('test', 'caller', { responseFormat: customSchema });
-
-    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.response_format).toEqual(customSchema);
-  });
-
   it('parses JSON from response', async () => {
     mockFetchOk('{"count":42,"items":["a","b"]}');
     const result = await callLLMJSON<{ count: number; items: string[] }>('test');
@@ -398,32 +375,49 @@ describe('callLLMJSON', () => {
     expect(result).toEqual({ result: 'done' });
   });
 
-  it('retries with doubled maxTokens on truncation', async () => {
-    // First call: truncated but parseable — no retry since max_tokens is no longer sent
-    mockFetchOk('{"complete":true}', 'stop');
+  it('injects a default system instruction for JSON-only output', async () => {
+    mockFetchOk('{"ok":true}');
+    await callLLMJSON('test prompt');
 
-    const result = await callLLMJSON<{ complete: boolean }>('test');
-    expect(result).toEqual({ complete: true });
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-
-    // Verify max_tokens is NOT sent
-    const body1 = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body1.max_tokens).toBeUndefined();
-
-    // response_format should still be set
-    expect(body1.response_format).toEqual({ type: 'json_object' });
-  });
-
-  it('does not send max_tokens in request body', async () => {
-    mockFetchOk('{"data":true}', 'stop');
-    const result = await callLLMJSON<{ data: boolean }>('test');
-    expect(result).toEqual({ data: true });
     const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(body.max_tokens).toBeUndefined();
+    expect(body.messages[0].content).toMatch(/Return valid JSON only/i);
   });
 
-  it('throws on unparseable response', async () => {
+  it('allows overriding the system instruction via options', async () => {
+    mockFetchOk('{"ok":true}');
+    await callLLMJSON('test prompt', 'caller', { system: 'Custom system msg' });
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.messages[0].content).toMatch(/Custom system msg/);
+  });
+
+  it('does not send response_format by default', async () => {
+    mockFetchOk('{"wantToPost":true}');
+    await callLLMJSON('test prompt');
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.response_format).toBeUndefined();
+  });
+
+  it('forwards response_format when explicitly provided', async () => {
+    const customSchema = {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: 'post_intent',
+        schema: { type: 'object', properties: { wantToPost: { type: 'boolean' } } },
+      },
+    };
+    mockFetchOk('{"wantToPost":false}');
+    await callLLMJSON('test', 'caller', { responseFormat: customSchema });
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(body.response_format).toEqual(customSchema);
+  });
+
+  it('retries once on unparseable response then throws', async () => {
     mockFetchOk('This is not JSON at all, no braces anywhere');
+    mockFetchOk('Still not JSON, no braces anywhere');
     await expect(callLLMJSON('test')).rejects.toThrow('Could not parse JSON');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });
