@@ -829,6 +829,7 @@ sub_skills:
   - ops-desk
   - generate-image
   - xhs-bridge
+  - douyin-bridge
   - content-browse
 
 features:

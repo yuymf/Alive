@@ -1075,7 +1075,7 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
   const PLATFORM_SKILLS = [
     {
       name: 'xiaohongshu-skills',
-      repo: 'https://github.com/autoclaw-cc/xiaohongshu-skills.git',
+      repo: 'https://github.com/yuymf/xiaohongshu-skills.git',
       dir: path.join(skillsBase, 'xiaohongshu-skills'),
       cli: path.join(skillsBase, 'xiaohongshu-skills', 'scripts', 'cli.py'),
       checkCmd: ['check-login'],
