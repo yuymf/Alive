@@ -12,7 +12,9 @@
 
 set -uo pipefail
 
-PROJECT_DIR="/Users/halyu/Documents/Code/Alive"
+# 基于脚本位置推断项目根目录
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DIST_DIR="$PROJECT_DIR/dist-alive/scripts"
 OUTPUT_DIR="$PROJECT_DIR/docs"
 TIMESTAMP=$(date '+%Y-%m-%d-%H%M%S')
@@ -43,8 +45,9 @@ source_env() {
   local config_file="$HOME/.openclaw/openclaw.json"
   if [ -f "$config_file" ]; then
     eval "$(python3 -c "
-import json
-cfg = json.load(open('$config_file'))
+import json, os
+cfg_path = os.path.expanduser('~/.openclaw/openclaw.json')
+cfg = json.load(open(cfg_path))
 env = cfg.get('skills', {}).get('entries', {}).get('alive', {}).get('env', {})
 for k, v in env.items():
     if v:

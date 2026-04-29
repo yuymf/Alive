@@ -8,6 +8,15 @@ const readline = require('readline');
 const { execSync, execFileSync } = require('child_process');
 const YAML = require('yaml');
 
+/** Cross-platform synchronous sleep (seconds). */
+function sleepSync(seconds) {
+  if (process.platform === 'win32') {
+    execSync(`powershell -Command "Start-Sleep -Seconds ${seconds}"`);
+  } else {
+    execSync(`sleep ${seconds}`);
+  }
+}
+
 /**
  * Cross-platform `which` — finds the full path of an executable.
  * Windows: uses `where` (built-in).
@@ -23,6 +32,65 @@ function whichSync(bin) {
   } catch {
     return null;
   }
+}
+
+/**
+ * On Windows, resolve the actual Node.js entry script path from the openclaw
+ * wrapper (.cmd, .ps1, or the extensionless shell script). This bypasses cmd.exe
+ * which causes sub-commands to hang on Windows.
+ * Returns the absolute JS/MJS path, or null if not resolvable / not needed (non-Windows).
+ */
+let _clawDirectPath = undefined;
+function resolveClawDirectPath() {
+  if (_clawDirectPath !== undefined) return _clawDirectPath;
+  if (process.platform !== 'win32') { _clawDirectPath = null; return null; }
+
+  const clawPath = whichSync('openclaw');
+  if (!clawPath) { _clawDirectPath = null; return null; }
+
+  // `where openclaw` may return the extensionless shell script first, then the .cmd.
+  // Collect candidate wrapper files to inspect.
+  const candidates = [];
+  const clawDir = path.dirname(clawPath);
+  const clawBase = path.basename(clawPath);
+
+  // 1) The exact path returned by whichSync
+  candidates.push(clawPath);
+  // 2) The .cmd and .ps1 in the same directory (common on Windows npm installs)
+  if (!clawPath.toLowerCase().endsWith('.cmd')) {
+    candidates.push(path.join(clawDir, clawBase + '.cmd'));
+  }
+  if (!clawPath.toLowerCase().endsWith('.ps1')) {
+    candidates.push(path.join(clawDir, clawBase + '.ps1'));
+  }
+
+  for (const candidate of candidates) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      const content = fs.readFileSync(candidate, 'utf8');
+      // Match quoted .mjs or .js paths, e.g.: "%dp0%\..\openclaw\openclaw.mjs"
+      // or in shell scripts: "$basedir/../openclaw/openclaw.mjs"
+      const jsMatch = content.match(/["']?([^\s"']+\.m?js)["']?/);
+      if (jsMatch) {
+        let jsPath = jsMatch[1];
+        // Handle %dp0% (Windows .cmd) and $basedir (shell script)
+        const scriptDir = path.dirname(candidate);
+        jsPath = jsPath.replace(/%dp0%/g, scriptDir);
+        jsPath = jsPath.replace(/\$basedir/g, scriptDir);
+        // Resolve relative paths against the wrapper's directory
+        if (!path.isAbsolute(jsPath)) {
+          jsPath = path.resolve(scriptDir, jsPath);
+        }
+        if (fs.existsSync(jsPath)) {
+          _clawDirectPath = jsPath;
+          return _clawDirectPath;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  _clawDirectPath = null;
+  return null;
 }
 
 /**
@@ -119,31 +187,89 @@ function resolveAgentMemoryDir(personaSlug) {
  * Check if an openclaw agent exists.
  */
 function agentExists(agentId) {
-  if (!isOpenClawCLIAvailable()) return false;
+  // Try direct gateway RPC first (works on Windows where CLI hangs)
   try {
-    const raw = execFileSync('openclaw', ['agents', 'list', '--json'], {
-      timeout: 10000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    const parsed = JSON.parse(raw);
-    const agents = Array.isArray(parsed) ? parsed : (parsed?.agents ?? []);
+    const result = callGatewayDirect('agents.list', {}, 10000);
+    const agents = result?.agents ?? [];
     return agents.some(a => a.id === agentId || a.name === agentId);
-  } catch {
-    // Fallback: check if directory exists
-    return fs.existsSync(path.join(OPENCLAW_DIR, 'agents', agentId));
+  } catch { /* fall through */ }
+
+  // Try CLI if gateway RPC failed
+  if (canClawRunSubCommands()) {
+    try {
+      const raw = execClaw(['agents', 'list', '--json'], {
+        timeout: 10000, stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      const parsed = JSON.parse(raw);
+      const agents = Array.isArray(parsed) ? parsed : (parsed?.agents ?? []);
+      return agents.some(a => a.id === agentId || a.name === agentId);
+    } catch { /* fall through */ }
   }
+
+  // Last fallback: check if directory exists
+  return fs.existsSync(path.join(OPENCLAW_DIR, 'agents', agentId));
+}
+
+/**
+ * Create an isolated openclaw agent for a persona via filesystem.
+ * Used when `openclaw agents add` CLI sub-command is unavailable (e.g. Windows hangs).
+ * Mimics what the CLI does: adds an entry to openclaw.json and creates the
+ * workspace + agent directories with minimal scaffold files.
+ */
+function ensureIsolatedAgentViaFilesystem(personaSlug, _persona, model) {
+  const agentWorkspace = resolveAgentWorkspace(personaSlug);
+  const agentDir = path.join(OPENCLAW_DIR, 'agents', personaSlug);
+
+  // Create workspace directory
+  fs.mkdirSync(agentWorkspace, { recursive: true });
+  // Create agent state directory
+  fs.mkdirSync(path.join(agentDir, 'agent'), { recursive: true });
+  fs.mkdirSync(path.join(agentDir, 'sessions'), { recursive: true });
+
+  // Scaffold minimal workspace files (AGENTS.md, BOOTSTRAP.md)
+  const agentsMd = path.join(agentWorkspace, 'AGENTS.md');
+  if (!fs.existsSync(agentsMd)) {
+    fs.writeFileSync(agentsMd, `# ${personaSlug}\n\nThis is the workspace for the **${personaSlug}** agent.\n`, 'utf8');
+  }
+  const bootstrapMd = path.join(agentWorkspace, 'BOOTSTRAP.md');
+  if (!fs.existsSync(bootstrapMd)) {
+    fs.writeFileSync(bootstrapMd, '', 'utf8');
+  }
+
+  // Update openclaw.json: add agent entry
+  try {
+    const cfg = fs.existsSync(CONFIG_FILE)
+      ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))
+      : {};
+    if (!cfg.agents) cfg.agents = {};
+    if (!cfg.agents.list) cfg.agents.list = [];
+
+    const existing = cfg.agents.list.find(a => a.id === personaSlug);
+    if (!existing) {
+      const entry = {
+        id: personaSlug,
+        name: personaSlug,
+        workspace: agentWorkspace,
+        agentDir,
+      };
+      if (model) entry.model = model;
+      cfg.agents.list.push(entry);
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+    }
+  } catch (err) {
+    warn(`Failed to update openclaw.json for agent "${personaSlug}": ${err.message}`);
+  }
+
+  ok(`Created isolated agent (filesystem): ${personaSlug} (workspace: ${agentWorkspace})`);
+  return true;
 }
 
 /**
  * Create an isolated openclaw agent for a persona.
  * Uses `openclaw agents add` with its own workspace directory.
- * Also sets up channel routing bindings if persona has channel config.
+ * Falls back to filesystem-based creation when CLI sub-commands are unavailable.
  */
 function ensureIsolatedAgent(personaSlug, persona, model) {
-  if (!isOpenClawCLIAvailable()) {
-    warn('OpenClaw CLI not available — skipping isolated agent creation');
-    return false;
-  }
-
   // Skip if this is the default/main persona
   if (personaSlug === 'main' || personaSlug === 'default') {
     ok('Using main agent (default persona)');
@@ -157,84 +283,182 @@ function ensureIsolatedAgent(personaSlug, persona, model) {
     return true;
   }
 
-  // Do NOT pre-create workspace directory — let `openclaw agents add` create it
-  // so that OpenClaw's default template files (AGENTS.md, BOOTSTRAP.md,
-  // HEARTBEAT.md, TOOLS.md) are properly scaffolded into the workspace.
-  const args = [
-    'agents', 'add', personaSlug,
-    '--workspace', agentWorkspace,
-    '--non-interactive',
-  ];
-  if (model) {
-    args.push('--model', model);
+  // Attempt 1: CLI sub-command
+  if (canClawRunSubCommands()) {
+    const args = [
+      'agents', 'add', personaSlug,
+      '--workspace', agentWorkspace,
+      '--non-interactive',
+    ];
+    if (model) {
+      args.push('--model', model);
+    }
+
+    try {
+      execClaw(args, { timeout: 15000, stdio: 'pipe' });
+      ok(`Created isolated agent: ${personaSlug} (workspace: ${agentWorkspace})`);
+      return true;
+    } catch (err) {
+      warn(`CLI agent creation failed: ${err.message} — falling back...`);
+    }
   }
 
+  // Attempt 2: Direct gateway RPC (bypasses CLI which hangs on Windows)
   try {
-    execFileSync('openclaw', args, { timeout: 15000, encoding: 'utf8', stdio: 'pipe' });
-    ok(`Created isolated agent: ${personaSlug} (workspace: ${agentWorkspace})`);
+    const createParams = {
+      id: personaSlug,
+      workspace: agentWorkspace,
+    };
+    if (model) createParams.model = model;
+    callGatewayDirect('agents.create', createParams, 15000);
+    ok(`Created isolated agent via gateway: ${personaSlug} (workspace: ${agentWorkspace})`);
+    return true;
   } catch (err) {
-    warn(`Failed to create isolated agent: ${err.message}`);
-    return false;
+    // Gateway RPC failed — fall through to filesystem
   }
 
-  return true;
+  // Attempt 3: Filesystem fallback — create agent directly in openclaw.json
+  if (isOpenClawCLIAvailable()) {
+    ok('Creating agent via filesystem (CLI and gateway RPC unavailable)');
+  } else {
+    ok('Creating agent via filesystem (CLI not available)');
+  }
+  return ensureIsolatedAgentViaFilesystem(personaSlug, persona, model);
 }
 
 /**
  * Bind channel routing for an isolated agent.
  * E.g., route wecom:miss-v → miss-v agent.
+ * Falls back to writing openclaw.json directly when CLI sub-commands are unavailable.
  */
 function ensureAgentBinding(personaSlug, channel, accountId) {
-  if (!isOpenClawCLIAvailable()) return false;
   if (personaSlug === 'main' || personaSlug === 'default') return true;
 
   const bindSpec = accountId ? `${channel}:${accountId}` : channel;
 
+  // Attempt 1: CLI
+  if (canClawRunSubCommands()) {
+    try {
+      execClaw(['agents', 'bind', '--agent', personaSlug, '--bind', bindSpec], {
+        timeout: 10000, stdio: 'pipe',
+      });
+      ok(`Bound ${bindSpec} → agent "${personaSlug}"`);
+      return true;
+    } catch (err) {
+      const msg = err.message || '';
+      if (msg.includes('already') || msg.includes('exists') || msg.includes('duplicate')) {
+        ok(`Binding ${bindSpec} → "${personaSlug}" already exists`);
+        return true;
+      }
+      warn(`CLI bind failed: ${msg} — falling back...`);
+    }
+  }
+
+  // Attempt 2: Direct gateway RPC
   try {
-    execFileSync('openclaw', ['agents', 'bind', '--agent', personaSlug, '--bind', bindSpec], {
-      timeout: 10000, encoding: 'utf8', stdio: 'pipe',
-    });
-    ok(`Bound ${bindSpec} → agent "${personaSlug}"`);
+    callGatewayDirect('agents.bind', { agent: personaSlug, channel, accountId: accountId || undefined }, 10000);
+    ok(`Bound ${bindSpec} → agent "${personaSlug}" (gateway)`);
     return true;
   } catch (err) {
-    // May already be bound — check if it's a duplicate error
     const msg = err.message || '';
     if (msg.includes('already') || msg.includes('exists') || msg.includes('duplicate')) {
       ok(`Binding ${bindSpec} → "${personaSlug}" already exists`);
       return true;
     }
-    warn(`Failed to bind ${bindSpec} → "${personaSlug}": ${msg}`);
+    // Fall through to filesystem
+  }
+
+  // Attempt 3: Filesystem fallback — write binding to openclaw.json
+  try {
+    const cfg = fs.existsSync(CONFIG_FILE)
+      ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))
+      : {};
+    if (!cfg.agents) cfg.agents = {};
+    if (!cfg.agents.bindings) cfg.agents.bindings = [];
+
+    const exists = cfg.agents.bindings.some(b =>
+      (b.agent === personaSlug && b.channel === channel && (b.accountId || '') === (accountId || ''))
+    );
+    if (!exists) {
+      cfg.agents.bindings.push({
+        agent: personaSlug,
+        channel,
+        ...(accountId ? { accountId } : {}),
+      });
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+      ok(`Bound ${bindSpec} → agent "${personaSlug}" (filesystem)`);
+    } else {
+      ok(`Binding ${bindSpec} → "${personaSlug}" already exists`);
+    }
+    return true;
+  } catch (err) {
+    warn(`Failed to bind ${bindSpec} → "${personaSlug}" (filesystem): ${err.message}`);
     return false;
   }
 }
 
 /**
  * Delete an isolated openclaw agent and optionally its workspace.
+ * Falls back to filesystem removal when CLI sub-commands are unavailable.
  */
 function deleteIsolatedAgent(personaSlug) {
-  if (!isOpenClawCLIAvailable()) return false;
   if (personaSlug === 'main' || personaSlug === 'default') return false;
 
-  try {
-    execFileSync('openclaw', ['agents', 'delete', personaSlug, '--yes'], {
-      timeout: 15000, encoding: 'utf8', stdio: 'pipe',
-    });
-    ok(`Deleted agent: ${personaSlug}`);
-    return true;
-  } catch (err) {
-    // Try without --yes flag (older openclaw versions)
+  // Attempt 1: CLI
+  if (canClawRunSubCommands()) {
     try {
-      execFileSync('openclaw', ['agents', 'delete', personaSlug], {
-        timeout: 15000, encoding: 'utf8', stdio: 'pipe',
-        input: 'y\n',
+      execClaw(['agents', 'delete', personaSlug, '--yes'], {
+        timeout: 15000, stdio: 'pipe',
       });
       ok(`Deleted agent: ${personaSlug}`);
       return true;
-    } catch (err2) {
-      warn(`Failed to delete agent "${personaSlug}": ${err2.message}`);
-      return false;
+    } catch (err) {
+      // Try without --yes flag (older openclaw versions)
+      try {
+        execClaw(['agents', 'delete', personaSlug], {
+          timeout: 15000, stdio: 'pipe',
+          input: 'y\n',
+        });
+        ok(`Deleted agent: ${personaSlug}`);
+        return true;
+      } catch (err2) {
+        warn(`CLI delete failed: ${err2.message} — falling back...`);
+      }
     }
   }
+
+  // Attempt 2: Direct gateway RPC
+  try {
+    callGatewayDirect('agents.delete', { id: personaSlug }, 15000);
+    ok(`Deleted agent via gateway: ${personaSlug}`);
+    return true;
+  } catch (err) {
+    // Fall through to filesystem
+  }
+
+  // Filesystem fallback: remove agent directory and update openclaw.json
+  const agentDir = path.join(OPENCLAW_DIR, 'agents', personaSlug);
+  if (fs.existsSync(agentDir)) {
+    fs.rmSync(agentDir, { recursive: true, force: true });
+    ok(`Deleted agent directory: ${agentDir}`);
+  }
+  // Remove from openclaw.json agents.list
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      if (cfg.agents?.list) {
+        const before = cfg.agents.list.length;
+        cfg.agents.list = cfg.agents.list.filter(a => a.id !== personaSlug);
+        if (cfg.agents.list.length < before) {
+          fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+          ok(`Removed agent "${personaSlug}" from config`);
+        }
+      }
+    }
+  } catch (err) {
+    warn(`Failed to clean config for agent "${personaSlug}": ${err.message}`);
+  }
+  return true;
 }
 
 const ALIVE_SRC = path.join(__dirname, '..', 'alive');
@@ -628,7 +852,7 @@ function installAliveAdminPlugin(pluginDir) {
   // Clean up any previous installation
   const existingPluginDir = path.join(OPENCLAW_DIR, 'extensions', 'alive-admin');
   if (fs.existsSync(existingPluginDir)) {
-    try { execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore', timeout: 10000 }); } catch { /* ignore */ }
+    try { execClaw(['plugins', 'uninstall', 'alive-admin'], { stdio: 'ignore', timeout: 10000 }); } catch { /* ignore */ }
     if (fs.existsSync(existingPluginDir)) {
       fs.rmSync(existingPluginDir, { recursive: true, force: true });
     }
@@ -636,8 +860,8 @@ function installAliveAdminPlugin(pluginDir) {
 
   // Attempt 1: standard install
   try {
-    execFileSync('openclaw', ['plugins', 'install', '--link', pluginDir], {
-      timeout: 15000, encoding: 'utf8', stdio: 'pipe',
+    execClaw(['plugins', 'install', '--link', pluginDir], {
+      timeout: 15000, stdio: 'pipe',
     });
     ok('alive-admin plugin installed');
     return;
@@ -653,8 +877,8 @@ function installAliveAdminPlugin(pluginDir) {
 
   // Attempt 2: --allow-unsafe (available in some openclaw versions)
   try {
-    execFileSync('openclaw', ['plugins', 'install', '--link', '--allow-unsafe', pluginDir], {
-      timeout: 15000, encoding: 'utf8', stdio: 'pipe',
+    execClaw(['plugins', 'install', '--link', '--allow-unsafe', pluginDir], {
+      timeout: 15000, stdio: 'pipe',
     });
     ok('alive-admin plugin installed (--allow-unsafe)');
     return;
@@ -664,6 +888,15 @@ function installAliveAdminPlugin(pluginDir) {
 
   // Attempt 3: manual registration — write openclaw.json config directly to simulate
   // `openclaw plugins install --link <dir>`. Bypasses the CLI entirely.
+  registerAliveAdminPluginManual(pluginDir);
+}
+
+/**
+ * Manually register the alive-admin plugin by writing openclaw.json directly.
+ * Used as a fallback when `openclaw plugins install` is unavailable or broken
+ * (e.g., on Windows where sub-commands hang).
+ */
+function registerAliveAdminPluginManual(pluginDir) {
   try {
     const absPluginDir = path.resolve(pluginDir);
     // Read plugin version from its package.json
@@ -764,8 +997,140 @@ function removeDirSafe(dir, label) {
 }
 
 function isOpenClawCLIAvailable() {
-  return !!whichSync('openclaw');
+  const resolved = whichSync('openclaw');
+  if (!resolved) return false;
+  // Functional check: `where`/`which` may find a broken .cmd wrapper on Windows.
+  // Verify the CLI can actually respond within a short timeout.
+  const directPath = resolveClawDirectPath();
+  try {
+    if (directPath) {
+      execFileSync(process.execPath, [directPath, '--version'], {
+        timeout: 5000,
+        encoding: 'utf8',
+        windowsHide: true,
+        stdio: 'pipe',
+      });
+    } else {
+      execFileSync('openclaw', ['--version'], {
+        timeout: 5000,
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+        stdio: 'pipe',
+      });
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
+
+/**
+ * Check whether `openclaw` sub-commands (agents, cron, etc.) actually work.
+ * On some Windows environments, `openclaw --version` succeeds but sub-commands
+ * hang indefinitely (spawnSync cmd.exe ETIMEDOUT). This detects that case.
+ * Returns true if sub-commands are usable, false otherwise.
+ */
+let _clawSubCommandsAvailable = undefined;
+function canClawRunSubCommands() {
+  if (_clawSubCommandsAvailable !== undefined) return _clawSubCommandsAvailable;
+  if (!isOpenClawCLIAvailable()) {
+    _clawSubCommandsAvailable = false;
+    return false;
+  }
+  // On Windows, the CLI may hang on sub-commands — try gateway RPC first
+  // to avoid the 8-second timeout. If gateway works, CLI isn't needed.
+  if (process.platform === 'win32') {
+    try {
+      callGatewayDirect('agents.list', {}, 5000);
+      // Gateway works — but CLI sub-commands may still hang.
+      // Mark as false so callers use gateway RPC fallbacks directly.
+      _clawSubCommandsAvailable = false;
+      return false;
+    } catch {
+      // Gateway also failed — try CLI as last resort
+    }
+  }
+  try {
+    execClaw(['agents', 'list', '--json'], {
+      timeout: 8000,
+      stdio: 'pipe',
+    });
+    _clawSubCommandsAvailable = true;
+  } catch {
+    _clawSubCommandsAvailable = false;
+  }
+  return _clawSubCommandsAvailable;
+}
+
+/**
+ * Cross-platform wrapper for execFileSync('openclaw', ...).
+ * On Windows, resolves the actual .js entry from the .cmd wrapper and calls
+ * it directly via `node` to avoid cmd.exe hangs on sub-commands.
+ * Falls back to shell: true on non-Windows or if direct path cannot be resolved.
+ */
+function execClaw(args, opts = {}) {
+  const directPath = resolveClawDirectPath();
+  if (directPath) {
+    return execFileSync(process.execPath, [directPath, ...args], {
+      timeout: 15000,
+      encoding: 'utf8',
+      windowsHide: true,
+      ...opts,
+    });
+  }
+  return execFileSync('openclaw', args, {
+    timeout: 15000,
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+    ...opts,
+  });
+}
+
+/**
+ * Cross-platform wrapper for spawnSync('openclaw', ...).
+ * Same rationale as execClaw — Windows bypasses .cmd wrapper to avoid hangs.
+ */
+function spawnClaw(args, opts = {}) {
+  const directPath = resolveClawDirectPath();
+  if (directPath) {
+    return require('child_process').spawnSync(process.execPath, [directPath, ...args], {
+      encoding: 'utf8',
+      timeout: 15000,
+      windowsHide: true,
+      ...opts,
+    });
+  }
+  return require('child_process').spawnSync('openclaw', args, {
+    encoding: 'utf8',
+    timeout: 15000,
+    shell: process.platform === 'win32',
+    ...opts,
+  });
+}
+
+// ─── Direct Gateway RPC ─────────────────────────────────────────────────────
+
+/**
+ * Call the openclaw gateway RPC directly via WebSocket, bypassing the CLI
+ * which hangs on Windows. Uses the gateway-rpc.js helper script.
+ * Returns the parsed JSON result, or throws on error.
+ */
+function callGatewayDirect(method, params = {}, timeoutMs = 15000) {
+  const helperPath = path.join(__dirname, 'gateway-rpc.js');
+  if (!fs.existsSync(helperPath)) {
+    throw new Error('gateway-rpc.js helper not found');
+  }
+  const result = execFileSync(process.execPath, [
+    helperPath, method, JSON.stringify(params), '--timeout', String(timeoutMs),
+  ], {
+    timeout: timeoutMs + 5000,
+    encoding: 'utf8',
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  return JSON.parse(result.trim());
+}
+
 
 // ─── Cron Helpers ────────────────────────────────────────────────────────────
 
@@ -774,9 +1139,14 @@ function isOpenClawCLIAvailable() {
  */
 function listCronJobs() {
   try {
-    const raw = execFileSync('openclaw', ['cron', 'list', '--json'], { timeout: 10000, encoding: 'utf8' });
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : (parsed?.jobs ?? []);
+    if (canClawRunSubCommands()) {
+      const raw = execClaw(['cron', 'list', '--json'], { timeout: 10000 });
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : (parsed?.jobs ?? []);
+    }
+    // Direct gateway fallback
+    const result = callGatewayDirect('cron.list', {}, 10000);
+    return result?.jobs ?? [];
   } catch {
     return [];
   }
@@ -791,7 +1161,7 @@ function removeCronByName(name) {
   const matches = jobs.filter(j => j.name === name);
   for (const job of matches) {
     try {
-      execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+      execClaw(['cron', 'remove', job.id], { timeout: 10000, stdio: 'pipe' });
     } catch { /* may already be gone */ }
   }
   return matches.length;
@@ -897,13 +1267,12 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
  */
 function reconcileCronJobs({ specs, skillSlug, personaSlug, agentId }) {
   const prefix = `${skillSlug}:${personaSlug}:`;
+  const useGateway = !canClawRunSubCommands();
 
   // 1. List all existing jobs
   let existingJobs = [];
   try {
-    const raw = execFileSync('openclaw', ['cron', 'list', '--json'], { timeout: 10000, encoding: 'utf8' });
-    const parsed = JSON.parse(raw);
-    existingJobs = Array.isArray(parsed) ? parsed : (parsed?.jobs ?? []);
+    existingJobs = listCronJobs();
   } catch (err) {
     warn(`Could not list cron jobs: ${err.message}`);
   }
@@ -912,7 +1281,11 @@ function reconcileCronJobs({ specs, skillSlug, personaSlug, agentId }) {
   const toRemove = existingJobs.filter(j => String(j.name || '').startsWith(prefix));
   for (const job of toRemove) {
     try {
-      execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+      if (useGateway) {
+        callGatewayDirect('cron.remove', { id: job.id }, 10000);
+      } else {
+        execClaw(['cron', 'remove', job.id], { timeout: 10000, stdio: 'pipe' });
+      }
     } catch { /* may already be gone */ }
   }
   if (toRemove.length > 0) {
@@ -921,29 +1294,83 @@ function reconcileCronJobs({ specs, skillSlug, personaSlug, agentId }) {
 
   // 3. Add desired specs
   for (const spec of specs) {
-    const args = [
-      'cron', 'add',
-      '--name', spec.name,
-      '--cron', spec.cron,
-      '--session', spec.session || 'isolated',
-      '--message', spec.message,
-      '--timeout-seconds', String(spec.timeout),
-      '--exact',
-      '--json',
-    ];
-    // Route cron jobs to the isolated agent (non-main personas)
-    if (agentId && agentId !== 'main' && agentId !== 'default') {
-      args.push('--agent', agentId);
-    }
-    if (spec.noDeliver) {
-      args.push('--no-deliver');
-    }
     try {
-      execFileSync('openclaw', args, { timeout: 10000, encoding: 'utf8' });
-      ok(`Registered cron: ${spec.name} (${spec.cron})${spec.noDeliver ? ' [no-deliver]' : ''}${agentId ? ` [agent:${agentId}]` : ''}`);
+      if (useGateway) {
+        // Direct gateway RPC — construct params matching cron.add schema
+        // Gateway expects: { name, schedule: {kind:"cron",cron:...}, payload: {message:...},
+        //   sessionTarget, agentId, delivery: {mode:...}, enabled, wakeMode }
+        const addParams = {
+          name: spec.name,
+          schedule: { kind: 'cron', cron: spec.cron },
+          payload: { message: spec.message },
+          sessionTarget: spec.session || 'isolated',
+          enabled: true,
+          wakeMode: 'always',
+        };
+        if (agentId && agentId !== 'main' && agentId !== 'default') {
+          addParams.agentId = agentId;
+        }
+        if (spec.noDeliver) {
+          addParams.delivery = { mode: 'none' };
+        }
+        callGatewayDirect('cron.add', addParams, 15000);
+      } else {
+        const args = [
+          'cron', 'add',
+          '--name', spec.name,
+          '--cron', spec.cron,
+          '--session', spec.session || 'isolated',
+          '--message', spec.message,
+          '--timeout-seconds', String(spec.timeout),
+          '--exact',
+          '--json',
+        ];
+        if (agentId && agentId !== 'main' && agentId !== 'default') {
+          args.push('--agent', agentId);
+        }
+        if (spec.noDeliver) {
+          args.push('--no-deliver');
+        }
+        execClaw(args, { timeout: 10000 });
+      }
+      ok(`Registered cron: ${spec.name} (${spec.cron})${spec.noDeliver ? ' [no-deliver]' : ''}${agentId ? ` [agent:${agentId}]` : ''}${useGateway ? ' (gateway)' : ''}`);
     } catch (err) {
       warn(`Failed to register cron ${spec.name}: ${err.message}`);
     }
+  }
+}
+
+/**
+ * Write cron specs to a pending file when CLI sub-commands are unavailable.
+ * The file can be used later to register cron jobs once the CLI is fixed.
+ */
+function writePendingCronSpecs(specs, { skillSlug, personaSlug, agentId }) {
+  if (!specs || specs.length === 0) return;
+  try {
+    const pendingPath = path.join(memoryDir, 'pending-crons.json');
+    const entry = {
+      savedAt: new Date().toISOString(),
+      personaSlug,
+      skillSlug,
+      agentId,
+      specs: specs.map(s => ({
+        name: s.name,
+        cron: s.cron,
+        message: s.message,
+        session: s.session || 'isolated',
+        timeout: s.timeout,
+        ...(s.noDeliver ? { noDeliver: true } : {}),
+      })),
+      registerCommand: specs.map(s => {
+        const parts = ['openclaw', 'cron', 'add', '--name', s.name, '--cron', s.cron, '--session', s.session || 'isolated', '--message', s.message, '--timeout-seconds', String(s.timeout), '--exact'];
+        if (agentId && agentId !== 'main' && agentId !== 'default') parts.push('--agent', agentId);
+        if (s.noDeliver) parts.push('--no-deliver');
+        return parts.join(' ');
+      }),
+    };
+    fs.writeFileSync(pendingPath, JSON.stringify(entry, null, 2) + '\n', 'utf8');
+  } catch (err) {
+    warn(`Failed to save pending cron specs: ${err.message}`);
   }
 }
 
@@ -952,8 +1379,12 @@ function reconcileCronJobs({ specs, skillSlug, personaSlug, agentId }) {
  * Only runs when ops is enabled for the persona.
  */
 function installRequiredClawHubSkills() {
-  if (!isOpenClawCLIAvailable()) {
-    warn('OpenClaw CLI not available — skipping ClawHub skill dependency check');
+  if (!canClawRunSubCommands()) {
+    if (isOpenClawCLIAvailable()) {
+      warn('OpenClaw CLI found but sub-commands are unavailable (likely a Windows cmd.exe issue).');
+    } else {
+      warn('OpenClaw CLI not available — skipping ClawHub skill dependency check');
+    }
     return;
   }
 
@@ -983,7 +1414,7 @@ function installRequiredClawHubSkills() {
         if (is429 && attempt <= MAX_RETRIES) {
           const delay = RETRY_DELAYS[attempt - 1];
           warn(`Rate limited checking ${skill} — retrying in ${delay}s (attempt ${attempt}/${MAX_RETRIES})...`);
-          execSync(`sleep ${delay}`);
+          sleepSync(delay);
         } else {
           warn(`Failed to check ClawHub skill: ${skill} — ${msg.split('\n')[0] || 'unknown error'}`);
           return false;
@@ -997,8 +1428,8 @@ function installRequiredClawHubSkills() {
   let installedSkills = [];
   let listSucceeded = false;
   try {
-    const result = require('child_process').spawnSync('openclaw', ['skills', 'list', '--json'], {
-      encoding: 'utf8', timeout: 15000, maxBuffer: 10 * 1024 * 1024,
+    const result = spawnClaw(['skills', 'list', '--json'], {
+      maxBuffer: 10 * 1024 * 1024,
     });
     // openclaw may mix Config warnings into stderr — extract only JSON from output
     const rawOutputs = [result.stdout, result.stderr].filter(Boolean).map(s => s.trim());
@@ -1046,7 +1477,7 @@ function installRequiredClawHubSkills() {
     }
     // Pause between skills to avoid triggering rate limit on the next request
     if (i < missing.length - 1) {
-      execSync(`sleep ${INTER_SKILL_DELAY}`);
+      sleepSync(INTER_SKILL_DELAY);
     }
   }
 
@@ -1424,12 +1855,16 @@ function migrateFromLegacySlug() {
   }
 
   // 3. Migrate cron jobs (remove all jobs whose name starts with the legacy slug prefix)
-  if (isOpenClawCLIAvailable()) {
-    const allJobs = listCronJobs();
+  {
+    const allJobs = listCronJobs(); // has gateway RPC fallback
     const legacyJobs = allJobs.filter(j => String(j.name || '').startsWith(legacySlug + ':'));
     for (const job of legacyJobs) {
       try {
-        execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+        if (canClawRunSubCommands()) {
+          execClaw(['cron', 'remove', job.id], { timeout: 10000, stdio: 'pipe' });
+        } else {
+          callGatewayDirect('cron.remove', { id: job.id }, 10000);
+        }
       } catch { /* may already be gone */ }
     }
     if (legacyJobs.length > 0) {
@@ -2391,7 +2826,8 @@ async function install() {
   const resolvedModel = (llmApiKey || existingEnv.LLM_API_KEY)
     ? `${existingEnv.LLM_API_BASE ? 'venus' : 'openrouter'}/${llmModel || existingEnv.LLM_MODEL || 'glm-5'}`
     : null;
-  const agentCreated = ensureIsolatedAgent(personaSlug, persona, resolvedModel);
+  let agentCreated = false;
+  agentCreated = ensureIsolatedAgent(personaSlug, persona, resolvedModel);
   if (agentCreated && personaSlug !== 'main' && personaSlug !== 'default') {
     // Auto-bind channel routing based on persona's channel config in openclaw.json
     if (fs.existsSync(CONFIG_FILE)) {
@@ -2411,19 +2847,31 @@ async function install() {
     }
   }
 
-  // Step 8b: Register cron (if OpenClaw CLI available)
+  // Step 8b: Register cron (try CLI, then direct gateway RPC, then pending file)
   log('Step 8b: Registering heartbeat cron jobs...');
-  if (isOpenClawCLIAvailable()) {
+  try {
     const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
-    reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentCreated ? personaSlug : null });
-  } else {
-    warn('OpenClaw CLI not found — skipping cron registration.');
+    if (specs.length > 0) {
+      reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentCreated ? personaSlug : null });
+    } else {
+      ok('No cron jobs to register (heartbeat disabled)');
+    }
+  } catch (err) {
+    // Last resort: save specs to pending file
+    const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
+    writePendingCronSpecs(specs, { skillSlug, personaSlug, agentId: agentCreated ? personaSlug : null });
+    warn(`Cron registration failed (${err.message}) — specs saved to ${path.join(memoryDir, 'pending-crons.json')}`);
   }
 
   // Step 8c: Install alive-admin plugin
   log('Step 8c: Installing alive-admin plugin...');
-  if (isOpenClawCLIAvailable()) {
+  if (canClawRunSubCommands()) {
     installAliveAdminPlugin(path.join(skillDest, 'plugin'));
+  } else {
+    if (isOpenClawCLIAvailable()) {
+      ok('CLI sub-commands unavailable — using gateway RPC / filesystem fallbacks');
+    }
+    registerAliveAdminPluginManual(path.join(skillDest, 'plugin'));
   }
 
   // Write persona identity to SOUL.md (in the agent's own workspace)
@@ -2503,25 +2951,28 @@ async function uninstall() {
   }
 
   log('Removing cron jobs...');
-  if (isOpenClawCLIAvailable()) {
-    const allJobs = listCronJobs();
-    // Only remove jobs for this specific persona prefix (not all alive:* jobs)
+  {
+    const allJobs = listCronJobs(); // has gateway RPC fallback
     const toRemove = allJobs.filter(j => {
       const name = String(j.name || '');
       return name.startsWith(`${skillSlug}:${personaSlug}:`);
     });
     for (const job of toRemove) {
       try {
-        execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+        if (canClawRunSubCommands()) {
+          execClaw(['cron', 'remove', job.id], { timeout: 10000, stdio: 'pipe' });
+        } else {
+          callGatewayDirect('cron.remove', { id: job.id }, 10000);
+        }
         ok(`Removed cron: ${job.name}`);
       } catch { /* may already be gone */ }
     }
   }
 
   // Remove alive-admin plugin
-  if (isOpenClawCLIAvailable()) {
+  if (canClawRunSubCommands()) {
     try {
-      execSync('openclaw plugins uninstall alive-admin', { stdio: 'ignore' });
+      execClaw(['plugins', 'uninstall', 'alive-admin'], { stdio: 'ignore' });
       ok('Removed alive-admin plugin');
     } catch {
       // Plugin may not be installed; ignore
@@ -2611,11 +3062,9 @@ async function uninstall() {
     ok(`Memory preserved at ${memoryDir}`);
   }
 
-  // Delete the isolated agent from openclaw
+  // Delete the isolated agent from openclaw (deleteIsolatedAgent has gateway RPC fallback)
   log('Removing isolated agent...');
-  if (isOpenClawCLIAvailable()) {
-    deleteIsolatedAgent(personaSlug);
-  }
+  deleteIsolatedAgent(personaSlug);
 
   log('Uninstall complete!\n');
 }
@@ -2802,21 +3251,22 @@ async function reinstall() {
 
   // Step 5: Remove old cron jobs & clean SOUL.md
   log('Step 5/9: Removing old cron jobs & cleaning SOUL.md...');
-  if (isOpenClawCLIAvailable()) {
-    const allJobs = listCronJobs();
-    // Only remove jobs for this specific persona prefix (not all alive:* jobs)
+  {
+    const allJobs = listCronJobs(); // has gateway RPC fallback
     const toRemove = allJobs.filter(j => {
       const name = String(j.name || '');
       return name.startsWith(`${skillSlug}:${personaSlug}:`);
     });
     for (const job of toRemove) {
       try {
-        execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+        if (canClawRunSubCommands()) {
+          execClaw(['cron', 'remove', job.id], { timeout: 10000, stdio: 'pipe' });
+        } else {
+          callGatewayDirect('cron.remove', { id: job.id }, 10000);
+        }
         ok(`Removed cron: ${job.name}`);
       } catch { /* may already be gone */ }
     }
-  } else {
-    warn('OpenClaw CLI not found — skipping cron removal.');
   }
 
   // Clean SOUL.md
@@ -2972,17 +3422,21 @@ async function reinstall() {
   }
   ok(`Fresh memory initialized at ${memoryDir}`);
 
-  // Register cron
-  if (isOpenClawCLIAvailable()) {
+  // Register cron (reconcileCronJobs has gateway RPC fallback)
+  try {
     const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
-    reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentExists(personaSlug) ? personaSlug : null });
-  } else {
-    warn('OpenClaw CLI not found — skipping cron registration.');
+    if (specs.length > 0) {
+      reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentExists(personaSlug) ? personaSlug : null });
+    }
+  } catch (err) {
+    warn(`Cron registration failed: ${err.message}`);
   }
 
   // Install alive-admin plugin
-  if (isOpenClawCLIAvailable()) {
+  if (canClawRunSubCommands()) {
     installAliveAdminPlugin(path.join(skillDest, 'plugin'));
+  } else {
+    registerAliveAdminPluginManual(path.join(skillDest, 'plugin'));
   }
 
   rl.close();
@@ -3076,15 +3530,19 @@ async function realDayTest() {
     removeDirSafe(memoryDir, 'Memory data');
   }
   // Remove cron jobs for this persona only (not all alive:* jobs)
-  if (isOpenClawCLIAvailable()) {
-    const allJobs = listCronJobs();
+  {
+    const allJobs = listCronJobs(); // has gateway RPC fallback
     const toRemove = allJobs.filter(j => {
       const name = String(j.name || '');
       return name.startsWith(`${skillSlug}:${personaSlug}:`);
     });
     for (const job of toRemove) {
       try {
-        execFileSync('openclaw', ['cron', 'remove', job.id], { timeout: 10000, encoding: 'utf8', stdio: 'pipe' });
+        if (canClawRunSubCommands()) {
+          execClaw(['cron', 'remove', job.id], { timeout: 10000, stdio: 'pipe' });
+        } else {
+          callGatewayDirect('cron.remove', { id: job.id }, 10000);
+        }
       } catch { /* may already be gone */ }
     }
   }
@@ -3185,10 +3643,14 @@ async function realDayTest() {
   }
   ok(`Fresh memory initialized at ${memoryDir}`);
 
-  // Register cron (optional)
-  if (isOpenClawCLIAvailable()) {
+  // Register cron (reconcileCronJobs has gateway RPC fallback)
+  try {
     const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
-    reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentExists(personaSlug) ? personaSlug : null });
+    if (specs.length > 0) {
+      reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentExists(personaSlug) ? personaSlug : null });
+    }
+  } catch (err) {
+    warn(`Cron registration failed: ${err.message}`);
   }
 
   ok('Fresh install complete');
@@ -3368,18 +3830,22 @@ async function switchPersona() {
   });
   rl.close();
 
-  // 5. Register cron for new persona (reconcile — removes duplicates, respects automation config)
+  // 5. Register cron for new persona (reconcileCronJobs has gateway RPC fallback)
   log('Registering cron for new persona...');
-  if (isOpenClawCLIAvailable()) {
+  try {
     const specs = buildCronSpecs({ persona, skillSlug, personaSlug, personaName });
-    reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentExists(personaSlug) ? personaSlug : null });
-  } else {
-    warn('OpenClaw CLI not found — skipping cron registration.');
+    if (specs.length > 0) {
+      reconcileCronJobs({ specs, skillSlug, personaSlug, agentId: agentExists(personaSlug) ? personaSlug : null });
+    }
+  } catch (err) {
+    warn(`Cron registration failed: ${err.message}`);
   }
 
   // Install alive-admin plugin (ensure plugin is registered for new persona)
-  if (isOpenClawCLIAvailable()) {
+  if (canClawRunSubCommands()) {
     installAliveAdminPlugin(path.join(skillDest, 'plugin'));
+  } else {
+    registerAliveAdminPluginManual(path.join(skillDest, 'plugin'));
   }
 
   // 6. Update SOUL.md
