@@ -8,7 +8,80 @@ const readline = require('readline');
 const { execSync, execFileSync } = require('child_process');
 const YAML = require('yaml');
 
-const OPENCLAW_DIR = path.join(process.env.HOME, '.openclaw');
+/**
+ * Cross-platform `which` — finds the full path of an executable.
+ * Windows: uses `where` (built-in).
+ * Unix: uses `which` (should be available).
+ * Returns the full path, or `null` if not found.
+ */
+function whichSync(bin) {
+  try {
+    const cmd = os.platform() === 'win32' ? `where ${bin}` : `which ${bin}`;
+    const result = execSync(cmd, { encoding: 'utf8', timeout: 2000, stdio: 'pipe' }).trim();
+    // `where` may return multiple lines; take the first one
+    return result.split('\n')[0].trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Auto-install Google Chrome on Windows.
+ * Downloads the official installer and runs it silently.
+ * Returns the Chrome executable path if successful, or throws an error.
+ */
+function autoInstallChromeWindows() {
+  const platform = os.platform();
+  if (platform !== 'win32') {
+    throw new Error('Auto-install only supported on Windows');
+  }
+
+  log('Downloading Google Chrome installer...');
+  const installerPath = path.join(os.tmpdir(), 'chrome_setup.exe');
+
+  try {
+    // Download Chrome installer using PowerShell
+    const downloadCmd = [
+      'powershell', '-NoProfile', '-Command',
+      `"Invoke-WebRequest -Uri 'https://dl.google.com/chrome/install/standalonesetup64.exe' -OutFile '${installerPath}'"`,
+    ].join(' ');
+
+    execSync(downloadCmd, { stdio: 'inherit', timeout: 300000 });
+
+    if (!fs.existsSync(installerPath)) {
+      throw new Error('Download failed - installer not found');
+    }
+
+    log('Running Chrome installer (silent mode)...');
+    // Silent install: --silent --install
+    execSync(`"${installerPath}" --silent --install`, { stdio: 'inherit', timeout: 300000 });
+
+    // Wait a bit for installation to complete
+    execSync('timeout /t 10 /nobreak', { stdio: 'ignore' });
+
+    // Check common installation paths
+    const possiblePaths = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      path.join(os.homedir(), 'AppData', 'Local', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    ];
+
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        log(`Chrome installed successfully: ${p}`);
+        // Clean up installer
+        try { fs.unlinkSync(installerPath); } catch { /* ignore */ }
+        return p;
+      }
+    }
+
+    throw new Error('Chrome installed but executable not found');
+  } catch (err) {
+    throw new Error(`Chrome auto-install failed: ${err.message}`);
+  }
+}
+
+const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');
 const SKILLS_DIR = path.join(OPENCLAW_DIR, 'skills');
 const WORKSPACE_DIR = path.join(OPENCLAW_DIR, 'workspace');
 const SOUL_FILE = path.join(WORKSPACE_DIR, 'SOUL.md');
@@ -351,7 +424,7 @@ function preflightCheck({ opsEnabled = false } = {}) {
 
     // Well-known binary names to search via $PATH
     const chromeCandidates = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome'];
-    // Well-known absolute paths for macOS / snap / flatpak / Windows WSL
+    // Well-known absolute paths for macOS / Windows / Linux
     const chromeAbsolutePaths = [
       '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',        // macOS
       '/Applications/Chromium.app/Contents/MacOS/Chromium',                  // macOS Chromium
@@ -360,6 +433,8 @@ function preflightCheck({ opsEnabled = false } = {}) {
       '/usr/bin/chromium',                                                   // Arch/Fedora
       '/snap/bin/chromium',                                                  // snap
       '/usr/lib/chromium/chromium',                                          // some distros
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',           // Windows
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',    // Windows x86
     ];
 
     // 1) Check explicit CHROME_BIN first
@@ -374,18 +449,19 @@ function preflightCheck({ opsEnabled = false } = {}) {
       }
     }
 
-    // 2) Search $PATH candidates
+    // 2) Search $PATH candidates (cross-platform)
     if (!chromeFound) {
       for (const bin of chromeCandidates) {
-        try {
-          const resolved = execSync(`which ${bin}`, { encoding: 'utf8', timeout: 2000 }).trim();
-          if (resolved) {
+        const resolved = whichSync(bin);
+        if (resolved) {
+          try {
+            execSync(`"${resolved}" --version`, { stdio: 'ignore', timeout: 5000 });
             chromeFound = true;
             detectedChromePath = resolved;
             ok(`Chrome auto-detected: ${resolved}`);
             break;
-          }
-        } catch { /* try next */ }
+          } catch { /* try next */ }
+        }
       }
     }
 
@@ -404,6 +480,21 @@ function preflightCheck({ opsEnabled = false } = {}) {
       }
     }
 
+    // 4) On Windows, try to auto-install Chrome if not found
+    if (!chromeFound && os.platform() === 'win32') {
+      log('Chrome not found on Windows — attempting auto-install...');
+      try {
+        const installResult = autoInstallChromeWindows();
+        if (installResult) {
+          chromeFound = true;
+          detectedChromePath = installResult;
+          ok(`Chrome auto-installed: ${detectedChromePath}`);
+        }
+      } catch (err) {
+        warn(`Auto-install failed: ${err.message}`);
+      }
+    }
+
     // Persist the detected path so downstream code (setupPlatformBridgeSkills,
     // Python CDP scripts) can use it without re-scanning.
     if (chromeFound && detectedChromePath) {
@@ -414,18 +505,35 @@ function preflightCheck({ opsEnabled = false } = {}) {
     }
 
     if (!chromeFound) {
-      const isMac = os.platform() === 'darwin';
-      errors.push({
-        name: 'Chrome / Chromium',
-        status: 'not found',
-        fix: isMac
-          ? 'Install Chrome: brew install --cask google-chrome'
-          : [
+      const platform = os.platform();
+      if (platform === 'darwin') {
+        errors.push({
+          name: 'Chrome / Chromium',
+          status: 'not found',
+          fix: 'Install Chrome: brew install --cask google-chrome',
+        });
+      } else if (platform === 'win32') {
+        errors.push({
+          name: 'Chrome / Chromium',
+          status: 'not found',
+          fix: [
+            'Install Chrome:',
+            '    1. Download from: https://www.google.com/chrome/',
+            '    2. Run the installer manually',
+            '    Or run as Administrator and re-run this command (auto-install will be attempted)',
+          ].join('\n         '),
+        });
+      } else {
+        errors.push({
+          name: 'Chrome / Chromium',
+          status: 'not found',
+          fix: [
               'Install Chrome/Chromium:',
               '    Ubuntu/Debian: sudo apt install -y chromium-browser',
               '    Or: wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo dpkg -i google-chrome-stable_current_amd64.deb',
             ].join('\n         '),
-      });
+        });
+      }
     }
 
     // ── 8. Headless display check (Xvfb / DISPLAY) ──
@@ -656,12 +764,7 @@ function removeDirSafe(dir, label) {
 }
 
 function isOpenClawCLIAvailable() {
-  try {
-    execSync('which openclaw', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
+  return !!whichSync('openclaw');
 }
 
 // ─── Cron Helpers ────────────────────────────────────────────────────────────
@@ -973,7 +1076,7 @@ function installRequiredClawHubSkills() {
  * @param {boolean} nonInteractive - Skip prompts (CI / headless install)
  */
 function setupPlatformBridgeSkills(nonInteractive = false) {
-  const HOME = process.env.HOME;
+  const HOME = os.homedir();
   const skillsBase = path.join(HOME, '.openclaw', 'skills');
 
   // Detect headless environment
@@ -1021,10 +1124,8 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
       '/snap/bin/chromium',
     ];
     for (const c of candidates) {
-      try {
-        const resolved = execSync(`which ${c}`, { encoding: 'utf8', timeout: 2000 }).trim();
-        if (resolved) { chromeBinPath = resolved; break; }
-      } catch { /* next */ }
+      const resolved = whichSync(c);
+      if (resolved) { chromeBinPath = resolved; break; }
     }
     if (!chromeBinPath) {
       for (const p of absPathFallbacks) {
@@ -1141,6 +1242,7 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
     }
 
     // Install Python dependencies via uv
+    let depsInstalled = false;
     try {
       execSync(`uv sync --directory ${skill.dir}`, {
         stdio: 'pipe',
@@ -1148,9 +1250,25 @@ function setupPlatformBridgeSkills(nonInteractive = false) {
         env: { ...process.env },
       });
       ok(`${skill.name} Python dependencies installed`);
+      depsInstalled = true;
     } catch (err) {
       warn(`${skill.name} uv sync failed: ${err.message}`);
-      warn('Check your Python version (>= 3.10) and internet connection');
+      // On Windows, uv sync may fail with path length / permission errors.
+      // Fallback to pip install as a workaround.
+      if (os.platform() === 'win32' && err.message && err.message.includes('Failed to install')) {
+        warn('Attempting fallback with pip install...');
+        try {
+          const pipCmd = `cd "${skill.dir}" && python -m pip install -e .`;
+          execSync(pipCmd, { stdio: 'pipe', timeout: 120000, env: { ...process.env } });
+          ok(`${skill.name} Python dependencies installed via pip fallback`);
+          depsInstalled = true;
+        } catch (pipErr) {
+          warn(`${skill.name} pip fallback also failed: ${pipErr.message}`);
+        }
+      }
+      if (!depsInstalled) {
+        warn('Check your Python version (>= 3.10) and internet connection');
+      }
     }
 
     // Health check: verify CLI starts and Chrome is reachable (headless safe)

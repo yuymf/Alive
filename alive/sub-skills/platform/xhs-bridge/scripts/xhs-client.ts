@@ -21,6 +21,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
 
@@ -34,7 +35,7 @@ function resolveXhsCacheFile(): string {
   const envOverride = process.env.XHS_CACHE_FILE_OVERRIDE;
   if (envOverride) return envOverride;
   const persona = process.env.ALIVE_PERSONA ?? 'default';
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  const home = os.homedir();
   return path.join(home, '.openclaw', 'workspace', 'memory', persona, 'xhs-search-cache.json');
 }
 
@@ -368,7 +369,7 @@ export interface XhsSearchOptions {
 function resolveXhsDir(): string {
   const envDir = process.env.XHS_SKILLS_DIR;
   if (envDir) return envDir;
-  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  const home = os.homedir();
   return path.join(home, '.openclaw', 'skills', 'xiaohongshu-skills');
 }
 

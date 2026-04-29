@@ -37,7 +37,7 @@ import type {
 
 function tryLoadApiKeys(): boolean {
   try {
-    const home = process.env.HOME || '~';
+    const home = os.homedir();
     const cfgPath = path.join(home, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(cfgPath)) return false;
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
@@ -188,7 +188,7 @@ function captureState(phase: string, hour: number) {
 
 function writeReport(tmpDir: string) {
   const outputPath = path.join(
-    process.env.HOME || '~',
+    os.homedir(),
     'Documents', 'Code', 'Alive',
     `miss-v-real-llm-report-${new Date().toISOString().slice(0, 10)}.md`,
   );

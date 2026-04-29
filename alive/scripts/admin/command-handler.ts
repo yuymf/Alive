@@ -4,6 +4,7 @@
 // Never touches diary, relations, or emotion via conversation hooks.
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import YAML from 'yaml';
 import { readJSON, readText, writeJSON, PATHS, setPersonaName, getPersonaName } from '../utils/file-utils';
@@ -1020,7 +1021,7 @@ async function cmdOpsPatterns(_cmd: ParsedCommand): Promise<CommandResult> {
 
 function readOpenClawEnv(): Record<string, string> {
   const configPath = process.env.OPENCLAW_CONFIG_FILE
-    ?? (process.env.HOME ? path.join(process.env.HOME, '.openclaw', 'openclaw.json') : null);
+    ?? path.join(os.homedir(), '.openclaw', 'openclaw.json');
   if (!configPath || !fs.existsSync(configPath)) return {};
   try {
     const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));

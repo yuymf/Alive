@@ -34,7 +34,7 @@ import type {
 
 function tryLoadApiKeys(): boolean {
   try {
-    const home = process.env.HOME || '~';
+    const home = os.homedir();
     const cfgPath = path.join(home, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(cfgPath)) return false;
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));

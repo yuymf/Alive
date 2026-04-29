@@ -44,7 +44,7 @@ export interface CachedCliResult {
 
 function getCacheDir(): string {
   const persona = process.env.ALIVE_PERSONA || 'default';
-  const home = process.env.HOME || os.homedir();
+  const home = os.homedir();
   // Align with existing alive runtime layout:
   // `~/.openclaw/workspace-<persona>/runtime/ops-api-cache/`
   const dir = path.join(home, '.openclaw', `workspace-${persona}`, 'runtime', 'ops-api-cache');

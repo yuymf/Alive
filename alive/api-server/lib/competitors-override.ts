@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { CompetitorProfile } from '../../scripts/utils/types';
 
@@ -18,7 +19,7 @@ export interface CompetitorOverrideFile {
 const EMPTY: CompetitorOverrideFile = { entries: [], last_updated: '' };
 
 function getOverridePath(): string {
-  const home = process.env.HOME!;
+  const home = os.homedir();
   const persona = process.env.ALIVE_PERSONA ?? 'default';
   const base = path.join(home, '.openclaw', 'workspace', 'memory', persona);
   return path.join(base, 'competitors-override.json');

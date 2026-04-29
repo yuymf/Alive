@@ -4,12 +4,13 @@
 
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // --- Helpers (exported for testing) ---
 
 function resolveHome(dir) {
-  return dir.startsWith('~') ? path.join(process.env.HOME, dir.slice(1)) : dir;
+  return dir.startsWith('~') ? path.join(os.homedir(), dir.slice(1)) : dir;
 }
 
 function readJsonSafe(filePath, defaultValue) {

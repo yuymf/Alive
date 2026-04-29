@@ -4,9 +4,10 @@
 // and a concrete OpenAI-compatible implementation (for host bootstrapping).
 
 import { now, wallNow } from './time-utils';
-import * as fs from 'fs';
-import * as path from 'path';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { PATHS } from './file-utils';
 // === Core Interface ===
 
@@ -104,7 +105,7 @@ function readGatewayToken(): string | null {
   const envToken = process.env.OPENCLAW_GATEWAY_TOKEN;
   if (envToken) return envToken;
   try {
-    const configPath = path.join(process.env.HOME || '/root', '.openclaw', 'openclaw.json');
+    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
     const raw = fs.readFileSync(configPath, 'utf8');
     const conf = JSON.parse(raw);
     return conf?.gateway?.auth?.token ?? null;

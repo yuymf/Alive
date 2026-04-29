@@ -11,10 +11,11 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { getLocalDate } from '../../../scripts/utils/time-utils';
 
-const MEMORY_BASE = path.join(process.env.HOME!, '.openclaw', 'workspace', 'memory', 'minase');
+const MEMORY_BASE = path.join(os.homedir(), '.openclaw', 'workspace', 'memory', 'minase');
 const WORLD_PATH = path.join(MEMORY_BASE, 'world.md');
 
 const ARCTIC_SHIFT_BASE = 'https://arctic-shift.photon-reddit.com/api';

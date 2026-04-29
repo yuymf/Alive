@@ -7,12 +7,18 @@ import { loadApiKeys, applyApiKeys } from '../../e2e/shared/setup';
 describe('e2e shared setup env loading', () => {
   let tempHome: string | undefined;
   const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
 
   afterEach(() => {
     if (originalHome === undefined) {
       delete process.env.HOME;
     } else {
       process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
     }
 
     for (const key of [
@@ -42,6 +48,7 @@ describe('e2e shared setup env loading', () => {
   it('loads live-run env keys from openclaw.json skill config', () => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'minase-openclaw-home-'));
     process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome; // Windows compatibility
 
     const openclawDir = path.join(tempHome, '.openclaw');
     fs.mkdirSync(openclawDir, { recursive: true });

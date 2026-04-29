@@ -2,6 +2,7 @@
 // Safe file I/O with backup and fallback — generalized for any persona
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 let _memoryBaseOverride: string | null = null;
@@ -22,7 +23,7 @@ function getMemoryBase(): string {
   if (_memoryBaseOverride) return _memoryBaseOverride;
   // Multi-agent layout: non-main personas use ~/.openclaw/workspace-{persona}/memory/{persona}
   // Main/default persona uses ~/.openclaw/workspace/memory/{persona}
-  const home = process.env.HOME!;
+  const home = os.homedir();
   if (_personaName === 'main' || _personaName === 'default') {
     return path.join(home, '.openclaw', 'workspace', 'memory', _personaName);
   }
@@ -36,7 +37,7 @@ function getMemoryBase(): string {
 }
 
 function getSkillBase(): string {
-  return _skillBaseOverride ?? path.join(process.env.HOME!, '.openclaw', 'skills', 'alive');
+  return _skillBaseOverride ?? path.join(os.homedir(), '.openclaw', 'skills', 'alive');
 }
 
 function getRepoRoot(): string {
@@ -190,7 +191,7 @@ export const PATHS = {
   get runtimeDir() {
     if (_memoryBaseOverride) return path.join(_memoryBaseOverride, '..', '_runtime');
     // Use the agent's workspace for runtime logs
-    const home = process.env.HOME!;
+    const home = os.homedir();
     if (_personaName === 'main' || _personaName === 'default') {
       return path.join(home, '.openclaw', 'workspace', 'runtime');
     }
@@ -313,7 +314,7 @@ export function resolveLlmLogPath(): string {
  */
 export function loadSkillEnvVars(skillName: string = 'alive'): void {
   try {
-    const openclawConfigPath = path.join(process.env.HOME!, '.openclaw', 'openclaw.json');
+    const openclawConfigPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
     if (!fs.existsSync(openclawConfigPath)) {
       console.warn(`[loadSkillEnvVars] openclaw.json not found at ${openclawConfigPath}`);
       return;

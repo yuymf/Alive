@@ -5,6 +5,7 @@
 //   2. Guided mode: step-by-step user input → persona with AI fill-in
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import YAML from 'yaml';
 import type { PersonaConfig } from '../utils/types';
@@ -483,7 +484,7 @@ export function savePersona(persona: PersonaConfig): string {
 function resolvePersonasDir(): string {
   // Check installed skill path first
   const installedDir = path.join(
-    process.env.HOME || '',
+    os.homedir(),
     '.openclaw', 'skills', 'alive', 'personas'
   );
   if (fs.existsSync(path.dirname(installedDir))) {

@@ -1,4 +1,5 @@
 import { definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
+import * as os from 'os';
 import path from 'path';
 
 // Shared helper: run a Node.js script with args, return stdout as text (async).
@@ -9,7 +10,7 @@ function runScript(scriptPath, args, timeoutMs = 600000) {
   // Only forward the minimal set of env vars needed for the script to run.
   // Avoid spreading all of process.env to prevent false-positive credential-harvesting warnings.
   const safeEnv = {
-    HOME: process.env.HOME,
+    HOME: os.homedir(),
     PATH: process.env.PATH,
     NODE_PATH: process.env.NODE_PATH,
     ALIVE_PERSONA: process.env.ALIVE_PERSONA,
@@ -63,7 +64,7 @@ export default definePluginEntry({
   register(api) {
     // Use absolute path based on HOME to avoid relative path issues
     // (e.g. double "skills/skills/" when plugin is installed via --link)
-    const SKILLS_DIR = path.join(process.env.HOME, '.openclaw', 'skills');
+    const SKILLS_DIR = path.join(os.homedir(), '.openclaw', 'skills');
     const adminHandlerPath = path.join(SKILLS_DIR, 'alive', 'scripts', 'admin', 'command-handler.js');
     const opsHandlerPath = path.join(SKILLS_DIR, 'alive', 'scripts', 'ops', 'ops-command-handler.js');
 

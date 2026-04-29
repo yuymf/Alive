@@ -8,7 +8,7 @@ describe('file-utils path override', () => {
   afterEach(() => resetBasePaths());
 
   it('PATHS uses default paths when no override set', () => {
-    const home = process.env.HOME!;
+    const home = os.homedir();
     expect(PATHS.emotionState).toBe(path.join(home, '.openclaw', 'workspace', 'memory', 'default', 'state', 'emotion-state.json'));
   });
 
@@ -27,6 +27,13 @@ describe('file-utils path override', () => {
   });
 
   it('resetBasePaths restores defaults', () => {
+    const home = os.homedir();
+    resetBasePaths();
+    expect(PATHS.emotionState).toBe(path.join(home, '.openclaw', 'workspace', 'memory', 'default', 'state', 'emotion-state.json'));
+  });
+
+  it('PATHS uses default paths when no override set (second check)', () => {
+    const home = os.homedir();
     setBasePaths('/tmp/test-memory', '/tmp/test-skill');
     resetBasePaths();
     expect(PATHS.emotionState).toContain('.openclaw');
@@ -86,7 +93,6 @@ describe('persona-sensitive paths should use memory base (not skill base)', () =
 
   it('persona-sensitive paths include personaSlug in default (non-override) mode', () => {
     setPersonaName('minase');
-    const home = process.env.HOME!;
     // Non-default personas use isolated workspace: workspace-{persona}/memory/{persona}
     // or fall back to workspace/memory/{persona} — either way, persona slug must be present
     expect(PATHS.cronSchedule).toContain('minase');
@@ -100,8 +106,6 @@ describe('persona-sensitive paths should use memory base (not skill base)', () =
   });
 
   it('two different personas get isolated persona-sensitive paths', () => {
-    const home = process.env.HOME!;
-
     setPersonaName('minase');
     const minaseCron = PATHS.cronSchedule;
     const minaseConfig = PATHS.personaConfig;

@@ -40,7 +40,7 @@ process.env.E2E_MOCK_CRON = '1';  // Keep cron mock (no openclaw daemon in test)
 
 function tryLoadApiKeys(): boolean {
   try {
-    const home = process.env.HOME || '~';
+    const home = os.homedir();
     const cfgPath = path.join(home, '.openclaw', 'openclaw.json');
     if (!fs.existsSync(cfgPath)) return false;
     const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
