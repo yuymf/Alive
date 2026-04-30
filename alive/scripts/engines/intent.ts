@@ -82,7 +82,14 @@ function boostOrCreate(intents: Intent[], category: MetaIntent, boost: number, d
 export function injectScheduleIntents(pool: IntentPool, schedule: ScheduleToday, hour: number): IntentPool {
   let intents = [...pool.intents];
   for (const flex of schedule.flexible) {
+    // P2.1 Fix: Validate preferred_time format (HH:MM)
+    if (!/^\d{1,2}:\d{2}$/.test(flex.preferred_time)) {
+      continue;  // Skip invalid format
+    }
     const prefHour = parseInt(flex.preferred_time.split(':')[0], 10);
+    if (isNaN(prefHour) || prefHour < 0 || prefHour > 23) {
+      continue;  // Skip invalid hour
+    }
     if (Math.abs(hour - prefHour) <= 1) {
       intents = boostOrCreate(intents, flex.intent_category, flex.intent_boost, flex.activity, 'schedule');
     }
@@ -182,7 +189,14 @@ export function processProcrastination(pool: IntentPool, chosenIntentIds: Readon
     const newSkipped = intent.skipped_count + 1;
     if (newSkipped >= INTENT_CONFIG.PROCRASTINATION_RESOLVE_AT) {
       const abandonProb = currentStress > 0.5 ? 0.8 : (currentStress < 0.3 ? 0.5 : 0.6);
-      if (rng() < abandonProb) {
+      const rngValue = rng();
+      // P2.2 Fix: Validate RNG returns valid probability
+      if (!validateRng(rngValue)) {
+        // If RNG is broken, don't abandon (conservative approach)
+        const newIntensity = cap(intent.intensity + 1.0);
+        return { ...intent, intensity: newIntensity, skipped_count: 0 };
+      }
+      if (rngValue < abandonProb) {
         const newIntensity = Math.min(intent.resistance * 0.8, 0.5);
         if (diaryEntries.length < MAX_DIARY_PER_TICK) {
           diaryEntries.push(`算了...${intent.description}不想做了`);
@@ -206,3 +220,8 @@ export function processProcrastination(pool: IntentPool, chosenIntentIds: Readon
   });
   return { pool: { ...pool, intents }, stressDelta, diaryEntries };
 }
+// P2.2 Helper: Validate RNG returns a valid probability [0, 1]
+function validateRng(value: number): boolean {
+  return typeof value === 'number' && !isNaN(value) && value >= 0 && value <= 1;
+}
+

@@ -161,8 +161,20 @@ export function computeDriftScore(modifiers: PersonalityModifier[]): number {
  *                    but not yet saved, to avoid write-then-read coupling.
  */
 export function detectDrift(persona?: PersonaConfig, modifiers?: PersonalityModifier[]): DriftAnalysis {
-  const p = persona ?? loadPersona();
-  const mods = modifiers ?? loadPersonalityDrift().modifiers;
+  let p: PersonaConfig;
+  let mods: PersonalityModifier[];
+  try {
+    // P2.5 Fix: Wrap loadPersona() in try-catch to handle file I/O failures
+    p = persona ?? loadPersona();
+    mods = modifiers ?? loadPersonalityDrift().modifiers;
+  } catch (e) {
+    console.error('[detectDrift] Failed to load persona or drift data:', e);
+    // Return neutral analysis on load failure
+    return {
+      score: 0, direction: 'none', drifting_traits: [],
+      warning: null, analyzed_at: now().toISOString(),
+    };
+  }
   const timestamp = now().toISOString();
 
   // Analyze modifiers for trait-level drift

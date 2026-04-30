@@ -215,8 +215,8 @@ export function readJSON<T>(filePath: string, defaultValue: T): T {
     if (fs.existsSync(target)) {
       try {
         return JSON.parse(fs.readFileSync(target, 'utf8'));
-      } catch {
-        // Try next
+      } catch (err) {
+        console.warn(`[file-utils] Failed to parse ${target}: ${(err as Error).message}${suffix === '' ? ', trying .bak' : ''}`);
       }
     }
   }
@@ -224,15 +224,75 @@ export function readJSON<T>(filePath: string, defaultValue: T): T {
 }
 
 /**
- * Write JSON file with .bak backup before overwrite.
+ * Write JSON file atomically with .bak backup before overwrite.
+ * Writes to a temp file first, then renames — rename is atomic on POSIX,
+ * so a crash mid-write cannot corrupt both the target and backup.
  */
 export function writeJSON<T>(filePath: string, data: T): void {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
+  const tmpPath = `${filePath}.tmp.${process.pid}`;
+  // 1. Write to temp file first
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
+  // 2. Backup existing file (if any)
   if (fs.existsSync(filePath)) {
-    fs.copyFileSync(filePath, filePath + '.bak');
+    try {
+      fs.copyFileSync(filePath, filePath + '.bak');
+    } catch {
+      // Backup failure is non-fatal; proceed with the write
+    }
   }
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  // 3. Atomic rename (same filesystem, so this is atomic on POSIX)
+  fs.renameSync(tmpPath, filePath);
+}
+
+const LOCK_STALE_MS = 30_000;
+
+/**
+ * Execute a callback while holding an advisory file lock.
+ * Prevents concurrent read-modify-write races on the same file.
+ * Lock is automatically released when the callback completes or throws.
+ */
+export async function withFileLock<T>(filePath: string, fn: () => T | Promise<T>): Promise<T> {
+  const lockPath = `${filePath}.lock`;
+  const lockContent = `${process.pid}\n${Date.now()}`;
+
+  // Acquire lock (spin with backoff)
+  let acquired = false;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      // O_EXCL ensures atomic creation — fails if file already exists
+      fs.writeFileSync(lockPath, lockContent, { flag: 'wx' });
+      acquired = true;
+      break;
+    } catch {
+      // Check if existing lock is stale
+      try {
+        const existing = fs.readFileSync(lockPath, 'utf8');
+        const lockTime = parseInt(existing.split('\n')[1] ?? '0', 10);
+        if (Date.now() - lockTime > LOCK_STALE_MS) {
+          // Stale lock — remove and retry
+          try { fs.unlinkSync(lockPath); } catch { /* race ok */ }
+          continue;
+        }
+      } catch {
+        // Lock file disappeared between our check — retry
+        continue;
+      }
+      // Wait with exponential backoff
+      await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
+    }
+  }
+
+  if (!acquired) {
+    throw new Error(`Failed to acquire file lock for ${filePath} after 10 attempts`);
+  }
+
+  try {
+    return await fn();
+  } finally {
+    try { fs.unlinkSync(lockPath); } catch { /* already removed */ }
+  }
 }
 
 export function appendText(filePath: string, text: string): void {

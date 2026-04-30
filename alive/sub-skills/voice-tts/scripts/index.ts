@@ -50,6 +50,10 @@ export const DEFAULT_VOICE_STATE: VoiceState = {
 };
 
 // ── Gate Checks ──────────────────────────────────────────────────
+// NOTE: This gate pattern (time window → daily limit → cooldown → emotion)
+// is structurally similar to send-message/scripts/index.ts:checkOutreachGate().
+// The thresholds and emotion checks differ (energy vs valence, different
+// active hours, limits, and cooldowns), so they are kept separate.
 
 export interface VoiceGateInput {
   hour: number;
@@ -160,7 +164,7 @@ export const actions = {
     const timeStr = getLocalTimeHHMM(currentTime);
 
     // 0. Prune old audio files (opportunistic cleanup)
-    try { pruneOldAudio(); } catch { /* non-critical */ }
+    try { pruneOldAudio(); } catch (err) { console.warn(`[voice-tts] pruneOldAudio failed: ${(err as Error).message}`); }
 
     // 1. Read state
     const voiceState = memory.readJSON<VoiceState>('voice-state', DEFAULT_VOICE_STATE);

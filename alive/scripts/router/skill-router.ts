@@ -95,7 +95,7 @@ export function buildRouteTable(subSkillsDir?: string, persona?: PersonaConfig):
     const enabled = getEnabledSubSkills(persona);
     allowList = new Set(enabled);
     if (allowList.size === 0) {
-      // No sub-skills enabled — return empty table
+      console.warn('[router] No sub-skills enabled for persona — route table will be empty. Check persona.sub_skills config.');
       _routeTable = table;
       return table;
     }
@@ -188,9 +188,13 @@ const SKILL_ALIAS_KEYWORDS: Record<string, string[]> = {
  */
 export function fuzzyResolveSkillName(unknownName: string): RouteEntry | null {
   const lower = unknownName.toLowerCase().replace(/[_\s]+/g, '-');
+  // Require minimum 3 chars for fuzzy matching to avoid overly loose matches
+  if (lower.length < 3) return null;
 
   for (const [skillName, keywords] of Object.entries(SKILL_ALIAS_KEYWORDS)) {
-    if (keywords.some(kw => lower.includes(kw) || kw.includes(lower))) {
+    // Only match if the unknown name contains a keyword (not vice versa)
+    // This prevents short inputs from matching long keywords
+    if (keywords.some(kw => lower.includes(kw) || lower === kw)) {
       const route = resolveRouteBySkillName(skillName);
       if (route) {
         console.log(`[router] Fuzzy-matched "${unknownName}" → "${skillName}"`);

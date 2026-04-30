@@ -157,6 +157,8 @@ export function computeEmotionIntentCoupling(
     if (c.valence)         multiplier += c.valence * emotion.mood.valence;
     if (c.valence_abs)     multiplier += c.valence_abs * Math.abs(emotion.mood.valence);
     if (c.arousal)         multiplier += c.arousal * emotion.mood.arousal;
+    // P2.4 Fix: Clamp multiplier to reasonable bounds [0.1, 5.0]
+    multiplier = Math.max(0.1, Math.min(5.0, multiplier));
     result[intent] = multiplier;
   }
   return result;

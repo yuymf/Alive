@@ -358,7 +358,7 @@ export function upsertEntry(basePath: string, entry: ViralEntry): void {
     try {
       const { boostTagsFromViralEntry } = require('./tag-engine');
       boostTagsFromViralEntry(entry);
-    } catch { /* non-blocking */ }
+    } catch (err) { console.warn(`[viral-kb-store] boostTagsFromViralEntry failed: ${(err as Error).message}`); }
     return;
   }
 
@@ -391,7 +391,7 @@ export function upsertEntry(basePath: string, entry: ViralEntry): void {
       try {
         const { boostTagsFromViralEntry } = require('./tag-engine');
         boostTagsFromViralEntry(mergedEntry);
-      } catch { /* non-blocking */ }
+      } catch (err) { console.warn(`[viral-kb-store] boostTagsFromViralEntry failed: ${(err as Error).message}`); }
     }
     // else: existing entry is better, silently skip the duplicate
     return;
@@ -404,8 +404,8 @@ export function upsertEntry(basePath: string, entry: ViralEntry): void {
   try {
     const { boostTagsFromViralEntry } = require('./tag-engine');
     boostTagsFromViralEntry(entry);
-  } catch {
-    // tag-engine not available or failed — silent, non-blocking
+  } catch (err) {
+    console.warn(`[viral-kb-store] tag-engine boost failed: ${(err as Error).message}`);
   }
 }
 

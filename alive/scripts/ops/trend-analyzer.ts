@@ -190,7 +190,7 @@ export function buildTrendUsageMap(
 ): Map<string, TrendUsageRecord[]> {
   const ref = refTime ?? now();
   const cutoff = new Date(ref.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
-  const usageMap = new Map<string, TrendUsageRecord[]>();
+  let usageMap = new Map<string, TrendUsageRecord[]>();
 
   for (const item of items) {
     if (!item.trend_hook) continue;
@@ -210,12 +210,8 @@ export function buildTrendUsageMap(
       used_at: item.created_at,
     };
 
-    const existing = usageMap.get(keyword);
-    if (existing) {
-      existing.push(record);
-    } else {
-      usageMap.set(keyword, [record]);
-    }
+    const existing = usageMap.get(keyword) ?? [];
+    usageMap = new Map(usageMap).set(keyword, [...existing, record]);
   }
 
   return usageMap;
@@ -596,7 +592,7 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
 
   if (isDebug()) console.log(`[trend-analyzer] Search-keyword engine: searching ${uniqueKeywords.length} keywords`);
 
-  const tagFrequency = new Map<string, { count: number; totalEngagement: number; platforms: Set<string> }>();
+  let tagFrequency: Record<string, { count: number; totalEngagement: number; platforms: Set<string> }> = {};
 
   // ── Candidate competitor discovery ──────────────────────────────────────
   // While searching, also collect high-engagement authors as candidate
@@ -605,27 +601,36 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
   // for content-browse results — but from the search-keyword pipeline
   // which covers trending hashtags that browse may not reach.
   const MIN_AUTHOR_HITS_FOR_CANDIDATE = 2;
-  const authorData = new Map<string, {
+  let authorData: Record<string, {
     count: number;
     totalEngagement: number;
     maxEngagement: number;
     topics: Set<string>;
     platform: string;
     profileUrl?: string;
-  }>();
+  }> = {};
 
   function collectAuthor(author: string, platform: string, engagement: number, topic: string, profileUrl?: string): void {
     if (!author || author === 'unknown') return;
     const key = `${author}:${platform}`;
-    const existing = authorData.get(key);
+    const existing = authorData[key];
     if (existing) {
-      existing.count++;
-      existing.totalEngagement += engagement;
-      existing.maxEngagement = Math.max(existing.maxEngagement, engagement);
-      existing.topics.add(topic);
-      if (profileUrl && !existing.profileUrl) existing.profileUrl = profileUrl;
+      authorData = {
+        ...authorData,
+        [key]: {
+          ...existing,
+          count: existing.count + 1,
+          totalEngagement: existing.totalEngagement + engagement,
+          maxEngagement: Math.max(existing.maxEngagement, engagement),
+          topics: new Set([...existing.topics, topic]),
+          profileUrl: profileUrl && !existing.profileUrl ? profileUrl : existing.profileUrl,
+        },
+      };
     } else {
-      authorData.set(key, { count: 1, totalEngagement: engagement, maxEngagement: engagement, topics: new Set([topic]), platform, profileUrl });
+      authorData = {
+        ...authorData,
+        [key]: { count: 1, totalEngagement: engagement, maxEngagement: engagement, topics: new Set([topic]), platform, profileUrl },
+      };
     }
   }
 
@@ -650,13 +655,18 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
       const tags = extractTagsFromText(`${note.title} ${note.description}`);
       const engagement = note.likes ?? 0;
       for (const tag of tags) {
-        const existing = tagFrequency.get(tag);
+        const existing = tagFrequency[tag];
         if (existing) {
-          existing.count++;
-          existing.totalEngagement += engagement;
-          existing.platforms.add('xhs');
+          tagFrequency = {
+            ...tagFrequency,
+            [tag]: {
+              count: existing.count + 1,
+              totalEngagement: existing.totalEngagement + engagement,
+              platforms: new Set([...existing.platforms, 'xhs']),
+            },
+          };
         } else {
-          tagFrequency.set(tag, { count: 1, totalEngagement: engagement, platforms: new Set(['xhs']) });
+          tagFrequency = { ...tagFrequency, [tag]: { count: 1, totalEngagement: engagement, platforms: new Set(['xhs']) } };
         }
       }
       // Collect author for candidate competitor discovery
@@ -706,13 +716,18 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
     for (const v of hits) {
       const tags = extractTagsFromText(v.desc as string);
       for (const tag of tags) {
-        const existing = tagFrequency.get(tag);
+        const existing = tagFrequency[tag];
         if (existing) {
-          existing.count++;
-          existing.totalEngagement += v.digg_count;
-          existing.platforms.add('douyin');
+          tagFrequency = {
+            ...tagFrequency,
+            [tag]: {
+              count: existing.count + 1,
+              totalEngagement: existing.totalEngagement + v.digg_count,
+              platforms: new Set([...existing.platforms, 'douyin']),
+            },
+          };
         } else {
-          tagFrequency.set(tag, { count: 1, totalEngagement: v.digg_count, platforms: new Set(['douyin']) });
+          tagFrequency = { ...tagFrequency, [tag]: { count: 1, totalEngagement: v.digg_count, platforms: new Set(['douyin']) } };
         }
       }
       // Collect author for candidate competitor discovery
@@ -723,7 +738,7 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
   // Convert high-frequency tags into TrendItem signals
   // (tags appearing in >=2 high-engagement results)
   const items: TrendItem[] = [];
-  for (const [tag, data] of tagFrequency) {
+  for (const [tag, data] of Object.entries(tagFrequency)) {
     if (data.count < 2) continue;
 
     const platform = data.platforms.has('xhs') ? 'xhs' : 'douyin';
@@ -768,7 +783,7 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
   const candidateStore = loadCandidateAccounts();
   let newCandidates = 0;
   const dateStr = new Date().toISOString().slice(0, 10);
-  for (const [key, data] of authorData) {
+  for (const [key, data] of Object.entries(authorData)) {
     if (data.count < MIN_AUTHOR_HITS_FOR_CANDIDATE) continue;
     const [authorName] = key.split(':');
     const avgEngagement = Math.round(data.totalEngagement / data.count);
@@ -803,9 +818,10 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
       newCandidates++;
     }
   }
-  if (newCandidates > 0 || authorData.size > 0) {
+  const authorCount = Object.keys(authorData).length;
+  if (newCandidates > 0 || authorCount > 0) {
     saveCandidateAccounts(candidateStore);
-    if (isDebug()) console.log(`[trend-analyzer] Candidate competitors: +${newCandidates} new from ${authorData.size} authors`);
+    if (isDebug()) console.log(`[trend-analyzer] Candidate competitors: +${newCandidates} new from ${authorCount} authors`);
   }
 
   return capped;
@@ -1261,13 +1277,12 @@ export const TREND_SCORING_VERSION = 3;
 
 /** Build signal pool summary for /trends display — groups items by source_bucket, shows top 3 per group */
 function buildSignalPoolSummary(items: TrendItem[]): TrendsCacheData['signal_pool'] {
-  const byBucket = new Map<string, TrendItem[]>();
+  const byBucket: Record<string, TrendItem[]> = {};
   for (const t of items) {
     const b = t.source_bucket ?? '热榜';
-    if (!byBucket.has(b)) byBucket.set(b, []);
-    byBucket.get(b)!.push(t);
+    byBucket[b] = [...(byBucket[b] ?? []), t];
   }
-  return [...byBucket.entries()].map(([bucket, items]) => ({
+  return Object.entries(byBucket).map(([bucket, items]) => ({
     bucket,
     top: items.slice(0, 3).map(t => ({
       keyword: t.keyword,

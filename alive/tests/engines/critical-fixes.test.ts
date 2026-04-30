@@ -6,6 +6,7 @@ import { generateFlowDiary } from '../../../alive/scripts/engines/flow';
 import { morningRecovery } from '../../../alive/scripts/engines/vitality';
 import { decayThreeLayer } from '../../../alive/scripts/engines/emotion';
 import { resetImpulseAfterOutput } from '../../../alive/scripts/engines/work-impulse';
+import { getLocalDate } from '../../../alive/scripts/utils/time-utils';
 
 describe('Phase 1 Critical Fixes', () => {
   
@@ -140,7 +141,7 @@ describe('Phase 1 Critical Fixes', () => {
 
   describe('Fix #5: Work impulse reset preserves state', () => {
     it('should preserve all required fields when resetting impulse', () => {
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      const today = getLocalDate(); // Use same local-timezone date as the engine
       const state = {
         value: 50,
         last_output_at: Date.now() - 3600000,

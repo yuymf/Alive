@@ -194,6 +194,9 @@ export const actions = {
           }
 
           totalReplies++;
+
+          // Delay between comment posts to avoid rate limiting
+          await new Promise(r => setTimeout(r, 2000));
         } catch (err) {
           console.error(`[social-engagement] Reply failed: ${(err as Error).message}`);
         }
@@ -306,6 +309,9 @@ export const actions = {
 
         postedUserIds.add(plan.user_id);
         postedCount++;
+
+        // Delay between comment posts to avoid rate limiting
+        await new Promise(r => setTimeout(r, 2000));
       } catch (err) {
         console.error(`[social-engagement] Post comment failed: ${(err as Error).message}`);
       }

@@ -44,6 +44,10 @@ export const DEFAULT_OUTREACH: OutreachState = {
 };
 
 // ── Gate Checks ──────────────────────────────────────────────────
+// NOTE: This gate pattern (time window → daily limit → cooldown → emotion)
+// is structurally similar to voice-tts/scripts/index.ts:checkVoiceGate().
+// The thresholds and emotion checks differ (valence vs energy, different
+// active hours, limits, and cooldowns), so they are kept separate.
 
 export interface OutreachGateInput {
   hour: number;
@@ -99,7 +103,11 @@ export function checkOutreachGate(input: OutreachGateInput): OutreachGateResult 
 
 function loadTemplate(templateName: string): string {
   const templateDir = path.join(__dirname, '..', 'templates');
-  const templatePath = path.join(templateDir, templateName);
+  const templatePath = path.resolve(templateDir, templateName);
+  // Prevent path traversal
+  if (!templatePath.startsWith(path.resolve(templateDir))) {
+    throw new Error(`Template path traversal blocked: ${templateName}`);
+  }
   if (fs.existsSync(templatePath)) return fs.readFileSync(templatePath, 'utf8');
   throw new Error(`Template not found: ${templateName}`);
 }

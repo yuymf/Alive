@@ -316,8 +316,8 @@ export function formatBriefCard(
       lines.push(adviceSection);
       lines.push('');
     }
-  } catch {
-    // proactive advice is non-critical, skip on error
+  } catch (err) {
+    console.warn(`[brief-generator] proactive advice generation failed: ${(err as Error).message}`);
   }
 
   // ─── Enrichment sections (new: 生图Prompt, 视频分镜, 人设建议) ────────────
@@ -443,8 +443,8 @@ export function formatBriefCard(
         lines.push('');
       }
     }
-  } catch {
-    // inspiration-state not available, skip
+  } catch (err) {
+    console.warn(`[brief-generator] inspiration-state loading failed: ${(err as Error).message}`);
   }
 
   // 📝 用户反馈（aggregated from recent performance entries）
@@ -460,8 +460,8 @@ export function formatBriefCard(
       }
       lines.push('');
     }
-  } catch {
-    // performance-log not available, skip
+  } catch (err) {
+    console.warn(`[brief-generator] performance-log loading failed: ${(err as Error).message}`);
   }
 
   // ✅ 审核共识（from review feedback on queue items）
@@ -473,7 +473,7 @@ export function formatBriefCard(
     if (reviewed.length > 0) {
       const approveReasons: string[] = [];
       const discardReasons: string[] = [];
-      const deviationTags = new Map<string, number>();
+      let deviationTags: Record<string, number> = {};
       const directions = new Set<string>();
 
       for (const item of reviewed) {
@@ -485,7 +485,7 @@ export function formatBriefCard(
             discardReasons.push(fb.reason_summary);
           }
           for (const tag of fb.persona_deviation_tags ?? []) {
-            deviationTags.set(tag, (deviationTags.get(tag) ?? 0) + 1);
+            deviationTags = { ...deviationTags, [tag]: (deviationTags[tag] ?? 0) + 1 };
           }
           for (const d of fb.improvement_directions ?? []) {
             directions.add(d);
@@ -502,8 +502,8 @@ export function formatBriefCard(
         const topDiscard = [...new Set(discardReasons)].slice(-limits.maxReviewReasons);
         reviewLines.push(`淘汰原因：${topDiscard.join('；')}`);
       }
-      if (deviationTags.size > 0) {
-        const topTags = [...deviationTags.entries()]
+      if (Object.keys(deviationTags).length > 0) {
+        const topTags = Object.entries(deviationTags)
           .sort((a, b) => b[1] - a[1])
           .slice(0, limits.maxReviewReasons)
           .map(([t]) => t);
@@ -515,8 +515,8 @@ export function formatBriefCard(
       lines.push(reviewLines.join('\n'));
       lines.push('');
     }
-  } catch {
-    // review feedback not available, skip
+  } catch (err) {
+    console.warn(`[brief-generator] review feedback loading failed: ${(err as Error).message}`);
   }
 
   // 👁️ 受众感知（from audience perception store）
@@ -527,8 +527,8 @@ export function formatBriefCard(
       lines.push(perceptionCtx);
       lines.push('');
     }
-  } catch {
-    // audience perception not available, skip
+  } catch (err) {
+    console.warn(`[brief-generator] audience perception loading failed: ${(err as Error).message}`);
   }
 
   // ─── 📚 爆款知识库 ──────────────────────────────────────────────────────
@@ -596,8 +596,8 @@ export function formatBriefCard(
       lines.push(kbLines.join('\n'));
       lines.push('');
     }
-  } catch {
-    // viral-kb not available, skip silently
+  } catch (err) {
+    console.warn(`[brief-generator] viral-kb loading failed: ${(err as Error).message}`);
   }
 
   // 🔍 候选对标（from discovery-engine account discovery）
@@ -615,8 +615,8 @@ export function formatBriefCard(
       lines.push(driftSection);
       lines.push('');
     }
-  } catch {
-    // personality-drift engine not available, skip
+  } catch (err) {
+    console.warn(`[brief-generator] personality-drift loading failed: ${(err as Error).message}`);
   }
 
   // 🔍 关键词追踪（from keyword-tracker, P4-1）
@@ -627,8 +627,8 @@ export function formatBriefCard(
       lines.push(keywordSection);
       lines.push('');
     }
-  } catch {
-    // keyword-tracker not available, skip
+  } catch (err) {
+    console.warn(`[brief-generator] keyword-tracker loading failed: ${(err as Error).message}`);
   }
 
   // 🏥 链路健康（only shown when warnings or missing items exist）
@@ -651,8 +651,8 @@ export function formatBriefCard(
       }
       lines.push('');
     }
-  } catch {
-    // health report not available, skip
+  } catch (err) {
+    console.warn(`[brief-generator] health report loading failed: ${(err as Error).message}`);
   }
 
   // ─── Actions (simplified — detailed commands are in each section above) ──────

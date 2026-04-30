@@ -150,7 +150,7 @@ export const actions = {
 
     // 1. Refresh inspiration (optional)
     if (refreshInspiration) {
-      try { await refreshInspiration(); } catch { /* non-critical */ }
+      try { await refreshInspiration(); } catch (err) { console.warn(`[instagram] refreshInspiration failed: ${(err as Error).message}`); }
     }
 
     // 2. Plan what to shoot
@@ -274,7 +274,7 @@ export const actions = {
       try {
         const followers = await getFollowerCount();
         feedback.push(createFeedback('instagram-post', followers, followerBaseline));
-      } catch { /* non-critical */ }
+      } catch (err) { console.warn(`[instagram] getFollowerCount failed: ${(err as Error).message}`); }
     }
 
     return createResult(

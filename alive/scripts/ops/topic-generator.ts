@@ -112,8 +112,8 @@ export function buildViralVideoContext(entries: ViralEntry[]): string {
   if (withVideo.length === 0) return '';
 
   // Aggregate camera moves across all viral entries
-  const moveCounts = new Map<string, number>();
-  const pacingCounts = new Map<string, number>();
+  let moveCounts: Record<string, number> = {};
+  let pacingCounts: Record<string, number> = {};
   const transitionStyles: string[] = [];
 
   for (const e of withVideo) {
@@ -121,12 +121,12 @@ export function buildViralVideoContext(entries: ViralEntry[]): string {
 
     // Count dominant moves
     for (const move of vs.dominant_moves) {
-      moveCounts.set(move, (moveCounts.get(move) ?? 0) + 1);
+      moveCounts = { ...moveCounts, [move]: (moveCounts[move] ?? 0) + 1 };
     }
 
     // Count pacing patterns
     if (vs.pacing) {
-      pacingCounts.set(vs.pacing, (pacingCounts.get(vs.pacing) ?? 0) + 1);
+      pacingCounts = { ...pacingCounts, [vs.pacing]: (pacingCounts[vs.pacing] ?? 0) + 1 };
     }
 
     // Collect transition styles
@@ -136,12 +136,12 @@ export function buildViralVideoContext(entries: ViralEntry[]): string {
   }
 
   // Sort by frequency
-  const topMoves = [...moveCounts.entries()]
+  const topMoves = Object.entries(moveCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([move]) => move);
 
-  const topPacing = [...pacingCounts.entries()]
+  const topPacing = Object.entries(pacingCounts)
     .sort((a, b) => b[1] - a[1])[0]?.[0];
 
   // Build context string
@@ -163,11 +163,10 @@ export function buildViralVideoContext(entries: ViralEntry[]): string {
 
   if (transitionStyles.length > 0) {
     // Deduplicate and take top 2 most common styles
-    const styleCounts = new Map<string, number>();
-    for (const s of transitionStyles) {
-      styleCounts.set(s, (styleCounts.get(s) ?? 0) + 1);
-    }
-    const topStyles = [...styleCounts.entries()]
+    const styleCounts = transitionStyles.reduce<Record<string, number>>((acc, s) => ({
+      ...acc, [s]: (acc[s] ?? 0) + 1,
+    }), {});
+    const topStyles = Object.entries(styleCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 2)
       .map(([s]) => s);
@@ -1097,8 +1096,8 @@ export async function generateTopics(
     if (diverseTopN.length < topN.length) {
       console.log(`[topic-generator] Diversity gate: ${topN.length} → ${diverseTopN.length} topics`);
     }
-  } catch {
-    // diversity gate not available, proceed with original list
+  } catch (err) {
+    console.warn(`[topic-generator] diversity gate failed: ${(err as Error).message}`);
   }
 
   // ── Topic scoring gate: evaluate potential before generation ──
@@ -1110,7 +1109,8 @@ export async function generateTopics(
     }
     // Replace diverseTopN with scored+filtered trends
     diverseTopN = scoredTrends.map(s => s.trend);
-  } catch {
+  } catch (err) {
+    console.warn(`[topic-generator] scoring gate failed: ${(err as Error).message}`);
     // scoring gate not available, proceed with original list
     scoredTrends = diverseTopN.map(t => ({
       trend: t,
@@ -1159,10 +1159,10 @@ export async function generateTopics(
   // Load all viral KB entries once (avoids N re-reads inside the per-trend loop)
   const allViralEntries = loadEntries(basePath);
   // Accumulate times_referenced increments: id → delta
-  const refIncrements = new Map<string, number>();
+  let refIncrements: Record<string, number> = {};
 
   // Cache benchmarks by identityMode — only identityMode varies per trend
-  const benchmarkCache = new Map<string, ReturnType<typeof buildCompetitorBenchmarks>>();
+  let benchmarkCache: Record<string, ReturnType<typeof buildCompetitorBenchmarks>> = {};
 
   for (const trend of diverseTopN) {
     const identityMode = selectIdentityMode(trend);
@@ -1174,10 +1174,10 @@ export async function generateTopics(
     const templateConstraint = template ? buildTemplateConstraint(template) : '';
 
     // Build competitor benchmarks for this identity (cached by mode)
-    const benchmarks = benchmarkCache.get(identityMode)
+    const benchmarks = benchmarkCache[identityMode]
       ?? (() => {
         const b = buildCompetitorBenchmarks(ops.competitors, identityMode, ops.content_templates, analysisStore);
-        benchmarkCache.set(identityMode, b);
+        benchmarkCache = { ...benchmarkCache, [identityMode]: b };
         return b;
       })();
 
@@ -1205,7 +1205,7 @@ export async function generateTopics(
     const viralContext = buildViralContext(trackPatterns, trend.platform);
     // Accumulate times_referenced increments (apply in one pass after the loop)
     for (const entry of trackPatterns) {
-      refIncrements.set(entry.id, (refIncrements.get(entry.id) ?? 0) + 1);
+      refIncrements = { ...refIncrements, [entry.id]: (refIncrements[entry.id] ?? 0) + 1 };
     }
 
     if (templateConstraint) contextParts.push(templateConstraint);
@@ -1237,8 +1237,8 @@ export async function generateTopics(
         identityMode,
       });
       if (opsMemoryCtx) contextParts.push(opsMemoryCtx);
-    } catch {
-      // ops memory not available, skip
+    } catch (err) {
+      console.warn(`[topic-generator] ops memory context failed: ${(err as Error).message}`);
     }
 
     // Generate XHS content via LLM
@@ -1361,10 +1361,10 @@ export async function generateTopics(
   }
 
   // Apply all accumulated times_referenced increments in a single read+write pass
-  if (refIncrements.size > 0) {
+  if (Object.keys(refIncrements).length > 0) {
     const currentEntries = loadEntries(basePath);
     const updatedEntries = currentEntries.map(e => {
-      const delta = refIncrements.get(e.id);
+      const delta = refIncrements[e.id];
       return delta ? { ...e, times_referenced: e.times_referenced + delta } : e;
     });
     saveEntries(basePath, updatedEntries);

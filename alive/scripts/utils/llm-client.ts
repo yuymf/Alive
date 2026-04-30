@@ -252,6 +252,16 @@ export async function callLLM(
         if (!res.ok) {
           const errText = await res.text();
           debugLog('GATEWAY_ERROR', `HTTP ${res.status}: ${errText}`);
+          // Rate limit: use Retry-After header or exponential backoff
+          if (res.status === 429) {
+            const retryAfter = res.headers.get('retry-after');
+            const waitMs = retryAfter
+              ? Math.min(parseInt(retryAfter, 10) * 1000, 60_000)
+              : Math.min(LLM_CONFIG.RETRY_DELAY_MS * Math.pow(2, attempt), 60_000);
+            console.warn(`[llm-client] Rate limited (429), waiting ${waitMs}ms before retry`);
+            await new Promise(r => setTimeout(r, waitMs));
+            continue;
+          }
           throw new Error(`Gateway returned ${res.status}: ${errText}`);
         }
 
@@ -355,6 +365,16 @@ export async function callLLM(
       if (!res.ok) {
         const errText = await res.text();
         debugLog('ERROR', `HTTP ${res.status}: ${errText}`);
+        // Rate limit: use Retry-After header or exponential backoff
+        if (res.status === 429) {
+          const retryAfter = res.headers.get('retry-after');
+          const waitMs = retryAfter
+            ? Math.min(parseInt(retryAfter, 10) * 1000, 60_000)
+            : Math.min(LLM_CONFIG.RETRY_DELAY_MS * Math.pow(2, attempt), 60_000);
+          console.warn(`[llm-client] Rate limited (429), waiting ${waitMs}ms before retry`);
+          await new Promise(r => setTimeout(r, waitMs));
+          continue;
+        }
         throw new Error(`API returned ${res.status}: ${errText}`);
       }
 

@@ -58,6 +58,7 @@ export interface AddItemInput {
 }
 
 export async function addItem(input: AddItemInput): Promise<QueueItem> {
+  // TODO: Wrap in withFileLock(PATHS.reviewQueue, ...) to prevent concurrent write races
   const queue = await loadQueue();
 
   // Dedup: check if same keyword + identity_mode already pending
@@ -102,6 +103,7 @@ export async function updateItemStatus(
   id: string,
   status: QueueItemStatus,
 ): Promise<QueueItem | null> {
+  // TODO: Wrap in withFileLock(PATHS.reviewQueue, ...) to prevent concurrent write races
   const queue = await loadQueue();
   const idx = queue.items.findIndex(i => i.id === id);
   if (idx === -1) return null;
@@ -124,6 +126,7 @@ export async function updateItemContent(
   content: Partial<QueueItemContent>,
   editEntry: { instruction: string; field: string },
 ): Promise<QueueItem | null> {
+  // TODO: Wrap in withFileLock(PATHS.reviewQueue, ...) to prevent concurrent write races
   const queue = await loadQueue();
   const idx = queue.items.findIndex(i => i.id === id);
   if (idx === -1) return null;
@@ -183,6 +186,7 @@ export function hoursSinceCreated(item: QueueItem): number {
  * consumers (brief, health-check) see an up-to-date queue.
  */
 export async function cleanupOldItems(): Promise<void> {
+  // TODO: Wrap in withFileLock(PATHS.reviewQueue, ...) to prevent concurrent write races
   const queue = await loadQueue();
   const cutoff = new Date(now().getTime() - CLEANUP_AGE_DAYS * 24 * 60 * 60 * 1000);
   const ts = now().toISOString();
@@ -219,6 +223,7 @@ export async function cleanupOldItems(): Promise<void> {
  * expiry and cleanup in one pass.
  */
 export async function expireStalePendingItems(): Promise<number> {
+  // TODO: Wrap in withFileLock(PATHS.reviewQueue, ...) to prevent concurrent write races
   const queue = await loadQueue();
   let expiredCount = 0;
   const ts = now().toISOString();
@@ -283,6 +288,7 @@ export interface MarkPublishedInput {
  * Valid transitions: pending → published, approved → published (already published items can add more URLs).
  */
 export async function markPublished(id: string, input: MarkPublishedInput): Promise<QueueItem | null> {
+  // TODO: Wrap in withFileLock(PATHS.reviewQueue, ...) to prevent concurrent write races
   const queue = await loadQueue();
   const idx = queue.items.findIndex(i => i.id === id);
   if (idx === -1) return null;
@@ -314,6 +320,7 @@ export async function markPublished(id: string, input: MarkPublishedInput): Prom
 
 /** Mark that performance tracking has started for this published item. */
 export async function markPerformanceTracked(id: string): Promise<QueueItem | null> {
+  // TODO: Wrap in withFileLock(PATHS.reviewQueue, ...) to prevent concurrent write races
   const queue = await loadQueue();
   const idx = queue.items.findIndex(i => i.id === id);
   if (idx === -1) return null;
@@ -349,6 +356,7 @@ export async function addReviewFeedback(
   id: string,
   feedback: Omit<QueueItemReviewFeedback, 'created_at'> & { created_at?: string },
 ): Promise<QueueItem | null> {
+  // TODO: Wrap in withFileLock(PATHS.reviewQueue, ...) to prevent concurrent write races
   const queue = await loadQueue();
   const idx = queue.items.findIndex(i => i.id === id);
   if (idx === -1) return null;
@@ -400,15 +408,16 @@ export async function getRecentReviewLearning(maxItems = 10): Promise<{
 }> {
   const queue = await loadQueue();
 
-  const approveReasons: string[] = [];
-  const discardReasons: string[] = [];
-  const deviationTags = new Map<string, number>();
-  const riskTags = new Map<string, number>();
-  const directions = new Set<string>();
-
   const recentItems = queue.items
     .filter(i => i.review_feedback && i.review_feedback.length > 0)
     .slice(-maxItems);
+
+  // Build tag frequency maps using reduce (immutable accumulation)
+  const approveReasons: string[] = [];
+  const discardReasons: string[] = [];
+  const deviationTagCounts: Record<string, number> = {};
+  const riskTagCounts: Record<string, number> = {};
+  const directions = new Set<string>();
 
   for (const item of recentItems) {
     for (const fb of item.review_feedback!) {
@@ -419,10 +428,10 @@ export async function getRecentReviewLearning(maxItems = 10): Promise<{
         discardReasons.push(fb.reason_summary);
       }
       for (const tag of fb.persona_deviation_tags ?? []) {
-        deviationTags.set(tag, (deviationTags.get(tag) ?? 0) + 1);
+        deviationTagCounts[tag] = (deviationTagCounts[tag] ?? 0) + 1;
       }
       for (const tag of fb.risk_tags ?? []) {
-        riskTags.set(tag, (riskTags.get(tag) ?? 0) + 1);
+        riskTagCounts[tag] = (riskTagCounts[tag] ?? 0) + 1;
       }
       for (const dir of fb.improvement_directions ?? []) {
         directions.add(dir);
@@ -430,14 +439,14 @@ export async function getRecentReviewLearning(maxItems = 10): Promise<{
     }
   }
 
-  const sortedTags = (m: Map<string, number>) =>
-    [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+  const sortedTags = (counts: Record<string, number>) =>
+    Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k]) => k);
 
   return {
     approveReasons: approveReasons.slice(-5),
     discardReasons: discardReasons.slice(-5),
-    commonDeviationTags: sortedTags(deviationTags).slice(0, 10),
-    commonRiskTags: sortedTags(riskTags).slice(0, 10),
+    commonDeviationTags: sortedTags(deviationTagCounts).slice(0, 10),
+    commonRiskTags: sortedTags(riskTagCounts).slice(0, 10),
     improvementDirections: [...directions].slice(0, 10),
   };
 }

@@ -19,6 +19,11 @@ const FLOW_COOLDOWN_TICKS = FLOW_CONFIG.FLOW_COOLDOWN_TICKS;     // 从 2 降到
 // 不允许进入 flow 的类别（休息、窥屏不应进入心流）
 const FLOW_EXCLUDED_CATEGORIES: ReadonlySet<string> = new Set(['rest', 'consume']);
 
+// P2.3 Helper: Escape regex special characters in user input
+function escapeRegexSpecialChars(str: string): string {
+  return str.replace(/[.*+?^${}()|[\\]]/g, '\$&');
+}
+
 export interface LastAction {
   category: IntentCategory;
   activity: string;
@@ -136,7 +141,9 @@ export function generateFlowDiary(flow: FlowState, emotion: EmotionState, rng = 
   const templates = FLOW_DIARY_TEMPLATES_BY_PHASE[phase];
   const templateIdx = Math.floor(rng() * templates.length) % templates.length;
   const template = templates[templateIdx];
-  let diary = template.replace(/{activity}/g, flow.activity ?? '做事');
+  // P2.3 Fix: Escape regex special characters in user input (flow.activity)
+  const escapedActivity = escapeRegexSpecialChars(flow.activity ?? '做事');
+  let diary = template.replace(/{activity}/g, escapedActivity);
 
   // 随机添加生活微细节（活人感）
   const detailIdx = Math.floor(rng() * FLOW_MICRO_DETAILS.length) % FLOW_MICRO_DETAILS.length;
