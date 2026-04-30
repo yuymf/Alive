@@ -1,10 +1,15 @@
 // alive/api-server/lib/cron-status.ts
 //
-// Read OpenClaw cron state via `openclaw cron list --json` and aggregate per-job
+// Read OpenClaw cron state via gateway WebSocket RPC and aggregate per-job
 // status. Exposed to the frontend via /api/health so operators can see at a
 // glance which cron jobs are healthy vs errored.
+//
+// Uses gateway-rpc.js (direct WebSocket) instead of `openclaw cron list --json`
+// because the CLI hangs on Windows when called via spawnSync.
 
-import { spawnSync } from 'child_process';
+import { execFileSync } from 'child_process';
+import * as path from 'path';
+import * as fs from 'fs';
 
 export interface CronJobStatus {
   id: string;
@@ -29,11 +34,11 @@ export interface CronStatusReport {
   deliveryError: number;
   idle: number;
   jobs: CronJobStatus[];
-  /** Reason why we couldn't query cron state (e.g. openclaw binary missing). */
+  /** Reason why we couldn't query cron state (e.g. gateway not running). */
   error_reason?: string;
 }
 
-const DEFAULT_TIMEOUT_MS = 8_000;
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 /** Cache the last successful cron snapshot; served as fallback on transient failures. */
 let lastGoodReport: CronStatusReport | null = null;
@@ -41,49 +46,47 @@ let lastGoodAtMs = 0;
 const LAST_GOOD_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Resolve the `openclaw` binary path. Falls back to `openclaw` on PATH.
- * Allows OPENCLAW_BIN env to override for tests / non-default installs.
+ * Resolve path to gateway-rpc.js helper.
  */
-function resolveOpenclawBin(): string {
-  if (process.env.OPENCLAW_BIN) return process.env.OPENCLAW_BIN;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require('fs');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const path = require('path');
-  const candidates: string[] = [];
+function resolveGatewayRpcPath(): string | null {
+  // 1. OPENCLAW_GATEWAY_RPC env override
+  if (process.env.OPENCLAW_GATEWAY_RPC) return process.env.OPENCLAW_GATEWAY_RPC;
 
-  if (process.platform === 'win32') {
-    // Windows: npm creates .cmd wrappers in node_modules\.bin
-    // 1. Global npm install
-    if (process.env.APPDATA) {
-      candidates.push(path.join(process.env.APPDATA, 'npm', 'openclaw.cmd'));
-    }
-    // 2. Project-local node_modules (walk up from cwd)
-    let dir = process.cwd();
-    for (let i = 0; i < 5; i++) {
-      const p = path.join(dir, 'node_modules', '.bin', 'openclaw.cmd');
-      candidates.push(p);
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-  } else {
-    // macOS / Linux: common homebrew and user-local install locations
-    candidates.push('/opt/homebrew/bin/openclaw', '/usr/local/bin/openclaw');
+  // 2. Look relative to this file (works for both ts-source and compiled dist)
+  const relCandidates = [
+    path.resolve(__dirname, '..', '..', '..', 'bin', 'gateway-rpc.js'),  // alive/api-server/lib → project-root/bin
+    path.resolve(__dirname, '..', '..', '..', '..', 'bin', 'gateway-rpc.js'), // dist-alive/api-server/lib → project-root/bin
+  ];
+  for (const c of relCandidates) {
+    if (fs.existsSync(c)) return c;
   }
 
-  for (const c of candidates) {
-    try {
-      if (fs.existsSync(c)) return c;
-    } catch { /* continue */ }
+  return null;
+}
+
+/**
+ * Call gateway RPC via gateway-rpc.js helper (direct WebSocket).
+ * Same pattern as bin/cli.js callGatewayDirect().
+ */
+function callGatewayRPC<T = unknown>(method: string, params: Record<string, unknown>, timeoutMs: number): T {
+  const helperPath = resolveGatewayRpcPath();
+  if (!helperPath) {
+    throw new Error('gateway-rpc.js not found. Set OPENCLAW_GATEWAY_RPC to its full path.');
   }
-  return 'openclaw';
+  const result = execFileSync(process.execPath, [
+    helperPath, method, JSON.stringify(params), '--timeout', String(timeoutMs),
+  ], {
+    timeout: timeoutMs + 5_000,
+    encoding: 'utf8',
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  return JSON.parse(result.trim()) as T;
 }
 
 export function fetchCronStatus(opts?: { agentId?: string; timeoutMs?: number }): CronStatusReport {
-  // openclaw's cron list occasionally exits 1 with empty output when the
-  // config is mid-write. Retry once and, if still failing, fall back to the
-  // last known-good snapshot if it's still recent.
+  // Gateway RPC can occasionally fail transiently. Retry once and, if still
+  // failing, fall back to the last known-good snapshot if it's still recent.
   let lastReport: CronStatusReport | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     lastReport = fetchCronStatusOnce(opts);
@@ -103,41 +106,17 @@ export function fetchCronStatus(opts?: { agentId?: string; timeoutMs?: number })
 
 function fetchCronStatusOnce(opts?: { agentId?: string; timeoutMs?: number }): CronStatusReport {
   try {
-    const bin = resolveOpenclawBin();
-    const result = spawnSync(bin, ['cron', 'list', '--json'], {
-      timeout: opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      encoding: 'utf8',
-      env: { ...process.env },
-      shell: process.platform === 'win32',
-    });
-    // spawn failed entirely (e.g. ENOENT on Windows without shell)
-    if (result.error) {
-      const code = (result.error as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') {
-        return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: `openclaw binary not found (ENOENT). Set OPENCLAW_BIN to its full path.` };
-      }
-      return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: `openclaw spawn error: ${result.error.message}` };
-    }
-    // Process killed by signal (e.g. SIGTERM from timeout)
-    if (result.status === null || result.signal) {
-      const timeout = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-      return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: `openclaw timed out (${timeout}ms, signal=${result.signal ?? 'none'}). Is the openclaw gateway running?` };
-    }
-    if (result.status !== 0) {
-      const stderr = (result.stderr || '').trim();
-      const stdout = (result.stdout || '').trim();
-      const detail = stderr || stdout || 'no output';
-      return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: `openclaw exit ${result.status}: ${detail.slice(0, 240)}` };
-    }
-    const parsed = JSON.parse(result.stdout) as { jobs?: unknown[] };
-    if (!Array.isArray(parsed.jobs)) {
-      return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: 'unexpected payload shape' };
+    const timeout = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const rpcResult = callGatewayRPC<{ jobs?: unknown[] }>('cron.list', {}, timeout);
+
+    if (!rpcResult || !Array.isArray(rpcResult.jobs)) {
+      return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: 'unexpected payload shape from gateway RPC' };
     }
 
     const wantedAgent = (opts?.agentId || process.env.ALIVE_PERSONA || '').trim();
     const jobs: CronJobStatus[] = [];
 
-    for (const raw of parsed.jobs) {
+    for (const raw of rpcResult.jobs) {
       const j = raw as Record<string, any>;
       const jobAgent = String(j.agentId ?? '');
       if (wantedAgent && jobAgent !== wantedAgent) continue;
@@ -194,6 +173,15 @@ function fetchCronStatusOnce(opts?: { agentId?: string; timeoutMs?: number }): C
       jobs,
     };
   } catch (err) {
-    return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: (err as Error).message };
+    const msg = (err as Error).message || String(err);
+    let reason = msg;
+    if (msg.includes('ECONNREFUSED') || msg.includes('WebSocket closed')) {
+      reason = 'gateway not reachable — is openclaw gateway running?';
+    } else if (msg.includes('timeout') || msg.includes('ETIMEDOUT')) {
+      reason = 'gateway RPC timed out — is openclaw gateway running?';
+    } else if (msg.includes('not found')) {
+      reason = msg;
+    }
+    return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: reason };
   }
 }
