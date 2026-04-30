@@ -197,7 +197,8 @@ export function processProcrastination(pool: IntentPool, chosenIntentIds: Readon
     }
     if (newSkipped === 3 && !emittedDescriptions.has(intent.description) && diaryEntries.length < MAX_DIARY_PER_TICK) {
       stressDelta += 0.05;
-      const templateFn = PROCRASTINATION_TEMPLATES[Math.floor(rng() * PROCRASTINATION_TEMPLATES.length)];
+      const index = Math.floor(rng() * PROCRASTINATION_TEMPLATES.length) % PROCRASTINATION_TEMPLATES.length;
+      const templateFn = PROCRASTINATION_TEMPLATES[index];
       diaryEntries.push(templateFn(intent.description));
       emittedDescriptions.add(intent.description);
     }

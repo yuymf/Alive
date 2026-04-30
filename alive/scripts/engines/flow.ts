@@ -134,11 +134,13 @@ const DRIFT_DIARY_TEMPLATES = [
 export function generateFlowDiary(flow: FlowState, emotion: EmotionState, rng = Math.random): string {
   const phase = flow.duration_ticks <= 2 ? 'early' : 'deep';
   const templates = FLOW_DIARY_TEMPLATES_BY_PHASE[phase];
-  const template = templates[Math.floor(rng() * templates.length)];
+  const templateIdx = Math.floor(rng() * templates.length) % templates.length;
+  const template = templates[templateIdx];
   let diary = template.replace(/{activity}/g, flow.activity ?? '做事');
 
   // 随机添加生活微细节（活人感）
-  const detail = FLOW_MICRO_DETAILS[Math.floor(rng() * FLOW_MICRO_DETAILS.length)];
+  const detailIdx = Math.floor(rng() * FLOW_MICRO_DETAILS.length) % FLOW_MICRO_DETAILS.length;
+  const detail = FLOW_MICRO_DETAILS[detailIdx];
   if (detail) diary += ` ${detail}`;
 
   // 情绪调味

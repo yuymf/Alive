@@ -65,6 +65,7 @@ export function resetImpulseAfterOutput(state: WorkImpulseState): WorkImpulseSta
   const outputsToday = state.outputs_today_date === today ? state.outputs_today : 0;
 
   return {
+    ...state,
     value: 0,
     last_output_at: now().getTime(),
     outputs_today_date: today,

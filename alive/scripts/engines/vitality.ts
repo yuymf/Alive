@@ -58,7 +58,9 @@ export function morningRecovery(state: VitalityState): VitalityState {
   const newConsecutive = wasLow ? state.consecutive_low_days + 1 : 0;
   const emergency = newConsecutive >= VITALITY_CONFIG.EMERGENCY_LOW_DAYS;
   const base = REPLENISHMENT.sleep_cycle;
-  const newVitality = emergency ? Math.max(state.vitality + base, VITALITY_CONFIG.EMERGENCY_MIN_VITALITY) : clampVitality(state.vitality + base);
+  const newVitality = emergency 
+    ? clampVitality(Math.max(state.vitality + base, VITALITY_CONFIG.EMERGENCY_MIN_VITALITY))
+    : clampVitality(state.vitality + base);
   return { ...state, vitality: newVitality, last_updated: now().toISOString(), consecutive_low_days: emergency ? 0 : newConsecutive };
 }
 

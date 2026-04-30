@@ -210,8 +210,9 @@ export function decayThreeLayer(state: EmotionState): EmotionState {
   };
   const prevSign = Math.sign(state.momentum.valence);
   const newSign = Math.sign(newMomentum.valence);
-  newMomentum.duration_ticks = prevSign === newSign ? state.momentum.duration_ticks + 1 : 0;
-
+  // Only increment if same sign AND not both zero
+  const sameSignMood = prevSign !== 0 && newSign !== 0 && prevSign === newSign;
+  newMomentum.duration_ticks = sameSignMood ? state.momentum.duration_ticks + 1 : 0;
   const nv = clamp(state.mood.valence + (newMomentum.valence - state.mood.valence) * IMPULSE_DECAY, -1.0, 1.0);
   const na = clamp(state.mood.arousal + (newMomentum.arousal - state.mood.arousal) * IMPULSE_DECAY, 0, 1.0);
   const ne = clamp(state.energy + (newMomentum.energy - state.energy) * IMPULSE_DECAY, 0, 1.0);
