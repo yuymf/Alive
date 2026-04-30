@@ -46,12 +46,34 @@ const LAST_GOOD_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes
  */
 function resolveOpenclawBin(): string {
   if (process.env.OPENCLAW_BIN) return process.env.OPENCLAW_BIN;
-  // Common homebrew and user-local install locations
-  const candidates = ['/opt/homebrew/bin/openclaw', '/usr/local/bin/openclaw'];
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require('path');
+  const candidates: string[] = [];
+
+  if (process.platform === 'win32') {
+    // Windows: npm creates .cmd wrappers in node_modules\.bin
+    // 1. Global npm install
+    if (process.env.APPDATA) {
+      candidates.push(path.join(process.env.APPDATA, 'npm', 'openclaw.cmd'));
+    }
+    // 2. Project-local node_modules (walk up from cwd)
+    let dir = process.cwd();
+    for (let i = 0; i < 5; i++) {
+      const p = path.join(dir, 'node_modules', '.bin', 'openclaw.cmd');
+      candidates.push(p);
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } else {
+    // macOS / Linux: common homebrew and user-local install locations
+    candidates.push('/opt/homebrew/bin/openclaw', '/usr/local/bin/openclaw');
+  }
+
   for (const c of candidates) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const fs = require('fs');
       if (fs.existsSync(c)) return c;
     } catch { /* continue */ }
   }
@@ -86,7 +108,21 @@ function fetchCronStatusOnce(opts?: { agentId?: string; timeoutMs?: number }): C
       timeout: opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       encoding: 'utf8',
       env: { ...process.env },
+      shell: process.platform === 'win32',
     });
+    // spawn failed entirely (e.g. ENOENT on Windows without shell)
+    if (result.error) {
+      const code = (result.error as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: `openclaw binary not found (ENOENT). Set OPENCLAW_BIN to its full path.` };
+      }
+      return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: `openclaw spawn error: ${result.error.message}` };
+    }
+    // Process killed by signal (e.g. SIGTERM from timeout)
+    if (result.status === null || result.signal) {
+      const timeout = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      return { available: false, total: 0, ok: 0, error: 0, deliveryError: 0, idle: 0, jobs: [], error_reason: `openclaw timed out (${timeout}ms, signal=${result.signal ?? 'none'}). Is the openclaw gateway running?` };
+    }
     if (result.status !== 0) {
       const stderr = (result.stderr || '').trim();
       const stdout = (result.stdout || '').trim();

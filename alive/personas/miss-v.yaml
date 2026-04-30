@@ -129,7 +129,7 @@ ops:
   automation:
     brief_delivery: session
     enable_heartbeat_cron: false
-    silent_background_jobs: true
+    silent_background_jobs: false
 
   # ─── 结构化对标账号画像 ─────────────────────────────────────────────────
   competitors:
@@ -213,6 +213,7 @@ ops:
     # === 赛道飒爽女车手 ===
     - name: "谷爱凌"
       platform: "xhs"
+      url: "https://www.xiaohongshu.com/user/profile/61a81710000000001000a823"
       tag: "赛道飒爽女车手"
       tag_desc: "跨界全能顶尖运动员，赛场果敢飒爽，生活中阳光鲜活。赛场硬核登顶＋自律坚韧＋清醒独立＋反差松弛软萌"
       audience: "14-30岁学生、运动爱好者为主，男女受众分布均衡"
@@ -268,6 +269,7 @@ ops:
 
     - name: "碳酸饮料拜拜"
       platform: "xhs"
+      url: "https://www.xiaohongshu.com/user/profile/5bc9d2fa636c170001715db8"
       tag: "低调轻奢富家千金"
       tag_desc: "颜值与风格兼具的时尚博主。复古鬼马+甜酷少年感，擅长奢牌与平价混搭，标志性短发+灵动身形，传递不被定义、自信独立的价值观"
       audience: "18-25岁Z世代年轻女性，追求个性表达、反容貌焦虑的时尚爱好者"

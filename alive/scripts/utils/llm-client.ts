@@ -98,6 +98,30 @@ function resolveOpenClawAgentId(): string {
 }
 
 /**
+ * Read the Gateway base URL.
+ * Priority:
+ *   1. OPENCLAW_GATEWAY_URL env var (explicit override)
+ *   2. Constructed from openclaw.json gateway.port
+ *   3. Fallback: http://127.0.0.1:18789/v1
+ */
+function resolveGatewayBase(): string {
+  const envUrl = process.env.OPENCLAW_GATEWAY_URL;
+  if (envUrl) return envUrl.replace(/\/+$/, '');
+  try {
+    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const conf = JSON.parse(raw);
+    const port = conf?.gateway?.port;
+    if (port && typeof port === 'number') {
+      return `http://127.0.0.1:${port}/v1`;
+    }
+  } catch {
+    // openclaw.json not found or unreadable — fall through
+  }
+  return 'http://127.0.0.1:18789/v1';
+}
+
+/**
  * Read the Gateway auth token from openclaw.json.
  * Falls back to OPENCLAW_GATEWAY_TOKEN env var.
  */
@@ -199,7 +223,7 @@ export async function callLLM(
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) {
     // Route through OpenClaw Gateway HTTP API (OpenAI-compatible)
-    const gatewayBase = (process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789/v1').replace(/\/+$/, '');
+    const gatewayBase = resolveGatewayBase();
     const gatewayToken = readGatewayToken();
     const agentId = resolveOpenClawAgentId();
     const model = `openclaw/${agentId}`;
@@ -258,11 +282,31 @@ export async function callLLM(
           debugLog('GATEWAY_ABORT', `request aborted: ${(err as Error).message}`);
           throw err;
         }
-        if (attempt === 0) {
-          debugLog('GATEWAY_RETRY', `attempt 1 failed: ${(err as Error).message}`);
-          console.error(`Gateway call failed, retrying in 10s: ${(err as Error).message}`);
-          await new Promise(r => setTimeout(r, LLM_CONFIG.RETRY_DELAY_MS));
-        } else {
+      const errMsg = (err as Error).message ?? '';
+      const isAuthError = /API returned (401|403)/.test(errMsg);
+      if (isAuthError) {
+        debugLog('GATEWAY_AUTH_FAIL', `auth error, not retrying: ${errMsg}`);
+        console.error(`Gateway auth error, not retrying: ${errMsg}`);
+        appendLlmLog({
+          id: crypto.randomUUID(),
+          timestamp: wallNow().toISOString(),
+          caller: caller ?? autoDetectCaller(),
+          prompt,
+          response: null,
+          elapsed_ms: wallNow().getTime() - totalStart,
+          input_tokens: null,
+          output_tokens: null,
+          finish_reason: 'error',
+          model,
+          error_message: errMsg,
+        });
+        throw err;
+      }
+      if (attempt === 0) {
+        debugLog('GATEWAY_RETRY', `attempt 1 failed: ${(err as Error).message}`);
+        console.error(`Gateway call failed, retrying in 10s: ${(err as Error).message}`);
+        await new Promise(r => setTimeout(r, LLM_CONFIG.RETRY_DELAY_MS));
+      } else {
           debugLog('GATEWAY_FAIL', `attempt 2 failed: ${(err as Error).message}`);
           appendLlmLog({
             id: crypto.randomUUID(),

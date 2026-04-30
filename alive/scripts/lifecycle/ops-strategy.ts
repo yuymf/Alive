@@ -10,7 +10,7 @@ import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
 import { computeStrategy, loadStrategy } from '../ops/strategy-engine';
-import { sendToWechatWork } from '../ops/brief-generator';
+import { sendBriefToSession } from '../ops/brief-generator';
 
 async function main(): Promise<void> {
   const persona = await loadPersona();
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
         ``,
         `⚠️ 请用 /alive ops confirm-strategy 确认后生效`,
       ].join('\n');
-      sendToWechatWork(summary);
+      sendBriefToSession(summary);
     }
   }
 

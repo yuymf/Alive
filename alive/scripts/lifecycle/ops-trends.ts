@@ -17,7 +17,7 @@ import { CompetitorLog, DissectQueueItem, ViralEntry } from '../utils/types';
 import { detectViral, TrendLikeItem } from '../ops/viral-detector';
 import { addManyToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
 import { dissectBatch } from '../ops/content-dissector';
-import { sendToWechatWork, deliverOpsResult } from '../ops/brief-generator';
+import { deliverOpsResult, BriefDeliveryMode } from '../ops/brief-generator';
 import { getOpsTrendsCacheStatus } from './ops-trends-cache';
 import * as path from 'path';
 
@@ -76,7 +76,12 @@ async function main(): Promise<void> {
     trends = await refreshTrends(ops, identities, llm);
     console.log(`[${wallNow().toISOString()}] ops-trends: refreshTrends returned ${trends.length} trends`);
   } catch (err) {
-    console.error(`[${wallNow().toISOString()}] ops-trends: refreshTrends failed:`, err);
+    const msg = (err as Error).message ?? '';
+    if (/401|invalid key/i.test(msg)) {
+      console.error(`[${wallNow().toISOString()}] ops-trends: LLM认证失败，请检查 LLM_API_KEY 环境变量。错误: ${msg}`);
+    } else {
+      console.error(`[${wallNow().toISOString()}] ops-trends: refreshTrends failed:`, err);
+    }
   }
 
   try {
@@ -166,7 +171,7 @@ async function main(): Promise<void> {
               `  累计出现: ${f.occurrence_count} 次`,
               `  公式: ${f.formula_summary}`,
             ].join('\n');
-            sendToWechatWork(msg);
+            console.log(msg);
           } catch {
             // notification failure is non-fatal
           }

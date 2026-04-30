@@ -20,7 +20,7 @@ import { analyzeCompetitors, saveCompetitorAnalysis } from '../ops/competitor-an
 import { syncCompetitorInsights } from '../ops/competitor-memory';
 import { buildCompetitorKeyFromProfile } from '../ops/competitor-keys';
 import { analyzePositioning, savePositioningReport } from '../ops/positioning-analyzer';
-import { sendToWechatWork } from '../ops/brief-generator';
+import { sendBriefToSession } from '../ops/brief-generator';
 import { loadQueue } from '../ops/review-queue';
 import type { PositioningReport } from '../utils/types';
 
@@ -207,10 +207,10 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
 
   // Push weekly report card to WeChat Work
   const card = formatWeeklyReportCard(report);
-  const sent = sendToWechatWork(card);
+  const sent = sendBriefToSession(card);
   console.log(
     `[${wallNow().toISOString()}] ops-competitor-analysis: Layer 3 done — ` +
-    `positioning report saved, WeChat Work push ${sent ? 'succeeded' : 'failed'}`,
+    `positioning report saved, stdout delivery ${sent ? 'succeeded' : 'failed'}`,
   );
 }
 

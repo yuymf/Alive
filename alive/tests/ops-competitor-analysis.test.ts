@@ -130,7 +130,7 @@ vi.mock('../scripts/ops/positioning-analyzer', () => ({
 }));
 
 vi.mock('../scripts/ops/brief-generator', () => ({
-  sendToWechatWork: vi.fn(() => true),
+  sendBriefToSession: vi.fn(() => true),
 }));
 
 vi.mock('../scripts/ops/review-queue', () => ({
@@ -170,7 +170,7 @@ const { analyzeCompetitors, saveCompetitorAnalysis } = await import(
 const { analyzePositioning, savePositioningReport } = await import(
   '../scripts/ops/positioning-analyzer'
 );
-const { sendToWechatWork } = await import('../scripts/ops/brief-generator');
+const { sendBriefToSession } = await import('../scripts/ops/brief-generator');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -257,7 +257,7 @@ describe('runCompetitorAnalysisPipeline', () => {
     expect(saveCompetitorAnalysis).toHaveBeenCalledOnce();
     expect(analyzePositioning).toHaveBeenCalledOnce();
     expect(savePositioningReport).toHaveBeenCalledOnce();
-    expect(sendToWechatWork).toHaveBeenCalledOnce();
+    expect(sendBriefToSession).toHaveBeenCalledOnce();
   });
 
   it('reports configured, fetched, missing_posts, analyzed and failed_analysis coverage', async () => {
@@ -306,7 +306,7 @@ describe('runCompetitorAnalysisPipeline', () => {
     await expect(runCompetitorAnalysisPipeline(true)).resolves.not.toThrow();
 
     expect(savePositioningReport).not.toHaveBeenCalled();
-    expect(sendToWechatWork).not.toHaveBeenCalled();
+    expect(sendBriefToSession).not.toHaveBeenCalled();
   });
 });
 

@@ -829,35 +829,19 @@ export function formatStrategySection(strategy: ContentStrategy | null): string 
 // Uses openclaw message send --channel wecom --target <WECOM_TARGET_ID>
 // WECOM_TARGET_ID = enterprise WeChat member userid (e.g. "zhangsan")
 // Set via: openclaw.json → skills.entries.alive.env.WECOM_TARGET_ID
+// NOTE: For brief delivery, prefer `sendBriefToSession` which outputs to stdout
+// and lets the cron runner handle IM delivery — no env vars needed.
 
 export type BriefDeliveryMode = 'session' | 'wecom-target';
 
 /**
- * Send brief to the current/last OpenClaw session (no channel/target needed).
+ * Output brief to stdout — the cron runner will handle delivery.
  * This is the preferred mode for personas using automation.brief_delivery = 'session'.
+ * No longer calls `openclaw message send` directly; delivery is delegated to openclaw.
  */
 export function sendBriefToSession(message: string): boolean {
-  // openclaw message send requires -t (target); for session delivery, use the
-  // OPENCLAW_SESSION_TARGET env var set by the cron runner, or fall back to stdout.
-  const sessionTarget = process.env.OPENCLAW_SESSION_TARGET ?? '';
-  if (!sessionTarget) {
-    console.log('\n[Session 投递内容]\n' + message + '\n');
-    console.log('[brief-generator] OPENCLAW_SESSION_TARGET not set — printed to stdout only');
-    return true;
-  }
-  try {
-    execFileSync('openclaw', [
-      'message', 'send',
-      '-t', sessionTarget,
-      '--message', message,
-    ], { timeout: 20_000, encoding: 'utf8' });
-    return true;
-  } catch (err) {
-    console.error('[brief-generator] session send failed:', err);
-    // Fallback: print to stdout so cron deliver can pick it up
-    console.log('\n[Session 投递内容（fallback）]\n' + message + '\n');
-    return false;
-  }
+  console.log(message);
+  return true;
 }
 
 /**
@@ -900,14 +884,16 @@ export function deliverBrief(message: string, mode: BriefDeliveryMode): boolean 
 
 /**
  * Unified ops result delivery helper.
- * Respects `ops.automation.silent_background_jobs` to suppress IM delivery.
+ * Outputs to stdout — the cron runner handles IM delivery.
+ * Respects `ops.automation.silent_background_jobs` to suppress output.
  */
 export function deliverOpsResult(message: string, ops?: { automation?: { silent_background_jobs?: boolean } }): boolean {
   if (ops?.automation?.silent_background_jobs) {
     console.log('[deliverOpsResult] silent_background_jobs=true, skipping IM delivery');
     return false;
   }
-  return sendToWechatWork(message);
+  console.log(message);
+  return true;
 }
 
 // ─── Log ─────────────────────────────────────────────────────────────────────
@@ -935,7 +921,7 @@ export async function sendDailyBrief(
   const strategySection = formatStrategySection(strategy);
   if (strategySection) card = `${card}\n${strategySection}`;
 
-  const mode = deliveryMode ?? 'wecom-target';
+  const mode = deliveryMode ?? 'session';
   const sent = deliverBrief(card, mode);
   if (sent) logBriefSent(date, queueItems.filter(i => i.status === 'pending').length);
   return sent;

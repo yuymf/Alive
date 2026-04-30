@@ -59,8 +59,9 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`[alive-api] listening on port ${PORT}`);
+const HOST = process.env.HOST ?? '0.0.0.0';
+const server = app.listen(PORT, HOST, () => {
+  console.log(`[alive-api] listening on ${HOST}:${PORT}`);
   // Warm the cron-status cache: first-call to `openclaw cron list --json` can
   // be flaky (exit 1 with empty stdout during config rewrites). Doing it once
   // on boot gives the UI a known-good fallback immediately.

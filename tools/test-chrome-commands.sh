@@ -343,7 +343,7 @@ run_cmd "15. ops-brief（运营简报 cron）" 600 "" \
   node "$DIST_DIR/lifecycle/ops-brief.js"
 
 # 16. ops-trends（热点趋势 cron）
-run_cmd "16. ops-trends（热点趋势 cron）" 300 "" \
+run_cmd "16. ops-trends（热点趋势 cron）" 600 "" \
   node "$DIST_DIR/lifecycle/ops-trends.js"
 
 # 17. ops-competitor-analysis（竞品分析 cron）

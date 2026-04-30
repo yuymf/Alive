@@ -1204,9 +1204,9 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
     const stratHour = parseInt(stratTimeParts[0], 10);
     const stratMin = parseInt(stratTimeParts[1] || '0', 10);
 
-    // ops-brief: for session delivery, use isolated + --no-deliver
-    // (the brief script itself handles sending via openclaw message send)
-    const briefNoDeliver = briefDelivery === 'session';
+    // ops-brief: for session delivery, let cron runner deliver stdout
+    // (the brief script outputs to stdout, cron runner handles IM delivery)
+    const briefNoDeliver = briefDelivery !== 'session'; // session mode: cron delivers; wecom-target: script delivers itself
     const briefSession = 'isolated';
 
     specs.push(
@@ -3325,9 +3325,10 @@ async function reinstall() {
   const updateOpsEnabled = !!(persona.ops && persona.ops.enabled);
 
   console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
-  const llmApiKey = await ask(rl, hintLlmKey
+  const llmApiKeyRaw = await ask(rl, hintLlmKey
     ? `  LLM_API_KEY (current: ${hintLlmKey}, Enter to keep): `
     : '  LLM_API_KEY (press Enter to skip): ');
+  const llmApiKey = llmApiKeyRaw.trim().toLowerCase() === 'skip' ? '' : llmApiKeyRaw.trim();
   const llmApiBase = await ask(rl, hintBase
     ? `  LLM_API_BASE (current: ${hintBase}, Enter to keep): `
     : '  LLM_API_BASE (default: https://aihubmix.com/v1): ');
@@ -3336,9 +3337,10 @@ async function reinstall() {
     : '  LLM_MODEL (default: claude-sonnet-4-20250514): ');
 
   console.log('\n  Optional: Configure image generation API key (for reference image generation):');
-  const imageApiKey = await ask(rl, hintImageKey
+  const imageApiKeyRaw = await ask(rl, hintImageKey
     ? `  AIHUBMIX_API_KEY (current: ${hintImageKey}, Enter to keep): `
     : '  AIHUBMIX_API_KEY (press Enter to skip): ');
+  const imageApiKey = imageApiKeyRaw.trim().toLowerCase() === 'skip' ? '' : imageApiKeyRaw.trim();
 
   let bilibiliCookieUpdate = '';
   if (updateOpsEnabled) {
