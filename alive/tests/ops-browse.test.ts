@@ -87,7 +87,9 @@ beforeEach(() => {
   setBasePaths(memoryDir, skillDir);
 
   vi.clearAllMocks();
+  delete process.env.ALIVE_OPS_BROWSE_PRECOMPUTE_SEARCH;
 });
+
 
 afterEach(() => {
   resetBasePaths();
@@ -310,8 +312,10 @@ describe('ops-browse execution', () => {
     expect(log.logs[0].tick_summary).toBe('No browse results');
   });
 
-  it('runs keyword search and pre-computes search-keyword trends after browse', async () => {
+  it('runs keyword search and optionally pre-computes search-keyword trends after browse', async () => {
+    process.env.ALIVE_OPS_BROWSE_PRECOMPUTE_SEARCH = '1';
     const persona = makeOpsPersona();
+
     mockLoadPersona.mockResolvedValue(persona);
     mockResolveRouteBySkillName.mockReturnValue(fakeRoute);
     mockExecuteSubSkill.mockResolvedValue({ narrative: '发现新趋势' });

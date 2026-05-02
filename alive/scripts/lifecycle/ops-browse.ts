@@ -223,16 +223,19 @@ export async function main(): Promise<void> {
     console.warn(`[keyword-tracker] Post-browse keyword search failed: ${(err as Error).message}`);
   }
 
-  try {
-    const skItems = await refreshSearchKeywordTrends(ops);
-    if (skItems.length > 0) {
-      console.log(`[search-keyword] Pre-computed ${skItems.length} trend items from keyword searches`);
+  if (process.env.ALIVE_OPS_BROWSE_PRECOMPUTE_SEARCH === '1') {
+    try {
+      const skItems = await refreshSearchKeywordTrends(ops);
+      if (skItems.length > 0) {
+        console.log(`[search-keyword] Pre-computed ${skItems.length} trend items from keyword searches`);
+      }
+    } catch (err) {
+      console.warn(`[search-keyword] Post-browse search-keyword pre-computation failed: ${(err as Error).message}`);
     }
-  } catch (err) {
-    console.warn(`[search-keyword] Post-browse search-keyword pre-computation failed: ${(err as Error).message}`);
   }
 
   // Write diary entry
+
   const summary = buildBrowseSummary(results);
   if (summary) {
     const timestamp = wallNow().toISOString();
@@ -267,8 +270,11 @@ export async function main(): Promise<void> {
 
 // Guard: only run when executed directly (not when imported for testing)
 if (require.main === module) {
-  main().catch(err => {
-    console.error(`[${wallNow().toISOString()}] ops-browse ERROR:`, err);
-    process.exit(1);
-  });
+  main()
+    .then(() => process.exit(0))
+    .catch(err => {
+      console.error(`[${wallNow().toISOString()}] ops-browse ERROR:`, err);
+      process.exit(1);
+    });
 }
+

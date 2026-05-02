@@ -219,12 +219,17 @@ run_cmd() {
     echo "  ✅ 成功: ${cmd[*]}"
   fi
 
-  # 检查输出中是否有 ⚠️ 警告
-  if grep -q '⚠️' "$clean_stdout" 2>/dev/null; then
+  # 检查输出中是否有非预期 ⚠️ 警告。
+  # 部分命令是负向/空状态用例（如缺 URL、缓存未就绪、部分关键词无结果），
+  # 这些是测试期望输出，不应计入问题清单。
+  if grep '⚠️' "$clean_stdout" 2>/dev/null \
+      | grep -Ev '请提供有效的帖子 URL|热点与竞品缓存均为空|另有[0-9]+个关键词未产出内容|暂未就绪' \
+      | grep -q .; then
     WARN_CMDS+=("$label (输出含警告)")
   fi
 
   rm -f "$tmp_stdout" "$tmp_stderr" "$clean_stdout"
+
 }
 
 # ════════════════════════════════════════════════════════════════════

@@ -19,6 +19,10 @@ import analyticsRouter from './routes/analytics';
 const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
 
+// Trust the nginx reverse proxy so req.protocol / req.ip reflect the
+// original client request (X-Forwarded-Proto, X-Forwarded-For, etc.)
+app.set('trust proxy', 1);
+
 if (!Number.isInteger(PORT) || PORT <= 0) {
   console.error(`[alive-api] Invalid PORT: ${process.env.PORT}`);
   process.exit(1);

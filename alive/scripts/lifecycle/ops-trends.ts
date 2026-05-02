@@ -11,19 +11,32 @@ import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
 import { loadSkillEnvVars, setPersonaName, PATHS, readJSON } from '../utils/file-utils';
 import { refreshTrends, refreshSearchKeywordTrends, buildPersonaIdentities, TRENDS_CACHE_TTL_MS } from '../ops/trend-analyzer';
-import { refreshCompetitors } from '../ops/competitor-tracker';
-import { analyzeNewHits, cleanupOldBreakdowns, trimObservationNotes } from '../ops/competitor-memory';
-import { CompetitorLog, DissectQueueItem, ViralEntry } from '../utils/types';
+import { cleanupOldBreakdowns, trimObservationNotes } from '../ops/competitor-memory';
+import { CompetitorLog, DissectQueueItem, OpsConfig, ViralEntry } from '../utils/types';
 import { detectViral, TrendLikeItem } from '../ops/viral-detector';
+
 import { addManyToQueue, dequeueItems, upsertEntry, checkFormulaPromotion } from '../ops/viral-kb-store';
 import { dissectBatch } from '../ops/content-dissector';
-import { deliverOpsResult, BriefDeliveryMode } from '../ops/brief-generator';
+import { deliverOpsResult } from '../ops/brief-generator';
+
 import { getOpsTrendsCacheStatus } from './ops-trends-cache';
 import * as path from 'path';
 
-async function main(): Promise<void> {
+function withMaxRoundDuration(ops: OpsConfig, maxRoundDurationMs: number): OpsConfig {
+  const current = ops.throttle?.max_round_duration_ms;
+  return {
+    ...ops,
+    throttle: {
+      ...ops.throttle,
+      max_round_duration_ms: Math.min(current ?? maxRoundDurationMs, maxRoundDurationMs),
+    },
+  };
+}
+
+export async function main(): Promise<void> {
   // Load environment variables from openclaw.json (needed for isolated cron sessions)
   loadSkillEnvVars('alive');
+
 
   // If --persona <slug> was passed (e.g. from cron), override the persona context
   // so this job operates on the correct persona's memory directory.
@@ -64,19 +77,19 @@ async function main(): Promise<void> {
   cleanupOldBreakdowns();
   trimObservationNotes();
 
-  // Refresh sequentially: trends first, then competitors. Running in parallel
-  // under the old Promise.allSettled was a latency optimisation for the
-  // synchronous /brief path — under async decoupling nobody is waiting and
-  // a calm, single-flight request stream is friendlier to platform anti-abuse.
+  // Refresh trends first. Competitor fetching/analysis is handled by the
+  // dedicated ops-competitor-analysis cron; here we only load the last
+  // competitor cache so viral detection can reuse it without another crawl.
   let trends: Awaited<ReturnType<typeof refreshTrends>> = [];
-  let competitors: Awaited<ReturnType<typeof refreshCompetitors>> = [];
+  let competitors: CompetitorLog['entries'] = [];
 
   console.log(`[${wallNow().toISOString()}] ops-trends: calling refreshTrends…`);
   try {
-    trends = await refreshTrends(ops, identities, llm);
+    trends = await refreshTrends(withMaxRoundDuration(ops, 5 * 60_000), identities, llm);
     console.log(`[${wallNow().toISOString()}] ops-trends: refreshTrends returned ${trends.length} trends`);
   } catch (err) {
     const msg = (err as Error).message ?? '';
+
     if (/401|invalid key/i.test(msg)) {
       console.error(`[${wallNow().toISOString()}] ops-trends: LLM认证失败，请检查 LLM_API_KEY 环境变量。错误: ${msg}`);
     } else {
@@ -85,33 +98,32 @@ async function main(): Promise<void> {
   }
 
   try {
-    competitors = await refreshCompetitors(ops);
+    const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
+    competitors = competitorLog.entries ?? [];
+    console.log(`[${wallNow().toISOString()}] ops-trends: loaded ${competitors.length} cached competitors`);
   } catch (err) {
-    console.error(`[${wallNow().toISOString()}] ops-trends: refreshCompetitors failed:`, err);
+    console.error(`[${wallNow().toISOString()}] ops-trends: load cached competitors failed:`, err);
   }
 
   // Search-keyword trends (XHS/Douyin keyword search) — this also discovers
   // candidate competitors from high-engagement search results.
   let searchKeywordCount = 0;
+
   try {
-    const skItems = await refreshSearchKeywordTrends(ops);
+    const skItems = await refreshSearchKeywordTrends(withMaxRoundDuration(ops, 2 * 60_000));
     searchKeywordCount = skItems.length;
   } catch (err) {
+
     console.error(`[${wallNow().toISOString()}] ops-trends: refreshSearchKeywordTrends failed:`, err);
   }
 
   const trendCount = trends.length;
   const competitorCount = competitors.length;
 
-  // Auto-analyze high-engagement competitor posts
-  if (competitorCount > 0 && ops) {
-    const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
-    await analyzeNewHits(competitors, ops, competitorLog.entries, llm);
-  }
-
-  console.log(`[${wallNow().toISOString()}] ops-trends: ${trendCount} trends, ${competitorCount} competitors, ${searchKeywordCount} search-keyword items tracked`);
+  console.log(`[${wallNow().toISOString()}] ops-trends: ${trendCount} trends, ${competitorCount} cached competitors, ${searchKeywordCount} search-keyword items tracked`);
 
   // === 爆款知识库处理 ===
+
   // Derive the memory base path from any known PATHS property
   const basePath = path.dirname(PATHS.emotionState);
 
@@ -214,7 +226,12 @@ async function main(): Promise<void> {
   deliverOpsResult(summary, ops);
 }
 
-main().catch(err => {
-  console.error(`[${wallNow().toISOString()}] ops-trends ERROR:`, err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main()
+    .then(() => process.exit(0))
+    .catch(err => {
+      console.error(`[${wallNow().toISOString()}] ops-trends ERROR:`, err);
+      process.exit(1);
+    });
+}
+

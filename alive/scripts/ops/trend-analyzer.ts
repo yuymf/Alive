@@ -15,7 +15,8 @@ import { LLMClient } from '../utils/llm-client';
 import { normalizeKeyword, extractTrendHookKeyword } from '../utils/text-utils';
 import { loadDiscoveryPool, loadCandidateAccounts, saveCandidateAccounts } from './discovery-engine';
 import type { DiscoveryItem, CandidateAccount, CandidateAccountsStore } from './discovery-engine';
-import { searchXhsNotes } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
+import { searchXhsNotes, getXhsRateLimitStatus } from '../../sub-skills/platform/xhs-bridge/scripts/xhs-client';
+
 import { searchDouyinVideos, getDouyinRateLimitStatus } from '../../sub-skills/platform/douyin-bridge/scripts/douyin-client';
 import { RoundAbortController, resolveThrottleConfig, sleepWithJitter } from './throttle';
 
@@ -635,9 +636,18 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
   }
 
   // XHS searches — serial with keyword-gap jitter to keep a calm fingerprint.
+  // If a prior request has entered cooldown, stop the XHS leg immediately;
+  // sleeping between doomed requests is what made lifecycle cron exceed 10min.
   for (let i = 0; i < uniqueKeywords.length; i++) {
     const kw = uniqueKeywords[i];
     if (round.shouldAbort()) break;
+
+    const rlStatus = getXhsRateLimitStatus();
+    if (rlStatus.in_cooldown) {
+      console.warn(`[trend-analyzer] XHS 风控冷却中 (剩余 ${rlStatus.cooldown_remaining_s}s)，终止本轮 XHS 搜索`);
+      break;
+    }
+
     if (i > 0) {
       await sleepWithJitter(throttle.keyword_gap_ms, round, `xhs keyword ${kw}`);
       if (round.shouldAbort()) break;
@@ -647,9 +657,14 @@ export async function refreshSearchKeywordTrends(ops?: OpsConfig): Promise<Trend
     try {
       notes = await searchXhsNotes(kw, { sortBy: '最多点赞', noteType: '不限' });
     } catch (err) {
-      console.warn(`[trend-analyzer] XHS search failed for "${kw}": ${(err as Error).message}`);
+      const msg = (err as Error).message;
+      console.warn(`[trend-analyzer] XHS search failed for "${kw}": ${msg}`);
+      if (msg.includes('风控冷却中') || msg.includes('触发风控') || /rate|limit|429|461|captcha|验证码/i.test(msg)) {
+        break;
+      }
       continue;
     }
+
     const hits = notes.filter(n => (n.likes ?? 0) >= SEARCH_KEYWORD_HIT_THRESHOLD_XHS);
     for (const note of hits) {
       const tags = extractTagsFromText(`${note.title} ${note.description}`);

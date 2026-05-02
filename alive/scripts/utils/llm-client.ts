@@ -88,8 +88,13 @@ function isAbortError(err: unknown): boolean {
   return Boolean(err) && typeof err === 'object' && (err as { name?: string }).name === 'AbortError';
 }
 
+function isNonRetryableHttpError(message: string): boolean {
+  return /(?:Gateway returned|API returned)\s+(400|401|403|404)\b/i.test(message);
+}
+
 /**
  * Resolve the OpenClaw agent ID for Gateway routing.
+
  * Priority: OPENCLAW_AGENT > ALIVE_PERSONA > "main"
  */
 function resolveOpenClawAgentId(): string {
@@ -292,31 +297,30 @@ export async function callLLM(
           debugLog('GATEWAY_ABORT', `request aborted: ${(err as Error).message}`);
           throw err;
         }
-      const errMsg = (err as Error).message ?? '';
-      const isAuthError = /API returned (401|403)/.test(errMsg);
-      if (isAuthError) {
-        debugLog('GATEWAY_AUTH_FAIL', `auth error, not retrying: ${errMsg}`);
-        console.error(`Gateway auth error, not retrying: ${errMsg}`);
-        appendLlmLog({
-          id: crypto.randomUUID(),
-          timestamp: wallNow().toISOString(),
-          caller: caller ?? autoDetectCaller(),
-          prompt,
-          response: null,
-          elapsed_ms: wallNow().getTime() - totalStart,
-          input_tokens: null,
-          output_tokens: null,
-          finish_reason: 'error',
-          model,
-          error_message: errMsg,
-        });
-        throw err;
-      }
-      if (attempt === 0) {
-        debugLog('GATEWAY_RETRY', `attempt 1 failed: ${(err as Error).message}`);
-        console.error(`Gateway call failed, retrying in 10s: ${(err as Error).message}`);
-        await new Promise(r => setTimeout(r, LLM_CONFIG.RETRY_DELAY_MS));
-      } else {
+        const errMsg = (err as Error).message ?? '';
+        if (isNonRetryableHttpError(errMsg)) {
+          debugLog('GATEWAY_NON_RETRYABLE_FAIL', `not retrying: ${errMsg}`);
+          console.error(`Gateway call failed, not retrying: ${errMsg}`);
+          appendLlmLog({
+            id: crypto.randomUUID(),
+            timestamp: wallNow().toISOString(),
+            caller: caller ?? autoDetectCaller(),
+            prompt,
+            response: null,
+            elapsed_ms: wallNow().getTime() - totalStart,
+            input_tokens: null,
+            output_tokens: null,
+            finish_reason: 'error',
+            model,
+            error_message: errMsg,
+          });
+          throw err;
+        }
+        if (attempt === 0) {
+          debugLog('GATEWAY_RETRY', `attempt 1 failed: ${(err as Error).message}`);
+          console.error(`Gateway call failed, retrying in 10s: ${(err as Error).message}`);
+          await new Promise(r => setTimeout(r, LLM_CONFIG.RETRY_DELAY_MS));
+        } else {
           debugLog('GATEWAY_FAIL', `attempt 2 failed: ${(err as Error).message}`);
           appendLlmLog({
             id: crypto.randomUUID(),
@@ -333,6 +337,7 @@ export async function callLLM(
           });
           throw err;
         }
+
       }
     }
     throw new Error('Gateway call failed after retry');
@@ -404,11 +409,32 @@ export async function callLLM(
         throw err;
       }
 
+      const errMsg = (err as Error).message ?? '';
+      if (isNonRetryableHttpError(errMsg)) {
+        debugLog('NON_RETRYABLE_FAIL', `not retrying: ${errMsg}`);
+        console.error(`LLM call failed, not retrying: ${errMsg}`);
+        appendLlmLog({
+          id: crypto.randomUUID(),
+          timestamp: wallNow().toISOString(),
+          caller: caller ?? autoDetectCaller(),
+          prompt,
+          response: null,
+          elapsed_ms: wallNow().getTime() - totalStart,
+          input_tokens: null,
+          output_tokens: null,
+          finish_reason: 'error',
+          model: process.env.LLM_MODEL ?? model,
+          error_message: errMsg,
+        });
+        throw err;
+      }
+
       if (attempt === 0) {
         debugLog('RETRY', `attempt 1 failed: ${(err as Error).message}`);
         console.error(`LLM call failed, retrying in 10s: ${(err as Error).message}`);
         await new Promise(r => setTimeout(r, LLM_CONFIG.RETRY_DELAY_MS));
       } else {
+
         debugLog('FAIL', `attempt 2 failed: ${(err as Error).message}`);
         appendLlmLog({
           id: crypto.randomUUID(),
