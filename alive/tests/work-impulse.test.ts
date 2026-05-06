@@ -44,6 +44,12 @@ describe('accumulateImpulse', () => {
     const result = accumulateImpulse(state, 10);
     expect(result).not.toBe(state);
   });
+
+  it('ignores non-finite deltas instead of corrupting value', () => {
+    const state = makeState({ value: 50 });
+    const result = accumulateImpulse(state, Number.NaN);
+    expect(result.value).toBe(50);
+  });
 });
 
 describe('decayImpulse', () => {

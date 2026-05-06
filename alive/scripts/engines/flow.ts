@@ -19,9 +19,10 @@ const FLOW_COOLDOWN_TICKS = FLOW_CONFIG.FLOW_COOLDOWN_TICKS;     // 从 2 降到
 // 不允许进入 flow 的类别（休息、窥屏不应进入心流）
 const FLOW_EXCLUDED_CATEGORIES: ReadonlySet<string> = new Set(['rest', 'consume']);
 
-// P2.3 Helper: Escape regex special characters in user input
-function escapeRegexSpecialChars(str: string): string {
-  return str.replace(/[.*+?^${}()|[\\]]/g, '\$&');
+function randomIndex(length: number, rng: () => number): number {
+  const value = rng();
+  const normalized = Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0;
+  return Math.floor(normalized * length) % length;
 }
 
 export interface LastAction {
@@ -139,14 +140,13 @@ const DRIFT_DIARY_TEMPLATES = [
 export function generateFlowDiary(flow: FlowState, emotion: EmotionState, rng = Math.random): string {
   const phase = flow.duration_ticks <= 2 ? 'early' : 'deep';
   const templates = FLOW_DIARY_TEMPLATES_BY_PHASE[phase];
-  const templateIdx = Math.floor(rng() * templates.length) % templates.length;
+  const templateIdx = randomIndex(templates.length, rng);
   const template = templates[templateIdx];
-  // P2.3 Fix: Escape regex special characters in user input (flow.activity)
-  const escapedActivity = escapeRegexSpecialChars(flow.activity ?? '做事');
-  let diary = template.replace(/{activity}/g, escapedActivity);
+  const activity = flow.activity ?? '做事';
+  let diary = template.replace(/{activity}/g, () => activity);
 
   // 随机添加生活微细节（活人感）
-  const detailIdx = Math.floor(rng() * FLOW_MICRO_DETAILS.length) % FLOW_MICRO_DETAILS.length;
+  const detailIdx = randomIndex(FLOW_MICRO_DETAILS.length, rng);
   const detail = FLOW_MICRO_DETAILS[detailIdx];
   if (detail) diary += ` ${detail}`;
 

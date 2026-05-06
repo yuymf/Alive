@@ -347,6 +347,13 @@ describe('generateFlowDiary', () => {
     // The first template from early is different from the first template from deep
     expect(earlyDiary).not.toBe(deepDiary);
   });
+
+  it('preserves activity text containing replacement metacharacters literally', () => {
+    const flow: FlowState = { status: 'flow', activity: '$& cosplay (draft)', category: 'produce', entered_at: '', duration_ticks: 1, interrupt_chance: 0.2, cooldown_remaining: 0 };
+    const diary = generateFlowDiary(flow, makeEmotion(), () => 0);
+    expect(diary).toContain('$& cosplay (draft)');
+    expect(diary).not.toContain('{activity}');
+  });
 });
 
 // ──── generateDriftDiary ────

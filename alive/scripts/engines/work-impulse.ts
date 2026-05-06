@@ -23,9 +23,10 @@ function clamp(value: number, min: number, max: number): number {
  * Returns new state without mutating the original.
  */
 export function accumulateImpulse(state: WorkImpulseState, delta: number): WorkImpulseState {
+  const safeDelta = Number.isFinite(delta) ? delta : 0;
   return {
     ...state,
-    value: clamp(state.value + delta, 0, 100),
+    value: clamp(state.value + safeDelta, 0, 100),
   };
 }
 

@@ -322,6 +322,12 @@ describe('processProcrastination', () => {
     expect(diaryEntries.length).toBeGreaterThan(0);
   });
 
+  it('handles invalid rng values when choosing procrastination diary templates', () => {
+    const intent = makeIntent({ id: 'a', intensity: 6.0, resistance: 2.0, skipped_count: 2 });
+    const pool = makePool([intent]);
+    expect(() => processProcrastination(pool, new Set(), () => Number.NaN)).not.toThrow();
+  });
+
   it('can abandon intent after 4 skips (high stress)', () => {
     const intent = makeIntent({ id: 'a', intensity: 6.0, resistance: 2.0, skipped_count: 3 });
     const pool = makePool([intent]);

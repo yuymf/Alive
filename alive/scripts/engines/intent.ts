@@ -190,9 +190,7 @@ export function processProcrastination(pool: IntentPool, chosenIntentIds: Readon
     if (newSkipped >= INTENT_CONFIG.PROCRASTINATION_RESOLVE_AT) {
       const abandonProb = currentStress > 0.5 ? 0.8 : (currentStress < 0.3 ? 0.5 : 0.6);
       const rngValue = rng();
-      // P2.2 Fix: Validate RNG returns valid probability
-      if (!validateRng(rngValue)) {
-        // If RNG is broken, don't abandon (conservative approach)
+      if (!isValidProbability(rngValue)) {
         const newIntensity = cap(intent.intensity + 1.0);
         return { ...intent, intensity: newIntensity, skipped_count: 0 };
       }
@@ -211,7 +209,7 @@ export function processProcrastination(pool: IntentPool, chosenIntentIds: Readon
     }
     if (newSkipped === 3 && !emittedDescriptions.has(intent.description) && diaryEntries.length < MAX_DIARY_PER_TICK) {
       stressDelta += 0.05;
-      const index = Math.floor(rng() * PROCRASTINATION_TEMPLATES.length) % PROCRASTINATION_TEMPLATES.length;
+      const index = randomIndex(PROCRASTINATION_TEMPLATES.length, rng);
       const templateFn = PROCRASTINATION_TEMPLATES[index];
       diaryEntries.push(templateFn(intent.description));
       emittedDescriptions.add(intent.description);
@@ -220,8 +218,13 @@ export function processProcrastination(pool: IntentPool, chosenIntentIds: Readon
   });
   return { pool: { ...pool, intents }, stressDelta, diaryEntries };
 }
-// P2.2 Helper: Validate RNG returns a valid probability [0, 1]
-function validateRng(value: number): boolean {
-  return typeof value === 'number' && !isNaN(value) && value >= 0 && value <= 1;
+function isValidProbability(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function randomIndex(length: number, rng: () => number): number {
+  const value = rng();
+  const normalized = isValidProbability(value) ? value : 0;
+  return Math.floor(normalized * length) % length;
 }
 

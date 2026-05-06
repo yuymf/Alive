@@ -15,6 +15,10 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function finiteOr(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
 // === Mood Description ===
 
 export function describeMood(
@@ -149,16 +153,21 @@ export function computeEmotionIntentCoupling(
   const result: Record<string, number> = {};
   for (const intent of ALL_META_INTENTS) {
     const c = config[intent] ?? {};
+    const creativity = finiteOr(emotion.creativity, 0);
+    const sociability = finiteOr(emotion.sociability, 0);
+    const stress = finiteOr(emotion.stress, 0);
+    const energy = finiteOr(emotion.energy, 1);
+    const valence = finiteOr(emotion.mood.valence, 0);
+    const arousal = finiteOr(emotion.mood.arousal, 0);
     let multiplier = 1.0;
-    if (c.creativity)      multiplier += c.creativity * emotion.creativity;
-    if (c.sociability)     multiplier += c.sociability * emotion.sociability;
-    if (c.stress)          multiplier += c.stress * emotion.stress;
-    if (c.energy_inverse)  multiplier += c.energy_inverse * (1.0 - emotion.energy);
-    if (c.valence)         multiplier += c.valence * emotion.mood.valence;
-    if (c.valence_abs)     multiplier += c.valence_abs * Math.abs(emotion.mood.valence);
-    if (c.arousal)         multiplier += c.arousal * emotion.mood.arousal;
-    // P2.4 Fix: Clamp multiplier to reasonable bounds [0.1, 5.0]
-    multiplier = Math.max(0.1, Math.min(5.0, multiplier));
+    if (c.creativity)      multiplier += finiteOr(c.creativity, 0) * creativity;
+    if (c.sociability)     multiplier += finiteOr(c.sociability, 0) * sociability;
+    if (c.stress)          multiplier += finiteOr(c.stress, 0) * stress;
+    if (c.energy_inverse)  multiplier += finiteOr(c.energy_inverse, 0) * (1.0 - energy);
+    if (c.valence)         multiplier += finiteOr(c.valence, 0) * valence;
+    if (c.valence_abs)     multiplier += finiteOr(c.valence_abs, 0) * Math.abs(valence);
+    if (c.arousal)         multiplier += finiteOr(c.arousal, 0) * arousal;
+    multiplier = clamp(finiteOr(multiplier, 1.0), 0.1, 5.0);
     result[intent] = multiplier;
   }
   return result;

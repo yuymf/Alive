@@ -81,6 +81,20 @@ describe('drainVitality', () => {
     const result = drainVitality(state, makeEmotion());
     expect(result.last_updated).toBeTruthy();
   });
+
+  it('does not corrupt vitality when computed drain is NaN', () => {
+    const state = makeVitality({ vitality: 70 });
+    const result = drainVitality(state, makeEmotion({ stress: Number.NaN }), 1.0);
+    expect(Number.isFinite(result.vitality)).toBe(true);
+    expect(result.vitality).toBe(70);
+  });
+
+  it('does not corrupt vitality when flow modifier is infinite', () => {
+    const state = makeVitality({ vitality: 70 });
+    const result = drainVitality(state, makeEmotion(), Number.POSITIVE_INFINITY);
+    expect(Number.isFinite(result.vitality)).toBe(true);
+    expect(result.vitality).toBe(70);
+  });
 });
 
 // ──── applyActionCost ────
@@ -109,6 +123,12 @@ describe('applyActionCost', () => {
     const result = applyActionCost(state, 'heavy_creation'); // -10
     expect(result.vitality).toBe(0);
   });
+
+  it('ignores non-finite custom costs', () => {
+    const state = makeVitality({ vitality: 70 });
+    const result = applyActionCost(state, 'custom', Number.NaN);
+    expect(result.vitality).toBe(70);
+  });
 });
 
 // ──── replenishVitality ────
@@ -128,13 +148,19 @@ describe('replenishVitality', () => {
 
   it('caps at 100', () => {
     const state = makeVitality({ vitality: 95 });
-    const result = replenishVitality(state, 'sleep_cycle'); // +15
+    const result = replenishVitality(state, 'sleep_cycle');
     expect(result.vitality).toBe(100);
   });
 
   it('returns unchanged for unknown source', () => {
     const state = makeVitality({ vitality: 50 });
     const result = replenishVitality(state, 'unknown_source');
+    expect(result.vitality).toBe(50);
+  });
+
+  it('ignores non-finite custom gains', () => {
+    const state = makeVitality({ vitality: 50 });
+    const result = replenishVitality(state, 'custom', Number.NaN);
     expect(result.vitality).toBe(50);
   });
 });
@@ -163,8 +189,8 @@ describe('morningRecovery', () => {
   it('triggers emergency recovery after 3 consecutive low days', () => {
     const state = makeVitality({ vitality: 20, consecutive_low_days: 2 });
     const result = morningRecovery(state);
-    // emergency: max(20+15=35, 60) = 60, consecutive resets
-    expect(result.vitality).toBe(60);
+    // emergency: lift to minimum first, then apply sleep recovery: max(20, 60) + 20 = 80
+    expect(result.vitality).toBe(80);
     expect(result.consecutive_low_days).toBe(0);
   });
 });

@@ -205,6 +205,16 @@ describe('computeEmotionIntentCoupling', () => {
       computeEmotionIntentCoupling(energetic)['rest']
     );
   });
+
+  it('returns finite bounded multipliers with invalid emotion dimensions', () => {
+    const coupling = computeEmotionIntentCoupling(
+      makeState({ creativity: Number.NaN }),
+      { produce: { creativity: 1 } } as any,
+    );
+    expect(Number.isFinite(coupling['produce'])).toBe(true);
+    expect(coupling['produce']).toBeGreaterThanOrEqual(0.1);
+    expect(coupling['produce']).toBeLessThanOrEqual(5.0);
+  });
 });
 
 // ──── intentSatisfactionFeedback ────

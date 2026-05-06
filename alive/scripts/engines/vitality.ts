@@ -10,7 +10,12 @@ const VITALITY_MIN = 0;
 const BASE_DRAIN_PER_TICK = VITALITY_CONFIG.BASE_DRAIN_PER_TICK;  // 从 3 降到 2：减缓全天活力消耗（之前 85→8.6 太快）
 
 function clampVitality(v: number): number {
+  if (!Number.isFinite(v)) return VITALITY_MIN;
   return Math.min(VITALITY_MAX, Math.max(VITALITY_MIN, v));
+}
+
+function safeNonNegative(value: number, fallback = 0): number {
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
 // Action cost categories (generic, sub-skills report their own costs)
@@ -34,21 +39,28 @@ const REPLENISHMENT: Record<string, number> = {
 };
 
 export function drainVitality(state: VitalityState, emotion: EmotionState, flowModifier?: number): VitalityState {
+  const rawModifier = flowModifier ?? 1.0;
+  if (!Number.isFinite(emotion.stress) || emotion.stress < 0 || !Number.isFinite(emotion.mood.arousal) || !Number.isFinite(rawModifier) || rawModifier < 0) {
+    return { ...state, last_updated: now().toISOString() };
+  }
+
   const stressMultiplier = 1.0 + emotion.stress * 0.5;
   const arousalDiscount = emotion.mood.arousal < 0.3 ? 0.8 : 1.0;
-  const modifier = flowModifier ?? 1.0;
-  const drain = BASE_DRAIN_PER_TICK * stressMultiplier * arousalDiscount * modifier;
-  return { ...state, vitality: clampVitality(state.vitality - drain), last_updated: now().toISOString() };
+  const drain = BASE_DRAIN_PER_TICK * stressMultiplier * arousalDiscount * rawModifier;
+  const vitality = Number.isFinite(drain) ? clampVitality(state.vitality - drain) : state.vitality;
+  return { ...state, vitality, last_updated: now().toISOString() };
 }
 
 export function applyActionCost(state: VitalityState, actionType: string, customCost?: number): VitalityState {
-  const cost = customCost ?? ACTION_COSTS[actionType] ?? 0;
+  const rawCost = customCost ?? ACTION_COSTS[actionType] ?? 0;
+  const cost = safeNonNegative(rawCost);
   if (cost === 0) return state;
   return { ...state, vitality: clampVitality(state.vitality - cost) };
 }
 
 export function replenishVitality(state: VitalityState, source: string, customGain?: number): VitalityState {
-  const gain = customGain ?? REPLENISHMENT[source] ?? 0;
+  const rawGain = customGain ?? REPLENISHMENT[source] ?? 0;
+  const gain = safeNonNegative(rawGain);
   if (gain === 0) return state;
   return { ...state, vitality: clampVitality(state.vitality + gain) };
 }
