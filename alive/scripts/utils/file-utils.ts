@@ -396,6 +396,16 @@ export function loadSkillEnvVars(skillName: string = 'alive'): void {
         loadedCount++;
       }
     }
+
+    // Keep the file-utils persona context in sync with ALIVE_PERSONA loaded
+    // from openclaw.json. This matters for long-lived processes such as the
+    // API server: _personaName is initialised before loadSkillEnvVars() runs,
+    // so process.env.ALIVE_PERSONA alone is not enough to switch PATHS away
+    // from the default memory directory.
+    if (process.env.ALIVE_PERSONA && (_personaName === 'default' || _personaName === 'main')) {
+      setPersonaName(process.env.ALIVE_PERSONA);
+    }
+
     if (process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true') {
       console.log(`[loadSkillEnvVars] Loaded ${loadedCount} environment variables for skill "${skillName}"`);
     }
@@ -403,3 +413,4 @@ export function loadSkillEnvVars(skillName: string = 'alive'): void {
     console.error(`[loadSkillEnvVars] Failed to load environment variables:`, err);
   }
 }
+

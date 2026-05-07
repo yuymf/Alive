@@ -2693,9 +2693,28 @@ function renderOpsHealth(data) {
   return h;
 }
 
+function dedupeDisplayItems(items, makeKey) {
+  var seen = {};
+  return (items || []).filter(function(item) {
+    var key = makeKey(item);
+    if (!key || seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+}
+
+function normalizeDisplayKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 function renderOpsTrends(data) {
-  var trends = data.trends || [];
-  var h = '<div class="ops-data-card"><div class="ops-data-card-title">📈 趋势分析 (' + trends.length + ' 个)</div>';
+  var rawTrends = data.trends || [];
+  var trends = dedupeDisplayItems(rawTrends, function(t) {
+    return normalizeDisplayKey(t.platform) + ':' + normalizeDisplayKey(t.keyword);
+  });
+  var removedTrendCount = rawTrends.length - trends.length;
+  var h = '<div class="ops-data-card"><div class="ops-data-card-title">📈 趋势分析 (' + trends.length + ' 个'
+    + (removedTrendCount > 0 ? '，已去重 ' + removedTrendCount + ' 个' : '') + ')</div>';
   if (trends.length === 0) {
     h += '<div class="ops-data-card-body">暂无相关趋势</div>';
   } else {
@@ -2713,10 +2732,17 @@ function renderOpsTrends(data) {
   // Signal pool (趋势信号池) — 后端会返回 signal_pool, 但之前没有渲染
   var pool = data.signal_pool || data.signals || null;
   if (pool) {
-    var items = Array.isArray(pool) ? pool : (pool.items || pool.signals || []);
+    var rawItems = Array.isArray(pool) ? pool : (pool.items || pool.signals || []);
+    var items = dedupeDisplayItems(rawItems, function(s) {
+      var kw = s.keyword || s.topic || s.title || s.term || '-';
+      var plat = s.platform || s.source || '-';
+      return normalizeDisplayKey(plat) + ':' + normalizeDisplayKey(kw);
+    });
+    var removedSignalCount = rawItems.length - items.length;
     if (items && items.length > 0) {
       h += '<div class="signal-pool-section">';
-      h += '<div class="signal-pool-title">🧲 信号池 (' + items.length + ' 条原始信号)</div>';
+      h += '<div class="signal-pool-title">🧲 信号池 (' + items.length + ' 条原始信号'
+        + (removedSignalCount > 0 ? '，已去重 ' + removedSignalCount + ' 条' : '') + ')</div>';
       h += '<table class="ops-queue-table"><thead><tr><th>关键词</th><th>平台</th><th>热度</th><th>来源</th></tr></thead><tbody>';
       items.slice(0, 30).forEach(function(s) {
         var kw = s.keyword || s.topic || s.title || s.term || '-';

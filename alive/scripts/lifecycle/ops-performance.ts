@@ -9,11 +9,19 @@
 
 import { loadPersona } from '../persona/persona-loader';
 import { setTimezone, wallNow } from '../utils/time-utils';
+import { loadSkillEnvVars, setPersonaName } from '../utils/file-utils';
 import { getPublishedItemsWithUrls } from '../ops/review-queue';
 import { appendSnapshot, fetchMetrics, cleanupOldEntries } from '../ops/performance-tracker';
 import { deliverOpsResult } from '../ops/brief-generator';
 
 async function main(): Promise<void> {
+  loadSkillEnvVars('alive');
+
+  const personaArgIdx = process.argv.indexOf('--persona');
+  if (personaArgIdx !== -1 && process.argv[personaArgIdx + 1]) {
+    setPersonaName(process.argv[personaArgIdx + 1]);
+  }
+
   const persona = await loadPersona();
   const ops = persona.ops;
 

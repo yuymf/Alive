@@ -127,9 +127,9 @@ ops:
     - platform: douyin
       count: 5
   automation:
-    brief_delivery: session
+    brief_delivery: wecom-target
     enable_heartbeat_cron: false
-    silent_background_jobs: false
+    silent_background_jobs: true
 
   # ─── 结构化对标账号画像 ─────────────────────────────────────────────────
   competitors:

@@ -1290,6 +1290,60 @@ export const TRENDS_EMPTY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes for empty
 export const TREND_SCORING_VERSION = 3;
  // Bump when scoring model / prompt changes
 
+const MIN_TRENDS_BEFORE_DISCOVERY_FALLBACK = 8;
+const MAX_DISCOVERY_FALLBACK_TRENDS = 16;
+
+function inferIdentityModeFromTopic(topic: string): FilteredTrend['identity_mode'] {
+  const t = (topic || '').toLowerCase();
+  if (/赛车|f1|车手|driving|驾驶/i.test(t)) return 'racer';
+  if (/电竞|kpl|lpl|valorant|无畏契约|选手|战队/i.test(t)) return 'esports';
+  if (/歌|音乐|singer|爱豆|偶像/i.test(t)) return 'singer';
+  return 'daily';
+}
+
+function adaptDiscoveryItemToTrend(item: DiscoveryItem): FilteredTrend {
+  const platformRaw = (item.source || '').replace(/^search:/, '');
+  const platform = platformRaw || 'unknown';
+  return {
+    platform,
+    keyword: item.topic || item.title,
+    current_volume: item.engagement ?? 0,
+    avg_7d: 0,
+    velocity_score: 1.0,
+    rank: 999,
+    _source: 'discovery_pool',
+    source_type: 'discovery_pool',
+    source_bucket: toSourceBucket('discovery_pool'),
+    signal_kind: classifySignalKind('discovery_pool'),
+    display_metric: `❤️${(item.engagement ?? 0).toLocaleString('zh-CN')}`,
+    priority_score: Math.max(1.0, (item.score ?? 0) / 100),
+    description: item.title,
+    category: item.topic,
+    hook_angle: `基于「${item.title}」（@${item.author || '?'}，${platform}）— 从人设赛道切入，借势发现池热帖做差异化表达`,
+    identity_mode: inferIdentityModeFromTopic(item.topic),
+  };
+}
+
+function buildDiscoveryFallback(existing: FilteredTrend[]): { results: FilteredTrend[]; computed_at: string | null } {
+  if (existing.length >= MIN_TRENDS_BEFORE_DISCOVERY_FALLBACK) {
+    return { results: existing, computed_at: null };
+  }
+
+  const pool = loadDiscoveryPool();
+  const existingKeys = new Set(existing.map(r => `${r.platform}::${r.keyword}`));
+  const backfill = (pool.items ?? [])
+    .slice()
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .map(adaptDiscoveryItemToTrend)
+    .filter(r => !existingKeys.has(`${r.platform}::${r.keyword}`))
+    .slice(0, MAX_DISCOVERY_FALLBACK_TRENDS - existing.length);
+
+  return {
+    results: [...existing, ...backfill],
+    computed_at: pool.last_updated || null,
+  };
+}
+
 /** Build signal pool summary for /trends display — groups items by source_bucket, shows top 3 per group */
 function buildSignalPoolSummary(items: TrendItem[]): TrendsCacheData['signal_pool'] {
   const byBucket: Record<string, TrendItem[]> = {};
@@ -1375,12 +1429,15 @@ export function filterCachedTrendsByDirection(
  * render the signal-pool overview should use this variant.
  */
 export function readCachedTrendsWithMeta(personaIdentities: string): CachedTrendsRead {
-  const empty: CachedTrendsRead = { results: [], computed_at: null, signal_pool: undefined };
+  const fallbackOnly = (): CachedTrendsRead => {
+    const fallback = buildDiscoveryFallback([]);
+    return { results: fallback.results, computed_at: fallback.computed_at, signal_pool: undefined };
+  };
 
   const cached = readJSON<TrendsCacheData>(PATHS.trendsCache, null as unknown as TrendsCacheData);
-  if (!cached?.computed_at) return empty;
-  if (cached.scoring_version !== TREND_SCORING_VERSION) return empty;
-  if (cached.persona_identities !== personaIdentities) return empty;
+  if (!cached?.computed_at) return fallbackOnly();
+  if (cached.scoring_version !== TREND_SCORING_VERSION) return fallbackOnly();
+  if (cached.persona_identities !== personaIdentities) return fallbackOnly();
 
   const age = now().getTime() - new Date(cached.computed_at).getTime();
   const ttl = cached.results.length === 0 ? TRENDS_EMPTY_CACHE_TTL_MS : TRENDS_CACHE_TTL_MS;
@@ -1390,21 +1447,24 @@ export function readCachedTrendsWithMeta(personaIdentities: string): CachedTrend
   // `stale` flag lets callers surface a "data is stale" banner and still give
   // the LLM something meaningful to work with while the next cron runs.
   if (age >= ttl) {
-    if (cached.results.length === 0) return empty;
+    if (cached.results.length === 0) return fallbackOnly();
+    const fallback = buildDiscoveryFallback(cached.results);
     return {
-      results: cached.results,
+      results: fallback.results,
       computed_at: cached.computed_at,
       signal_pool: cached.signal_pool,
       stale: true,
     };
   }
 
+  const fallback = buildDiscoveryFallback(cached.results);
   return {
-    results: cached.results,
-    computed_at: cached.computed_at,
+    results: fallback.results,
+    computed_at: cached.computed_at || fallback.computed_at,
     signal_pool: cached.signal_pool,
   };
 }
+
 
 /**
  * Refresh the trends cache by fetching raw data from all platforms,
@@ -1497,9 +1557,17 @@ export async function refreshTrends(
     console.log(`[trend-analyzer] DEBUG: Injecting ${tagItems.length} tag-engine signals, ${discoveryItems.length} discovery-pool signals, ${searchKeywordItems.length} search-keyword signals`);
   }
 
-  // Combine and compute priority_score (velocity × source_weight × quality_penalty)
+  // Combine, deduplicate, and compute priority_score (velocity × source_weight × quality_penalty)
   const combined = [...tagItems, ...discoveryItems, ...searchKeywordItems, ...withVelocity];
-  withVelocity = computePriorityScores(combined);
+  const combinedSeen = new Set<string>();
+  const dedupedCombined = combined.filter(item => {
+    const key = `${item.platform.trim().toLowerCase()}:${item.keyword.trim().toLowerCase()}`;
+    if (combinedSeen.has(key)) return false;
+    combinedSeen.add(key);
+    return true;
+  });
+  if (isDebug()) console.log(`[trend-analyzer] DEBUG: combined items: ${combined.length}, deduped combined items: ${dedupedCombined.length}`);
+  withVelocity = computePriorityScores(dedupedCombined);
 
   // 3b. Apply trend fatigue penalty — reduce priority for keywords already
   //     selected in recent runs (cross-reference with review-queue history)

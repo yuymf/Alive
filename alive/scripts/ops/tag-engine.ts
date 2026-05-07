@@ -22,9 +22,9 @@ const DECAY_FACTOR = 0.85;
 const DORMANT_SCORE_THRESHOLD = 5;
 const ACTIVE_TO_DORMANT_DAYS = 7;
 const DORMANT_DELETE_DAYS = 30;
-const TOP_ACTIVE_REFRESH = 10;
+const TOP_ACTIVE_REFRESH = 5;  // reduced from 10 to stay within cron execution timeout
 const REFRESH_LIMIT = 5;
-const REVIVAL_SAMPLE_SIZE = 10;
+const REVIVAL_SAMPLE_SIZE = 3;  // reduced from 10 to stay within cron execution timeout
 const REVIVAL_SCORE = 15;
 
 export function extractHashtags(text: string, text2?: string): string[] {

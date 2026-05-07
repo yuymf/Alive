@@ -900,8 +900,9 @@ export function deliverOpsResult(message: string, ops?: { automation?: { silent_
 
 function logBriefSent(date: string, topicCount: number): void {
   const log = readJSON<OpsBriefLog>(PATHS.opsBriefLog, { entries: [] });
+  const entries = Array.isArray(log.entries) ? log.entries : [];
   const entry = { date, sent_at: now().toISOString(), topic_count: topicCount };
-  writeJSON(PATHS.opsBriefLog, { entries: [...log.entries.slice(-29), entry] });
+  writeJSON(PATHS.opsBriefLog, { entries: [...entries.slice(-29), entry] });
 }
 
 // ─── Main export ─────────────────────────────────────────────────────────────

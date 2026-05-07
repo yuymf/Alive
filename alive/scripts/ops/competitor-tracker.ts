@@ -520,7 +520,7 @@ main();
  */
 export function deriveUpdatesFromPosts(
   store: CompetitorPostsStore,
-  ops: OpsConfig,
+  ops?: Pick<OpsConfig, 'competitors'>,
 ): CompetitorUpdate[] {
   const updates: CompetitorUpdate[] = [];
 
@@ -533,7 +533,7 @@ export function deriveUpdatesFromPosts(
     const platform = colonIdx >= 0 ? accountKey.slice(colonIdx + 1) : 'xhs';
 
     // Resolve display name from ops config (tracker uses display names, not IDs)
-    const profile = ops.competitors?.find(
+    const profile = ops?.competitors?.find(
       c => c.name === accountName && c.platform === platform,
     );
     const displayName = profile?.name ?? accountName;
@@ -658,17 +658,38 @@ export function readCachedCompetitorsWithMeta(): CachedCompetitorsRead {
     e => getLocalDate(new Date(e.fetched_at)) === today,
   );
 
-  if (todayEntries.length === 0) {
+  if (todayEntries.length > 0) {
+    const oldestMs = getOldestFetchedAtMs(todayEntries);
+    const computedAt = oldestMs !== null
+      ? new Date(oldestMs).toISOString()
+      : log.last_updated || null;
+
+    return { updates: todayEntries, computed_at: computedAt };
+  }
+
+  // The dedicated ops-competitor-analysis cron writes competitor-posts.json.
+  // Derive the lightweight dashboard format from that store when the legacy
+  // competitor-log.json cache has no entry for today, so the UI does not show
+  // an empty competitor page after a successful analysis run.
+  const postsStore = readJSON<CompetitorPostsStore>(PATHS.competitorPosts, {
+    version: 1,
+    last_fetched: '',
+    accounts: {},
+    fetch_statuses: {},
+  });
+  const derived = deriveUpdatesFromPosts(postsStore);
+  if (derived.length === 0) {
     return { updates: [], computed_at: null };
   }
 
-  const oldestMs = getOldestFetchedAtMs(todayEntries);
+  const oldestMs = getOldestFetchedAtMs(derived);
   const computedAt = oldestMs !== null
     ? new Date(oldestMs).toISOString()
-    : log.last_updated || null;
+    : postsStore.last_fetched || null;
 
-  return { updates: todayEntries, computed_at: computedAt };
+  return { updates: derived, computed_at: computedAt };
 }
+
 
 /**
  * Returns true when the competitor-log.json cache is older than

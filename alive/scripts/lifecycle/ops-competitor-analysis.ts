@@ -22,7 +22,9 @@ import { buildCompetitorKeyFromProfile } from '../ops/competitor-keys';
 import { analyzePositioning, savePositioningReport } from '../ops/positioning-analyzer';
 import { sendBriefToSession } from '../ops/brief-generator';
 import { loadQueue } from '../ops/review-queue';
+import { loadSkillEnvVars, setPersonaName } from '../utils/file-utils';
 import type { PositioningReport } from '../utils/types';
+
 
 // ─── Weekly report card formatter ────────────────────────────────────────────
 
@@ -96,9 +98,17 @@ export function formatWeeklyReportCard(report: PositioningReport): string {
 // ─── Main pipeline ────────────────────────────────────────────────────────────
 
 export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean): Promise<void> {
+  loadSkillEnvVars('alive');
+
+  const personaArgIdx = process.argv.indexOf('--persona');
+  if (personaArgIdx !== -1 && process.argv[personaArgIdx + 1]) {
+    setPersonaName(process.argv[personaArgIdx + 1]);
+  }
+
   // 1. Load persona
   const persona = await loadPersona();
   const ops = persona.ops;
+
 
   // 2. Exit early if ops is disabled
   if (!ops?.enabled) {

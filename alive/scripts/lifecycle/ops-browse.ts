@@ -8,7 +8,7 @@
 
 import { loadPersona, getContentSourcesConfig } from '../persona/persona-loader';
 import { wallNow, getLocalDate } from '../utils/time-utils';
-import { PATHS, readJSON, writeJSON, appendText, setPersonaName } from '../utils/file-utils';
+import { PATHS, readJSON, writeJSON, appendText, setPersonaName, loadSkillEnvVars } from '../utils/file-utils';
 import { processInspirationForDiscovery, processInspirationForAccountDiscovery } from '../ops/discovery-engine';
 import { buildRouteTable, resolveRouteBySkillName, buildContext, executeSubSkill } from '../router/skill-router';
 import { createRealLLMClient } from '../utils/llm-client';
@@ -69,8 +69,16 @@ export function buildBrowseSummary(results: BrowseSourceResult[]): string {
 // ── Main ─────────────────────────────────────────────────────────
 
 export async function main(): Promise<void> {
+  loadSkillEnvVars('alive');
+
+  const personaArgIdx = process.argv.indexOf('--persona');
+  if (personaArgIdx !== -1 && process.argv[personaArgIdx + 1]) {
+    setPersonaName(process.argv[personaArgIdx + 1]);
+  }
+
   const persona = await loadPersona();
   const ops = persona.ops;
+
 
   if (!ops?.enabled) {
     console.log(`[${wallNow().toISOString()}] ops-browse: ops.enabled is false, skipping`);
@@ -101,7 +109,6 @@ export async function main(): Promise<void> {
     }
   }
 
-  setPersonaName(persona.meta.id ?? 'default');
   const llm = createRealLLMClient('ops-browse');
   const browseSources = ops.browse_sources ?? [
     { platform: 'dailyhot', count: 5 },

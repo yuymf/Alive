@@ -10,12 +10,20 @@
 import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
+import { loadSkillEnvVars, setPersonaName } from '../utils/file-utils';
 import { analyzePublishedPosts } from '../ops/post-analyzer';
 
 const DEFAULT_DELAY_HOURS = 24;
 const DEFAULT_BASELINE_WINDOW_DAYS = 7;
 
 async function main(): Promise<void> {
+  loadSkillEnvVars('alive');
+
+  const personaArgIdx = process.argv.indexOf('--persona');
+  if (personaArgIdx !== -1 && process.argv[personaArgIdx + 1]) {
+    setPersonaName(process.argv[personaArgIdx + 1]);
+  }
+
   const persona = await loadPersona();
   const ops = persona.ops;
 
