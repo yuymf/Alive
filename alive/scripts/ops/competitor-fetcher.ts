@@ -36,6 +36,11 @@ function jitter(minMs: number, maxMs: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function isXhsNonRetryable(msg: string): boolean {
+  return /Not logged in|风控|冷却|rate|limit|429|461|captcha|验证码|频繁|blocked|too many|滑块|challenge/i.test(msg);
+}
+
+
 // ─── Pure functions (exported for testing) ────────────────────────────────────
 
 /**
@@ -324,11 +329,20 @@ export async function fetchCompetitorPosts(
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('Not logged in')) {
-        console.warn(`[competitor-fetcher] XHS 未登录，跳过账号 ${key}，不影响其他平台抓取。请重新登录小红书。`);
+      if (isXhsNonRetryable(msg)) {
+        console.warn(`[competitor-fetcher] XHS user-profile 跳过搜索回退 ${key}: ${msg}`);
+        failed.push(key);
+        recordFetchStatus(fetchStatuses, {
+          canonical_key: key,
+          fetch_id: userId,
+          status: 'failed',
+          platform: 'xhs',
+          last_attempted: attemptedAt,
+          error: msg,
+        });
       } else {
         console.warn(`[competitor-fetcher] XHS user-profile 抓取失败 ${key}: ${msg}，尝试搜索回退`);
-        // Fallback to search by name
+        // Fallback to search by name only for non-rate-limit failures.
         try {
           const incoming = await fetchXhsPosts(displayName);
           const existingPosts = updatedAccounts[key] ?? [];

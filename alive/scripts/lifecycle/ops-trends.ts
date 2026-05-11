@@ -83,17 +83,32 @@ export async function main(): Promise<void> {
   let trends: Awaited<ReturnType<typeof refreshTrends>> = [];
   let competitors: CompetitorLog['entries'] = [];
 
-  console.log(`[${wallNow().toISOString()}] ops-trends: calling refreshTrends…`);
-  try {
-    trends = await refreshTrends(withMaxRoundDuration(ops, 5 * 60_000), identities, llm);
-    console.log(`[${wallNow().toISOString()}] ops-trends: refreshTrends returned ${trends.length} trends`);
-  } catch (err) {
-    const msg = (err as Error).message ?? '';
+  if (!forceRun && cacheStatus.trendsFromCache) {
+    // Trends data is still within TTL — load from cache to avoid redundant network fetches.
+    try {
+      const { readJSON } = await import('../utils/file-utils');
+      const { PATHS } = await import('../utils/file-utils');
+      const cached = readJSON<{ results: typeof trends }>(PATHS.trendsCache, { results: [] });
+      trends = cached.results ?? [];
+      console.log(`[${wallNow().toISOString()}] ops-trends: trends loaded from cache (${cacheStatus.trendsAgeMin}min old), ${trends.length} items — skipping network fetch`);
+    } catch (err) {
+      console.warn(`[${wallNow().toISOString()}] ops-trends: failed to load trends cache, will re-fetch:`, err);
+    }
+  }
 
-    if (/401|invalid key/i.test(msg)) {
-      console.error(`[${wallNow().toISOString()}] ops-trends: LLM认证失败，请检查 LLM_API_KEY 环境变量。错误: ${msg}`);
-    } else {
-      console.error(`[${wallNow().toISOString()}] ops-trends: refreshTrends failed:`, err);
+  if (trends.length === 0) {
+    console.log(`[${wallNow().toISOString()}] ops-trends: calling refreshTrends…`);
+    try {
+      trends = await refreshTrends(withMaxRoundDuration(ops, 5 * 60_000), identities, llm);
+      console.log(`[${wallNow().toISOString()}] ops-trends: refreshTrends returned ${trends.length} trends`);
+    } catch (err) {
+      const msg = (err as Error).message ?? '';
+
+      if (/401|invalid key/i.test(msg)) {
+        console.error(`[${wallNow().toISOString()}] ops-trends: LLM认证失败，请检查 LLM_API_KEY 环境变量。错误: ${msg}`);
+      } else {
+        console.error(`[${wallNow().toISOString()}] ops-trends: refreshTrends failed:`, err);
+      }
     }
   }
 

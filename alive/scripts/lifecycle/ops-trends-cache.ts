@@ -1,12 +1,11 @@
 import { PATHS, readJSON } from '../utils/file-utils';
-import { now, getLocalDate } from '../utils/time-utils';
-import type { CompetitorLog, CompetitorUpdate } from '../utils/types';
+import { now } from '../utils/time-utils';
 import {
   TRENDS_CACHE_TTL_MS,
   TRENDS_EMPTY_CACHE_TTL_MS,
   TREND_SCORING_VERSION,
 } from '../ops/trend-analyzer';
-import { COMPETITOR_CACHE_TTL_MS } from '../ops/competitor-tracker';
+import { COMPETITOR_CACHE_TTL_MS, readCachedCompetitorsWithMeta } from '../ops/competitor-tracker';
 
 interface TrendsCacheData {
   computed_at: string;
@@ -26,18 +25,7 @@ function toAgeMin(ageMs: number | null): number {
   return ageMs === null ? Infinity : Math.round(ageMs / 60_000);
 }
 
-function getOldestFetchedAtMs(entries: CompetitorUpdate[]): number | null {
-  const timestamps = entries
-    .map(entry => Date.parse(entry.fetched_at))
-    .filter(ts => Number.isFinite(ts));
 
-  return timestamps.length > 0 ? Math.min(...timestamps) : null;
-}
-
-function getCompetitorEntriesForToday(log: CompetitorLog): CompetitorUpdate[] {
-  const today = getLocalDate(now());
-  return (log.entries ?? []).filter(entry => getLocalDate(new Date(entry.fetched_at)) === today);
-}
 
 export function getOpsTrendsCacheStatus(personaIdentities: string): OpsTrendsCacheStatus {
   const result: OpsTrendsCacheStatus = {
@@ -66,10 +54,9 @@ export function getOpsTrendsCacheStatus(personaIdentities: string): OpsTrendsCac
   }
 
   try {
-    const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
-    const todayEntries = getCompetitorEntriesForToday(competitorLog);
-    if (todayEntries.length > 0) {
-      const sourceAtMs = getOldestFetchedAtMs(todayEntries) ?? Date.parse(competitorLog.last_updated);
+    const competitorMeta = readCachedCompetitorsWithMeta();
+    if (competitorMeta.computed_at && competitorMeta.updates.length > 0) {
+      const sourceAtMs = Date.parse(competitorMeta.computed_at);
       const ageMs = Number.isFinite(sourceAtMs) ? now().getTime() - sourceAtMs : null;
       result.competitorsAgeMin = toAgeMin(ageMs);
       if (ageMs !== null && ageMs < COMPETITOR_CACHE_TTL_MS) {

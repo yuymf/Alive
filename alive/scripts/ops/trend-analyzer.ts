@@ -1632,6 +1632,7 @@ export async function refreshTrends(
   }
 
   let finalResults: FilteredTrend[] = [];
+  let llmFailed = false;
   try {
     const envelope = await llm.callJSON<LLMTrendEnvelope>(prompt, 4000);
     if (isDebug()) console.log(`[trend-analyzer] DEBUG: LLM response received:`, envelope);
@@ -1711,7 +1712,20 @@ export async function refreshTrends(
       .filter((r): r is FilteredTrend => r !== null);
   } catch (err) {
     console.error(`[trend-analyzer] LLM call failed:`, err);
+    llmFailed = true;
     finalResults = [];
+  }
+
+  if (llmFailed) {
+    const existing = readJSON<TrendsCacheData>(PATHS.trendsCache, null as unknown as TrendsCacheData);
+    if (
+      existing?.results?.length
+      && existing.persona_identities === personaIdentities
+      && existing.scoring_version === TREND_SCORING_VERSION
+    ) {
+      console.warn(`[trend-analyzer] preserving previous non-empty trends cache after LLM failure (${existing.results.length} items)`);
+      return existing.results;
+    }
   }
 
   writeJSON(PATHS.trendsCache, {

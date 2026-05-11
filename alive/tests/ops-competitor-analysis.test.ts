@@ -35,6 +35,8 @@ vi.mock('../scripts/utils/file-utils', () => ({
   PATHS: {},
   readJSON: vi.fn(),
   writeJSON: vi.fn(),
+  loadSkillEnvVars: vi.fn(),
+  setPersonaName: vi.fn(),
 }));
 
 vi.mock('../scripts/ops/competitor-tracker', () => ({

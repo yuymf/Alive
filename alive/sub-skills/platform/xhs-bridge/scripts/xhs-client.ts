@@ -642,7 +642,12 @@ export async function getUserNotes(accountName: string, limit = 20): Promise<Xhs
       const data = result as Record<string, unknown>;
       const notes = (data.notes ?? []) as Array<Record<string, unknown>>;
       return notes.map(mapFeedToNote);
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/风控|冷却|rate|limit|429|461|captcha|验证码|频繁|blocked|too many|滑块|challenge/i.test(msg)) {
+        console.warn(`[xhs-bridge] get-user-notes hit rate-limit for "${accountName}", skipping search fallback: ${msg}`);
+        throw err;
+      }
       console.error(`[xhs-bridge] get-user-notes not supported, falling back to search for "${accountName}"`);
       await jitter(3000, 6000);  // fallback 前再加一次抖动
       return searchXhsNotes(accountName, { sortBy: '最新' });

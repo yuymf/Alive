@@ -23,6 +23,8 @@ import { loadStrategy } from '../ops/strategy-engine';
 import { PATHS } from '../utils/file-utils';
 import * as path from 'path';
 
+const BRIEF_TOPIC_GENERATION_TARGET = 3;
+
 async function main(): Promise<void> {
   // Load environment variables from openclaw.json (needed for isolated cron sessions)
   loadSkillEnvVars('alive');
@@ -57,14 +59,25 @@ async function main(): Promise<void> {
   const trends = readCachedTrends(identities);
   const competitors = readCachedCompetitors();
 
-  console.log(`[${wallNow().toISOString()}] ops-brief: trends=${trends.length}, calling generateTopics...`);
-  await generateTopics(trends, ops, persona.meta.name, llm, persona.voice);
+  let queue = await loadQueue();
+  let pending = queue.items.filter(i => i.status === 'pending');
+  let activePending = pending.filter(i => hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
 
-  const queue = await loadQueue();
-  const pending = queue.items.filter(i => i.status === 'pending');
-  // 只将 48h 内活跃的 pending items 传入 LLM 上下文，expired 内容不参与
-  const activePending = pending.filter(i => hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
-  console.log(`[${wallNow().toISOString()}] ops-brief: after generateTopics, pending=${pending.length} items (active=${activePending.length})`);
+  const generateCount = Math.max(
+    0,
+    Math.min(BRIEF_TOPIC_GENERATION_TARGET - activePending.length, trends.length, ops.topic_count),
+  );
+  if (generateCount > 0) {
+    console.log(`[${wallNow().toISOString()}] ops-brief: trends=${trends.length}, activePending=${activePending.length}, generating ${generateCount} topic(s)...`);
+    await generateTopics(trends, { ...ops, topic_count: generateCount }, persona.meta.name, llm, persona.voice);
+
+    queue = await loadQueue();
+    pending = queue.items.filter(i => i.status === 'pending');
+    activePending = pending.filter(i => hoursSinceCreated(i) < PENDING_EXPIRE_HOURS);
+  } else {
+    console.log(`[${wallNow().toISOString()}] ops-brief: skip topic generation (trends=${trends.length}, activePending=${activePending.length})`);
+  }
+  console.log(`[${wallNow().toISOString()}] ops-brief: pending=${pending.length} items (active=${activePending.length})`);
 
   // Generate persona alignment report for brief enrichment
   let personaReport = null;

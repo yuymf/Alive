@@ -1210,7 +1210,7 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
     const briefSession = 'isolated';
 
     specs.push(
-      { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-brief.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，生成今日运营简报（热点+选题+人设建议）。`, timeout: 360, noDeliver: briefNoDeliver, session: briefSession },
+      { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-brief.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，生成今日运营简报（热点+选题+人设建议）。`, timeout: 900, noDeliver: briefNoDeliver, session: briefSession },
     );
 
     // Background ops jobs (always-on)
@@ -1223,7 +1223,7 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
     const trendsInterval = persona.ops?.trends_interval || '5 * * * *';
     const bgJobs = [
       { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: trendsInterval, message: `[cron:ops-trends] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-trends.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，从抖音/微博/B站/头条/百度采集热点数据，追踪竞品动态，更新爆款知识库。`, timeout: 2400 },
-      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-competitor-analysis.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，采集并分析竞品账号最新帖子。`, timeout: 600 },
+      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-competitor-analysis.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，采集并分析竞品账号最新帖子。`, timeout: 1200 },
       { name: `${skillSlug}:${personaSlug}:ops-tags`, cron: '0 10,20 * * *', message: `[cron:ops-tags] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-tags.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，维护Tag词表（热门词检测+过期词清理）。`, timeout: 1200 },
     ];
     for (const job of bgJobs) {
