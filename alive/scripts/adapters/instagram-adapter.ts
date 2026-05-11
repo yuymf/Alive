@@ -478,6 +478,8 @@ export function createContentBrowseConfig(options?: {
   const maxSearchResults = options?.maxSearchResults ?? 5;
   // Only call Instagram APIs if 'instagram' is explicitly in the platform filter, or no filter is set
   const igEnabled = !platformFilter || platformFilter.includes('instagram');
+  // Only call XHS APIs if 'xhs' is explicitly in the platform filter, or no filter is set
+  const xhsEnabled = !platformFilter || platformFilter.includes('xhs');
 
   return {
     /**
@@ -495,8 +497,8 @@ export function createContentBrowseConfig(options?: {
         snippet?: string;
       }> = [];
 
-      // XHS feed (built-in)
-      try {
+      // XHS feed (built-in) — only if xhs is in the platform filter (or no filter set)
+      if (xhsEnabled) try {
         if (await isXhsAvailable()) {
           const xhsNotes = await listXhsFeed();
           for (const note of xhsNotes.slice(0, 10)) {
@@ -591,7 +593,8 @@ export function createContentBrowseConfig(options?: {
       }> = [];
 
       // XHS search — sort by popularity, filter to recent 7 days
-      try {
+      // Only if xhs is in the platform filter (or no filter set)
+      if (xhsEnabled) try {
         if (await isXhsAvailable()) {
           const notes = await searchXhsNotes(keyword, {
             sortBy: '最热',

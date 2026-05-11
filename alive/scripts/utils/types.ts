@@ -1334,11 +1334,12 @@ export interface CompetitorPost {
 export interface CompetitorAccountFetchStatus {
   readonly canonical_key: string;
   readonly fetch_id: string;
-  readonly status: 'success' | 'empty' | 'failed';
+  readonly status: 'success' | 'empty' | 'failed' | 'skipped_cooldown' | 'skipped_backoff' | 'skipped_budget';
   readonly platform: 'xhs' | 'douyin' | 'bilibili';
   readonly last_attempted: string;
   readonly error?: string;
 }
+
 
 export interface CompetitorPostsStore {
   readonly version: 1;

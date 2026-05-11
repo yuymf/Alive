@@ -9,7 +9,11 @@
 import { loadPersona, getContentSourcesConfig } from '../persona/persona-loader';
 import { wallNow, getLocalDate } from '../utils/time-utils';
 import { PATHS, readJSON, writeJSON, appendText, setPersonaName, loadSkillEnvVars } from '../utils/file-utils';
+import { TaskDeadline } from '../utils/task-deadline';
+import { beginOpsRun, finishOpsRun } from '../utils/run-status';
+import { getPlatformCooldownRemainingMs } from '../utils/platform-runtime';
 import { processInspirationForDiscovery, processInspirationForAccountDiscovery } from '../ops/discovery-engine';
+
 import { buildRouteTable, resolveRouteBySkillName, buildContext, executeSubSkill } from '../router/skill-router';
 import { createRealLLMClient } from '../utils/llm-client';
 import { hydrateEmotionState, DEFAULT_MOMENTUM, DEFAULT_UNDERTONE } from '../utils/types';
@@ -70,20 +74,29 @@ export function buildBrowseSummary(results: BrowseSourceResult[]): string {
 
 export async function main(): Promise<void> {
   loadSkillEnvVars('alive');
+  process.env.ALIVE_CRON = process.env.ALIVE_CRON ?? '1';
 
   const personaArgIdx = process.argv.indexOf('--persona');
+
   if (personaArgIdx !== -1 && process.argv[personaArgIdx + 1]) {
     setPersonaName(process.argv[personaArgIdx + 1]);
   }
 
+  const run = beginOpsRun('ops-browse');
+  const warnings: string[] = [];
+  const deadline = TaskDeadline.fromEnv('ops-browse', 'ALIVE_OPS_BROWSE_BUDGET_MS', 300_000);
+
   const persona = await loadPersona();
+
   const ops = persona.ops;
 
 
   if (!ops?.enabled) {
     console.log(`[${wallNow().toISOString()}] ops-browse: ops.enabled is false, skipping`);
+    finishOpsRun(run, 'skipped', { warnings: ['ops.enabled is false'] });
     return;
   }
+
 
   // Determine if we should run:
   // 1. If browse_schedule is set → run at scheduled times only (check current time matches)
@@ -97,24 +110,42 @@ export async function main(): Promise<void> {
       return h === nowHour && m === nowMinute;
     });
     if (!matchesSchedule) {
+      finishOpsRun(run, 'skipped', { warnings: ['not scheduled time'] });
       return; // silently skip — not a scheduled time
     }
+
     console.log(`[${wallNow().toISOString()}] ops-browse: scheduled browse at ${nowHour}:${String(nowMinute).padStart(2, '0')}`);
   } else {
     // Legacy mode: only run when heartbeat is disabled
     const enableHeartbeat = ops.automation?.enable_heartbeat_cron !== false;
     if (enableHeartbeat) {
       console.log(`[${wallNow().toISOString()}] ops-browse: heartbeat is enabled and no browse_schedule, skipping (use heartbeat-tick instead)`);
+      finishOpsRun(run, 'skipped', { warnings: ['heartbeat cron is enabled'] });
       return;
     }
+
   }
 
   const llm = createRealLLMClient('ops-browse');
-  const browseSources = ops.browse_sources ?? [
+  const configuredBrowseSources = ops.browse_sources ?? [
     { platform: 'dailyhot', count: 5 },
   ];
+  const xhsOnly = process.argv.includes('--xhs-only');
+  const includeXhs = xhsOnly || process.env.ALIVE_OPS_BROWSE_INCLUDE_XHS === '1' || process.argv.includes('--include-xhs');
+  const xhsCooldownMs = getPlatformCooldownRemainingMs('xhs');
+  const browseSources = configuredBrowseSources.filter(source => {
+    if (xhsOnly && source.platform !== 'xhs') return false;
+    if (source.platform !== 'xhs') return true;
+    if (includeXhs && xhsCooldownMs <= 0) return true;
 
-  console.log(`[${wallNow().toISOString()}] ops-browse: starting for ${persona.meta.id}, ${browseSources.length} sources`);
+    warnings.push(xhsCooldownMs > 0
+      ? `XHS browse skipped due to cooldown (${Math.round(xhsCooldownMs / 1000)}s remaining)`
+      : 'XHS browse skipped in main ops-browse; use --include-xhs for dedicated window');
+    return false;
+  });
+
+  console.log(`[${wallNow().toISOString()}] ops-browse: starting for ${persona.meta.id}, ${browseSources.length}/${configuredBrowseSources.length} sources`);
+
 
   // Build route table for sub-skill access
   buildRouteTable(undefined, persona);
@@ -122,8 +153,10 @@ export async function main(): Promise<void> {
 
   if (!browseRoute) {
     console.log(`[${wallNow().toISOString()}] ops-browse: content-browse sub-skill not found, skipping`);
+    finishOpsRun(run, 'skipped', { warnings: ['content-browse route not found'] });
     return;
   }
+
 
   const results: BrowseSourceResult[] = [];
 
@@ -151,8 +184,14 @@ export async function main(): Promise<void> {
   };
 
   for (const source of browseSources) {
+    if (!deadline.shouldStart(90_000, `browse:${source.platform}`)) {
+      warnings.push(`skip ${source.platform}: budget low`);
+      results.push({ platform: source.platform, items: [] });
+      continue;
+    }
     try {
       // Only register the provider for the current browse source platform
+
       const registry = new ContentProviderRegistry();
       const providerFactory = PROVIDER_MAP[source.platform];
       if (!providerFactory) {
@@ -194,9 +233,12 @@ export async function main(): Promise<void> {
         items: (result.narrative ? [{ title: result.narrative.slice(0, 100), source: source.platform }] : []),
       });
     } catch (err) {
-      console.error(`[ops-browse] Failed to browse ${source.platform}: ${(err as Error).message}`);
+      const msg = (err as Error).message;
+      warnings.push(`${source.platform} browse failed: ${msg}`);
+      console.error(`[ops-browse] Failed to browse ${source.platform}: ${msg}`);
       results.push({ platform: source.platform, items: [] });
     }
+
   }
 
   // Post-browse hook: trigger discovery pipeline (matches heartbeat-tick post-hook)
@@ -210,29 +252,38 @@ export async function main(): Promise<void> {
     console.error(`[ops-browse] discovery pipeline error: ${(err as Error).message}`);
   }
 
-  // Post-browse hook: active keyword search + search-keyword trend pre-computation
-  try {
-    const keywordRegistry = new ContentProviderRegistry();
-    const registered = new Set<string>();
-    for (const source of browseSources) {
-      const factory = PROVIDER_MAP[source.platform];
-      if (factory && !registered.has(source.platform)) {
-        keywordRegistry.register(factory());
-        registered.add(source.platform);
+  // Post-browse hook: active keyword search is high-risk and opt-in for cron.
+  const keywordSearchEnabled = process.env.ALIVE_OPS_BROWSE_KEYWORD_SEARCH === '1' || process.argv.includes('--keyword-search');
+  if (keywordSearchEnabled && deadline.shouldStart(120_000, 'post-browse keyword search')) {
+    try {
+      const keywordRegistry = new ContentProviderRegistry();
+      const registered = new Set<string>();
+      for (const source of browseSources) {
+        const factory = PROVIDER_MAP[source.platform];
+        if (factory && !registered.has(source.platform)) {
+          keywordRegistry.register(factory());
+          registered.add(source.platform);
+        }
       }
-    }
 
-    const kResult = await runKeywordSearch(keywordRegistry);
-    if (kResult.searched > 0) {
-      console.log(`[keyword-tracker] Searched ${kResult.searched} keywords (${kResult.keywords.join(', ')}), +${kResult.totalDiscovered} discoveries`);
+      const kResult = await runKeywordSearch(keywordRegistry);
+      if (kResult.searched > 0) {
+        console.log(`[keyword-tracker] Searched ${kResult.searched} keywords (${kResult.keywords.join(', ')}), +${kResult.totalDiscovered} discoveries`);
+      }
+    } catch (err) {
+      const msg = (err as Error).message;
+      warnings.push(`keyword search failed: ${msg}`);
+      console.warn(`[keyword-tracker] Post-browse keyword search failed: ${msg}`);
     }
-  } catch (err) {
-    console.warn(`[keyword-tracker] Post-browse keyword search failed: ${(err as Error).message}`);
+  } else {
+    console.log('[keyword-tracker] Post-browse keyword search disabled by default');
   }
 
-  if (process.env.ALIVE_OPS_BROWSE_PRECOMPUTE_SEARCH === '1') {
+
+  if (process.env.ALIVE_OPS_BROWSE_PRECOMPUTE_SEARCH === '1' && deadline.shouldStart(150_000, 'post-browse search precompute')) {
     try {
       const skItems = await refreshSearchKeywordTrends(ops);
+
       if (skItems.length > 0) {
         console.log(`[search-keyword] Pre-computed ${skItems.length} trend items from keyword searches`);
       }
@@ -272,8 +323,18 @@ export async function main(): Promise<void> {
     deliverOpsResult(imSummary, ops);
   }
 
+  finishOpsRun(run, warnings.length > 0 ? 'degraded_success' : 'success', {
+    warnings,
+    outputs: {
+      configured_sources: configuredBrowseSources.length,
+      active_sources: browseSources.length,
+      result_sources: results.filter(r => r.items.length > 0).length,
+    },
+  });
+
   console.log(`[${wallNow().toISOString()}] ops-browse: completed`);
 }
+
 
 // Guard: only run when executed directly (not when imported for testing)
 if (require.main === module) {

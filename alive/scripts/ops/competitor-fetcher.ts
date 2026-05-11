@@ -9,7 +9,18 @@
 
 import { PATHS, readJSON, writeJSON } from '../utils/file-utils';
 import { wallNow } from '../utils/time-utils';
+import { TaskDeadline } from '../utils/task-deadline';
+import {
+  enterPlatformCooldown,
+  getAccountBackoffRemainingMs,
+  getPlatformCooldownRemainingMs,
+  isAccountBackoffActive,
+  isPlatformCoolingDown,
+  recordAccountFailure,
+  recordAccountSuccess,
+} from '../utils/platform-runtime';
 import { execFileSync } from 'child_process';
+
 import type {
   CompetitorAccountFetchStatus,
   CompetitorPost,
@@ -30,11 +41,30 @@ export const MAX_POSTS_PER_ACCOUNT = 20;
 export const POST_RETENTION_DAYS = 30;
 export const DOUYIN_FETCH_TIMEOUT = 45_000;
 
+type CompetitorFetchPlatform = 'xhs' | 'douyin' | 'bilibili';
+
+export interface FetchCompetitorPostsOptions {
+  readonly platforms?: readonly CompetitorFetchPlatform[];
+  readonly deadline?: TaskDeadline;
+  readonly skipXhsFallback?: boolean;
+}
+
+const DEFAULT_FETCH_PLATFORMS: readonly CompetitorFetchPlatform[] = ['bilibili', 'douyin', 'xhs'];
+const ACCOUNT_MIN_REMAINING_MS = 75_000;
+const FINALIZE_RESERVED_MS = 20_000;
+const DOUYIN_ACCOUNT_BACKOFF_MS = 12 * 60 * 60_000;
+
 /** 随机等待 minMs~maxMs 毫秒，用于账号间节流，降低风控触发率。 */
 function jitter(minMs: number, maxMs: number): Promise<void> {
   const ms = minMs + Math.random() * (maxMs - minMs);
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+async function jitterIfBudget(deadline: TaskDeadline | undefined, minMs: number, maxMs: number, label: string): Promise<void> {
+  if (deadline && !deadline.shouldStart(maxMs + FINALIZE_RESERVED_MS, label)) return;
+  await jitter(minMs, maxMs);
+}
+
 
 function isXhsNonRetryable(msg: string): boolean {
   return /Not logged in|风控|冷却|rate|limit|429|461|captcha|验证码|频繁|blocked|too many|滑块|challenge/i.test(msg);
@@ -108,6 +138,23 @@ function recordFetchStatus(
 ): void {
   statuses[input.canonical_key] = input;
 }
+
+function saveCompetitorPostsPartial(
+  accounts: Record<string, readonly CompetitorPost[]>,
+  fetchStatuses: Record<string, CompetitorAccountFetchStatus>,
+): void {
+  writeJSON<CompetitorPostsStore>(PATHS.competitorPosts, {
+    version: 1,
+    last_fetched: wallNow().toISOString(),
+    accounts,
+    fetch_statuses: fetchStatuses,
+  });
+}
+
+function hasBudget(deadline: TaskDeadline | undefined, label: string): boolean {
+  return !deadline || deadline.shouldStart(ACCOUNT_MIN_REMAINING_MS, label);
+}
+
 
 function resolveCanonicalKey(
   profiles: readonly CompetitorProfile[],
@@ -286,9 +333,10 @@ main();
  * Results are written to PATHS.competitorPosts.
  */
 export async function fetchCompetitorPosts(
-  accounts: { xhs: string[]; xhsUserIds: Map<string, string>; douyin: string[]; bilibili?: Array<{ mid: string; name: string }> },
+  accounts: { xhs: string[]; xhsUserIds?: Map<string, string>; douyin: string[]; bilibili?: Array<{ mid: string; name: string }> },
   profiles: readonly CompetitorProfile[],
   _basePath: string,
+  options: FetchCompetitorPostsOptions = {},
 ): Promise<FetchResult> {
   const existing = readJSON<CompetitorPostsStore>(PATHS.competitorPosts, {
     version: 1,
@@ -296,7 +344,8 @@ export async function fetchCompetitorPosts(
     accounts: {},
   });
 
-  // Work on a mutable copy of the accounts map
+  const platforms = new Set(options.platforms ?? DEFAULT_FETCH_PLATFORMS);
+  const deadline = options.deadline;
   const updatedAccounts: Record<string, readonly CompetitorPost[]> = { ...existing.accounts };
   const fetchStatuses: Record<string, CompetitorAccountFetchStatus> = { ...(existing.fetch_statuses ?? {}) };
 
@@ -305,219 +354,219 @@ export async function fetchCompetitorPosts(
   const now = wallNow();
   const attemptedAt = now.toISOString();
 
-  // Fetch XHS accounts by user_id (precise fetch)
-  const xhsUserIdEntries = [...(accounts.xhsUserIds?.entries() ?? [])];
-  for (let i = 0; i < xhsUserIdEntries.length; i++) {
-    const [userId, displayName] = xhsUserIdEntries[i];
-    const key = buildAccountKey(displayName, 'xhs');
-    if (i > 0) await jitter(5000, 12000);
-    try {
-      const incoming = await fetchXhsPostsByUserId(userId, displayName);
-      const existingPosts = updatedAccounts[key] ?? [];
-      const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
-      const pruned = pruneOldPosts(merged, now);
-      updatedAccounts[key] = pruned;
-      const status = pruned.length > 0 ? 'success' : 'empty';
-      if (status === 'success') success.push(key);
-      else failed.push(key);
-      recordFetchStatus(fetchStatuses, {
-        canonical_key: key,
-        fetch_id: userId,
-        status,
-        platform: 'xhs',
-        last_attempted: attemptedAt,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (isXhsNonRetryable(msg)) {
-        console.warn(`[competitor-fetcher] XHS user-profile 跳过搜索回退 ${key}: ${msg}`);
-        failed.push(key);
-        recordFetchStatus(fetchStatuses, {
-          canonical_key: key,
-          fetch_id: userId,
-          status: 'failed',
-          platform: 'xhs',
-          last_attempted: attemptedAt,
-          error: msg,
-        });
-      } else {
+  const pushUnique = (target: string[], key: string) => {
+    if (!target.includes(key)) target.push(key);
+  };
+  const mark = (status: CompetitorAccountFetchStatus) => {
+    recordFetchStatus(fetchStatuses, status);
+    saveCompetitorPostsPartial(updatedAccounts, fetchStatuses);
+  };
+  const hasCachedPosts = (key: string) => (updatedAccounts[key]?.length ?? 0) > 0;
+  const recordResult = (key: string, ok: boolean) => pushUnique(ok ? success : failed, key);
+
+  // Fetch Bilibili first: stable source, cheap, and safe to preserve before risky platforms.
+  if (platforms.has('bilibili')) {
+    const bilibiliAccounts = accounts.bilibili ?? [];
+    for (let i = 0; i < bilibiliAccounts.length; i++) {
+      const { mid, name } = bilibiliAccounts[i];
+      const key = buildAccountKey(name, 'bilibili');
+      if (!hasBudget(deadline, `bilibili:${name}`)) {
+        recordResult(key, hasCachedPosts(key));
+        mark({ canonical_key: key, fetch_id: mid, status: 'skipped_budget', platform: 'bilibili', last_attempted: attemptedAt });
+        continue;
+      }
+      if (i > 0) await jitterIfBudget(deadline, 5000, 12000, `bilibili-jitter:${name}`);
+      try {
+        const incoming = fetchBilibiliPosts(mid, name);
+        if (incoming.length === 0) {
+          console.warn(`[competitor-fetcher] Bilibili 抓取返回 0 条 ${key}`);
+          const status = hasCachedPosts(key) ? 'success' : 'empty';
+          recordResult(key, status === 'success');
+          mark({ canonical_key: key, fetch_id: mid, status, platform: 'bilibili', last_attempted: attemptedAt });
+          continue;
+        }
+        const existingPosts = updatedAccounts[key] ?? [];
+        updatedAccounts[key] = pruneOldPosts(mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT), now);
+        recordResult(key, true);
+        mark({ canonical_key: key, fetch_id: mid, status: 'success', platform: 'bilibili', last_attempted: attemptedAt });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[competitor-fetcher] Bilibili 抓取失败 ${key}: ${msg}`);
+        recordResult(key, false);
+        mark({ canonical_key: key, fetch_id: mid, status: 'failed', platform: 'bilibili', last_attempted: attemptedAt, error: msg });
+      }
+    }
+  }
+
+  if (platforms.has('douyin')) {
+    const douyinCooldownMs = getPlatformCooldownRemainingMs('douyin');
+    if (douyinCooldownMs > 0) {
+      console.warn(`[competitor-fetcher] Douyin 平台冷却中，跳过本轮，剩余 ${Math.round(douyinCooldownMs / 1000)}s`);
+    }
+    for (let i = 0; i < accounts.douyin.length; i++) {
+      const accountId = accounts.douyin[i];
+      const key = resolveCanonicalKey(profiles, 'douyin', accountId, accountId);
+      if (douyinCooldownMs > 0) {
+        recordResult(key, hasCachedPosts(key));
+        mark({ canonical_key: key, fetch_id: accountId, status: 'skipped_cooldown', platform: 'douyin', last_attempted: attemptedAt, error: `platform cooldown ${Math.round(douyinCooldownMs / 1000)}s` });
+        continue;
+      }
+      const accountBackoffMs = getAccountBackoffRemainingMs(key);
+      if (isAccountBackoffActive(key)) {
+        console.warn(`[competitor-fetcher] Douyin 账号 ${key} backoff 中，跳过，剩余 ${Math.round(accountBackoffMs / 1000)}s`);
+        recordResult(key, hasCachedPosts(key));
+        mark({ canonical_key: key, fetch_id: accountId, status: 'skipped_backoff', platform: 'douyin', last_attempted: attemptedAt, error: `account backoff ${Math.round(accountBackoffMs / 1000)}s` });
+        continue;
+      }
+      if (!hasBudget(deadline, `douyin:${key}`)) {
+        recordResult(key, hasCachedPosts(key));
+        mark({ canonical_key: key, fetch_id: accountId, status: 'skipped_budget', platform: 'douyin', last_attempted: attemptedAt });
+        continue;
+      }
+      if (i > 0) await jitterIfBudget(deadline, 3000, 7000, `douyin-jitter:${key}`);
+      try {
+        const incoming = fetchDouyinPosts(accountId).map(post => ({
+          ...post,
+          account_name: parseAccountKey(key).name,
+        }));
+        const existingPosts = updatedAccounts[key] ?? [];
+        const pruned = pruneOldPosts(mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT), now);
+        updatedAccounts[key] = pruned;
+        const status = pruned.length > 0 ? 'success' : 'empty';
+        recordResult(key, status === 'success');
+        if (status === 'success') recordAccountSuccess(key);
+        mark({ canonical_key: key, fetch_id: accountId, status, platform: 'douyin', last_attempted: attemptedAt });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[competitor-fetcher] Douyin 抓取失败 ${key}: ${msg}`);
+        recordAccountFailure(key, msg, { backoffMs: DOUYIN_ACCOUNT_BACKOFF_MS, manualCheckThreshold: 3 });
+        if (/风控|限流|rate|cooldown|captcha|429|403/i.test(msg)) {
+          enterPlatformCooldown('douyin', msg, { cooldownMs: 30 * 60_000 });
+        }
+        recordResult(key, false);
+        mark({ canonical_key: key, fetch_id: accountId, status: 'failed', platform: 'douyin', last_attempted: attemptedAt, error: msg });
+      }
+    }
+  }
+
+  if (platforms.has('xhs')) {
+    let xhsCooldownMs = getPlatformCooldownRemainingMs('xhs');
+    let xhsUnavailable = isPlatformCoolingDown('xhs');
+
+    if (xhsUnavailable) {
+      console.warn(`[competitor-fetcher] XHS 平台冷却中，跳过本轮，剩余 ${Math.round(xhsCooldownMs / 1000)}s`);
+    }
+
+    const xhsUserIdEntries = [...(accounts.xhsUserIds?.entries() ?? [])];
+    for (let i = 0; i < xhsUserIdEntries.length; i++) {
+      const [userId, displayName] = xhsUserIdEntries[i];
+      const key = buildAccountKey(displayName, 'xhs');
+      if (xhsUnavailable) {
+        recordResult(key, hasCachedPosts(key));
+        mark({ canonical_key: key, fetch_id: userId, status: 'skipped_cooldown', platform: 'xhs', last_attempted: attemptedAt, error: `platform cooldown ${Math.round(xhsCooldownMs / 1000)}s` });
+        continue;
+      }
+      if (!hasBudget(deadline, `xhs:${key}`)) {
+        recordResult(key, hasCachedPosts(key));
+        mark({ canonical_key: key, fetch_id: userId, status: 'skipped_budget', platform: 'xhs', last_attempted: attemptedAt });
+        continue;
+      }
+      if (i > 0) await jitterIfBudget(deadline, 5000, 12000, `xhs-jitter:${key}`);
+      try {
+        const incoming = await fetchXhsPostsByUserId(userId, displayName);
+        const existingPosts = updatedAccounts[key] ?? [];
+        const pruned = pruneOldPosts(mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT), now);
+        updatedAccounts[key] = pruned;
+        const status = pruned.length > 0 ? 'success' : 'empty';
+        recordResult(key, status === 'success');
+        mark({ canonical_key: key, fetch_id: userId, status, platform: 'xhs', last_attempted: attemptedAt });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (isXhsNonRetryable(msg)) {
+          enterPlatformCooldown('xhs', msg, { cooldownMs: /461|captcha|验证码|滑块|challenge/i.test(msg) ? 6 * 60 * 60_000 : 60 * 60_000 });
+          xhsUnavailable = true;
+          xhsCooldownMs = getPlatformCooldownRemainingMs('xhs');
+          console.warn(`[competitor-fetcher] XHS user-profile 跳过搜索回退 ${key}: ${msg}`);
+
+          recordResult(key, false);
+          mark({ canonical_key: key, fetch_id: userId, status: 'failed', platform: 'xhs', last_attempted: attemptedAt, error: msg });
+          continue;
+        }
+        if (options.skipXhsFallback) {
+          console.warn(`[competitor-fetcher] XHS user-profile 抓取失败且禁用搜索回退 ${key}: ${msg}`);
+          recordResult(key, false);
+          mark({ canonical_key: key, fetch_id: userId, status: 'failed', platform: 'xhs', last_attempted: attemptedAt, error: msg });
+          continue;
+        }
         console.warn(`[competitor-fetcher] XHS user-profile 抓取失败 ${key}: ${msg}，尝试搜索回退`);
-        // Fallback to search by name only for non-rate-limit failures.
         try {
           const incoming = await fetchXhsPosts(displayName);
           const existingPosts = updatedAccounts[key] ?? [];
-          const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
-          const pruned = pruneOldPosts(merged, now);
+          const pruned = pruneOldPosts(mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT), now);
           updatedAccounts[key] = pruned;
           const status = pruned.length > 0 ? 'success' : 'empty';
-          if (status === 'success') success.push(key);
-          else failed.push(key);
-          recordFetchStatus(fetchStatuses, {
-            canonical_key: key,
-            fetch_id: userId,
-            status,
-            platform: 'xhs',
-            last_attempted: attemptedAt,
-          });
+          recordResult(key, status === 'success');
+          mark({ canonical_key: key, fetch_id: userId, status, platform: 'xhs', last_attempted: attemptedAt });
         } catch (fallbackErr) {
           const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
           console.warn(`[competitor-fetcher] XHS 搜索回退也失败 ${key}: ${fbMsg}`);
-          failed.push(key);
-          recordFetchStatus(fetchStatuses, {
-            canonical_key: key,
-            fetch_id: userId,
-            status: 'failed',
-            platform: 'xhs',
-            last_attempted: attemptedAt,
-            error: fbMsg,
-          });
+          if (isXhsNonRetryable(fbMsg)) {
+            enterPlatformCooldown('xhs', fbMsg, { cooldownMs: 60 * 60_000 });
+            xhsUnavailable = true;
+            xhsCooldownMs = getPlatformCooldownRemainingMs('xhs');
+          }
+          recordResult(key, false);
+
+          mark({ canonical_key: key, fetch_id: userId, status: 'failed', platform: 'xhs', last_attempted: attemptedAt, error: fbMsg });
         }
       }
     }
-  }
 
-  // Fetch XHS accounts by name (search)
-  for (let i = 0; i < accounts.xhs.length; i++) {
-    const accountName = accounts.xhs[i];
-    const key = buildAccountKey(accountName, 'xhs');
-    // 账号间节流：第一个账号不等，后续账号随机等待 5~12s
-    if (i > 0) await jitter(5000, 12000);
-    try {
-      const incoming = await fetchXhsPosts(accountName);
-      const existingPosts = updatedAccounts[key] ?? [];
-      const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
-      const pruned = pruneOldPosts(merged, now);
-      updatedAccounts[key] = pruned;
-      const status = pruned.length > 0 ? 'success' : 'empty';
-      if (status === 'success') success.push(key);
-      else failed.push(key);
-      recordFetchStatus(fetchStatuses, {
-        canonical_key: key,
-        fetch_id: accountName,
-        status,
-        platform: 'xhs',
-        last_attempted: attemptedAt,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('Not logged in')) {
-        console.warn(`[competitor-fetcher] XHS 未登录，跳过账号 ${key}，不影响其他平台抓取。请重新登录小红书。`);
-      } else {
-        console.warn(`[competitor-fetcher] XHS 抓取失败 ${key}: ${msg}`);
-      }
-      // 保留历史数据，只标记失败
-      failed.push(key);
-      recordFetchStatus(fetchStatuses, {
-        canonical_key: key,
-        fetch_id: accountName,
-        status: 'failed',
-        platform: 'xhs',
-        last_attempted: attemptedAt,
-        error: msg,
-      });
-    }
-  }
-
-  // Fetch Douyin accounts
-  for (let i = 0; i < accounts.douyin.length; i++) {
-    const accountId = accounts.douyin[i];
-    const key = resolveCanonicalKey(profiles, 'douyin', accountId, accountId);
-    // 账号间节流：随机等待 3~7s
-    if (i > 0) await jitter(3000, 7000);
-    try {
-      const incoming = fetchDouyinPosts(accountId).map(post => ({
-        ...post,
-        account_name: parseAccountKey(key).name,
-      }));
-      const existingPosts = updatedAccounts[key] ?? [];
-      const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
-      const pruned = pruneOldPosts(merged, now);
-      updatedAccounts[key] = pruned;
-      const status = pruned.length > 0 ? 'success' : 'empty';
-      if (status === 'success') success.push(key);
-      else failed.push(key);
-      recordFetchStatus(fetchStatuses, {
-        canonical_key: key,
-        fetch_id: accountId,
-        status,
-        platform: 'douyin',
-        last_attempted: attemptedAt,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[competitor-fetcher] Douyin 抓取失败 ${key}: ${msg}`);
-      failed.push(key);
-      recordFetchStatus(fetchStatuses, {
-        canonical_key: key,
-        fetch_id: accountId,
-        status: 'failed',
-        platform: 'douyin',
-        last_attempted: attemptedAt,
-        error: msg,
-      });
-    }
-  }
-
-  // Fetch Bilibili accounts
-  const bilibiliAccounts = accounts.bilibili ?? [];
-  for (let i = 0; i < bilibiliAccounts.length; i++) {
-    const { mid, name } = bilibiliAccounts[i];
-    const key = buildAccountKey(name, 'bilibili');
-    if (i > 0) await jitter(5000, 12000);
-    try {
-      const incoming = fetchBilibiliPosts(mid, name);
-      if (incoming.length === 0) {
-        // No posts returned — keep existing data, just log
-        console.warn(`[competitor-fetcher] Bilibili 抓取返回 0 条 ${key}`);
-        const status = updatedAccounts[key]?.length ? 'success' : 'empty';
-        if (status === 'success') success.push(key);
-        else failed.push(key);
-        recordFetchStatus(fetchStatuses, {
-          canonical_key: key,
-          fetch_id: mid,
-          status,
-          platform: 'bilibili',
-          last_attempted: attemptedAt,
-        });
+    for (let i = 0; i < accounts.xhs.length; i++) {
+      const accountName = accounts.xhs[i];
+      const key = buildAccountKey(accountName, 'xhs');
+      if (xhsUnavailable) {
+        recordResult(key, hasCachedPosts(key));
+        mark({ canonical_key: key, fetch_id: accountName, status: 'skipped_cooldown', platform: 'xhs', last_attempted: attemptedAt, error: `platform cooldown ${Math.round(xhsCooldownMs / 1000)}s` });
         continue;
       }
-      const existingPosts = updatedAccounts[key] ?? [];
-      const merged = mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT);
-      const pruned = pruneOldPosts(merged, now);
-      updatedAccounts[key] = pruned;
-      success.push(key);
-      recordFetchStatus(fetchStatuses, {
-        canonical_key: key,
-        fetch_id: mid,
-        status: 'success',
-        platform: 'bilibili',
-        last_attempted: attemptedAt,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[competitor-fetcher] Bilibili 抓取失败 ${key}: ${msg}`);
-      failed.push(key);
-      recordFetchStatus(fetchStatuses, {
-        canonical_key: key,
-        fetch_id: mid,
-        status: 'failed',
-        platform: 'bilibili',
-        last_attempted: attemptedAt,
-        error: msg,
-      });
+      if (!hasBudget(deadline, `xhs:${key}`)) {
+        recordResult(key, hasCachedPosts(key));
+        mark({ canonical_key: key, fetch_id: accountName, status: 'skipped_budget', platform: 'xhs', last_attempted: attemptedAt });
+        continue;
+      }
+      if (i > 0) await jitterIfBudget(deadline, 5000, 12000, `xhs-jitter:${key}`);
+      try {
+        const incoming = await fetchXhsPosts(accountName);
+        const existingPosts = updatedAccounts[key] ?? [];
+        const pruned = pruneOldPosts(mergeAndDedupPosts(existingPosts, incoming, MAX_POSTS_PER_ACCOUNT), now);
+        updatedAccounts[key] = pruned;
+        const status = pruned.length > 0 ? 'success' : 'empty';
+        recordResult(key, status === 'success');
+        mark({ canonical_key: key, fetch_id: accountName, status, platform: 'xhs', last_attempted: attemptedAt });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (isXhsNonRetryable(msg)) {
+          enterPlatformCooldown('xhs', msg, { cooldownMs: /461|captcha|验证码|滑块|challenge/i.test(msg) ? 6 * 60 * 60_000 : 60 * 60_000 });
+          xhsUnavailable = true;
+          xhsCooldownMs = getPlatformCooldownRemainingMs('xhs');
+        }
+        if (msg.includes('Not logged in')) {
+
+          console.warn(`[competitor-fetcher] XHS 未登录，跳过账号 ${key}，不影响其他平台抓取。请重新登录小红书。`);
+        } else {
+          console.warn(`[competitor-fetcher] XHS 抓取失败 ${key}: ${msg}`);
+        }
+        recordResult(key, false);
+        mark({ canonical_key: key, fetch_id: accountName, status: 'failed', platform: 'xhs', last_attempted: attemptedAt, error: msg });
+      }
     }
   }
 
-  const store: CompetitorPostsStore = {
-    version: 1,
-    last_fetched: wallNow().toISOString(),
-    accounts: updatedAccounts,
-    fetch_statuses: fetchStatuses,
-  };
-  writeJSON(PATHS.competitorPosts, store);
-
+  saveCompetitorPostsPartial(updatedAccounts, fetchStatuses);
   return { success, failed };
 }
+
 
 /**
  * Load the stored competitor posts from disk.

@@ -10,7 +10,10 @@ import { createRealLLMClient } from '../utils/llm-client';
 import { loadPersona } from '../persona/persona-loader';
 import { wallNow } from '../utils/time-utils';
 import { loadSkillEnvVars, setPersonaName, PATHS, readJSON } from '../utils/file-utils';
+import { TaskDeadline } from '../utils/task-deadline';
+import { beginOpsRun, finishOpsRun } from '../utils/run-status';
 import { refreshTrends, refreshSearchKeywordTrends, buildPersonaIdentities, TRENDS_CACHE_TTL_MS } from '../ops/trend-analyzer';
+
 import { cleanupOldBreakdowns, trimObservationNotes } from '../ops/competitor-memory';
 import { CompetitorLog, DissectQueueItem, OpsConfig, ViralEntry } from '../utils/types';
 import { detectViral, TrendLikeItem } from '../ops/viral-detector';
@@ -36,24 +39,33 @@ function withMaxRoundDuration(ops: OpsConfig, maxRoundDurationMs: number): OpsCo
 export async function main(): Promise<void> {
   // Load environment variables from openclaw.json (needed for isolated cron sessions)
   loadSkillEnvVars('alive');
+  process.env.ALIVE_CRON = process.env.ALIVE_CRON ?? '1';
 
 
   // If --persona <slug> was passed (e.g. from cron), override the persona context
+
   // so this job operates on the correct persona's memory directory.
   const personaArgIdx = process.argv.indexOf('--persona');
   if (personaArgIdx !== -1 && process.argv[personaArgIdx + 1]) {
     setPersonaName(process.argv[personaArgIdx + 1]);
   }
 
+  const run = beginOpsRun('ops-trends');
+  const warnings: string[] = [];
+  const deadline = TaskDeadline.fromEnv('ops-trends', 'ALIVE_OPS_TRENDS_BUDGET_MS', 240_000);
+
   const forceRun = process.argv.includes('--force');
+
 
   const persona = await loadPersona();
   const ops = persona.ops;
 
   if (!ops?.enabled) {
     console.log(`[${wallNow().toISOString()}] ops-trends: ops.enabled is false for ${persona.meta.id}, skipping`);
+    finishOpsRun(run, 'skipped', { warnings: ['ops.enabled is false'] });
     return;
   }
+
 
   const identities = buildPersonaIdentities(persona);
 
@@ -63,8 +75,15 @@ export async function main(): Promise<void> {
   const cacheStatus = getOpsTrendsCacheStatus(identities);
   if (!forceRun && cacheStatus.trendsFromCache && cacheStatus.competitorsFromCache) {
     console.log(`[${wallNow().toISOString()}] ops-trends: 数据未刷新，跳过本轮执行（趋势缓存 ${cacheStatus.trendsAgeMin}min / 竞品缓存 ${cacheStatus.competitorsAgeMin}min，TTL=${TRENDS_CACHE_TTL_MS / 60_000}min）`);
+    finishOpsRun(run, 'skipped', {
+      outputs: {
+        trends_cache_age_min: cacheStatus.trendsAgeMin,
+        competitors_cache_age_min: cacheStatus.competitorsAgeMin,
+      },
+    });
     return;
   }
+
   if (forceRun) {
     console.log(`[${wallNow().toISOString()}] ops-trends: --force 已设置，跳过缓存检查强制执行（趋势缓存 ${cacheStatus.trendsAgeMin}min / 竞品缓存 ${cacheStatus.competitorsAgeMin}min）`);
   }
@@ -120,17 +139,23 @@ export async function main(): Promise<void> {
     console.error(`[${wallNow().toISOString()}] ops-trends: load cached competitors failed:`, err);
   }
 
-  // Search-keyword trends (XHS/Douyin keyword search) — this also discovers
-  // candidate competitors from high-engagement search results.
+  // Search-keyword trends hit high-risk platforms (XHS/Douyin); keep them out
+  // of the default trends cron unless explicitly requested.
   let searchKeywordCount = 0;
+  const keywordSearchEnabled = process.env.ALIVE_OPS_TRENDS_KEYWORD_SEARCH === '1' || process.argv.includes('--keyword-search');
 
-  try {
-    const skItems = await refreshSearchKeywordTrends(withMaxRoundDuration(ops, 2 * 60_000));
-    searchKeywordCount = skItems.length;
-  } catch (err) {
-
-    console.error(`[${wallNow().toISOString()}] ops-trends: refreshSearchKeywordTrends failed:`, err);
+  if (keywordSearchEnabled && deadline.shouldStart(150_000, 'search-keyword trends')) {
+    try {
+      const skItems = await refreshSearchKeywordTrends(withMaxRoundDuration(ops, 2 * 60_000));
+      searchKeywordCount = skItems.length;
+    } catch (err) {
+      warnings.push(`refreshSearchKeywordTrends failed: ${(err as Error).message}`);
+      console.error(`[${wallNow().toISOString()}] ops-trends: refreshSearchKeywordTrends failed:`, err);
+    }
+  } else {
+    console.log(`[${wallNow().toISOString()}] ops-trends: search-keyword trends disabled by default`);
   }
+
 
   const trendCount = trends.length;
   const competitorCount = competitors.length;
@@ -178,11 +203,12 @@ export async function main(): Promise<void> {
     }
 
     // 3. 批量拆解
-    const llmViral = createRealLLMClient('viral-dissector');
-    const toProcess = dequeueItems(basePath, batchSize);
+    const toProcess = deadline.shouldStart(120_000, 'viral-kb dissect') ? dequeueItems(basePath, batchSize) : [];
     if (toProcess.length > 0) {
+      const llmViral = createRealLLMClient('viral-dissector');
       const personaId = persona.meta.id ?? 'default';
       dissectedEntries = await dissectBatch(toProcess, llmViral, personaId);
+
       for (const entry of dissectedEntries) {
         upsertEntry(basePath, entry);
         const result = checkFormulaPromotion(basePath, entry, PATHS.personaConfig);
@@ -239,7 +265,18 @@ export async function main(): Promise<void> {
   const summary = summaryLines.join('\n');
   console.log('\n' + summary);
   deliverOpsResult(summary, ops);
+  finishOpsRun(run, warnings.length > 0 ? 'degraded_success' : 'success', {
+    warnings,
+    outputs: {
+      trends: trendCount,
+      competitors: competitorCount,
+      search_keyword_items: searchKeywordCount,
+      viral_candidates: viralCandidates.length,
+      dissected_entries: dissectedEntries.length,
+    },
+  });
 }
+
 
 if (require.main === module) {
   main()

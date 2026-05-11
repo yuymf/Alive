@@ -128,6 +128,8 @@ export const PATHS = {
   get travelState() { return path.join(getMemoryBase(), 'state', 'travel-state.json'); },
   get workImpulse() { return path.join(getMemoryBase(), 'state', 'work-impulse.json'); },
   get contentStrategy() { return path.join(getMemoryBase(), 'state', 'content-strategy.json'); },
+  get platformRuntime() { return path.join(getMemoryBase(), 'state', 'platform-runtime.json'); },
+  get opsRunStatus() { return path.join(getMemoryBase(), 'state', 'ops-run-status.json'); },
 
   // === queues/ — Transient queues & logs ===
   get intentPool() { return path.join(getMemoryBase(), 'queues', 'intent-pool.json'); },

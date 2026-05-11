@@ -24,6 +24,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
+import {
+  enterPlatformCooldown,
+  getPlatformCooldownRemainingMs,
+  getPlatformRuntime,
+  recordPlatformSuccess,
+} from '../../../../scripts/utils/platform-runtime';
+
 
 const XHS_CLI_TIMEOUT = 75_000;  // 延长至 75s，减少因慢速响应触发的风控重试
 
@@ -182,6 +189,21 @@ function createRateLimiter(): XhsRateLimiter {
     }
   }
 
+  function getMaxWaitMs(): number {
+    const raw = process.env.XHS_CRON_MAX_WAIT_MS;
+    const parsed = raw ? Number(raw) : NaN;
+    if (process.env.ALIVE_CRON === '1') return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10_000;
+    return Infinity;
+  }
+
+  async function waitOrSkip(waitMs: number, reason: string): Promise<void> {
+    const maxWaitMs = getMaxWaitMs();
+    if (waitMs > maxWaitMs) {
+      throw new Error(`[xhs-bridge] skip: ${reason} wait ${Math.round(waitMs / 1000)}s exceeds max ${Math.round(maxWaitMs / 1000)}s`);
+    }
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+  }
+
   return {
     async acquire() {
       refillTokens();
@@ -190,7 +212,7 @@ function createRateLimiter(): XhsRateLimiter {
       if (tokens <= 0) {
         const waitMs = BUCKET_REFILL_MS - (Date.now() - lastRefill);
         console.log(`[xhs-bridge] Rate limiter: bucket empty, waiting ${Math.round(waitMs / 1000)}s for refill`);
-        await new Promise(resolve => setTimeout(resolve, waitMs));
+        await waitOrSkip(waitMs, 'bucket refill');
         refillTokens();
       }
 
@@ -201,12 +223,13 @@ function createRateLimiter(): XhsRateLimiter {
         const jitterWait = gaussianJitter(0, MAX_JITTER_MS);
         const totalWait = baseWait + jitterWait;
         console.log(`[xhs-bridge] Rate limiter: waiting ${(totalWait / 1000).toFixed(1)}s (interval + gaussian jitter)`);
-        await new Promise(resolve => setTimeout(resolve, totalWait));
+        await waitOrSkip(totalWait, 'interval');
       }
 
       tokens--;
       lastRequestTime = Date.now();
     },
+
 
     getCachedLoginStatus(): boolean | null {
       if (loginCacheValue === null) return null;
@@ -278,11 +301,23 @@ function isXhs461Signal(text: string): boolean {
   return XHS_461_SIGNALS.some(signal => lower.includes(signal));
 }
 
+function syncXhsCooldownFromStore(): void {
+  const stored = getPlatformRuntime('xhs');
+  const storedUntil = stored.cooldown_until ? new Date(stored.cooldown_until).getTime() : 0;
+  if (storedUntil > _xhsRateLimitState.cooldownUntil) {
+    _xhsRateLimitState.cooldownUntil = storedUntil;
+    _xhsRateLimitState.consecutiveHits = stored.consecutive_hits;
+    _xhsRateLimitState.lastReason = stored.last_reason;
+  }
+}
+
 function xhsIsInCooldown(): boolean {
+  syncXhsCooldownFromStore();
   return Date.now() < _xhsRateLimitState.cooldownUntil;
 }
 
 function xhsEnterCooldown(reason: string, retryAfterS: number = 0): void {
+  syncXhsCooldownFromStore();
   _xhsRateLimitState.consecutiveHits++;
   _xhsRateLimitState.lastReason = reason;
 
@@ -302,6 +337,8 @@ function xhsEnterCooldown(reason: string, retryAfterS: number = 0): void {
   const actualS = Math.max(30, cooldownS + noise);
 
   _xhsRateLimitState.cooldownUntil = Date.now() + actualS * 1000;
+  const persisted = enterPlatformCooldown('xhs', reason, { cooldownMs: actualS * 1000 });
+  _xhsRateLimitState.consecutiveHits = persisted.consecutive_hits;
   console.warn(
     `[xhs-bridge] 风控冷却: ${reason}, 等待 ${Math.round(actualS)}s ` +
     `(连续 ${_xhsRateLimitState.consecutiveHits} 次)`,
@@ -314,10 +351,12 @@ function xhsResetCooldown(): void {
       `[xhs-bridge] 风控冷却重置 (之前连续 ${_xhsRateLimitState.consecutiveHits} 次)`,
     );
   }
+  _xhsRateLimitState.cooldownUntil = 0;
   _xhsRateLimitState.consecutiveHits = 0;
   _xhsRateLimitState.lastReason = '';
-  // 注意：不重置 cooldownUntil，让当前冷却期自然结束
+  recordPlatformSuccess('xhs');
 }
+
 
 /** 检测 CLI 输出中是否包含风控信号 */
 function isXhsRateLimitSignal(text: string): boolean {
@@ -332,14 +371,17 @@ export function getXhsRateLimitStatus(): {
   consecutive_hits: number;
   last_reason: string;
 } {
-  const remaining = Math.max(0, Math.round((_xhsRateLimitState.cooldownUntil - Date.now()) / 1000));
+  syncXhsCooldownFromStore();
+  const remainingMs = Math.max(getPlatformCooldownRemainingMs('xhs'), _xhsRateLimitState.cooldownUntil - Date.now());
+  const stored = getPlatformRuntime('xhs');
   return {
-    in_cooldown: xhsIsInCooldown(),
-    cooldown_remaining_s: remaining,
-    consecutive_hits: _xhsRateLimitState.consecutiveHits,
-    last_reason: _xhsRateLimitState.lastReason,
+    in_cooldown: remainingMs > 0,
+    cooldown_remaining_s: Math.max(0, Math.round(remainingMs / 1000)),
+    consecutive_hits: Math.max(_xhsRateLimitState.consecutiveHits, stored.consecutive_hits),
+    last_reason: stored.last_reason || _xhsRateLimitState.lastReason,
   };
 }
+
 
 export interface XhsNote {
   id: string;

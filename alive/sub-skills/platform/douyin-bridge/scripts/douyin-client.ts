@@ -12,6 +12,13 @@
 import { spawnSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
+import {
+  enterPlatformCooldown,
+  getPlatformCooldownRemainingMs,
+  getPlatformRuntime,
+  recordPlatformSuccess,
+} from '../../../../scripts/utils/platform-runtime';
+
 
 const DOUYIN_SKILLS_DIR = process.env.DOUYIN_SKILLS_DIR
   ?? path.join(os.homedir(), '.openclaw', 'skills', 'douyin-skills');
@@ -47,11 +54,23 @@ const MAX_COOLDOWN_S = 1800;
 /** 连续多少次风控后进入长冷却（10分钟+） */
 const LONG_COOLDOWN_THRESHOLD = 3;
 
+function syncCooldownFromStore(): void {
+  const stored = getPlatformRuntime('douyin');
+  const storedUntil = stored.cooldown_until ? new Date(stored.cooldown_until).getTime() : 0;
+  if (storedUntil > _rateLimitState.cooldownUntil) {
+    _rateLimitState.cooldownUntil = storedUntil;
+    _rateLimitState.consecutiveHits = stored.consecutive_hits;
+    _rateLimitState.lastReason = stored.last_reason;
+  }
+}
+
 function isInCooldown(): boolean {
+  syncCooldownFromStore();
   return Date.now() < _rateLimitState.cooldownUntil;
 }
 
 function enterCooldown(reason: string, retryAfterS: number = 0): void {
+  syncCooldownFromStore();
   _rateLimitState.consecutiveHits++;
   _rateLimitState.lastReason = reason;
 
@@ -72,6 +91,8 @@ function enterCooldown(reason: string, retryAfterS: number = 0): void {
   const actualS = Math.max(30, cooldownS + noise);
 
   _rateLimitState.cooldownUntil = Date.now() + actualS * 1000;
+  const persisted = enterPlatformCooldown('douyin', reason, { cooldownMs: actualS * 1000 });
+  _rateLimitState.consecutiveHits = persisted.consecutive_hits;
   console.warn(
     `[douyin-client] 风控冷却: ${reason}, 等待 ${Math.round(actualS)}s ` +
     `(连续 ${_rateLimitState.consecutiveHits} 次)`,
@@ -84,10 +105,12 @@ function resetCooldown(): void {
       `[douyin-client] 风控冷却重置 (之前连续 ${_rateLimitState.consecutiveHits} 次)`,
     );
   }
+  _rateLimitState.cooldownUntil = 0;
   _rateLimitState.consecutiveHits = 0;
   _rateLimitState.lastReason = '';
-  // 注意：不重置 cooldownUntil，让当前冷却期自然结束
+  recordPlatformSuccess('douyin');
 }
+
 
 // ─── 节流工具 ─────────────────────────────────────────────────────────────────
 
@@ -262,11 +285,14 @@ export function getDouyinRateLimitStatus(): {
   consecutive_hits: number;
   last_reason: string;
 } {
-  const remaining = Math.max(0, Math.round((_rateLimitState.cooldownUntil - Date.now()) / 1000));
+  syncCooldownFromStore();
+  const remainingMs = Math.max(getPlatformCooldownRemainingMs('douyin'), _rateLimitState.cooldownUntil - Date.now());
+  const stored = getPlatformRuntime('douyin');
   return {
-    in_cooldown: isInCooldown(),
-    cooldown_remaining_s: remaining,
-    consecutive_hits: _rateLimitState.consecutiveHits,
-    last_reason: _rateLimitState.lastReason,
+    in_cooldown: remainingMs > 0,
+    cooldown_remaining_s: Math.max(0, Math.round(remainingMs / 1000)),
+    consecutive_hits: Math.max(_rateLimitState.consecutiveHits, stored.consecutive_hits),
+    last_reason: stored.last_reason || _rateLimitState.lastReason,
   };
 }
+

@@ -88,7 +88,10 @@ beforeEach(() => {
 
   vi.clearAllMocks();
   delete process.env.ALIVE_OPS_BROWSE_PRECOMPUTE_SEARCH;
+  delete process.env.ALIVE_OPS_BROWSE_KEYWORD_SEARCH;
+  delete process.env.ALIVE_OPS_BROWSE_INCLUDE_XHS;
 });
+
 
 
 afterEach(() => {
@@ -246,26 +249,24 @@ describe('ops-browse gate checks', () => {
 describe('ops-browse execution', () => {
   const fakeRoute = { skillName: 'content-browse', action: 'feed-browse', priority: 4 };
 
-  it('calls executeSubSkill for each browse source and writes diary + log', async () => {
+  it('excludes XHS by default and writes diary + log for safe browse sources', async () => {
     const persona = makeOpsPersona();
     mockLoadPersona.mockResolvedValue(persona);
     mockResolveRouteBySkillName.mockReturnValue(fakeRoute);
-    mockExecuteSubSkill
-      .mockResolvedValueOnce({ narrative: '发现电竞趋势：女性解说崛起，多个账号涨粉迅速' })
-      .mockResolvedValueOnce({ narrative: 'B站KPL春季赛回顾视频热度上升' });
+    mockExecuteSubSkill.mockResolvedValueOnce({ narrative: 'B站KPL春季赛回顾视频热度上升' });
 
     await main();
 
-    // Should call executeSubSkill for each browse source (xhs + bilibili)
-    expect(mockExecuteSubSkill).toHaveBeenCalledTimes(2);
+    // Main browse cron excludes XHS unless explicitly enabled.
+    expect(mockExecuteSubSkill).toHaveBeenCalledTimes(1);
 
     // Should call buildContext with correct keywords from persona
-    expect(mockBuildContext).toHaveBeenCalledTimes(2);
+    expect(mockBuildContext).toHaveBeenCalledTimes(1);
 
     // Diary should be written
     const diary = readText(PATHS.diary);
     expect(diary).toContain('ops-browse');
-    expect(diary).toContain('xhs');
+    expect(diary).not.toContain('xhs');
     expect(diary).toContain('bilibili');
 
     // Heartbeat log should be written
@@ -273,8 +274,9 @@ describe('ops-browse execution', () => {
     expect(log.logs).toHaveLength(1);
     expect(log.logs[0].type).toBe('regular');
     expect(log.logs[0].status).toBe('completed');
-    expect(log.logs[0].chosen_actions).toEqual(['ops-browse:xhs', 'ops-browse:bilibili']);
+    expect(log.logs[0].chosen_actions).toEqual(['ops-browse:bilibili']);
   });
+
 
   it('uses default browse_sources when none configured', async () => {
     const persona = makeOpsPersona();
@@ -312,8 +314,10 @@ describe('ops-browse execution', () => {
     expect(log.logs[0].tick_summary).toBe('No browse results');
   });
 
-  it('runs keyword search and optionally pre-computes search-keyword trends after browse', async () => {
+  it('runs keyword search and optionally pre-computes search-keyword trends after browse when enabled', async () => {
+    process.env.ALIVE_OPS_BROWSE_KEYWORD_SEARCH = '1';
     process.env.ALIVE_OPS_BROWSE_PRECOMPUTE_SEARCH = '1';
+
     const persona = makeOpsPersona();
 
     mockLoadPersona.mockResolvedValue(persona);
@@ -340,8 +344,10 @@ describe('ops-browse execution', () => {
 describe('ops-browse error handling', () => {
   const fakeRoute = { skillName: 'content-browse', action: 'feed-browse', priority: 4 };
 
-  it('catches sub-skill errors gracefully and continues to next source', async () => {
+  it('catches sub-skill errors gracefully and continues to next source when XHS is explicitly enabled', async () => {
+    process.env.ALIVE_OPS_BROWSE_INCLUDE_XHS = '1';
     const persona = makeOpsPersona();
+
     mockLoadPersona.mockResolvedValue(persona);
     mockResolveRouteBySkillName.mockReturnValue(fakeRoute);
     mockExecuteSubSkill

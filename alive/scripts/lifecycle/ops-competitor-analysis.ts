@@ -23,7 +23,10 @@ import { analyzePositioning, savePositioningReport } from '../ops/positioning-an
 import { sendBriefToSession } from '../ops/brief-generator';
 import { loadQueue } from '../ops/review-queue';
 import { loadSkillEnvVars, setPersonaName } from '../utils/file-utils';
+import { TaskDeadline } from '../utils/task-deadline';
+import { beginOpsRun, finishOpsRun, type OpsRunStatusKind } from '../utils/run-status';
 import type { PositioningReport } from '../utils/types';
+
 
 
 // ─── Weekly report card formatter ────────────────────────────────────────────
@@ -99,13 +102,20 @@ export function formatWeeklyReportCard(report: PositioningReport): string {
 
 export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean): Promise<void> {
   loadSkillEnvVars('alive');
+  process.env.ALIVE_CRON = process.env.ALIVE_CRON ?? '1';
 
   const personaArgIdx = process.argv.indexOf('--persona');
+
   if (personaArgIdx !== -1 && process.argv[personaArgIdx + 1]) {
     setPersonaName(process.argv[personaArgIdx + 1]);
   }
 
+  const run = beginOpsRun('ops-competitor-analysis');
+  const warnings: string[] = [];
+  let finalStatus: OpsRunStatusKind = 'success';
+
   // 1. Load persona
+
   const persona = await loadPersona();
   const ops = persona.ops;
 
@@ -115,10 +125,13 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
     console.log(
       `[${wallNow().toISOString()}] ops-competitor-analysis: ops.enabled is false for ${persona.meta.id}, skipping`,
     );
+    finishOpsRun(run, 'skipped', { warnings: ['ops.enabled is false'] });
     return;
   }
 
+  const deadline = TaskDeadline.fromEnv('ops-competitor-analysis', 'ALIVE_OPS_COMPETITOR_BUDGET_MS', 480_000);
   const llm = createRealLLMClient('ops-competitor-analysis');
+
   const profiles = ops.competitors ?? [];
 
   // 3. Resolve competitor accounts
@@ -141,14 +154,46 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
   );
 
   // ── Layer 1: Fetch posts ──────────────────────────────────────────────────
-  const fetchResult = await fetchCompetitorPosts(accountsWithBilibili, profiles, '');
+  const xhsOnly = process.argv.includes('--xhs-only');
+  const fetchPlatforms: Array<'bilibili' | 'douyin' | 'xhs'> = xhsOnly ? ['xhs'] : ['bilibili', 'douyin'];
+  if (!xhsOnly && (process.env.ALIVE_OPS_COMPETITOR_ENABLE_XHS === '1' || process.argv.includes('--include-xhs'))) {
+    fetchPlatforms.push('xhs');
+  } else if (!xhsOnly && (accounts.xhs.length > 0 || accounts.xhsUserIds.size > 0)) {
+    warnings.push('XHS realtime fetch disabled in main competitor cron; use dedicated xhs fetch window');
+  }
+
+  const fetchResult = await fetchCompetitorPosts(accountsWithBilibili, profiles, '', {
+
+    platforms: fetchPlatforms,
+    deadline,
+    skipXhsFallback: true,
+  });
+  if (fetchResult.failed.length > 0) finalStatus = 'degraded_success';
   console.log(
     `[${wallNow().toISOString()}] ops-competitor-analysis: Layer 1 done — ` +
-    `${fetchResult.success.length} fetched, ${fetchResult.failed.length} failed`,
+    `${fetchResult.success.length} fetched/usable, ${fetchResult.failed.length} failed/skipped`,
   );
+
+  if (xhsOnly) {
+    finishOpsRun(run, finalStatus, {
+      warnings,
+      outputs: { fetched: fetchResult.success.length, failed: fetchResult.failed.length, platforms: fetchPlatforms },
+    });
+    return;
+  }
+
+  if (!deadline.shouldStart(180_000, 'Layer 2 competitor analysis')) {
+
+    finishOpsRun(run, 'skipped_due_to_budget', {
+      warnings,
+      outputs: { fetched: fetchResult.success.length, failed: fetchResult.failed.length },
+    });
+    return;
+  }
 
   // ── Layer 2: Per-account analysis ─────────────────────────────────────────
   const postsStore = loadCompetitorPosts();
+
   const analyzedStore = await analyzeCompetitors(postsStore, profiles, llm);
   const configuredSupported = profiles
     .filter(profile => profile.platform === 'xhs' || profile.platform === 'douyin' || profile.platform === 'bilibili')
@@ -198,8 +243,19 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
       `[${wallNow().toISOString()}] ops-competitor-analysis: Layer 3 skipped ` +
       `(isMonday=${isMonday}, analyzedCount=${analyzedCount})`,
     );
+    finishOpsRun(run, finalStatus, {
+      warnings,
+      outputs: {
+        fetched: fetchResult.success.length,
+        failed: fetchResult.failed.length,
+        analyzed: analyzedCount,
+        missing_posts: coverage.missing_posts.length,
+        failed_analysis: coverage.failed_analysis.length,
+      },
+    });
     return;
   }
+
 
   // Load published items from review queue for context
   const queue = await loadQueue();
@@ -210,8 +266,18 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
     console.log(
       `[${wallNow().toISOString()}] ops-competitor-analysis: Layer 3 returned no report, skipping`,
     );
+    finishOpsRun(run, finalStatus, {
+      warnings,
+      outputs: {
+        fetched: fetchResult.success.length,
+        failed: fetchResult.failed.length,
+        analyzed: analyzedCount,
+        positioning_report: false,
+      },
+    });
     return;
   }
+
 
   savePositioningReport(report);
 
@@ -222,7 +288,18 @@ export async function runCompetitorAnalysisPipeline(isMondayOverride?: boolean):
     `[${wallNow().toISOString()}] ops-competitor-analysis: Layer 3 done — ` +
     `positioning report saved, stdout delivery ${sent ? 'succeeded' : 'failed'}`,
   );
+  finishOpsRun(run, finalStatus, {
+    warnings,
+    outputs: {
+      fetched: fetchResult.success.length,
+      failed: fetchResult.failed.length,
+      analyzed: analyzedCount,
+      positioning_report: true,
+      delivered: sent,
+    },
+  });
 }
+
 
 // ─── CLI entry point ──────────────────────────────────────────────────────────
 

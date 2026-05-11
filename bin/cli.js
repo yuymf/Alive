@@ -1222,10 +1222,12 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
     // midway kills that burn cached state.
     const trendsInterval = persona.ops?.trends_interval || '5 * * * *';
     const bgJobs = [
-      { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: trendsInterval, message: `[cron:ops-trends] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-trends.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，从抖音/微博/B站/头条/百度采集热点数据，追踪竞品动态，更新爆款知识库。`, timeout: 2400 },
-      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-competitor-analysis.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，采集并分析竞品账号最新帖子。`, timeout: 1200 },
+      { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: trendsInterval, message: `[cron:ops-trends] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-trends.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，从稳定热点缓存整理趋势；默认不触发小红书/抖音关键词搜索。`, timeout: 600 },
+      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-competitor-analysis.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，采集B站/抖音并分析竞品账号最新帖子；小红书由独立短任务处理。`, timeout: 600 },
+      { name: `${skillSlug}:${personaSlug}:ops-competitor-xhs`, cron: '30 6 * * *', message: `[cron:ops-competitor-xhs] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-competitor-analysis.js')}${personaSlug ? ' --persona ' + personaSlug : ''} --xhs-only，短预算采集小红书竞品；冷却中立即跳过。`, timeout: 180 },
       { name: `${skillSlug}:${personaSlug}:ops-tags`, cron: '0 10,20 * * *', message: `[cron:ops-tags] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-tags.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，维护Tag词表（热门词检测+过期词清理）。`, timeout: 1200 },
     ];
+
     for (const job of bgJobs) {
       specs.push({ ...job, noDeliver: silentBg });
     }
@@ -1251,10 +1253,18 @@ function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
       specs.push({
         name: `${skillSlug}:${personaSlug}:ops-browse`,
         cron: browseInterval,
-        message: `[cron:ops-browse] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-browse.js')}${personaSlug ? ' --persona ' + personaSlug : ''} 浏览内容平台发现灵感。`,
-        timeout: 2400,
+        message: `[cron:ops-browse] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-browse.js')}${personaSlug ? ' --persona ' + personaSlug : ''} 浏览稳定内容平台发现灵感；默认不触发小红书。`,
+        timeout: 600,
         noDeliver: silentBg,
       });
+      specs.push({
+        name: `${skillSlug}:${personaSlug}:ops-browse-xhs`,
+        cron: '35 10 * * *',
+        message: `[cron:ops-browse-xhs] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-browse.js')}${personaSlug ? ' --persona ' + personaSlug : ''} --xhs-only 浏览小红书；冷却中立即跳过。`,
+        timeout: 180,
+        noDeliver: silentBg,
+      });
+
     }
   }
 
