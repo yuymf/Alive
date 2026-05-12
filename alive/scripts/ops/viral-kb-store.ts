@@ -14,7 +14,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { readJSON, writeJSON } from '../utils/file-utils';
 import { wallNow } from '../utils/time-utils';
-import { ViralEntry, UniversalFormula, DissectQueueItem, ViralPlatform, ViralConfidenceLevel } from '../utils/types';
+import { ViralEntry, UniversalFormula, DissectQueueItem, ViralPlatform, ViralConfidenceLevel, ViralKbTopic, ViralKnowledgeType } from '../utils/types';
 
 // ─── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -89,6 +89,8 @@ export interface KBStats {
   usable_count: number;
   by_content_type: Record<string, number>;
   by_hook_type: Record<string, number>;
+  by_topic: Record<string, number>;
+  by_knowledge_type: Record<string, number>;
 }
 
 export interface KBAuditReport {
@@ -760,6 +762,66 @@ export function queryAll(basePath: string, opts: QueryAllOptions = {}): ViralEnt
   return opts.limit ? entries.slice(0, opts.limit) : entries;
 }
 
+// ─── Topic-based queries ─────────────────────────────────────────────────────
+
+export interface QueryByTopicOptions {
+  topic: ViralKbTopic;
+  platform?: ViralPlatform;
+  limit?: number;
+  sort?: 'recency' | 'likes';
+}
+
+/**
+ * Query entries that have a specific topic tag in their dissection.topics array.
+ */
+export function queryByTopic(basePath: string, opts: QueryByTopicOptions): ViralEntry[] {
+  let entries = loadEntries(basePath);
+
+  // Exclude deprecated
+  entries = entries.filter(e => e.entry_status !== 'deprecated');
+
+  // Filter by topic
+  entries = entries.filter(e =>
+    e.dissection?.topics?.includes(opts.topic)
+  );
+
+  if (opts.platform) {
+    entries = entries.filter(e => e.platform === opts.platform);
+  }
+
+  entries = sortEntries(entries, opts.sort);
+  return opts.limit ? entries.slice(0, opts.limit) : entries;
+}
+
+export interface QueryByKnowledgeTypeOptions {
+  knowledgeType: ViralKnowledgeType;
+  platform?: ViralPlatform;
+  limit?: number;
+  sort?: 'recency' | 'likes';
+}
+
+/**
+ * Query entries by their knowledge_type classification.
+ */
+export function queryByKnowledgeType(basePath: string, opts: QueryByKnowledgeTypeOptions): ViralEntry[] {
+  let entries = loadEntries(basePath);
+
+  // Exclude deprecated
+  entries = entries.filter(e => e.entry_status !== 'deprecated');
+
+  // Filter by knowledge type
+  entries = entries.filter(e =>
+    e.dissection?.knowledge_type === opts.knowledgeType
+  );
+
+  if (opts.platform) {
+    entries = entries.filter(e => e.platform === opts.platform);
+  }
+
+  entries = sortEntries(entries, opts.sort);
+  return opts.limit ? entries.slice(0, opts.limit) : entries;
+}
+
 export interface QueryFormulasOptions {
   platform?: ViralPlatform;
 }
@@ -788,6 +850,8 @@ export function getStats(basePath: string): KBStats {
   const by_status: Record<string, number> = {};
   const by_content_type: Record<string, number> = {};
   const by_hook_type: Record<string, number> = {};
+  const by_topic: Record<string, number> = {};
+  const by_knowledge_type: Record<string, number> = {};
 
   let failed_count = 0;
   let hollow_count = 0;
@@ -821,6 +885,14 @@ export function getStats(basePath: string): KBStats {
     if (hookType) {
       by_hook_type[hookType] = (by_hook_type[hookType] ?? 0) + 1;
     }
+    if (e.dissection?.topics) {
+      for (const topic of e.dissection.topics) {
+        by_topic[topic] = (by_topic[topic] ?? 0) + 1;
+      }
+    }
+    if (e.dissection?.knowledge_type) {
+      by_knowledge_type[e.dissection.knowledge_type] = (by_knowledge_type[e.dissection.knowledge_type] ?? 0) + 1;
+    }
   }
 
   return {
@@ -835,6 +907,8 @@ export function getStats(basePath: string): KBStats {
     usable_count,
     by_content_type,
     by_hook_type,
+    by_topic,
+    by_knowledge_type,
   };
 }
 

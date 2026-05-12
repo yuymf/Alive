@@ -2098,6 +2098,27 @@ export type ViralConfidenceLevel = 'low' | 'medium' | 'high';
 /** Platforms supported by the viral knowledge base. */
 export type ViralPlatform = 'douyin' | 'xhs';
 
+/** Predefined topic categories for viral KB entries (fixed 10 categories). */
+export const VIRAL_KB_TOPICS = [
+  '商业模式',   // 变现路径、定价、产品设计
+  '内容创作',   // 选题、文案、排版、节奏
+  '流量运营',   // 起号、投流、算法、分发
+  '人设打造',   // IP、身份、信任感、辨识度
+  '视觉设计',   // 封面、配色、构图、字体
+  '互动设计',   // 评论引导、投票、粉丝互动
+  '情绪营销',   // 共鸣、恐惧、好奇、争议
+  '产品定位',   // 用户画像、需求匹配、竞品差异
+  '用户心理',   // 决策、从众、损失厌恶、锚定
+  '平台规则',   // 算法偏好、违规边界、流量机制
+] as const;
+export type ViralKbTopic = typeof VIRAL_KB_TOPICS[number];
+
+/** Knowledge type classification for viral KB entries (inspired by dbskill atoms). */
+export type ViralKnowledgeType = 'principle' | 'method' | 'case' | 'anti-pattern' | 'insight' | 'tool';
+
+/** Lifecycle status for universal formulas. */
+export type FormulaStatus = 'experimental' | 'validated' | 'deprecated';
+
 /** Source categories for viral content items. */
 export type ViralSourceType = 'competitor' | 'trending_feed' | 'search';
 
@@ -2144,6 +2165,12 @@ export interface ViralEntry {
     };
     /** 5-template structural extraction (actionable templates for topic-generator) */
     viral_templates?: ViralTemplates;
+    /** Knowledge type classification (principle/method/case/anti-pattern/insight/tool) */
+    knowledge_type?: ViralKnowledgeType;
+    /** Topic tags from VIRAL_KB_TOPICS (max 3) */
+    topics?: ViralKbTopic[];
+    /** One-sentence reusable knowledge extract from this viral content */
+    knowledge_extract?: string;
   };
 
   dissection_status: 'done' | 'failed';
@@ -2209,6 +2236,10 @@ export interface UniversalFormula {
   distinct_source_count?: number;
   /** Confidence score 0-1 based on occurrence count, source diversity, & recency */
   confidence?: number;
+  /** Formula lifecycle status */
+  formula_status?: FormulaStatus;
+  /** Applicable topic tags aggregated from source entries */
+  applicable_topics?: ViralKbTopic[];
 }
 
 /** A single item waiting to be dissected by the LLM. */
