@@ -6,12 +6,12 @@
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
-[![OpenClaw Skill](https://img.shields.io/badge/OpenClaw-skill-purple.svg)](https://openclaw.ai)
-[![Zero Config](https://img.shields.io/badge/zero-config-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-147%20passed-brightgreen.svg)]()
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](tsconfig.json)
 
 **Emotions · Fatigue · Procrastination · Flow States · Random Life Events**
 
-[English](#) · [中文](README.zh.md) · [Guide](docs/guide.md) · [Changelog](CHANGELOG.md)
+[English](#) · [中文](README.zh.md) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -34,6 +34,70 @@
 | One-size-fits-all | **Persona DNA** — MBTI baselines, voice, schedule, feature flags |
 | No content ops | **Built-in Ops Desk** — trends, competitors, viral KB |
 | Single platform | **7 content providers** — Bilibili, Reddit, Weibo, Zhihu, XHS, Douyin, DailyHot |
+
+---
+
+## 🏗️ Architecture Decisions
+
+Alive isn't another "prompt + tools + loop" agent. Here's why each layer exists.
+
+### Why 6D Emotion instead of 2D (valence/arousal)?
+
+Most emotion models use just valence (positive/negative) and arousal (calm/excited). But this misses critical dimensions that drive **behavioral decisions**:
+
+- **Energy** (0→1): Controls procrastination, flow entry, content quality. A tired agent should rest, not force content.
+- **Stress** (0→1): Triggers threshold breaks — emotional explosions after sustained pressure. Without this, agents are eternally patient (unrealistic).
+- **Confidence** (0→1): Quality multiplier (0.5×→1.5×). Recent successes boost output; failures dampen it. This creates natural performance variation.
+- **Sociability** (0→1): Determines outreach vs. withdrawal. An introverted agent in low-sociability mode won't spam comments.
+
+```
+Impulse (瞬时刺激)  →  Momentum (惯性趋势)  →  Undertone (个性底色)
+    ↓ fast decay           ↓ slow drift             ↓ persona baseline
+  20% per tick          3% per tick              constant (MBTI-derived)
+```
+
+**Why three layers?** A single event (e.g., getting a compliment) should spike arousal immediately (impulse), create a lingering positive bias (momentum), but not permanently change personality (undertone). Without separation, agents either overreact to single events or are immune to them.
+
+### Why 4-Layer Memory instead of flat context?
+
+Inspired by [Stanford Generative Agents](https://arxiv.org/abs/2304.03442), but optimized for **cost**:
+
+| Layer | Retention | Storage | Why |
+|:---:|:---:|:---:|:---|
+| 0 | Session | In-memory | Free — no LLM call needed |
+| 1 | 30 days | Markdown diary | Cheap — low-importance entries auto-merge |
+| 2 | 90 days | JSON relations | Structured — fast lookup for social context |
+| 3 | Permanent | Core wisdom | Expensive — only 20 slots, highest-value only |
+
+**Cost control**: Layer 1 entries with importance < 4 are auto-merged into daily summaries. Layer 3 is capped at 20 entries — when full, lowest-importance entries are evicted. This prevents unbounded memory growth.
+
+### Why a Heartbeat Loop?
+
+Most agents are **reactive** — they only act when prompted. Alive is **proactive** — it runs `perceive → intend → act` every hour, even without user input.
+
+```
+Wake → Morning Plan (seed today's intents)
+  ↓
+Hourly: Perceive (read world state) → Intend (pick action) → Act (execute)
+  ↓
+Sleep → Night Reflect (consolidate memory, update personality drift)
+```
+
+**Why hourly?** Balances responsiveness with cost. More frequent = expensive LLM calls. Less frequent = misses time-sensitive opportunities (trending topics, breaking news).
+
+### Why Persona DNA instead of a single prompt?
+
+A persona is not a system prompt. It's a **configuration object** with:
+
+- MBTI baseline (drift range for each dimension)
+- Voice signature (catchphrases, anti-patterns, platform-specific styles)
+- Schedule (wake/sleep, active peaks)
+- Content sources (platforms, keywords, competitor accounts)
+- Feature flags (ops enabled, voice TTS, image generation)
+
+This allows the same engine to run Minase (INFP, quiet, photography-focused) and Miss V (ENTJ, aggressive, esports-focused) with zero code changes.
+
+---
 
 ## 🧠 What's Inside
 
@@ -76,6 +140,24 @@
 </tr>
 </table>
 
+---
+
+## 🔬 What Makes This Different
+
+| Feature | Stanford Generative Agents | Character.AI | **Alive** |
+|:---|:---:|:---:|:---:|
+| Emotion model | Basic (valence only) | None | ✅ 6D + 3-layer inertia |
+| Memory | 3-tier (research) | Flat context | ✅ 4-tier with cost control |
+| Proactive behavior | ✅ (research demo) | ❌ reactive only | ✅ heartbeat loop |
+| Persona system | Single agent | Pre-built characters | ✅ YAML-driven DNA |
+| Content ops | ❌ | ❌ | ✅ trends, competitors, viral KB |
+| Production ready | ❌ research paper | ✅ consumer product | ✅ open source, testable |
+| Test coverage | N/A | N/A | ✅ 147 tests, 37k lines |
+
+**Alive bridges the gap** between research prototypes (Stanford) and consumer products (Character.AI) — it has the **architectural depth** of research with the **engineering rigor** of production.
+
+---
+
 ## 🎭 Built-in Personas
 
 | | Persona | Vibe |
@@ -86,6 +168,8 @@
 | 🎤 | **Guodegang** | Crosstalk master with dry humor |
 
 Bring your own — any `persona.yaml` works.
+
+---
 
 ## 🚀 Quick Start
 
@@ -106,6 +190,8 @@ That's it. The wizard walks you through the rest.
 2. Pick a persona               # Minase, Miss V, or import your own
 3. Done ✅                      # Cron jobs auto-registered, she's alive
 ```
+
+---
 
 ## ⌨️ Commands
 
@@ -135,6 +221,8 @@ That's it. The wizard walks you through the rest.
 /alive kb formulas         # Universal formulas
 ```
 
+---
+
 ## 🔓 Progressive Unlock
 
 | Feature | Required | You Get |
@@ -150,7 +238,9 @@ That's it. The wizard walks you through the rest.
 
 Reconfigure anytime: `/alive setup`
 
-## 🏗️ Architecture
+---
+
+## 🏗️ Project Structure
 
 ```
 alive/
@@ -168,7 +258,9 @@ alive/
 ├── sub-skills/               # 9 pluggable capability units
 ├── hooks/                    # Context-loader · memory-save
 ├── plugin/                   # /alive command registration
-└── dashboard/                # Web dashboard
+├── api-server/               # REST API (auth, analytics, intel, strategy)
+├── dashboard/                # Web dashboard
+└── tests/                    # 147 test files, 37k lines
 ```
 
 ### Sub-Skills (9 pluggable units)
@@ -179,6 +271,8 @@ alive/
 
 `Bilibili` · `Reddit` · `DailyHot` · `Weibo` · `Zhihu` · `小红书 (XHS)` · `Douyin`
 
+---
+
 ## 🛠️ Development
 
 ```bash
@@ -187,7 +281,15 @@ npm run typecheck   # Type-check only
 npm run test        # Run all tests (vitest)
 ```
 
+### Testing Philosophy
+
+- **Unit tests**: Mock LLM client, mock filesystem — test engines in isolation
+- **E2E tests**: Real LLM calls, full heartbeat cycle — verify end-to-end behavior
+- **Autoresearch**: Auto-tune prompts using eval fixtures (inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch))
+
 PRs welcome! Persona configs (`alive/personas/*.yaml`) especially welcome.
+
+---
 
 ## 📄 License
 
