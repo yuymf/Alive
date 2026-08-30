@@ -2,7 +2,7 @@
 // Audio file management — save, retrieve, and auto-clean voice files.
 //
 // Storage layout:
-//   ~/.openclaw/workspace/memory/{persona_id}/voice/
+//   $ALIVE_HOME/personas/{persona_id}/state/voice/
 //   ├── 2026-03-24_143022.mp3
 //   ├── 2026-03-24_180055.mp3
 //   └── ...
@@ -39,8 +39,7 @@ export interface SavedAudio {
  * Creates it if it doesn't exist.
  */
 export function getVoiceDir(): string {
-  // PATHS use the memory base (e.g. ~/.openclaw/workspace/memory/{persona}/...)
-  // We need the persona memory base and add /voice/ to it
+  // PATHS use the persona memory base; voice files live next to state/.
   const memoryBase = path.dirname(PATHS.emotionState);
   const voiceDir = path.join(memoryBase, 'voice');
 

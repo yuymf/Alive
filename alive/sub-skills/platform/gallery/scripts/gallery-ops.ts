@@ -141,7 +141,7 @@ export function sendMedia(mediaUrl: string, _channel: string, _target: string, c
 }
 
 /**
- * Look up a photo by id, send via OpenClaw, and update gallery.
+ * Look up a photo by id, queue it in the host outbox, and update gallery.
  * Returns a GallerySendResult. Exported for testability.
  */
 export function sendPhoto(id: string, channel: string, target: string, caption?: string): GallerySendResult {

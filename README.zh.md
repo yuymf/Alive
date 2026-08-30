@@ -74,7 +74,7 @@
 | 🎭 | **星彤** | 温暖幽默的生活方式创作者 |
 | 🎤 | **郭德纲** | 相声大师，冷幽默 |
 
-也可以用 `alive --persona <你的角色.yaml>` 导入自定义角色。
+也可以 `/alive create` 生成新角色，或把自定义 `persona.yaml` 放到 `$ALIVE_HOME/personas/<id>/persona/`。
 
 ## 🚀 快速开始
 
@@ -131,17 +131,18 @@ npx alive init
 alive/
 ├── SKILL.md                  # Agent Skills 入口（跨宿主）
 ├── persona-schema.yaml       # 配置 schema + MBTI 表
-├── personas/                 # 内置预设角色
+├── personas/                 # 内置预设（水瀬 / V姐 / 星彤 / 郭德纲）
 ├── templates/                # LLM 提示词模板（{persona.*}）
 ├── protocols/                # 心跳 · 记忆 · 社交图谱 · 意图池
 ├── scripts/
+│   ├── host/                 # init · boot · outbox · 记忆播种
+│   ├── admin/                # /alive 命令
 │   ├── engines/              # 7 大核心引擎
 │   ├── lifecycle/            # 心跳循环 · 晨间规划 · 晚间反思
 │   ├── adapters/             # 平台适配器
 │   └── utils/                # 类型 · 配置 · 技能路由 · 内容源
 ├── sub-skills/               # 可插拔子技能
-├── hooks/                    # 上下文加载 · 记忆保存
-├── plugin/                   # /alive 命令注册
+└── tests/                    # 引擎、CLI、生命周期测试
 ```
 
 ### 子技能（9 个可插拔单元）

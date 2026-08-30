@@ -13,6 +13,10 @@ All notable changes to Alive are documented here.
 
 ### Removed
 - OpenClaw plugin, gateway RPC, cron-sync, ClawHub installer, Gateway LLM fallback.
+- Unused OpenClaw hooks, one-off migration/test scripts, and leaked `/alive create` test personas.
+
+### Fixed
+- `alive status` / admin commands now load `$ALIVE_HOME/.env` so they find the persona seeded by `init`.
 
 ---
 

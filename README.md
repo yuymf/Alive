@@ -229,18 +229,18 @@ Reconfigure anytime: `/alive setup`
 alive/
 ├── SKILL.md                  # Agent Skills entry (portable)
 ├── persona-schema.yaml       # Config schema + MBTI table
-├── personas/                 # Built-in presets
+├── personas/                 # Built-in presets (minase / miss-v / xingtong / guodegang)
 ├── templates/                # LLM prompt templates ({persona.*})
 ├── protocols/                # Heartbeat · memory · social-graph · intent-pool
 ├── scripts/
+│   ├── host/                 # init · boot · outbox · memory seed
+│   ├── admin/                # /alive commands
 │   ├── engines/              # 7 core state engines
 │   ├── lifecycle/            # Heartbeat loop · morning-plan · night-reflect
 │   ├── adapters/             # Platform adapters
 │   └── utils/                # Types · config · skill-router · providers
 ├── sub-skills/               # Pluggable capability units
-├── hooks/                    # Context-loader · memory-save
-├── plugin/                   # /alive command registration
-└── tests/                    # Engine and lifecycle tests
+└── tests/                    # Engine, CLI, and lifecycle tests
 ```
 
 ### Sub-Skills (9 pluggable units)
@@ -264,7 +264,7 @@ npm run test        # Run all tests (vitest)
 ### Testing Philosophy
 
 - **Unit tests**: Mock LLM client, mock filesystem — test engines in isolation
-- **E2E tests**: Real LLM calls, full heartbeat cycle — verify end-to-end behavior
+- **CLI smoke**: `npx alive init` then `status` / `emotion` / `help` against an isolated `$ALIVE_HOME`
 
 PRs welcome! Persona configs (`alive/personas/*.yaml`) especially welcome.
 

@@ -34,13 +34,16 @@ export function projectSkillTarget(cwd = process.cwd()): SkillTarget {
   return { id: 'project', dir: path.join(cwd, '.agents', 'skills', 'alive'), reason: 'project' };
 }
 
-function copyDir(src: string, dest: string): void {
+const SKIP_SKILL_DIRS = new Set(['tests', 'plugin', 'hooks']);
+
+function copyDir(src: string, dest: string, rel = ''): void {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (entry.name === 'tests' || entry.name === 'plugin' || entry.name.endsWith('.test.ts')) continue;
+    if (SKIP_SKILL_DIRS.has(entry.name) || entry.name.endsWith('.test.ts')) continue;
+    if (rel === 'personas' && !isOfficialPersonaFile(entry.name)) continue;
     const from = path.join(src, entry.name);
     const to = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDir(from, to);
+    if (entry.isDirectory()) copyDir(from, to, path.posix.join(rel, entry.name));
     else fs.copyFileSync(from, to);
   }
 }
@@ -90,6 +93,19 @@ export function installSkillTo(dest: string, root = repoRootFromHere()): void {
 }
 
 export const DEFAULT_PERSONAS = ['minase', 'miss-v', 'xingtong', 'guodegang'] as const;
+
+const OFFICIAL_PERSONA_FILES = new Set([
+  'minase.yaml',
+  'minase-source.png',
+  'miss-v.yaml',
+  'miss-v-source.png',
+  'xingtong.yaml',
+  'guodegang.yaml',
+]);
+
+function isOfficialPersonaFile(name: string): boolean {
+  return OFFICIAL_PERSONA_FILES.has(name);
+}
 
 export function initMemory(aliveHome: string, personaId: string, root = repoRootFromHere()): void {
   const memory = path.join(aliveHome, 'personas', personaId);

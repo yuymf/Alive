@@ -9,7 +9,7 @@
 // to validate the complete pipeline with the Miss V ENTJ persona.
 //
 // Usage:
-//   REAL_LLM_E2E=1 npx vitest run alive/tests/e2e-miss-v-real-llm-full.test.ts --config vitest.alive.config.ts
+//   REAL_LLM_E2E=1 npx vitest run alive/tests/e2e-miss-v-real-llm-full.test.ts
 //   Keys auto-load from ~/.openclaw/openclaw.json
 //   Set KEEP_SANDBOX=1 to preserve tmp dir for inspection.
 

@@ -112,10 +112,10 @@ function loadTemplate(templateName: string): string {
   throw new Error(`Template not found: ${templateName}`);
 }
 
-// ── Send via OpenClaw CLI ────────────────────────────────────────
+// ── Host outbox ──────────────────────────────────────────────────
 
 /**
- * Send a text message via OpenClaw CLI.
+ * Queue a text message for the host Code Agent to deliver.
  * Returns true on success, false on failure (never throws).
  */
 export function sendMessage(message: string): boolean {

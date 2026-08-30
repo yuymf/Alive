@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import YAML from 'yaml';
-import { readJSON, readText, writeJSON, PATHS, setPersonaName, getPersonaName, getAliveHome, readEnvFile } from '../utils/file-utils';
+import { readJSON, readText, writeJSON, PATHS, setPersonaName, getPersonaName, getAliveHome, readEnvFile, loadAliveEnv } from '../utils/file-utils';
 import { loadPersona, clearPersonaCache, getScheduleConfig } from '../persona/persona-loader';
 import {
   generatePersonaQuick,
@@ -173,6 +173,7 @@ export async function handleCommand(cmd: ParsedCommand): Promise<CommandResult> 
  * Top-level entry: parse raw input and execute.
  */
 export async function dispatch(raw: string): Promise<CommandResult> {
+  loadAliveEnv();
   const cmd = parseCommand(raw);
   return handleCommand(cmd);
 }
@@ -655,7 +656,7 @@ function safeLoadPersona(): PersonaConfig | null {
 
 function personaNotFound(): CommandResult {
   return {
-    output: '❌ Persona not found. Run `alive --persona <path>` to install one first.',
+    output: '❌ Persona not found. Run `npx alive init` first.',
     error: true,
   };
 }
@@ -915,7 +916,7 @@ ${tableRows}
 
 // ── CLI Entry Point ────────────────────────────────────────────────
 // When executed as `node command-handler.js <rawArgs>`, parse argv and
-// dispatch, printing the result to stdout so the plugin can capture it.
+// dispatch, printing the result to stdout so the host agent can return it.
 
 async function main(): Promise<void> {
   const raw = process.argv.slice(2).join(' ').trim() || 'help';

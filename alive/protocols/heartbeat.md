@@ -13,29 +13,18 @@
 
 每天约 {active_hours} 次心跳。睡眠时段收到的事件写入 `queues/event-queue.json`，晨规划时消费。
 
-## Cron 触发
+## 触发
 
-OpenClaw cron 触发入口：
+脚本心跳需要 `$ALIVE_HOME/.env` 里的 `LLM_API_KEY`。对话本身走宿主模型，不走这条路径。
 
-| 触发器 | 脚本 | 说明 |
-|--------|------|------|
-| `cron:morning` | `scripts/lifecycle/morning-plan.js` | 晨规划 |
-| `cron:tick` | `scripts/lifecycle/heartbeat-tick.js` | 常规心跳 |
-| `cron:night` | `scripts/lifecycle/night-reflect.js` | 睡前反思 |
+| 入口 | 说明 |
+|------|------|
+| `alive tick` | 一次常规心跳（感知→意图→行动） |
+| `alive morning` / `alive night` | 晨规划 / 睡前反思 |
+| `alive start` | 每小时整点 tick |
+| `node {baseDir}/scripts/host/boot.js tick` | 宿主按 SKILL.md 调用的同一入口 |
 
-`heartbeat-tick.js` 是统一入口，内部根据时间判断心跳类型。
-
-## 动态 Cron
-
-晨规划脚本生成当天的 cron 配置，写入 `cron-schedule.json`：
-
-```
-路径: {baseDir}/cron-schedule.json
-```
-
-{persona.meta.name}可以调整自己的心跳时间 — 周末晚起、某天兴奋到凌晨不睡等。晨规划输出的 cron 配置覆盖默认的每小时整点。
-
-如果 OpenClaw 尚不支持动态 cron 注册，退化方案：固定每整点执行，`heartbeat-tick.js` 内部判断是否在活跃时段，不在则跳过。
+`heartbeat-tick.js` 内部根据时间判断心跳类型；不在活跃时段则跳过。
 
 ## 单次心跳流程
 
@@ -103,9 +92,9 @@ Cron 配置：
 
 ## 容错规则
 
-1. **睡眠跳过**：睡眠时段收到 cron 触发时直接跳过，不执行任何逻辑
+1. **睡眠跳过**：睡眠时段收到 tick 时直接跳过，不执行任何逻辑
 2. **LLM 失败重试**：失败后等待 10 秒重试一次，仍失败则跳过本次心跳，写入 `heartbeat-log.json` 标记 `status: "skipped"`
-3. **心跳缺失不补**：机器休眠或 OpenClaw 宕机导致心跳缺失时，下次醒来不补执行。晨规划检测到昨天心跳异常少时，在日记中记录「昨天好像断片了」
+3. **心跳缺失不补**：机器休眠或进程没跑导致心跳缺失时，下次醒来不补执行。晨规划检测到昨天心跳异常少时，在日记中记录「昨天好像断片了」
 4. **JSON 备份**：每次写入 JSON 状态文件前，先备份到 `.bak` 文件。读取时如果 JSON 解析失败，回退到 `.bak`；`.bak` 也损坏则使用默认初始值
 5. **日志轮转**：`heartbeat-log.json` 文件大小上限 100KB，超出时截断旧条目。晨规划时清理 7 天前的日志
 6. **事件队列溢出**：`event-queue.json` 最多 50 个未处理事件，超出时丢弃最旧的，丢弃数量记入日志
