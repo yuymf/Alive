@@ -11,7 +11,6 @@
  */
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { getLocalDate } from '../../../scripts/utils/time-utils';
 import { PATHS } from '../../../scripts/utils/file-utils';
