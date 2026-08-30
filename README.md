@@ -32,7 +32,6 @@
 | Always eager, always on | **Gets tired, procrastinates, enters flow** |
 | Scripted responses | **Autonomous heartbeat loop** — hourly perceive→intend→act |
 | One-size-fits-all | **Persona DNA** — MBTI baselines, voice, schedule, feature flags |
-| No content ops | **Built-in Ops Desk** — trends, competitors, viral KB |
 | Single platform | **7 content providers** — Bilibili, Reddit, Weibo, Zhihu, XHS, Douyin, DailyHot |
 
 ---
@@ -127,15 +126,6 @@ This allows the same engine to run Minase (INFP, quiet, photography-focused) and
 | 2 | 90 days | Social relations |
 | 3 | Permanent | Core wisdom |
 
-### Ops Desk
-
-- 📊 Trend Analyzer
-- 🔍 Competitor Tracker (XHS / Douyin / Bilibili)
-- 💡 Topic Generator
-- 📋 Daily Brief (WeChat Work push)
-- 🎯 Persona Advisor
-- 🦠 **Viral Knowledge Base** — auto-dissect → auto-promote → auto-evict
-
 </td>
 </tr>
 </table>
@@ -150,7 +140,6 @@ This allows the same engine to run Minase (INFP, quiet, photography-focused) and
 | Memory | 3-tier (research) | Flat context | ✅ 4-tier with cost control |
 | Proactive behavior | ✅ (research demo) | ❌ reactive only | ✅ heartbeat loop |
 | Persona system | Single agent | Pre-built characters | ✅ YAML-driven DNA |
-| Content ops | ❌ | ❌ | ✅ trends, competitors, viral KB |
 | Production ready | ❌ research paper | ✅ consumer product | ✅ open source, testable |
 | Test coverage | N/A | N/A | ✅ 147 tests, 37k lines |
 
@@ -207,20 +196,6 @@ That's it. The wizard walks you through the rest.
 /alive help                # All commands
 ```
 
-### Ops
-
-```
-/alive brief               # Daily brief (trends + topics + advice)
-/alive trends              # Trending keywords
-/alive idea [direction]    # Generate topic ideas
-/alive post [N]            # Topic queue / detail
-/alive analyze <URL>       # Dissect a viral post
-/alive advice              # Persona × trend fit
-/alive kb status           # Viral KB stats
-/alive kb search <kw>      # Search dissections
-/alive kb formulas         # Universal formulas
-```
-
 ---
 
 ## 🔓 Progressive Unlock
@@ -252,15 +227,12 @@ alive/
 ├── scripts/
 │   ├── engines/              # 7 core state engines
 │   ├── lifecycle/            # Heartbeat loop · morning-plan · night-reflect
-│   ├── ops/                  # Trend · competitor · brief · advisor · viral KB
 │   ├── adapters/             # Platform adapters
 │   └── utils/                # Types · config · skill-router · providers
-├── sub-skills/               # 9 pluggable capability units
+├── sub-skills/               # Pluggable capability units
 ├── hooks/                    # Context-loader · memory-save
 ├── plugin/                   # /alive command registration
-├── api-server/               # REST API (auth, analytics, intel, strategy)
-├── dashboard/                # Web dashboard
-└── tests/                    # 147 test files, 37k lines
+└── tests/                    # Engine and lifecycle tests
 ```
 
 ### Sub-Skills (9 pluggable units)
@@ -285,7 +257,6 @@ npm run test        # Run all tests (vitest)
 
 - **Unit tests**: Mock LLM client, mock filesystem — test engines in isolation
 - **E2E tests**: Real LLM calls, full heartbeat cycle — verify end-to-end behavior
-- **Autoresearch**: Auto-tune prompts using eval fixtures (inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch))
 
 PRs welcome! Persona configs (`alive/personas/*.yaml`) especially welcome.
 

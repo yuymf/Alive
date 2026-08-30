@@ -37,14 +37,10 @@ const STATE_FILES = [
   'content-patterns.json',
   'personality-drift.json',
   'schedule-today.json',
-  'content-taste.json',
   'travel-state.json',
   'voice-state.json',
   'outreach-state.json',
   'work-impulse.json',
-  'post-impulse.json',
-  'viral-search-state.json',
-  'content-strategy.json',
 ];
 
 const QUEUE_FILES = [
@@ -52,22 +48,9 @@ const QUEUE_FILES = [
   'heartbeat-log.json',
   'intent-pool.json',
   'pending-chains.json',
-  'review-queue.json',
-  'post-analysis-log.json',
-  'persona-report-log.json',
-  'competitor-log.json',
-  'discovery-pool.json',
-  'ops-brief-log.json',
-  'performance-log.json',
-  'analysis-log.json',
-  'trend-history.json',
-  'competitor-posts.json',
-  'competitor-analysis.json',
-  'candidate-accounts.json',
   'post-history.json',
   'pending-engagement.json',
   'outbound-history.json',
-  'health-report.json',
 ];
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -142,32 +125,4 @@ for (const file of STATE_FILES) {
 console.log('\n── queues/ ──');
 for (const file of QUEUE_FILES) {
   totalMoved += moveWithBak(memoryDir, file, 'queues', dryRun);
-}
-
-// 4. Archive ops-*.md reports into ops/ subdirectories
-console.log('\n── ops/ (report archival) ──');
-const opsDir = path.join(memoryDir, 'ops');
-const rootFiles = fs.readdirSync(memoryDir);
-
-for (const file of rootFiles) {
-  if (!file.startsWith('ops-') || !file.endsWith('.md')) continue;
-
-  let targetSubdir = 'ops/misc';
-  if (file.includes('trends')) targetSubdir = 'ops/trends';
-  else if (file.includes('competitor')) targetSubdir = 'ops/competitor-analysis';
-  else if (file.includes('performance')) targetSubdir = 'ops/performance';
-  else if (file.includes('brief')) targetSubdir = 'ops/briefs';
-  else if (file.includes('strategy')) targetSubdir = 'ops/strategy';
-
-  const src = path.join(memoryDir, file);
-  const dest = path.join(memoryDir, targetSubdir, file);
-  if (moveFile(src, dest, dryRun)) totalMoved++;
-}
-
-// 5. Summary
-console.log(`\n${dryRun ? '🔍 Dry run complete' : '✅ Migration complete'}: ${totalMoved} file(s) ${dryRun ? 'would be moved' : 'moved'}`);
-
-if (dryRun) {
-  console.log('\nRun without --dry-run to apply changes:');
-  console.log(`  npx tsx scripts/migrate-memory-layout.ts ${personaId}\n`);
 }

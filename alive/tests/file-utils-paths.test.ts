@@ -68,8 +68,10 @@ describe('file-utils path override', () => {
     resetBasePaths();
   });
 
-  it('should have analysisLog path', () => {
-    expect(PATHS.analysisLog).toContain('analysis-log.json');
+  it('PATHS.postHistory points to post-history.json', () => {
+    setBasePaths('/tmp/test-memory', '/tmp/test-skill');
+    expect(PATHS.postHistory).toBe('/tmp/test-memory/queues/post-history.json');
+    resetBasePaths();
   });
 });
 

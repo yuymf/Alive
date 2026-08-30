@@ -102,28 +102,6 @@ schema:
       required: false
       auto_generated: true
       description: "自动从 sample_lines 生成，带「」包裹的台词列表"
-    platform_voices:
-      type: object
-      required: false
-      description: "平台特定语音风格，key 为平台名（xhs/douyin/wechat），value 为 PlatformVoice"
-      additionalProperties:
-        type: object
-        properties:
-          style: { type: string, description: "平台特定的语言风格描述" }
-          reply_structure: { type: string, description: "回复结构模式，如'接梗→立场→有用一句→收尾'" }
-          anti_patterns:
-            type: array
-            items: string
-            description: "该平台应避免的表达方式"
-          catchphrases:
-            type: array
-            items: string
-            description: "平台特定的口头禅"
-          sample_lines:
-            type: array
-            items: string
-            description: "该平台的示例台词"
-
   intimacy:
     levels: { type: number, required: false, default: 5 }
     behaviors:
@@ -333,89 +311,6 @@ schema:
       role: { type: string, required: true, description: "顾问定位" }
       personality: { type: string, required: true }
       system_prompt: { type: string, required: false }
-
-  ops:
-    type: object
-    required: false
-    description: "运营台配置 — 人机协作内容运营层"
-    properties:
-      enabled: { type: boolean, required: true }
-      brief_time: { type: string, required: true, description: "每日简报时间 (HH:MM)" }
-      competitor_accounts:
-        type: object
-        required: true
-        description: "对标账号 ID 列表（兼容旧格式）"
-        properties:
-          xhs: { type: array, items: string }
-          douyin: { type: array, items: string }
-      competitors:
-        type: array
-        required: false
-        description: "结构化对标账号画像"
-        items:
-          name: { type: string, required: true, description: "账号名（展示用）" }
-          platform: { type: string, required: true, enum: [xhs, douyin, bilibili, weibo, instagram, youtube] }
-          url: { type: string, required: false, description: "账号链接" }
-          external_id: { type: string, required: false, description: "平台 API 标识符（如抖音 sec_user_id），区分展示名 name。若设置则 API 调用优先使用此字段。" }
-          tag: { type: string, required: true, description: "人设标签 (如 '硬核电竞解说')" }
-          tag_desc: { type: string, required: true, description: "标签详细描述" }
-          followers: { type: string, required: false, description: "粉丝量 (如 '3.7w')" }
-          content_mix:
-            type: object
-            required: false
-            description: "内容比例 { category: percentage }"
-            additionalProperties: { type: number }
-          audience: { type: string, required: false, description: "粉丝画像描述" }
-          interaction_style: { type: string, required: false, description: "评论互动风格" }
-          reference_type: { type: string, required: true, enum: [primary, secondary] }
-          group: { type: string, required: false, description: "分组标签" }
-          takeaways: { type: array, items: string, required: false, description: "值得借鉴的点" }
-          avoid: { type: array, items: string, required: false, description: "需要避免的点" }
-      content_templates:
-        type: array
-        required: false
-        description: "内容类型模板 — 场景/镜头/造型约束"
-        items:
-          type: { type: string, required: true, description: "内容类型名 (如 'MV切片')" }
-          category: { type: string, required: true, description: "所属板块 (如 '音乐', '赛车', '生活日常')" }
-          priority: { type: string, required: true, enum: [high, normal], description: "优先级 (high = ⭐)" }
-          scene: { type: string, required: true, description: "场景描述" }
-          camera: { type: string, required: true, description: "镜头语言" }
-          styling: { type: string, required: true, description: "人物形象/造型关键词" }
-          highlights: { type: array, items: string, required: true, description: "内容亮点" }
-          reference_links: { type: array, items: string, required: false, description: "参考链接" }
-          platforms: { type: array, items: string, required: false, description: "适用平台" }
-          identity_mode: { type: string, required: false, enum: [esports, singer, racer, daily] }
-      viral_threshold:
-        type: integer
-        required: false
-        default: 5000
-        description: 点赞阈值，超过此值的内容进入爆款知识库候选队列
-      kb_dissect_batch:
-        type: integer
-        required: false
-        default: 3
-        min: 1
-        max: 10
-        description: 每次 ops-trends 运行时最多拆解的爆款条数（控制 LLM 成本）
-      trend_score_threshold: { type: number, required: true }
-      topic_count: { type: number, required: true }
-      topic_filter_prompt: { type: string, required: true }
-      trends_interval: { type: string, required: false, description: "ops-trends 的 cron 表达式；未配置时默认每小时执行" }
-      platforms:
-        type: object
-        required: true
-        properties:
-          xhs: { type: object, properties: { enabled: { type: boolean }, style: { type: string } } }
-          douyin: { type: object, properties: { enabled: { type: boolean }, style: { type: string } } }
-      automation:
-        type: object
-        required: false
-        description: "自动化投递配置 — 控制哪些 cron 存在以及如何投递"
-        properties:
-          brief_delivery: { type: string, required: false, enum: [session, wecom-target], description: "简报投递模式: session=当前会话, wecom-target=定向企微" }
-          enable_heartbeat_cron: { type: boolean, required: false, description: "是否注册心跳 cron (morning/tick/night)，默认 true" }
-          silent_background_jobs: { type: boolean, required: false, description: "后台运营任务是否禁止 announce 投递，默认 false" }
 
   content_sources:
     type: object

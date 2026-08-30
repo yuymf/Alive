@@ -2,7 +2,7 @@
   "name": "alive-admin",
   "version": "1.1.0",
   "private": true,
-  "description": "Alive 管理面板 + 运营工作台命令处理器",
+  "description": "Alive 管理面板命令处理器",
   "type": "module",
   "openclaw": {
     "extensions": [

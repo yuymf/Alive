@@ -7,7 +7,6 @@ set -uo pipefail
 
 PROJECT_DIR="/Users/halyu/Documents/Code/Alive"
 ADMIN_HANDLER="$PROJECT_DIR/dist-alive/scripts/admin/command-handler.js"
-OPS_HANDLER="$PROJECT_DIR/dist-alive/scripts/ops/ops-command-handler.js"
 OUTPUT_DIR="$PROJECT_DIR/docs"
 TIMESTAMP=$(date '+%Y-%m-%d-%H%M%S')
 OUTPUT_FILE="$OUTPUT_DIR/slash-command-test-${TIMESTAMP}.md"
@@ -178,42 +177,12 @@ run_cmd "23c. /alive kb repair --limit 3（修复空壳条目）" 30 node "$ADMI
 echo "" >> "$OUTPUT_FILE"
 echo "## 三、运营策略命令组 (Strategy)" >> "$OUTPUT_FILE"
 
-run_cmd "24. /alive strategy" 30 node "$ADMIN_HANDLER" strategy
-run_cmd "25. /alive confirm-strategy" 30 node "$ADMIN_HANDLER" confirm-strategy
-run_cmd "26. /alive insights" 30 node "$ADMIN_HANDLER" insights
-run_cmd "27. /alive patterns" 30 node "$ADMIN_HANDLER" patterns
-
-# ════════════════════════════════════════════════════════════════════
-# 四、Ops 命令组（真实搜索+真实LLM）
-# ════════════════════════════════════════════════════════════════════
-
-echo "" >> "$OUTPUT_FILE"
-echo "## 四、运营工作台命令组 (Ops)" >> "$OUTPUT_FILE"
-echo "" >> "$OUTPUT_FILE"
-echo "> 通过 ops-command-handler.js 运行，需要 LLM API key 和真实搜索" >> "$OUTPUT_FILE"
-
-run_cmd "28. /alive brief（运营简报 - 真实搜索+LLM）" 600 node "$OPS_HANDLER" brief
-run_cmd "29. /alive trends（热点趋势 - 真实搜索+LLM）" 300 node "$OPS_HANDLER" trends
-run_cmd "30. /alive idea（选题生成 - 真实搜索+LLM）" 600 node "$OPS_HANDLER" idea
-run_cmd "31. /alive idea 电竞（指定方向选题 - 真实搜索+LLM）" 600 node "$OPS_HANDLER" idea 电竞
-run_cmd "32. /alive post（选题列表 - 本地队列）" 30 node "$OPS_HANDLER" post
-run_cmd "33. /alive post 1（第1个选题详情）" 30 node "$OPS_HANDLER" post 1
-run_cmd "34. /alive analyze（缺 URL 测试）" 30 node "$OPS_HANDLER" analyze
-run_cmd "35. /alive advice（人设建议 - 真实搜索+LLM）" 300 node "$OPS_HANDLER" advice
-run_cmd "36. /alive status（运营队列状态）" 30 node "$OPS_HANDLER" status
-run_cmd "37. /alive candidates（候选对标）" 30 node "$OPS_HANDLER" candidates
-run_cmd "38. /alive health（健康检查）" 30 node "$OPS_HANDLER" health
-run_cmd "39. /alive help（运营帮助）" 30 node "$OPS_HANDLER" help
-run_cmd "39b. /alive review（LLM 快速审核）" 300 node "$OPS_HANDLER" review
-run_cmd "39c. /alive review approve-all（一键通过）" 30 node "$OPS_HANDLER" review approve-all
-run_cmd "39d. /alive review discard-low（弃置低分）" 300 node "$OPS_HANDLER" review discard-low
-
 # ════════════════════════════════════════════════════════════════════
 # 五、Create 命令组（需要 LLM）
 # ════════════════════════════════════════════════════════════════════
 
 echo "" >> "$OUTPUT_FILE"
-echo "## 五、角色创建命令组 (Create)" >> "$OUTPUT_FILE"
+echo "## 四、角色创建命令组 (Create)" >> "$OUTPUT_FILE"
 echo "" >> "$OUTPUT_FILE"
 echo "> /alive create 需要 LLM API，/alive create --guided 不需要" >> "$OUTPUT_FILE"
 

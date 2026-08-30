@@ -89,7 +89,7 @@ const MISS_V_PERSONA = {
     racer: { weight: 0.20 },
     lifestyle: { weight: 0.15 },
   },
-  sub_skills: ['ops-desk', 'generate-image', 'xhs-bridge', 'content-browse', 'web-search'],
+  sub_skills: ['generate-image', 'xhs-bridge', 'content-browse', 'web-search'],
   features: {
     emotion: true,
     intent: true,
@@ -108,20 +108,6 @@ const MISS_V_PERSONA = {
     platforms: ['bilibili', 'weibo', 'dailyhot'],
     keywords: ['电竞', '歌手', '赛车', '女性力量', '轻奢生活', 'AI虚拟偶像'],
     dailyhot_platforms: ['douyin', 'weibo', 'bilibili', 'toutiao', 'baidu'],
-  },
-  ops: {
-    enabled: true,
-    brief_time: '08:30',
-    trend_score_threshold: 1.0,
-    topic_count: 3,
-    topic_filter_prompt: '与以下任一赛道相关或可借势：电竞、音乐/歌手、赛车/运动、女性力量/大女主、轻奢生活\n可用V姐任意一个身份切入解读\n优先选择平台正在助推（速度分>1.8）的话题\n避免负面争议、政治敏感话题',
-    platforms: {
-      xhs: { enabled: true, style: '图文为主，封面强视觉冲击，文案克制有力，适度emoji，5-10个精准标签，结尾留互动钩子' },
-      douyin: { enabled: true, style: '视频脚本，前3秒必须有冲突感或反差，BGM卡点，字幕简洁，结尾引导互动' },
-    },
-    competitors: [],
-    content_templates: [],
-    automation: { brief_delivery: 'session', enable_heartbeat_cron: true, silent_background_jobs: false },
   },
 };
 
@@ -529,11 +515,6 @@ describe.skipIf(!shouldRun)('E2E: Miss V Real LLM Full Day (V姐 真实LLM全功
 
     // Create mock sub-skills
     const ss = path.join(tmpDir, 'sub-skills');
-    createMockSubSkill(ss, 'ops-desk', 'Ops Desk 内容运营', '内容草稿生成、发布到小红书+抖音', [
-      { intent: 'produce', action: 'generate-topics', priority: 7 },
-      { intent: 'express', action: 'generate-topics', priority: 6 },
-      { intent: 'consume', action: 'refresh-trends', priority: 3 },
-    ]);
     createMockSubSkill(ss, 'generate-image', 'AI图片生成', '生成角色形象/内容封面图', [
       { intent: 'produce', action: 'generate', priority: 6 },
     ]);
@@ -647,7 +628,7 @@ describe.skipIf(!shouldRun)('E2E: Miss V Real LLM Full Day (V姐 真实LLM全功
 
     // Check for all-simulated problem (P0)
     const allActions = regulars.flatMap(l => l.chosen_actions ?? []);
-    const hasRealSkill = allActions.some(a => /^\[(?:ops-desk|generate-image|xhs-bridge|content-browse|web-search|real-e2e:)/.test(a));
+    const hasRealSkill = allActions.some(a => /^\[(?:generate-image|xhs-bridge|content-browse|web-search|real-e2e:)/.test(a));
     if (!hasRealSkill) {
       issue('critical', 'routing', 'P0: 全天 0 个 real skill action — LLM 未遵循 prompt 中的技能引导');
     }

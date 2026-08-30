@@ -31,13 +31,8 @@ const MISS_V_PERSONA = {
   },
   intimacy: { levels: 5, behaviors: { 1: '专业克制，保持距离', 3: '适度开放，偶尔分享幕后', 5: '真实反差，展示柔软一面' } },
   schedule: { wake_hour: 9, sleep_hour: 23, timezone: 'Asia/Shanghai', active_peaks: [14, 21] },
-  sub_skills: ['ops-desk', 'xhs-bridge', 'content-browse', 'web-search'],
+  sub_skills: ['xhs-bridge', 'content-browse', 'web-search'],
   features: { skill_discovery: false, random_events: true, social_graph: false, flow_states: true, procrastination: false, personality_drift: true },
-  ops: {
-    enabled: true, brief_time: '08:30', trend_score_threshold: 1.8, topic_count: 3,
-    platforms: { xhs: { enabled: true, style: '图文为主，封面强视觉冲击，文案克制有力，适度emoji，精准标签，结尾留互动钩子' }, douyin: { enabled: true, style: '视频脚本，前3秒必须有冲突感或反差，BGM卡点，字幕简洁，结尾引导互动' } },
-    competitors: [], content_templates: [],
-  },
 };
 
 const MORNING_PLAN_RESPONSE = JSON.stringify({
@@ -118,7 +113,7 @@ function makeDecision(hour: number): string {
       inner_monologue: '发出去了。配文写的是"看这场比赛之前，先看这个"。能不能留住人就看开头15秒。',
       new_impulses: [{ category: 'express', description: '赛前内容发布，引导粉丝带着思路框架看比赛', intensity: 8 }],
       suppressed_intents: [],
-      chosen_actions: [{ action: '发布赛前BP解说视频+小红书图文，配文精准引导观赛视角', type: 'real', skill: 'ops-desk', satisfies_intent: 'express' }],
+      chosen_actions: [{ action: '发布赛前BP解说视频+小红书图文，配文精准引导观赛视角', type: 'real', skill: satisfies_intent: 'express' }],
     },
     20: {
       inner_monologue: '帖子数据不错。现在专注看比赛。分析的准不准，比赛会给答案。',
@@ -207,7 +202,6 @@ function setupSandbox() {
   for (const [k, v] of Object.entries(TEMPLATES)) fs.writeFileSync(path.join(tmpDir, 'templates', k), v);
 
   const ss = path.join(tmpDir, 'sub-skills');
-  createMockSubSkill(ss, 'ops-desk', [{ intent: 'produce', action: 'generate-topics', priority: 7 }, { intent: 'express', action: 'generate-topics', priority: 6 }]);
   createMockSubSkill(ss, 'xhs-bridge', [{ intent: 'express', action: 'publish-note', priority: 8 }, { intent: 'consume', action: 'search-feed', priority: 4 }]);
   createMockSubSkill(ss, 'content-browse', [{ intent: 'consume', action: 'feed-browse', priority: 4 }, { intent: 'learn', action: 'inspiration-collect', priority: 4 }]);
   createMockSubSkill(ss, 'web-search', [{ intent: 'learn', action: 'search-pipeline', priority: 5 }, { intent: 'consume', action: 'search-pipeline', priority: 3 }]);

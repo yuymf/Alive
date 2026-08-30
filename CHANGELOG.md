@@ -4,6 +4,17 @@ All notable changes to Alive are documented here.
 
 ---
 
+## [0.3.0] — 2026-08-30
+
+### Removed
+- **Ops Desk / 运营工作台** — 全部删除：`scripts/ops/`、`lifecycle/ops-*`、`sub-skills/ops-desk/`、选题/竞品/爆款 KB/简报/审核队列及相关 cron、斜杠命令、eval 调参集。
+- **Frontend** — 删除已废弃的 `alive/dashboard/` 与仅为运营 UI 服务的 `alive/api-server/`。
+- Miss V persona 中的 `ops:` 配置块与 `ops-desk` 子技能。
+
+心跳引擎、记忆、人设、平台子技能（浏览/发帖/语音）保留。OpenClaw 仍是当前运行时宿主（解耦列为后续工作）。
+
+---
+
 ## [1.3.0] — 2026-04-27
 
 ### Added
