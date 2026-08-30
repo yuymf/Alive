@@ -201,7 +201,7 @@ function makeHeartbeatDecision(hour: number): string {
       ],
       suppressed_intents: [],
       chosen_actions: [
-        { action: '发布赛前BP解说视频+小红书图文，附上观赛指南', type: 'real', skill: satisfies_intent: 'express' },
+        { action: '发布赛前BP解说视频+小红书图文，附上观赛指南', type: 'real', skill: 'xhs-bridge', satisfies_intent: 'express' },
       ],
     },
     20: {
@@ -664,7 +664,7 @@ describe('E2E: V姐 (Miss V) Full Day Simulation', () => {
 
       // At least some ticks should have real skill execution recorded
       const realSkillActions = logsWithActions.flatMap(l => l.chosen_actions ?? [])
-        .filter(a => /^\[(?:generate-image|xhs-bridge|content-browse|web-search|mock:|fallback:)/.test(a));)
+        .filter(a => /^\[(?:generate-image|xhs-bridge|content-browse|web-search|mock:|fallback:)/.test(a));
       expect(realSkillActions.length).toBeGreaterThanOrEqual(1);
     });
   });
@@ -807,7 +807,7 @@ describe('E2E: V姐 (Miss V) Full Day Simulation', () => {
       const allRegularLogs = finalLog.logs.filter(l => l.type === 'regular');
       const logsWithActions = allRegularLogs.filter(l => l.chosen_actions && l.chosen_actions.length > 0);
       const realSkillActions = logsWithActions.flatMap(l => l.chosen_actions ?? [])
-        .filter(a => /^\[(?:generate-image|xhs-bridge|content-browse|web-search|mock:|fallback:)/.test(a));)
+        .filter(a => /^\[(?:generate-image|xhs-bridge|content-browse|web-search|mock:|fallback:)/.test(a));
       expect(realSkillActions.length).toBeGreaterThanOrEqual(1);
 
       // Diary contains evidence of skill execution

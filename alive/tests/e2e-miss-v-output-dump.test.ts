@@ -113,7 +113,7 @@ function makeDecision(hour: number): string {
       inner_monologue: '发出去了。配文写的是"看这场比赛之前，先看这个"。能不能留住人就看开头15秒。',
       new_impulses: [{ category: 'express', description: '赛前内容发布，引导粉丝带着思路框架看比赛', intensity: 8 }],
       suppressed_intents: [],
-      chosen_actions: [{ action: '发布赛前BP解说视频+小红书图文，配文精准引导观赛视角', type: 'real', skill: satisfies_intent: 'express' }],
+      chosen_actions: [{ action: '发布赛前BP解说视频+小红书图文，配文精准引导观赛视角', type: 'real', skill: 'xhs-bridge', satisfies_intent: 'express' }],
     },
     20: {
       inner_monologue: '帖子数据不错。现在专注看比赛。分析的准不准，比赛会给答案。',
