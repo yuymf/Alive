@@ -297,13 +297,10 @@ run_cmd "6. Douyin feed（推荐流浏览）" 180 "$DOUYIN_SKIP" \
 echo "" >> "$OUTPUT_FILE"
 echo "## 三、Ops 命令（平台交互类）" >> "$OUTPUT_FILE"
 echo "" >> "$OUTPUT_FILE"
-echo "> 通过 ops-command-handler.js 运行，间接调用 Chrome 相关功能" >> "$OUTPUT_FILE"
 
-OPS_HANDLER="$DIST_DIR/ops/ops-command-handler.js"
 ADMIN_HANDLER="$DIST_DIR/admin/command-handler.js"
 
 # 7. brief 需要真实搜索+LLM（搜索部分走 Chrome）
-run_cmd "7. /alive brief（运营简报 - 需平台搜索）" 600 "" \
   node "$OPS_HANDLER" brief
 
 # 8. trends 需要搜索（可能走 Chrome）
@@ -343,8 +340,6 @@ echo "> 这些脚本由 OpenClaw cron 调度执行，部分需要 Chrome 参与�
 run_cmd "14. ops-browse（定时内容浏览）" 600 "" \
   node "$DIST_DIR/lifecycle/ops-browse.js"
 
-# 15. ops-brief（运营简报 cron）
-run_cmd "15. ops-brief（运营简报 cron）" 600 "" \
   node "$DIST_DIR/lifecycle/ops-brief.js"
 
 # 16. ops-trends（热点趋势 cron）
@@ -509,7 +504,6 @@ echo "| LLM_MODEL | ${LLM_MODEL:-❌ 未设置} |" >> "$ERROR_FILE"
 echo "| Chrome | $([ "$CHROME_AVAILABLE" = true ] && echo '✅ 已启动' || echo '❌ 未启动') |" >> "$ERROR_FILE"
 echo "| XHS_SKILLS_DIR | ${XHS_SKILLS_DIR:-❌ 未设置} |" >> "$ERROR_FILE"
 echo "| DOUYIN_SKILLS_DIR | ${DOUYIN_SKILLS_DIR:-❌ 未设置} |" >> "$ERROR_FILE"
-echo "| BILIBILI_COOKIE | $([ -n "${BILIBILI_COOKIE:-}" ] && echo '已设置' || echo '❌ 未设置') |" >> "$ERROR_FILE"
 echo "| AIHUBMIX_API_KEY | $([ -n "${AIHUBMIX_API_KEY:-}" ] && echo '已设置' || echo '❌ 未设置') |" >> "$ERROR_FILE"
 
 echo ""

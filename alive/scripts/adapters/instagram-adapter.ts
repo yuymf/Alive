@@ -531,47 +531,28 @@ export function createContentBrowseConfig(options?: {
       }
 
       // Registry providers (multi-platform bridge)
-      // Skip if trend-analyzer already fetched hot lists within the last 4 hours
-      // (avoids redundant DailyHot API calls when ops-trends already ran)
       if (registry) {
-        let skipRegistryFeed = false;
         try {
-          const { readJSON } = await import('../utils/file-utils');
-          const { PATHS } = await import('../utils/file-utils');
-          const trendsCache = readJSON<{ computed_at?: string }>(PATHS.trendsCache, {});
-          if (trendsCache.computed_at) {
-            const cacheAge = Date.now() - new Date(trendsCache.computed_at).getTime();
-            if (cacheAge < 4 * 60 * 60 * 1000) { // 4 hours
-              skipRegistryFeed = true;
-              console.log(`[content-browse] Skipping Registry feed — trend-analyzer cache is fresh (${Math.round(cacheAge / 60_000)}min old)`);
+          const registryItems = await registry.getAggregatedFeed({
+            platforms: platformFilter,
+            keywords: contentSources?.keywords,
+            limit: maxSearchResults,
+          });
+          for (const item of registryItems) {
+            if (!items.some(existing => existing.id === item.id)) {
+              items.push({
+                id: item.id,
+                title: item.title,
+                likes: item.likes ?? 0,
+                user: item.user,
+                tags: item.tags,
+                source: item.source,
+                url: item.url,
+                snippet: item.snippet,
+              });
             }
           }
-        } catch { /* non-critical — if cache check fails, proceed with registry */ }
-
-        if (!skipRegistryFeed) {
-          try {
-            const registryItems = await registry.getAggregatedFeed({
-              platforms: platformFilter,
-              keywords: contentSources?.keywords,
-              limit: maxSearchResults,
-            });
-            for (const item of registryItems) {
-              // Skip if already present (dedup by id)
-              if (!items.some(existing => existing.id === item.id)) {
-                items.push({
-                  id: item.id,
-                  title: item.title,
-                  likes: item.likes ?? 0,
-                  user: item.user,
-                  tags: item.tags,
-                  source: item.source,
-                  url: item.url,
-                  snippet: item.snippet,
-                });
-              }
-            }
-          } catch { /* non-critical — registry failure does not block built-in sources */ }
-        }
+        } catch { /* non-critical — registry failure does not block built-in sources */ }
       }
 
       return items;

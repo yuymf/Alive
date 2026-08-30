@@ -544,11 +544,9 @@ function autoLoadEnvFile() {
  * Checks ALL required dependencies upfront and reports them clearly.
  * If any REQUIRED dependency is missing, prints instructions and exits.
  *
- * @param {object} options
- * @param {boolean} options.opsEnabled - Whether ops features are needed (XHS/Douyin)
  * @returns {{ warnings: string[] }} Non-fatal warnings
  */
-function preflightCheck({ opsEnabled = false } = {}) {
+function preflightCheck() {
   console.log('\n  ╭─────────────────────────────────────────────╮');
   console.log('  │       🔍 Preflight Dependency Check          │');
   console.log('  ╰─────────────────────────────────────────────╯\n');
@@ -586,16 +584,8 @@ function preflightCheck({ opsEnabled = false } = {}) {
     gitAvailable = true;
     ok('git available');
   } catch {
-    if (opsEnabled) {
-      errors.push({
-        name: 'git',
-        status: 'not found',
-        fix: 'Install git: sudo apt install -y git  (required for platform skills auto-download)',
-      });
-    } else {
-      warnings.push('git not found — auto-download of platform skills disabled');
-      warn('git not found — auto-download of platform skills will be disabled');
-    }
+    warnings.push('git not found — auto-download of platform skills disabled');
+    warn('git not found — auto-download of platform skills will be disabled');
   }
 
   // ── 4. OpenClaw CLI (optional but recommended) ──
@@ -605,171 +595,6 @@ function preflightCheck({ opsEnabled = false } = {}) {
   } else {
     warnings.push('OpenClaw CLI not found — cron scheduling & ClawHub skills disabled');
     warn('OpenClaw CLI not found — cron scheduling & ClawHub skills will be disabled');
-  }
-
-  // ── Ops-specific checks (only when ops enabled) ──
-  if (opsEnabled) {
-    // ── 5. uv (Python package manager) ──
-    let uvAvailable = false;
-    try {
-      const uvVer = execSync('uv --version', { encoding: 'utf8', timeout: 5000 }).trim();
-      uvAvailable = true;
-      ok(`uv available (${uvVer})`);
-    } catch {
-      errors.push({
-        name: 'uv (Python package manager)',
-        status: 'not found',
-        fix: 'Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh\n         Then restart your shell or run: source $HOME/.local/bin/env',
-      });
-    }
-
-    // ── 6. Python 3.10+ ──
-    if (uvAvailable) {
-      try {
-        const pyVer = execSync('uv run python --version', { encoding: 'utf8', timeout: 10000 }).trim();
-        ok(`Python available (${pyVer})`);
-      } catch {
-        try {
-          const pyVer = execSync('python3 --version', { encoding: 'utf8', timeout: 5000 }).trim();
-          ok(`Python available (${pyVer})`);
-        } catch {
-          errors.push({
-            name: 'Python 3.10+',
-            status: 'not found',
-            fix: 'Install Python 3.10+: sudo apt install -y python3 python3-venv',
-          });
-        }
-      }
-    }
-
-    // ── 7. Chrome / Chromium (auto-detect & persist) ──
-    let chromeFound = false;
-    let detectedChromePath = null;
-
-    // Well-known binary names to search via $PATH
-    const chromeCandidates = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome'];
-    // Well-known absolute paths for macOS / Windows / Linux
-    const chromeAbsolutePaths = [
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',        // macOS
-      '/Applications/Chromium.app/Contents/MacOS/Chromium',                  // macOS Chromium
-      '/usr/bin/google-chrome-stable',                                       // Linux apt
-      '/usr/bin/chromium-browser',                                           // Debian/Ubuntu
-      '/usr/bin/chromium',                                                   // Arch/Fedora
-      '/snap/bin/chromium',                                                  // snap
-      '/usr/lib/chromium/chromium',                                          // some distros
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',           // Windows
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',    // Windows x86
-    ];
-
-    // 1) Check explicit CHROME_BIN first
-    if (process.env.CHROME_BIN) {
-      try {
-        execSync(`"${process.env.CHROME_BIN}" --version`, { stdio: 'ignore', timeout: 5000 });
-        chromeFound = true;
-        detectedChromePath = process.env.CHROME_BIN;
-        ok(`Chrome available (CHROME_BIN=${process.env.CHROME_BIN})`);
-      } catch {
-        warn(`CHROME_BIN set but not working: ${process.env.CHROME_BIN}`);
-      }
-    }
-
-    // 2) Search $PATH candidates (cross-platform)
-    if (!chromeFound) {
-      for (const bin of chromeCandidates) {
-        const resolved = whichSync(bin);
-        if (resolved) {
-          try {
-            execSync(`"${resolved}" --version`, { stdio: 'ignore', timeout: 5000 });
-            chromeFound = true;
-            detectedChromePath = resolved;
-            ok(`Chrome auto-detected: ${resolved}`);
-            break;
-          } catch { /* try next */ }
-        }
-      }
-    }
-
-    // 3) Search well-known absolute paths (macOS .app bundles, snap, etc.)
-    if (!chromeFound) {
-      for (const absPath of chromeAbsolutePaths) {
-        if (fs.existsSync(absPath)) {
-          try {
-            execSync(`"${absPath}" --version`, { stdio: 'ignore', timeout: 5000 });
-            chromeFound = true;
-            detectedChromePath = absPath;
-            ok(`Chrome auto-detected: ${absPath}`);
-            break;
-          } catch { /* exists but won't run */ }
-        }
-      }
-    }
-
-    // 4) On Windows, try to auto-install Chrome if not found
-    if (!chromeFound && os.platform() === 'win32') {
-      log('Chrome not found on Windows — attempting auto-install...');
-      try {
-        const installResult = autoInstallChromeWindows();
-        if (installResult) {
-          chromeFound = true;
-          detectedChromePath = installResult;
-          ok(`Chrome auto-installed: ${detectedChromePath}`);
-        }
-      } catch (err) {
-        warn(`Auto-install failed: ${err.message}`);
-      }
-    }
-
-    // Persist the detected path so downstream code (setupPlatformBridgeSkills,
-    // Python CDP scripts) can use it without re-scanning.
-    if (chromeFound && detectedChromePath) {
-      if (!process.env.CHROME_BIN) {
-        process.env.CHROME_BIN = detectedChromePath;
-        ok(`CHROME_BIN auto-set → ${detectedChromePath}`);
-      }
-    }
-
-    if (!chromeFound) {
-      const platform = os.platform();
-      if (platform === 'darwin') {
-        errors.push({
-          name: 'Chrome / Chromium',
-          status: 'not found',
-          fix: 'Install Chrome: brew install --cask google-chrome',
-        });
-      } else if (platform === 'win32') {
-        errors.push({
-          name: 'Chrome / Chromium',
-          status: 'not found',
-          fix: [
-            'Install Chrome:',
-            '    1. Download from: https://www.google.com/chrome/',
-            '    2. Run the installer manually',
-            '    Or run as Administrator and re-run this command (auto-install will be attempted)',
-          ].join('\n         '),
-        });
-      } else {
-        errors.push({
-          name: 'Chrome / Chromium',
-          status: 'not found',
-          fix: [
-              'Install Chrome/Chromium:',
-              '    Ubuntu/Debian: sudo apt install -y chromium-browser',
-              '    Or: wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo dpkg -i google-chrome-stable_current_amd64.deb',
-            ].join('\n         '),
-        });
-      }
-    }
-
-    // ── 8. Headless display check (Xvfb / DISPLAY) ──
-    const isLinux = os.platform() === 'linux';
-    const hasDisplay = !!process.env.DISPLAY || !!process.env.WAYLAND_DISPLAY;
-    if (isLinux && !hasDisplay) {
-      // Check if Chrome supports --headless=new (modern headless mode)
-      // This is informational — not a hard error since Chrome can run headless
-      warnings.push('No DISPLAY set — Chrome will run in headless mode. Login flows may need special handling.');
-      warn('No DISPLAY set — Chrome will run in headless mode');
-      warn('For login flows, consider: sudo apt install -y xvfb && Xvfb :99 & export DISPLAY=:99');
-    }
   }
 
   // ── Report ──
@@ -795,12 +620,6 @@ function preflightCheck({ opsEnabled = false } = {}) {
 
   return { warnings };
 }
-
-// External ClawHub skills required by ops scripts
-// (daily-hot-news & douyin-hot-trend removed — trend-analyzer now calls DailyHot API directly)
-const REQUIRED_CLAWHUB_SKILLS = [
-  'yt-dlp-downloader',   // competitor-fetcher, competitor-tracker, viral-analyzer, performance-tracker: 抖音视频信息
-];
 
 function log(msg) { console.log(`\n  ${msg}`); }
 function ok(msg) { console.log(`  ✓ ${msg}`); }
@@ -1174,107 +993,13 @@ function removeCronByName(name) {
  * Respects automation config: brief_delivery, enable_heartbeat_cron, silent_background_jobs.
  */
 function buildCronSpecs({ persona, skillSlug, personaSlug, personaName }) {
-  const automation = persona.ops?.automation ?? {};
-  const enableHeartbeat = automation.enable_heartbeat_cron !== false; // default true
-  const silentBg = automation.silent_background_jobs === true;
-  const briefDelivery = automation.brief_delivery ?? 'wecom-target';
-
-  const specs = [];
-
-  // Heartbeat jobs (morning/tick/night) — skip if persona disables them
-  if (enableHeartbeat) {
-    specs.push(
-      { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180, noDeliver: false },
-      { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120, noDeliver: false },
-      { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300, noDeliver: false },
-    );
-  }
-
-  // Ops jobs (only if ops.enabled)
-  if (persona.ops && persona.ops.enabled) {
-    const briefTimeParts = (persona.ops.brief_time || '08:30').split(':');
-    // Use total-minutes subtraction to handle hour borrow correctly (e.g. 08:05 → 07:55)
-    const rawHour = parseInt(briefTimeParts[0], 10);
-    const rawMin = parseInt(briefTimeParts[1] || '30', 10);
-    const totalMinutes = ((rawHour * 60 + rawMin) - 10 + 1440) % 1440; // +1440 handles midnight wrap
-    const briefHour = Math.floor(totalMinutes / 60);
-    const briefMin = totalMinutes % 60;
-    const strategyDay = persona.ops.strategy_day ?? 1;
-    const stratTimeParts = (persona.ops.strategy_time || '08:00').split(':');
-    const stratHour = parseInt(stratTimeParts[0], 10);
-    const stratMin = parseInt(stratTimeParts[1] || '0', 10);
-
-    // ops-brief: for session delivery, let cron runner deliver stdout
-    // (the brief script outputs to stdout, cron runner handles IM delivery)
-    const briefNoDeliver = briefDelivery !== 'session'; // session mode: cron delivers; wecom-target: script delivers itself
-    const briefSession = 'isolated';
-
-    specs.push(
-      { name: `${skillSlug}:${personaSlug}:ops-brief`, cron: `${briefMin} ${briefHour} * * *`, message: `[cron:ops-brief] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-brief.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，生成今日运营简报（热点+选题+人设建议）。`, timeout: 900, noDeliver: briefNoDeliver, session: briefSession },
-    );
-
-    // Background ops jobs (always-on)
-    //
-    // Default schedule staggers ops-trends (HH:05) and ops-browse (HH:25) so
-    // the two platforms are hit in different halves of the hour. The timeout
-    // is 40 min (2400s) because the producer now throttles platform requests
-    // with 30–90s jitter and a 30 min round cap — generous budget beats
-    // midway kills that burn cached state.
-    const trendsInterval = persona.ops?.trends_interval || '5 * * * *';
-    const bgJobs = [
-      { name: `${skillSlug}:${personaSlug}:ops-trends`, cron: trendsInterval, message: `[cron:ops-trends] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-trends.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，从稳定热点缓存整理趋势；默认不触发小红书/抖音关键词搜索。`, timeout: 600 },
-      { name: `${skillSlug}:${personaSlug}:ops-competitor-analysis`, cron: '0 6 * * *', message: `[cron:ops-competitor-analysis] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-competitor-analysis.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，采集B站/抖音并分析竞品账号最新帖子；小红书由独立短任务处理。`, timeout: 600 },
-      { name: `${skillSlug}:${personaSlug}:ops-competitor-xhs`, cron: '30 6 * * *', message: `[cron:ops-competitor-xhs] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-competitor-analysis.js')}${personaSlug ? ' --persona ' + personaSlug : ''} --xhs-only，短预算采集小红书竞品；冷却中立即跳过。`, timeout: 180 },
-      { name: `${skillSlug}:${personaSlug}:ops-tags`, cron: '0 10,20 * * *', message: `[cron:ops-tags] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-tags.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，维护Tag词表（热门词检测+过期词清理）。`, timeout: 1200 },
-    ];
-
-    for (const job of bgJobs) {
-      specs.push({ ...job, noDeliver: silentBg });
-    }
-
-    // Strategy-dependent ops jobs (only when strategy_enabled)
-    const strategyEnabled = persona.ops?.strategy_enabled === true;
-    if (strategyEnabled) {
-      const strategyJobs = [
-        { name: `${skillSlug}:${personaSlug}:ops-performance`, cron: '0 */4 * * *', message: `[cron:ops-performance] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-performance.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，采集内容表现数据。`, timeout: 240 },
-        { name: `${skillSlug}:${personaSlug}:ops-analyze`, cron: '5 */4 * * *', message: `[cron:ops-analyze] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-analyze.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，分析内容表现数据。`, timeout: 240 },
-        { name: `${skillSlug}:${personaSlug}:ops-strategy`, cron: `${stratMin} ${stratHour} * * ${strategyDay}`, message: `[cron:ops-strategy] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-strategy.js')}${personaSlug ? ' --persona ' + personaSlug : ''}，生成周度内容策略。`, timeout: 600 },
-      ];
-      for (const job of strategyJobs) {
-        specs.push({ ...job, noDeliver: silentBg });
-      }
-    }
-
-    // Ops-browse: register when heartbeat is disabled (cron-only mode)
-    if (!enableHeartbeat) {
-      // Default HH:25 staggers with ops-trends (HH:05). Same 40 min timeout
-      // rationale — the producer jitters per-keyword and caps the round.
-      const browseInterval = persona.ops?.browse_interval || '25 * * * *';
-      specs.push({
-        name: `${skillSlug}:${personaSlug}:ops-browse`,
-        cron: browseInterval,
-        message: `[cron:ops-browse] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-browse.js')}${personaSlug ? ' --persona ' + personaSlug : ''} 浏览稳定内容平台发现灵感；默认不触发小红书。`,
-        timeout: 600,
-        noDeliver: silentBg,
-      });
-      specs.push({
-        name: `${skillSlug}:${personaSlug}:ops-browse-xhs`,
-        cron: '35 10 * * *',
-        message: `[cron:ops-browse-xhs] 请运行 node ${path.join(DIST_SRC, 'scripts', 'lifecycle', 'ops-browse.js')}${personaSlug ? ' --persona ' + personaSlug : ''} --xhs-only 浏览小红书；冷却中立即跳过。`,
-        timeout: 180,
-        noDeliver: silentBg,
-      });
-
-    }
-  }
-
-  return specs;
+  return [
+    { name: `${skillSlug}:${personaSlug}:morning`, cron: '0 7 * * *', message: `[cron:morning] 执行${personaName}晨规划。`, timeout: 180, noDeliver: false },
+    { name: `${skillSlug}:${personaSlug}:tick`, cron: '0 8-22 * * *', message: `[cron:tick] 执行${personaName}心跳。`, timeout: 120, noDeliver: false },
+    { name: `${skillSlug}:${personaSlug}:night`, cron: '0 23 * * *', message: `[cron:night] 执行${personaName}夜反思。`, timeout: 300, noDeliver: false },
+  ];
 }
 
-/**
- * Reconcile cron jobs: remove all existing jobs for this persona prefix, then add desired specs.
- * This ensures idempotent registration — no duplicates.
- */
 function reconcileCronJobs({ specs, skillSlug, personaSlug, agentId }) {
   const prefix = `${skillSlug}:${personaSlug}:`;
   const useGateway = !canClawRunSubCommands();
@@ -1381,122 +1106,6 @@ function writePendingCronSpecs(specs, { skillSlug, personaSlug, agentId }) {
     fs.writeFileSync(pendingPath, JSON.stringify(entry, null, 2) + '\n', 'utf8');
   } catch (err) {
     warn(`Failed to save pending cron specs: ${err.message}`);
-  }
-}
-
-/**
- * Check which external ClawHub skills are installed and install missing ones.
- * Only runs when ops is enabled for the persona.
- */
-function installRequiredClawHubSkills() {
-  if (!canClawRunSubCommands()) {
-    if (isOpenClawCLIAvailable()) {
-      warn('OpenClaw CLI found but sub-commands are unavailable (likely a Windows cmd.exe issue).');
-    } else {
-      warn('OpenClaw CLI not available — skipping ClawHub skill dependency check');
-    }
-    return;
-  }
-
-  // Exponential backoff delays for 429 rate-limit retries (seconds)
-  const RETRY_DELAYS = [15, 30, 60];
-  const MAX_RETRIES = RETRY_DELAYS.length;
-  // Pause between consecutive skill installs to stay under rate limit
-  const INTER_SKILL_DELAY = 8; // seconds
-
-  /**
-   * Install a single ClawHub skill with retry-on-429 logic.
-   * Returns true on success, false on failure.
-   */
-  function installSkillWithRetry(skill, label) {
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      try {
-        execSync(`openclaw skills install ${skill}`, {
-          encoding: 'utf8',
-          timeout: 90000,
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
-        ok(`${label}: ${skill}`);
-        return true;
-      } catch (err) {
-        const msg = (err.message || '') + (err.stderr ? err.stderr.toString() : '');
-        const is429 = msg.includes('429') || msg.includes('Rate limit') || msg.includes('rate limit');
-        if (is429 && attempt <= MAX_RETRIES) {
-          const delay = RETRY_DELAYS[attempt - 1];
-          warn(`Rate limited checking ${skill} — retrying in ${delay}s (attempt ${attempt}/${MAX_RETRIES})...`);
-          sleepSync(delay);
-        } else {
-          warn(`Failed to check ClawHub skill: ${skill} — ${msg.split('\n')[0] || 'unknown error'}`);
-          return false;
-        }
-      }
-    }
-    return false;
-  }
-
-  // Get list of installed skills
-  let installedSkills = [];
-  let listSucceeded = false;
-  try {
-    const result = spawnClaw(['skills', 'list', '--json'], {
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    // openclaw may mix Config warnings into stderr — extract only JSON from output
-    const rawOutputs = [result.stdout, result.stderr].filter(Boolean).map(s => s.trim());
-    for (const raw of rawOutputs) {
-      // Find the first JSON array or object in the output (skip leading warning lines)
-      const jsonStart = raw.search(/[\[{]/);
-      if (jsonStart === -1) continue;
-      try {
-        const parsed = JSON.parse(raw.slice(jsonStart));
-        const skillList = Array.isArray(parsed) ? parsed : (parsed.skills || []);
-        installedSkills = skillList.map(s => (typeof s === 'string' ? s : s.name || s.slug || '')).filter(Boolean);
-        listSucceeded = true;
-        break;
-      } catch { /* try next output stream */ }
-    }
-  } catch { /* list command itself failed */ }
-
-  if (!listSucceeded) {
-    warn('Could not list installed skills — will check each dependency individually');
-  }
-
-  const missing = listSucceeded
-    ? REQUIRED_CLAWHUB_SKILLS.filter(s => !installedSkills.includes(s))
-    : [...REQUIRED_CLAWHUB_SKILLS];
-
-  if (missing.length === 0) {
-    ok(`All ${REQUIRED_CLAWHUB_SKILLS.length} ClawHub skill dependencies are installed`);
-    return;
-  }
-
-  const actionLabel = listSucceeded ? 'Installing' : 'Checking';
-  log(`${actionLabel} ${missing.length} ClawHub skill dependencies${listSucceeded ? '' : ' individually'}...`);
-
-  let installed = 0;
-  let failed = 0;
-
-  for (let i = 0; i < missing.length; i++) {
-    const skill = missing[i];
-    const label = listSucceeded ? 'Installed ClawHub skill' : 'ClawHub skill ready';
-    const success = installSkillWithRetry(skill, label);
-    if (success) {
-      installed++;
-    } else {
-      failed++;
-    }
-    // Pause between skills to avoid triggering rate limit on the next request
-    if (i < missing.length - 1) {
-      sleepSync(INTER_SKILL_DELAY);
-    }
-  }
-
-  if (failed > 0) {
-    warn(`${failed} skill(s) failed to install. Some ops features may be limited.`);
-    console.log('  You can install them manually: openclaw skills install <name>');
-  }
-  if (installed > 0) {
-    ok(`${installed} ClawHub skill(s) ${listSucceeded ? 'newly installed' : 'ready'}`);
   }
 }
 
@@ -2524,7 +2133,7 @@ async function install() {
   const envVars = autoLoadEnvFile();
 
   // Step 1: Load persona config (needed for preflight to know if ops is enabled)
-  log('Step 1/8: Loading persona configuration...');
+  log('Step 1/7: Loading persona configuration...');
   let personaPath = getPersonaArg();
   let resolvedPersonaPath;
 
@@ -2566,8 +2175,7 @@ async function install() {
   ok(`Persona: ${personaName} (persona: ${personaSlug}, skill: ${skillSlug})`);
 
   // Step 1.5: Preflight dependency check — MUST pass before continuing
-  const opsEnabled = !!(persona.ops && persona.ops.enabled);
-  preflightCheck({ opsEnabled });
+  preflightCheck();
 
   const skillDest = path.join(SKILLS_DIR, skillSlug);
   const agentWorkspace = resolveAgentWorkspace(personaSlug);
@@ -2621,20 +2229,6 @@ async function install() {
     warn(`node_modules not found at ${srcNodeModules} — skipping symlink`);
   }
 
-  // Initialize competitor profiles markdown from persona config
-  try {
-    const { initProfilesFromPersona } = require(path.join(skillDest, 'scripts', 'ops', 'competitor-memory.js'));
-    const { setBasePaths } = require(path.join(skillDest, 'scripts', 'utils', 'file-utils.js'));
-    setBasePaths(memoryDir, skillDest);
-    if (persona.ops?.competitors?.length) {
-      initProfilesFromPersona(persona.ops.competitors);
-      ok(`Initialized ${persona.ops.competitors.length} competitor profile docs`);
-    }
-  } catch (err) {
-    // Non-fatal: profiles will be initialized on first ops-trends run if build exists
-    warn(`Could not initialize competitor profiles: ${err.message}`);
-  }
-
   // Step 4: Register in OpenClaw config
   log('Step 4/8: Registering skill in OpenClaw config...');
 
@@ -2657,7 +2251,7 @@ async function install() {
   const envFromFile = envVars;
   const hasEnvFile = Object.keys(envFromFile).length > 0;
 
-  let llmApiKey, llmApiBase, llmModel, imageApiKey, bilibiliCookie;
+  let llmApiKey, llmApiBase, llmModel, imageApiKey;
 
   if (hasEnvFile && (envFromFile.LLM_API_KEY || existingEnv.LLM_API_KEY)) {
     // Non-interactive: use .env values, falling back to existing config
@@ -2665,7 +2259,6 @@ async function install() {
     llmApiBase = envFromFile.LLM_API_BASE || '';
     llmModel = envFromFile.LLM_MODEL || '';
     imageApiKey = envFromFile.AIHUBMIX_API_KEY || '';
-    bilibiliCookie = envFromFile.BILIBILI_COOKIE || '';
     ok('Using env from .env file (non-interactive mode)');
     if (llmApiKey) ok(`LLM_API_KEY: ${maskSecret(llmApiKey || existingEnv.LLM_API_KEY)}`);
     if (llmApiBase || existingEnv.LLM_API_BASE) ok(`LLM_API_BASE: ${llmApiBase || existingEnv.LLM_API_BASE}`);
@@ -2707,18 +2300,6 @@ async function install() {
         : '  AIHUBMIX_API_KEY (press Enter to skip): ');
     }
 
-    if (opsEnabled) {
-      const hintBiliCookie = existingEnv.BILIBILI_COOKIE ? '(already set, Enter to keep)' : '(paste full cookie string, or Enter to skip)';
-      console.log('\n  Optional: Bilibili competitor tracking requires a login cookie.');
-      console.log('  Get it from: browser DevTools → Network → any bilibili.com request → Cookie header.');
-      const biliInput = await ask(rl, `  BILIBILI_COOKIE ${hintBiliCookie}: `);
-      if (biliInput.trim()) {
-        bilibiliCookie = biliInput.trim();
-      } else {
-        bilibiliCookie = '';
-      }
-    }
-
     rl.close();
   }
 
@@ -2733,7 +2314,6 @@ async function install() {
       ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
       ...(llmModel && { LLM_MODEL: llmModel }),
       ...(imageApiKey && { AIHUBMIX_API_KEY: imageApiKey }),
-      ...(bilibiliCookie && { BILIBILI_COOKIE: bilibiliCookie }),
       ALIVE_PERSONA: personaSlug,
     },
   };
@@ -2749,7 +2329,6 @@ async function install() {
   const hasLlm = !!(llmApiKey || existingEnv.LLM_API_KEY);
   const hasImage = !!(imageApiKey || envFromFile.AIHUBMIX_API_KEY || envFromFile.FAL_KEY || existingEnv.AIHUBMIX_API_KEY || existingEnv.FAL_KEY);
   const hasInstagram = !!(envFromFile.INSTAGRAM_USERNAME || existingEnv.INSTAGRAM_USERNAME);
-  const hasBilibili = !!(bilibiliCookie || existingEnv.BILIBILI_COOKIE);
   console.log('\n  ╭─────────────────────────────────────────────╮');
   console.log('  │         🌟 Feature Unlock Status             │');
   console.log('  ╰─────────────────────────────────────────────╯');
@@ -2759,9 +2338,6 @@ async function install() {
   console.log(`  ${hasImage ? '✓' : '○'} AI image gen        — ${hasImage ? 'enabled' : 'add AIHUBMIX_API_KEY or FAL_KEY'}`);
   console.log(`  ${hasInstagram ? '✓' : '○'} Instagram posting   — ${hasInstagram ? 'enabled' : 'add INSTAGRAM_USERNAME + PASSWORD'}`);
   console.log('  ○ Voice messages     — no key needed (Noiz TTS, ≤3/day)');
-  if (opsEnabled) {
-    console.log(`  ${hasBilibili ? '✓' : '○'} Bilibili tracking   — ${hasBilibili ? 'enabled' : 'add BILIBILI_COOKIE for competitor data'}`);
-  }
   console.log('');
 
   // Step 5: Setup reference images
@@ -2819,15 +2395,10 @@ async function install() {
   }
   ok(`Memory initialized at ${memoryDir}`);
 
-  // Step 7: Install external ClawHub skill dependencies (if ops enabled)
-  if (persona.ops && persona.ops.enabled) {
-    log('Step 7/8: Installing ClawHub skill dependencies for ops...');
-    installRequiredClawHubSkills();
-  }
-
-  // Step 7b: Setup Python platform bridge skills (XHS + Douyin CDP)
-  if (persona.ops && persona.ops.enabled) {
-    log('Step 7b: Checking Python platform bridge skills (XHS / Douyin)...');
+  // Setup Python platform bridge skills when the persona actually uses them
+  const subSkills = persona.sub_skills ?? [];
+  if (subSkills.includes('xhs-bridge') || subSkills.includes('douyin-bridge')) {
+    log('Checking Python platform bridge skills (XHS / Douyin)...');
     setupPlatformBridgeSkills(/* nonInteractive= */ true);
   }
 
@@ -3332,8 +2903,6 @@ async function reinstall() {
   const hintBase = capturedEnv.LLM_API_BASE || '';
   const hintModel = capturedEnv.LLM_MODEL || '';
   const hintImageKey = maskSecret(capturedEnv.AIHUBMIX_API_KEY);
-  const updateOpsEnabled = !!(persona.ops && persona.ops.enabled);
-
   console.log('\n  Optional: Configure LLM for heartbeat/reflection calls:');
   const llmApiKeyRaw = await ask(rl, hintLlmKey
     ? `  LLM_API_KEY (current: ${hintLlmKey}, Enter to keep): `
@@ -3352,14 +2921,6 @@ async function reinstall() {
     : '  AIHUBMIX_API_KEY (press Enter to skip): ');
   const imageApiKey = imageApiKeyRaw.trim().toLowerCase() === 'skip' ? '' : imageApiKeyRaw.trim();
 
-  let bilibiliCookieUpdate = '';
-  if (updateOpsEnabled) {
-    const hintBiliCookie = capturedEnv.BILIBILI_COOKIE ? '(already set, Enter to keep)' : '(paste full cookie string, or Enter to skip)';
-    console.log('\n  Optional: Bilibili competitor tracking requires a login cookie.');
-    const biliInput = await ask(rl, `  BILIBILI_COOKIE ${hintBiliCookie}: `);
-    if (biliInput.trim()) bilibiliCookieUpdate = biliInput.trim();
-  }
-
   let config = {};
   if (fs.existsSync(CONFIG_FILE)) {
     try { config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { /* fresh */ }
@@ -3374,7 +2935,6 @@ async function reinstall() {
       ...(llmApiBase && { LLM_API_BASE: llmApiBase }),
       ...(llmModel && { LLM_MODEL: llmModel }),
       ...(imageApiKey && { AIHUBMIX_API_KEY: imageApiKey }),
-      ...(bilibiliCookieUpdate && { BILIBILI_COOKIE: bilibiliCookieUpdate }),
       ALIVE_PERSONA: personaSlug,
     },
   };

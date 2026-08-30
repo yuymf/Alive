@@ -6,7 +6,7 @@
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-147%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-1200%2B%20engine-brightgreen.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](tsconfig.json)
 
 **Emotions · Fatigue · Procrastination · Flow States · Random Life Events**
@@ -32,7 +32,6 @@
 | Always eager, always on | **Gets tired, procrastinates, enters flow** |
 | Scripted responses | **Autonomous heartbeat loop** — hourly perceive→intend→act |
 | One-size-fits-all | **Persona DNA** — MBTI baselines, voice, schedule, feature flags |
-| No content ops | **Built-in Ops Desk** — trends, competitors, viral KB |
 | Single platform | **7 content providers** — Bilibili, Reddit, Weibo, Zhihu, XHS, Douyin, DailyHot |
 
 ---
@@ -93,7 +92,7 @@ A persona is not a system prompt. It's a **configuration object** with:
 - Voice signature (catchphrases, anti-patterns, platform-specific styles)
 - Schedule (wake/sleep, active peaks)
 - Content sources (platforms, keywords, competitor accounts)
-- Feature flags (ops enabled, voice TTS, image generation)
+- Feature flags (voice TTS, image generation)
 
 This allows the same engine to run Minase (INFP, quiet, photography-focused) and Miss V (ENTJ, aggressive, esports-focused) with zero code changes.
 
@@ -127,15 +126,6 @@ This allows the same engine to run Minase (INFP, quiet, photography-focused) and
 | 2 | 90 days | Social relations |
 | 3 | Permanent | Core wisdom |
 
-### Ops Desk
-
-- 📊 Trend Analyzer
-- 🔍 Competitor Tracker (XHS / Douyin / Bilibili)
-- 💡 Topic Generator
-- 📋 Daily Brief (WeChat Work push)
-- 🎯 Persona Advisor
-- 🦠 **Viral Knowledge Base** — auto-dissect → auto-promote → auto-evict
-
 </td>
 </tr>
 </table>
@@ -150,9 +140,8 @@ This allows the same engine to run Minase (INFP, quiet, photography-focused) and
 | Memory | 3-tier (research) | Flat context | ✅ 4-tier with cost control |
 | Proactive behavior | ✅ (research demo) | ❌ reactive only | ✅ heartbeat loop |
 | Persona system | Single agent | Pre-built characters | ✅ YAML-driven DNA |
-| Content ops | ❌ | ❌ | ✅ trends, competitors, viral KB |
-| Production ready | ❌ research paper | ✅ consumer product | ✅ open source, testable |
-| Test coverage | N/A | N/A | ✅ 147 tests, 37k lines |
+| Production ready | ❌ research paper | ✅ consumer product | ⚠️ open source, testable (needs a host) |
+| Test coverage | N/A | N/A | ✅ 1200+ engine tests |
 
 **Alive bridges the gap** between research prototypes (Stanford) and consumer products (Character.AI) — it has the **architectural depth** of research with the **engineering rigor** of production.
 
@@ -177,18 +166,19 @@ Bring your own — any `persona.yaml` works.
 npx alive
 ```
 
-That's it. The wizard walks you through the rest.
+This is an **OpenClaw skill installer**, not a standalone runtime.
 
-> **Prerequisite:** [OpenClaw](https://openclaw.ai) installed (Node.js ≥ 18)
+> **Prerequisite:** [OpenClaw](https://openclaw.ai) already installed, with `~/.openclaw` present (Node.js ≥ 18).
 >
-> **No API key required** — falls back to OpenClaw's built-in Claude.
+> Without a host, `npx alive` cannot schedule heartbeats, persist memory, or talk to an LLM. If you skip `LLM_API_KEY`, it tries OpenClaw's built-in Claude — that is not “zero config”.
 
-### 30-Second Setup
+### Setup
 
 ```
-1. npx alive                    # Install
-2. Pick a persona               # Minase, Miss V, or import your own
-3. Done ✅                      # Cron jobs auto-registered, she's alive
+1. Install OpenClaw and make sure `openclaw` is on PATH
+2. npx alive                    # copy skill + register cron
+3. Pick a persona               # Minase, Miss V, or import your own
+4. /alive setup                 # set LLM_API_KEY (recommended)
 ```
 
 ---
@@ -207,28 +197,14 @@ That's it. The wizard walks you through the rest.
 /alive help                # All commands
 ```
 
-### Ops
-
-```
-/alive brief               # Daily brief (trends + topics + advice)
-/alive trends              # Trending keywords
-/alive idea [direction]    # Generate topic ideas
-/alive post [N]            # Topic queue / detail
-/alive analyze <URL>       # Dissect a viral post
-/alive advice              # Persona × trend fit
-/alive kb status           # Viral KB stats
-/alive kb search <kw>      # Search dissections
-/alive kb formulas         # Universal formulas
-```
-
 ---
 
 ## 🔓 Progressive Unlock
 
 | Feature | Required | You Get |
 |:---|:---|:---|
-| Chat + emotion memory | _nothing_ | Works out of the box |
-| Heartbeat autonomy | _nothing_ | Uses built-in Claude |
+| Chat + emotion memory | OpenClaw host | Skill + memory files under `~/.openclaw` |
+| Heartbeat autonomy | OpenClaw cron | Hourly tick; LLM via key or host Claude |
 | Custom LLM | `LLM_API_KEY` | Any OpenAI-compatible endpoint |
 | AI image generation | `AIHUBMIX_API_KEY` / `FAL_KEY` | Auto-posting with images |
 | Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | Autonomous posting |
@@ -252,15 +228,12 @@ alive/
 ├── scripts/
 │   ├── engines/              # 7 core state engines
 │   ├── lifecycle/            # Heartbeat loop · morning-plan · night-reflect
-│   ├── ops/                  # Trend · competitor · brief · advisor · viral KB
 │   ├── adapters/             # Platform adapters
 │   └── utils/                # Types · config · skill-router · providers
-├── sub-skills/               # 9 pluggable capability units
+├── sub-skills/               # Pluggable capability units
 ├── hooks/                    # Context-loader · memory-save
 ├── plugin/                   # /alive command registration
-├── api-server/               # REST API (auth, analytics, intel, strategy)
-├── dashboard/                # Web dashboard
-└── tests/                    # 147 test files, 37k lines
+└── tests/                    # Engine and lifecycle tests
 ```
 
 ### Sub-Skills (9 pluggable units)
@@ -285,7 +258,6 @@ npm run test        # Run all tests (vitest)
 
 - **Unit tests**: Mock LLM client, mock filesystem — test engines in isolation
 - **E2E tests**: Real LLM calls, full heartbeat cycle — verify end-to-end behavior
-- **Autoresearch**: Auto-tune prompts using eval fixtures (inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch))
 
 PRs welcome! Persona configs (`alive/personas/*.yaml`) especially welcome.
 

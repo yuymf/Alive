@@ -56,9 +56,6 @@ import { XhsProvider } from '../adapters/providers/xhs-provider';
 import { DouyinProvider } from '../adapters/providers/douyin-provider';
 import { exaWebSearch } from '../utils/exa-client';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
-import { processInspirationForDiscovery, processInspirationForAccountDiscovery } from '../ops/discovery-engine';
-import { runKeywordSearch } from '../ops/keyword-tracker';
-import { runViralSearch, runCrossPlatformRadar, runAutoBreakdown } from '../ops/viral-search';
 import { buildDriftContext } from '../engines/personality-drift';
 import { HEARTBEAT_CONFIG } from '../config';
 import { runMorningPlan } from './morning-plan';
@@ -532,11 +529,11 @@ export async function regularTick(
     // 5d. Apply dynamic resistance
     intentPool = applyResistanceToPool(
       intentPool, vitality.vitality, confidence.confidence,
-      false, null, rigidNow, persona.ops?.browse_schedule,
+      false, null, rigidNow,
     );
 
     // 5e. Check impulse breakthrough
-    const breakthrough = checkImpulseBreakthrough(intentPool, vitality.vitality, false, persona.ops?.browse_schedule);
+    const breakthrough = checkImpulseBreakthrough(intentPool, vitality.vitality, false);
     if (breakthrough) {
       console.log(`Impulse breakthrough: ${breakthrough.description}`);
     }
@@ -746,76 +743,6 @@ export async function regularTick(
           appendText(PATHS.diary, `\n## ${todayStr} ${timeStr}\n${subResult.narrative}\n情绪: ${emotion.mood.description} | 重要性: 5\n标签: heartbeat, real, ${route.skillName}\n`);
           totalImportance += 5;
           actionResults.push(`[${route.skillName}] ${action.action}`);
-
-          // Post-hook: content-browse → trigger discovery pipeline + keyword search
-          if (route.skillName === 'content-browse') {
-            try {
-              const discovered = processInspirationForDiscovery();
-              const newCandidates = processInspirationForAccountDiscovery();
-              if (discovered > 0 || newCandidates > 0) {
-                console.log(`[discovery] +${discovered} content discoveries, +${newCandidates} candidate accounts`);
-              }
-            } catch (discErr) {
-              console.warn(`[discovery] Post-browse discovery failed: ${(discErr as Error).message}`);
-            }
-
-            // P4-1: Active keyword search (reuses registry from the content-browse config above)
-            try {
-              const kRegistry = skillConfig.registry as ContentProviderRegistry | undefined;
-              if (kRegistry) {
-                const kResult = await runKeywordSearch(kRegistry);
-                if (kResult.searched > 0) {
-                  console.log(`[keyword-tracker] Searched ${kResult.searched} keywords (${kResult.keywords.join(', ')}), +${kResult.totalDiscovered} discoveries`);
-                }
-              }
-            } catch (kwErr) {
-              console.warn(`[keyword-tracker] Post-browse keyword search failed: ${(kwErr as Error).message}`);
-            }
-
-            // Viral search: proactive high-engagement content discovery
-            try {
-              const vsResult = await runViralSearch();
-              if (vsResult.injected > 0) {
-                console.log(`[viral-search] +${vsResult.injected} viral discoveries (${vsResult.xhs_found} XHS, ${vsResult.douyin_found} Douyin)`);
-              }
-            } catch (vsErr) {
-              console.warn(`[viral-search] Post-browse viral search failed: ${(vsErr as Error).message}`);
-            }
-
-            // Cross-platform radar: detect trending topics across platforms
-            try {
-              const radarResult = await runCrossPlatformRadar();
-              if (radarResult.injected > 0) {
-                console.log(`[radar] +${radarResult.injected} cross-platform discoveries (${radarResult.trend_keywords_used.join(', ')})`);
-              }
-            } catch (radarErr) {
-              console.warn(`[radar] Post-browse radar failed: ${(radarErr as Error).message}`);
-            }
-
-            // Auto-breakdown: analyze high-engagement items from discovery pool
-            try {
-              const abResult = await runAutoBreakdown(llm);
-              if (abResult.analyzed > 0) {
-                console.log(`[auto-breakdown] Analyzed ${abResult.analyzed} items: ${abResult.titles.join(', ')}`);
-              }
-            } catch (abErr) {
-              console.warn(`[auto-breakdown] Post-browse auto-breakdown failed: ${(abErr as Error).message}`);
-            }
-
-            // Search-keyword trend engine: pre-compute trend signals from keyword searches
-            // Results are cached and read by consumers via readCachedTrends() on next invocation.
-            // Passing `persona.ops` lets the refresher honour the persona's
-            // throttle config (abort_on_status, keyword jitter, round cap).
-            try {
-              const { refreshSearchKeywordTrends } = await import('../ops/trend-analyzer');
-              const skItems = await refreshSearchKeywordTrends(persona.ops);
-              if (skItems.length > 0) {
-                console.log(`[search-keyword] Pre-computed ${skItems.length} trend items from keyword searches`);
-              }
-            } catch (skErr) {
-              console.warn(`[search-keyword] Post-browse search-keyword pre-computation failed: ${(skErr as Error).message}`);
-            }
-          }
         } catch (err) {
           console.error(`[router] Sub-skill ${route.skillName} failed: ${(err as Error).message}`);
           actionResults.push(`[error:${route.skillName}] ${action.action}`);
@@ -1028,21 +955,6 @@ export async function main(
     case 'night':
       console.log('Night heartbeat — running night reflection');
       await runNightReflect(llm);
-      // Post-hook: run health check and persist report
-      try {
-        const { runHealthCheck } = await import('../ops/health-check');
-        const { writeJSON: writeJ } = await import('../utils/file-utils');
-        const report = await runHealthCheck();
-        writeJ(PATHS.healthReport, report);
-        const { warn, missing } = report.summary;
-        if (warn > 0 || missing > 0) {
-          console.log(`[health-check] ⚠️ ${warn} warnings, ${missing} missing — report saved`);
-        } else {
-          console.log(`[health-check] ✅ All links healthy`);
-        }
-      } catch (hcErr) {
-        console.warn(`[health-check] Failed: ${(hcErr as Error).message}`);
-      }
       break;
     case 'regular':
       await regularTick(llm);

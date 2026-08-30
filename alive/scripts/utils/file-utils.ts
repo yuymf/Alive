@@ -40,52 +40,9 @@ function getSkillBase(): string {
   return _skillBaseOverride ?? path.join(os.homedir(), '.openclaw', 'skills', 'alive');
 }
 
-function getRepoRoot(): string {
-  return path.join(__dirname, '..', '..', '..');
-}
-
 function resolveTunablePromptPath(relativePath: string): string | null {
   const installedPath = path.join(getSkillBase(), 'tunable', 'prompts', relativePath);
-  if (fs.existsSync(installedPath)) return installedPath;
-
-  const devPath = path.join(getRepoRoot(), 'eval', 'tunable', 'prompts', relativePath);
-  if (fs.existsSync(devPath)) return devPath;
-
-  return null;
-}
-
-export function readTunablePrompt(relativePath: string): string | null {
-  const resolved = resolveTunablePromptPath(relativePath);
-  if (!resolved) return null;
-  return fs.readFileSync(resolved, 'utf8');
-}
-
-/**
- * Read and JSON.parse a tunable config file under eval/tunable/prompts/.
- * Returns null (not throws) when the file is missing OR fails to parse — caller
- * must supply its own defaults in that case. This keeps tunable overrides safe
- * by construction: a broken tunable file never takes precedence over baked-in
- * constants.
- */
-export function readTunableJSON<T>(relativePath: string): T | null {
-  const raw = readTunablePrompt(relativePath);
-  if (raw == null) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch (err) {
-    console.error(`[tunable] failed to parse ${relativePath}:`, err);
-    return null;
-  }
-}
-
-export function renderTunablePrompt(
-  template: string,
-  vars: Record<string, string | number | boolean | null | undefined>,
-): string {
-  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, key: string) => {
-    const value = vars[key];
-    return value === null || value === undefined ? '' : String(value);
-  });
+  return fs.existsSync(installedPath) ? installedPath : null;
 }
 
 /** Override base paths for testing (sandbox isolation). */
@@ -119,50 +76,21 @@ export const PATHS = {
   get flowState() { return path.join(getMemoryBase(), 'state', 'flow-state.json'); },
   get vitalityState() { return path.join(getMemoryBase(), 'state', 'vitality-state.json'); },
   get inspirationState() { return path.join(getMemoryBase(), 'state', 'inspiration-state.json'); },
-  get keywordState() { return path.join(getMemoryBase(), 'state', 'keyword-state.json'); },
   get searchState() { return path.join(getMemoryBase(), 'state', 'search-state.json'); },
-  get contentPatterns() { return path.join(getMemoryBase(), 'state', 'content-patterns.json'); },
   get personalityDrift() { return path.join(getMemoryBase(), 'state', 'personality-drift.json'); },
   get scheduleToday() { return path.join(getMemoryBase(), 'state', 'schedule-today.json'); },
-  get contentTaste() { return path.join(getMemoryBase(), 'state', 'content-taste.json'); },
   get travelState() { return path.join(getMemoryBase(), 'state', 'travel-state.json'); },
   get workImpulse() { return path.join(getMemoryBase(), 'state', 'work-impulse.json'); },
-  get contentStrategy() { return path.join(getMemoryBase(), 'state', 'content-strategy.json'); },
   get platformRuntime() { return path.join(getMemoryBase(), 'state', 'platform-runtime.json'); },
-  get opsRunStatus() { return path.join(getMemoryBase(), 'state', 'ops-run-status.json'); },
 
   // === queues/ — Transient queues & logs ===
   get intentPool() { return path.join(getMemoryBase(), 'queues', 'intent-pool.json'); },
   get eventQueue() { return path.join(getMemoryBase(), 'queues', 'event-queue.json'); },
   get heartbeatLog() { return path.join(getMemoryBase(), 'queues', 'heartbeat-log.json'); },
   get pendingChains() { return path.join(getMemoryBase(), 'queues', 'pending-chains.json'); },
-  get reviewQueue() { return path.join(getMemoryBase(), 'queues', 'review-queue.json'); },
-  get postAnalysisLog() { return path.join(getMemoryBase(), 'queues', 'post-analysis-log.json'); },
-  get personaReportLog() { return path.join(getMemoryBase(), 'queues', 'persona-report-log.json'); },
-  get competitorLog() { return path.join(getMemoryBase(), 'queues', 'competitor-log.json'); },
-  get discoveryPool() { return path.join(getMemoryBase(), 'queues', 'discovery-pool.json'); },
-  get opsBriefLog() { return path.join(getMemoryBase(), 'queues', 'ops-brief-log.json'); },
-  get performanceLog() { return path.join(getMemoryBase(), 'queues', 'performance-log.json'); },
-  get analysisLog() { return path.join(getMemoryBase(), 'queues', 'analysis-log.json'); },
-  get trendHistory() { return path.join(getMemoryBase(), 'queues', 'trend-history.json'); },
-  get trendsCache() { return path.join(getMemoryBase(), 'queues', 'trends-cache.json'); },
-  get searchKeywordCache() { return path.join(getMemoryBase(), 'queues', 'search-keyword-cache.json'); },
-  get competitorPosts() { return path.join(getMemoryBase(), 'queues', 'competitor-posts.json'); },
-  get competitorAnalysis() { return path.join(getMemoryBase(), 'queues', 'competitor-analysis.json'); },
-  get candidateAccounts() { return path.join(getMemoryBase(), 'queues', 'candidate-accounts.json'); },
   get postHistory() { return path.join(getMemoryBase(), 'queues', 'post-history.json'); },
   get pendingEngagement() { return path.join(getMemoryBase(), 'queues', 'pending-engagement.json'); },
   get outboundHistory() { return path.join(getMemoryBase(), 'queues', 'outbound-history.json'); },
-  get healthReport() { return path.join(getMemoryBase(), 'queues', 'health-report.json'); },
-  get audiencePerception() { return path.join(getMemoryBase(), 'queues', 'audience-perception.json'); },
-  get directionIdeaCache() { return path.join(getMemoryBase(), 'queues', 'direction-idea-cache.json'); },
-  /**
-   * Per-persona log of directions the user has explicitly queried via
-   * `/idea <direction>`. The ops-browse cron reads this file to pre-fetch
-   * those directions on the next round so subsequent `/idea <same>` calls
-   * hit the cache instead of running an inline search.
-   */
-  get activeDirections() { return path.join(getMemoryBase(), 'queues', 'active-directions.json'); },
 
   // === Social (unchanged) ===
   get socialMeta() { return path.join(getMemoryBase(), 'relations', 'social-meta.json'); },
@@ -172,16 +100,10 @@ export const PATHS = {
   get diary() { return path.join(getMemoryBase(), 'diary.md'); },
   get world() { return path.join(getMemoryBase(), 'world.md'); },
   get cronSchedule() { return path.join(getMemoryBase(), 'cron-schedule.json'); },
-  get formulaStore() { return path.join(getMemoryBase(), 'formula-store.json'); },
-  get tagVocabulary() { return path.join(getMemoryBase(), 'tag-vocabulary.json'); },
-  get positioningReport() { return path.join(getMemoryBase(), 'positioning-report.json'); },
-  get positioningReportPrev() { return path.join(getMemoryBase(), 'positioning-report.prev.json'); },
   get photoGallery() { return path.join(getMemoryBase(), 'photo-gallery.json'); },
   get inspiration() { return path.join(getMemoryBase(), 'inspiration.json'); },
   get photoRoll() { return path.join(getMemoryBase(), 'photo-roll'); },
   get inspirationRefs() { return path.join(getMemoryBase(), 'inspiration-refs'); },
-  get competitorsDir() { return path.join(getMemoryBase(), 'competitors'); },
-  get hitBreakdownsDir() { return path.join(getMemoryBase(), 'hit-breakdowns'); },
   get referencesDir() { return path.join(getMemoryBase(), 'assets', 'references'); },
 
   // === Shared skill infra (global, not per-persona) ===
@@ -313,8 +235,7 @@ export function readText(filePath: string, fallback = ''): string {
  *
  * Tunable override priority:
  * 1. <skillBase>/tunable/prompts/lifecycle/<templateName>
- * 2. <repoRoot>/eval/tunable/prompts/lifecycle/<templateName>
- * 3. legacy templates locations
+ * 2. <repoRoot>/alive/templates/<templateName>
  */
 export function readTemplate(templateName: string): string {
   const tunablePath = resolveTunablePromptPath(path.join('lifecycle', templateName));
@@ -372,7 +293,7 @@ export function resolveLlmLogPath(): string {
  * This is needed for cron jobs that run in isolated session mode where process.env
  * is not automatically populated with skill environment variables.
  *
- * Usage: Call this early in cron job entry points (e.g., in ops-brief.ts, ops-trends.ts)
+ * Usage: Call this early in cron job entry points (e.g. heartbeat-tick.ts)
  */
 export function loadSkillEnvVars(skillName: string = 'alive'): void {
   try {

@@ -9,7 +9,6 @@ import * as path from 'path';
 import YAML from 'yaml';
 import { readJSON, readText, writeJSON, PATHS, setPersonaName, getPersonaName } from '../utils/file-utils';
 import { loadPersona, clearPersonaCache, getScheduleConfig } from '../persona/persona-loader';
-import { handleKbCommand } from '../../sub-skills/ops-desk/scripts/kb-query';
 import {
   generatePersonaQuick,
   generatePersonaGuided,
@@ -133,63 +132,6 @@ function tokenize(input: string): string[] {
 
 // ── Dispatcher ─────────────────────────────────────────────────────
 
-/**
- * Proxy ops sub-commands to ops-command-handler.
- * E.g. "/alive brief" → node ops-command-handler.js brief
- *      "/alive post 1" → node ops-command-handler.js post 1
- */
-function cmdOpsProxy(cmd: ParsedCommand): CommandResult {
-  const { execFileSync } = require('child_process') as typeof import('child_process');
-  const opsHandlerPath = path.resolve(__dirname, '../ops/ops-command-handler.js');
-  const opsArgs = [cmd.subcommand, ...cmd.args];
-  try {
-    const output = execFileSync(process.execPath, [opsHandlerPath, ...opsArgs], {
-      timeout: 300_000,
-      encoding: 'utf8' as const,
-      env: { ...process.env },
-    });
-    return { output: (output as string).trim() || '✅ Done.' };
-  } catch (err) {
-    // 子进程的 stdout 包含 ops-command-handler 自己格式化好的用户友好输出
-    const stdout = (err as { stdout?: Buffer | string }).stdout?.toString().trim() ?? '';
-    if (stdout) {
-      // ops-command-handler 已经做了错误处理，stdout 里的内容是安全的
-      return { output: stdout, error: true };
-    }
-    // stdout 为空时，从 stderr 提取用户友好的错误摘要（不暴露内部细节）
-    const stderr = (err as { stderr?: Buffer | string }).stderr?.toString().trim() ?? '';
-    return { output: extractUserFriendlyError(stderr, err as Error), error: true };
-  }
-}
-
-/**
- * 从子进程 stderr 中提取用户友好的错误信息，
- * 过滤掉 Python traceback、CDP 日志、内部类名等技术细节。
- */
-function extractUserFriendlyError(stderr: string, err: Error): string {
-  const patterns: Array<{ re: RegExp; msg: string }> = [
-    { re: /NoFeedsError|没有捕获到 feeds 数据/, msg: '小红书搜索数据获取失败，可能需要重新登录小红书' },
-    { re: /NotLoggedInError|未登录/, msg: '小红书未登录，请先执行登录' },
-    { re: /等待.*INITIAL_STATE.*超时|等待.*超时/, msg: '小红书页面加载超时，请检查网络或重新登录' },
-    { re: /会话 tab.*已失效/, msg: '浏览器会话已过期，请重启 Chrome 后重试' },
-    { re: /CDPError|CDP.*错误/, msg: '浏览器连接异常，请确认 Chrome 已启动' },
-    { re: /ECONNREFUSED/, msg: 'Chrome 浏览器未启动或远程调试端口未开启' },
-    { re: /ETIMEDOUT|timeout/i, msg: '请求超时，请稍后重试' },
-    { re: /RateLimitError|rate.?limit/i, msg: '操作过于频繁，请稍后重试' },
-    { re: /ENOTFOUND/, msg: '网络连接失败，请检查网络' },
-    { re: /ops 未启用/, msg: 'ops 未启用，请在 persona.yaml 中设置 ops.enabled: true' },
-  ];
-
-  for (const { re, msg } of patterns) {
-    if (re.test(stderr) || re.test(err.message)) {
-      return `⚠️ ${msg}`;
-    }
-  }
-
-  // 兜底：不暴露内部技术细节
-  return '⚠️ 命令执行遇到问题，请稍后重试或查看服务器日志';
-}
-
 const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<CommandResult>> = {
   help: cmdHelp,
   status: cmdStatus,
@@ -202,19 +144,6 @@ const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<C
   memory: cmdMemory,
   reset: cmdReset,
   create: cmdCreate,
-  strategy: cmdOpsStrategy,
-  'confirm-strategy': cmdOpsConfirmStrategy,
-  insights: cmdOpsInsights,
-  patterns: cmdOpsPatterns,
-  // ── Ops 子命令 — 转发到 ops-command-handler ──────────────────
-  brief: cmdOpsProxy,
-  trends: cmdOpsProxy,
-  idea: cmdOpsProxy,
-  post: cmdOpsProxy,
-  analyze: cmdOpsProxy,
-  advice: cmdOpsProxy,
-  // ── 爆款知识库 ─────────────────────────────────────────────────
-  kb: cmdKb,
 };
 
 /**
@@ -275,24 +204,6 @@ function cmdHelp(): CommandResult {
 | \`/alive create\` | 随机生成一个新角色 |
 | \`/alive create <name> <tagline>\` | 用指定名字和定位生成角色 |
 | \`/alive create --guided\` | 引导模式，逐步填写角色信息 |
-
-## 📊 运营工作台命令
-
-| Command | Description |
-|---------|-------------|
-| \`/alive brief\` | 生成今日运营简报（热点+选题+建议） |
-| \`/alive trends\` | 查看当前热点趋势 |
-| \`/alive idea [方向]\` | 手动生成选题（可指定方向） |
-| \`/alive post [N]\` | 查看选题列表 / 第N个选题详情 |
-| \`/alive analyze <URL>\` | 爆款帖子拆解分析 |
-| \`/alive advice\` | 人设契合度建议 |
-| \`/alive kb status\` | 爆款知识库统计（含 usable / hollow / failed） |
-| \`/alive kb search <关键词>\` | 知识库全文搜索 |
-| \`/alive kb list [--platform X] [--type Y] [--status done|failed|hollow] [--source competitor|search|trending_feed]\` | 按条件列出条目 |
-| \`/alive kb audit\` | 查看空壳条目和质量摘要 |
-| \`/alive kb repair [--limit N]\` | 将 hollow 条目重新入队修复 |
-| \`/alive kb formulas [--platform X]\` | 列出通用爆款公式 |
-| \`/alive kb top [--platform X] [--limit N]\` | 按点赞排 Top N |
 
 > ⚡ 这些命令不经过角色人格、不写入日记、不影响记忆。`,
   };
@@ -910,113 +821,6 @@ ${scheduleTable}
   };
 }
 
-// ── Ops: strategy ──────────────────────────────────────────────────
-
-async function cmdOpsStrategy(_cmd: ParsedCommand): Promise<CommandResult> {
-  const { loadStrategy } = await import('../ops/strategy-engine');
-  const strategy = loadStrategy();
-  if (!strategy) {
-    return {
-      output: '📊 暂无内容策略。\n\n策略将在每周日深夜由 `ops-strategy` cron 任务自动生成，或运行 `/alive confirm-strategy` 手动触发。',
-    };
-  }
-  const { performance_summary: ps, persona_health: ph, next_week_recommendations: rec, status } = strategy;
-  const statusLabel = status === 'confirmed' ? '✅ 已确认' : status === 'expired' ? '⌛ 已过期' : '⏳ 待确认';
-  const trendIcon = ps.engagement_trend === 'rising' ? '📈' : ps.engagement_trend === 'declining' ? '📉' : '➡️';
-  const lines = [
-    `📊 本周内容策略  ${statusLabel}`,
-    `生成时间: ${strategy.generated_at.slice(0, 10)}`,
-    '',
-    '━━ 表现摘要 ━━',
-    `总发布: ${ps.total_posts} 篇  互动趋势: ${trendIcon} ${ps.engagement_trend}  周变化: ${ps.week_over_week_change >= 0 ? '+' : ''}${ps.week_over_week_change}%`,
-    `最佳模板: ${ps.best_performing_template}`,
-    `最差模板: ${ps.worst_performing_template}`,
-    '',
-    '━━ 角色健康度 ━━',
-    `综合评分: ${ph.overall_score}/10`,
-    '',
-    '━━ 下周推荐 ━━',
-    `方向: ${rec.content_direction}`,
-    `推荐模板: ${rec.recommended_templates.join('、')}`,
-    `避免模板: ${rec.avoid_templates.join('、')}`,
-  ];
-  if (status === 'pending') {
-    lines.push('', '回复 `/alive confirm-strategy` 确认策略并生效');
-  }
-  return { output: lines.join('\n') };
-}
-
-// ── Ops: confirm-strategy ──────────────────────────────────────────
-
-async function cmdOpsConfirmStrategy(_cmd: ParsedCommand): Promise<CommandResult> {
-  const { confirmStrategy } = await import('../ops/strategy-engine');
-  const ok = confirmStrategy();
-  if (!ok) {
-    return {
-      output: '⏳ 未找到待确认的策略。请等待 `ops-strategy` cron 任务生成新策略后再确认。',
-    };
-  }
-  return {
-    output: '✅ 策略已确认！下周内容生成将按此策略执行。\n\n使用 `/alive strategy` 查看策略详情。',
-  };
-}
-
-// ── Ops: insights ──────────────────────────────────────────────────
-
-async function cmdOpsInsights(_cmd: ParsedCommand): Promise<CommandResult> {
-  const { loadAnalysisLog } = await import('../ops/post-analyzer');
-  const log = loadAnalysisLog();
-  if (!log || log.entries.length === 0) {
-    return {
-      output: '📈 暂无内容表现数据。\n\n数据将由 `ops-analyze` cron 任务每4小时自动采集。',
-    };
-  }
-  const recent = log.entries.slice(-10);
-  const avgEngagement = recent.reduce((s, e) => s + e.engagement_score, 0) / recent.length;
-  const tierCounts: Record<string, number> = {};
-  for (const e of recent) {
-    tierCounts[e.performance_tier] = (tierCounts[e.performance_tier] ?? 0) + 1;
-  }
-  const tierSummary = Object.entries(tierCounts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([tier, count]) => `${tier}: ${count}篇`)
-    .join('  ');
-  const lines = [
-    `📈 内容表现洞察（最近${recent.length}篇）`,
-    '',
-    `平均互动分: ${avgEngagement.toFixed(1)}`,
-    `层级分布: ${tierSummary}`,
-    '',
-    '━━ 最近发布 ━━',
-    ...recent.slice(-5).reverse().map(e =>
-      `#${e.item_id}  ${e.performance_tier}  互动${e.engagement_score.toFixed(1)}`
-    ),
-  ];
-  return { output: lines.join('\n') };
-}
-
-// ── Ops: patterns ──────────────────────────────────────────────────
-
-async function cmdOpsPatterns(_cmd: ParsedCommand): Promise<CommandResult> {
-  const { loadContentPatterns } = await import('../ops/content-analyzer');
-  const patterns = loadContentPatterns();
-  if (!patterns || patterns.patterns.length === 0) {
-    return {
-      output: '🔍 暂无内容模式数据。\n\n模式分析将随 `ops-analyze` 任务自动更新。',
-    };
-  }
-  const sorted = [...patterns.patterns].sort((a, b) => (b.success_rate ?? 0) - (a.success_rate ?? 0));
-  const lines = [
-    `🔍 内容模式分析（共${sorted.length}个）`,
-    '',
-    '━━ 成功率排行 ━━',
-    ...sorted.slice(0, 8).map((p, i) =>
-      `${i + 1}. ${p.type}  来源:${p.source}  使用${p.times_used}次  成功率${p.success_rate != null ? (p.success_rate * 100).toFixed(0) + '%' : '未知'}`
-    ),
-  ];
-  return { output: lines.join('\n') };
-}
-
 // ── Setup Command ───────────────────────────────────────────────────
 
 function readOpenClawEnv(): Record<string, string> {
@@ -1118,12 +922,6 @@ ${tableRows}
 // ── CLI Entry Point ────────────────────────────────────────────────
 // When executed as `node command-handler.js <rawArgs>`, parse argv and
 // dispatch, printing the result to stdout so the plugin can capture it.
-
-function cmdKb(cmd: ParsedCommand): CommandResult {
-  const basePath = path.dirname(PATHS.emotionState);
-  const output = handleKbCommand(cmd.args, cmd.flags, basePath);
-  return { output };
-}
 
 async function main(): Promise<void> {
   const raw = process.argv.slice(2).join(' ').trim() || 'help';

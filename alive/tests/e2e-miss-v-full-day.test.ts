@@ -75,7 +75,7 @@ const MISS_V_PERSONA = {
     lifestyle: { weight: 0.15 },
   },
   // Enable sub-skills matching Miss V's profile
-  sub_skills: ['ops-desk', 'generate-image', 'xhs-bridge', 'content-browse', 'web-search'],
+  sub_skills: ['generate-image', 'xhs-bridge', 'content-browse', 'web-search'],
   features: {
     skill_discovery: false,
     random_events: true,
@@ -83,18 +83,6 @@ const MISS_V_PERSONA = {
     flow_states: true,
     procrastination: false,
     personality_drift: true,
-  },
-  ops: {
-    enabled: true,
-    brief_time: '08:30',
-    trend_score_threshold: 1.8,
-    topic_count: 3,
-    platforms: {
-      xhs: { enabled: true, style: '图文为主，封面强视觉冲击，文案克制有力' },
-      douyin: { enabled: true, style: '视频脚本，前3秒必须有冲突感或反差' },
-    },
-    competitors: [],
-    content_templates: [],
   },
 };
 
@@ -213,7 +201,7 @@ function makeHeartbeatDecision(hour: number): string {
       ],
       suppressed_intents: [],
       chosen_actions: [
-        { action: '发布赛前BP解说视频+小红书图文，附上观赛指南', type: 'real', skill: 'ops-desk', satisfies_intent: 'express' },
+        { action: '发布赛前BP解说视频+小红书图文，附上观赛指南', type: 'real', skill: 'xhs-bridge', satisfies_intent: 'express' },
       ],
     },
     20: {
@@ -426,13 +414,6 @@ function setupSandbox() {
 
   // Create mock sub-skills for Miss V's skill set
   const subSkillsDir = path.join(tmpDir, 'sub-skills');
-
-  createMockSubSkill(subSkillsDir, 'ops-desk', 'Ops Desk 内容运营',
-    '内容草稿生成、发布到小红书+抖音', [
-      { intent: 'produce', action: 'generate-topics', priority: 7 },
-      { intent: 'express', action: 'generate-topics', priority: 6 },
-      { intent: 'consume', action: 'refresh-trends', priority: 3 },
-    ]);
 
   createMockSubSkill(subSkillsDir, 'generate-image', 'AI图片生成',
     '生成角色形象/内容封面图', [
@@ -683,7 +664,7 @@ describe('E2E: V姐 (Miss V) Full Day Simulation', () => {
 
       // At least some ticks should have real skill execution recorded
       const realSkillActions = logsWithActions.flatMap(l => l.chosen_actions ?? [])
-        .filter(a => /^\[(?:ops-desk|generate-image|xhs-bridge|content-browse|web-search|mock:|fallback:)/.test(a));
+        .filter(a => /^\[(?:generate-image|xhs-bridge|content-browse|web-search|mock:|fallback:)/.test(a));
       expect(realSkillActions.length).toBeGreaterThanOrEqual(1);
     });
   });
@@ -826,7 +807,7 @@ describe('E2E: V姐 (Miss V) Full Day Simulation', () => {
       const allRegularLogs = finalLog.logs.filter(l => l.type === 'regular');
       const logsWithActions = allRegularLogs.filter(l => l.chosen_actions && l.chosen_actions.length > 0);
       const realSkillActions = logsWithActions.flatMap(l => l.chosen_actions ?? [])
-        .filter(a => /^\[(?:ops-desk|generate-image|xhs-bridge|content-browse|web-search|mock:|fallback:)/.test(a));
+        .filter(a => /^\[(?:generate-image|xhs-bridge|content-browse|web-search|mock:|fallback:)/.test(a));
       expect(realSkillActions.length).toBeGreaterThanOrEqual(1);
 
       // Diary contains evidence of skill execution

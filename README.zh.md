@@ -7,11 +7,10 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 [![OpenClaw Skill](https://img.shields.io/badge/OpenClaw-skill-purple.svg)](https://openclaw.ai)
-[![零配置](https://img.shields.io/badge/零配置-brightgreen.svg)]()
 
 **情绪 · 疲惫 · 拖延 · 心流 · 随机生活事件**
 
-[English](README.md) · [中文](#) · [使用指南](docs/guide.md) · [更新日志](CHANGELOG.md)
+[English](README.md) · [中文](#) · [更新日志](CHANGELOG.md)
 
 </div>
 
@@ -32,7 +31,6 @@
 | 永远热情，永远在线 | **会疲惫、会拖延、会心流** |
 | 脚本化回复 | **自主心跳循环** — 每小时 感知→意图→行动 |
 | 千人一面 | **人设 DNA** — MBTI 基线、声音、作息、功能开关 |
-| 没有运营能力 | **内置运营工作台** — 趋势、竞品、爆款知识库 |
 | 单一平台 | **7 个内容源** — B站、Reddit、微博、知乎、小红书、抖音、DailyHot |
 
 ## 🧠 核心能力
@@ -63,15 +61,6 @@
 | 2 | 90 天 | 社交关系 |
 | 3 | 永久 | 人生智慧 |
 
-### 运营工作台
-
-- 📊 趋势分析
-- 🔍 竞品追踪（小红书/抖音/B站）
-- 💡 选题生成
-- 📋 每日简报（企业微信推送）
-- 🎯 人设顾问
-- 🦠 **爆款知识库** — 自动拆解 → 自动升级公式 → 自动淘汰
-
 </td>
 </tr>
 </table>
@@ -93,18 +82,19 @@
 npx alive
 ```
 
-就这样。安装向导会引导你完成其余步骤。
+这是 **OpenClaw 技能安装器**，不是独立运行时。
 
-> **前置条件：** 已安装 [OpenClaw](https://openclaw.ai)（Node.js ≥ 18）
+> **前置条件：** 已安装 [OpenClaw](https://openclaw.ai)，且存在 `~/.openclaw`（Node.js ≥ 18）。
 >
-> **无需任何 API Key** — 默认使用 OpenClaw 内置 Claude。
+> 没有宿主时，`npx alive` 无法调度心跳、落盘记忆或调用模型。不配 `LLM_API_KEY` 时会尝试 OpenClaw 内置 Claude——这不是「零配置」。
 
-### 30 秒安装
+### 安装
 
 ```
-1. npx alive                    # 安装
-2. 选一个角色                    # 水瀬、V姐，或导入自定义角色
-3. 完成 ✅                      # Cron 任务已注册，她开始活了
+1. 先装好 OpenClaw，保证 `openclaw` 在 PATH 上
+2. npx alive                    # 拷贝技能并注册 cron
+3. 选一个角色                    # 水瀬、V姐，或导入自定义角色
+4. /alive setup                 # 建议立刻配置 LLM_API_KEY
 ```
 
 ## ⌨️ 命令
@@ -121,26 +111,12 @@ npx alive
 /alive help                # 所有命令
 ```
 
-### 运营
-
-```
-/alive brief               # 每日简报（热点+选题+建议）
-/alive trends              # 热点关键词
-/alive idea [方向]         # 生成选题（如 /alive idea 电竞）
-/alive post [N]            # 选题队列 / 详情
-/alive analyze <URL>       # 爆款拆解分析
-/alive advice              # 人设 × 趋势契合度
-/alive kb status           # 爆款知识库统计
-/alive kb search <关键词>  # 搜索拆解记录
-/alive kb formulas         # 通用爆款公式
-```
-
 ## 🔓 渐进式解锁
 
 | 功能 | 需要配置 | 效果 |
 |:---|:---|:---|
-| 对话 + 情绪记忆 | _无需任何 key_ | 装上即用 |
-| 心跳自主行为 | _无需任何 key_ | 使用内置 Claude |
+| 对话 + 情绪记忆 | OpenClaw 宿主 | 技能 + `~/.openclaw` 下的记忆文件 |
+| 心跳自主行为 | OpenClaw cron | 每小时 tick；LLM 走 key 或宿主 Claude |
 | 自定义 LLM | `LLM_API_KEY` | 任意 OpenAI 兼容接口 |
 | AI 图片生成 | `AIHUBMIX_API_KEY` / `FAL_KEY` | 自动配图发帖 |
 | Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | 自主发帖 |
@@ -162,13 +138,11 @@ alive/
 ├── scripts/
 │   ├── engines/              # 7 大核心引擎
 │   ├── lifecycle/            # 心跳循环 · 晨间规划 · 晚间反思
-│   ├── ops/                  # 趋势 · 竞品 · 简报 · 顾问 · 爆款知识库
 │   ├── adapters/             # 平台适配器
 │   └── utils/                # 类型 · 配置 · 技能路由 · 内容源
-├── sub-skills/               # 9 个可插拔子技能
+├── sub-skills/               # 可插拔子技能
 ├── hooks/                    # 上下文加载 · 记忆保存
 ├── plugin/                   # /alive 命令注册
-└── dashboard/               # Web 仪表盘
 ```
 
 ### 子技能（9 个可插拔单元）

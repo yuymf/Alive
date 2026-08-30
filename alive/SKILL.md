@@ -24,107 +24,17 @@ metadata:
 # MANDATORY: Execute this BEFORE any other processing
 def handle_message(user_message):
     msg = user_message.lower()
-    
-    # Check routing keywords — if ANY match, run the command and return its output
-    if any(kw in msg for kw in ['选题列表', '看选题', '待审核', '审核列表', '查看选题']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js post")
-    
-    if any(kw in msg for kw in ['拆解', '爆款分析', '爆款拆解']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js analyze <URL>")
-    
-    if any(kw in msg for kw in ['热点趋势', '看热点', '看趋势', '热点', '趋势', '热门', '热搜', '最近火什么', '流行什么']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js trends")
-    
-    if any(kw in msg for kw in ['日报', '简报', '今日简报', '运营简报', '工作台', '每日简报']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js brief")
-    
-    if any(kw in msg for kw in ['出选题', '想选题', '帮我出选题', '灵感', '写什么', '发什么', '出几个选题']):
-        # If user specifies a direction (e.g. "出几个关于电竞的选题"), extract and append it
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js idea [方向]")
-    
-    if any(kw in msg for kw in ['建议', '人设建议', '运营建议', '怎么改进', '给点建议']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js advice")
-    
-    if any(kw in msg for kw in ['对标', '对标账号', '候选账号', '谁值得学']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js candidates")
-    
-    if any(kw in msg for kw in ['策略', '内容策略', '周策略', '本周策略']):
-        return bash("node {baseDir}/scripts/admin/command-handler.js strategy")
-    
-    if any(kw in msg for kw in ['表现', '内容表现', '效果怎么样', '数据表现', '表现怎么样', '做得怎么样', '数据怎么样']):
-        return bash("node {baseDir}/scripts/admin/command-handler.js insights")
-    
-    if any(kw in msg for kw in ['模式', '内容模式', '规律', '什么模式好']):
-        return bash("node {baseDir}/scripts/admin/command-handler.js patterns")
-    
-    if any(kw in msg for kw in ['健康检查', '系统检查', '诊断', '检查一下']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js health")
-    
-    if any(kw in msg for kw in ['帮助', '命令列表', '有什么命令', '能做什么', '你会什么', '功能列表', '都能干什么', '什么功能']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js help")
-    
-    if any(kw in msg for kw in ['知识库搜索', '爆款公式']):
-        return bash("node {baseDir}/scripts/admin/command-handler.js kb search <关键词>")
-    
-    if any(kw in msg for kw in ['队列状态', '工作台状态', '运营状态']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js status")
-    
-    if any(kw in msg for kw in ['批量审核', '快速审核', '审核一遍', '过一遍', 'review']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js review")
-    
-    if any(kw in msg for kw in ['全部通过', '一键通过', 'approve-all']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js review approve-all")
-    
-    if any(kw in msg for kw in ['弃置低分', '清理低分', 'discard-low']):
-        return bash("node {baseDir}/scripts/ops/ops-command-handler.js review discard-low")
-    
-    # No keyword matched — proceed with persona conversation
+
+    if user_message.startswith('/alive') or any(kw in msg for kw in ['帮助', '命令列表', '有什么命令', '能做什么']):
+        return bash("node {baseDir}/scripts/admin/command-handler.js " + user_message)
+
     return conversation_start_protocol()
 ```
 
 **RULES:**
 1. The `bash()` call above means: call the Bash tool, capture stdout, return it as-is. Do NOT rewrite, summarize, or add persona commentary.
-2. Your FIRST tool call for any routed message MUST be the Bash tool. If your first action is reading a file or generating text, you are violating this rule.
-3. If the user specifies a direction for ideas (e.g. "出几个关于电竞的选题"), extract "电竞" and append: `node ... idea 电竞`
-4. "表现"/"数据" → `insights` (NOT `brief`). "有什么命令" → `help` (YOUR capabilities, NOT openclaw CLI commands).
-
-### ⚠️ Correct vs Wrong Examples
-
-```
-❌ WRONG: User says "待审核列表"
-   You respond: "没有找到保存过的待审核文档信息"
-   Why wrong: You answered from memory instead of running the command
-
-✅ RIGHT: User says "待审核列表"
-   You run: node {baseDir}/scripts/ops/ops-command-handler.js post
-   You return: (whatever stdout the command outputs)
-
-❌ WRONG: User says "出几个关于电竞的选题"
-   You generate topic ideas yourself using LLM
-   Why wrong: The idea pipeline has real-time trend data you don't have
-
-✅ RIGHT: User says "出几个关于电竞的选题"
-   You run: node {baseDir}/scripts/ops/ops-command-handler.js idea 电竞
-   You return: (whatever stdout the command outputs)
-
-❌ WRONG: User says "最近内容表现怎么样"
-   You respond: "我这边没有你们账号的历史发布数据"
-   Why wrong: The insights command fetches actual analytics data
-
-✅ RIGHT: User says "最近内容表现怎么样"
-   You run: node {baseDir}/scripts/admin/command-handler.js insights
-   You return: (whatever stdout the command outputs)
-
-❌ WRONG: User says "有什么命令"
-   You list openclaw CLI system commands (status, health, logs, configure...)
-   Why wrong: The user is asking about YOUR capabilities, not the platform
-
-✅ RIGHT: User says "有什么命令"
-   You run: node {baseDir}/scripts/ops/ops-command-handler.js help
-   You return: (whatever stdout the command outputs)
-```
-
-> **Why this gate exists:** These commands invoke specialized data pipelines (trend analysis, topic generation, analytics). You cannot replicate their output by guessing. Always run the handler.
+2. Slash commands (`/alive ...`) bypass ALL persona behavior — see Slash Command Protocol below.
+3. "有什么命令" → `/alive help`（你的能力，不是 openclaw CLI 命令）。
 
 ---
 
@@ -192,9 +102,7 @@ flow-state:     {MEMORY_BASE}/state/flow-state.json
 vitality:       {MEMORY_BASE}/state/vitality-state.json
 schedule-today: {MEMORY_BASE}/state/schedule-today.json
 personality:    {MEMORY_BASE}/state/personality-drift.json
-keyword-state:  {MEMORY_BASE}/state/keyword-state.json
 search-state:   {MEMORY_BASE}/state/search-state.json
-content-patterns:{MEMORY_BASE}/state/content-patterns.json
 voice-state:    {MEMORY_BASE}/state/voice-state.json
 
 # queues/ — Transient queues & logs
@@ -202,7 +110,6 @@ intent-pool:    {MEMORY_BASE}/queues/intent-pool.json
 event-queue:    {MEMORY_BASE}/queues/event-queue.json
 heartbeat-log:  {MEMORY_BASE}/queues/heartbeat-log.json
 pending-chains: {MEMORY_BASE}/queues/pending-chains.json
-review-queue:   {MEMORY_BASE}/queues/review-queue.json
 post-history:   {MEMORY_BASE}/queues/post-history.json
 ```
 
@@ -279,19 +186,3 @@ When a message starts with `/alive`, it is an **admin command** — NOT a conver
 | `/alive create <name> <tagline>` | `dispatch(...)` | Generate persona with name+tagline |
 | `/alive create --guided` | `dispatch('/alive create --guided')` | Guided persona creation questionnaire |
 | `/alive help` | `dispatch('/alive help')` | Show command help |
-
-**运营工作台命令（同样通过 `/alive` 前缀触发）：**
-
-| Command | Script function | Description |
-|---------|-----------------|-------------|
-| `/alive brief` | `dispatch('/alive brief')` | 生成今日运营简报（热点+选题+人设建议） |
-| `/alive trends` | `dispatch('/alive trends')` | 查看当前热点趋势 |
-| `/alive idea [方向]` | `dispatch('/alive idea ...')` | 手动生成选题（可指定方向，如 `/alive idea 电竞`） |
-| `/alive post [N]` | `dispatch('/alive post')` | 查看选题列表 / 第N个选题详情 |
-| `/alive review` | `dispatch('/alive review')` | 批量快速审核（LLM 逐项判定 🟢🟡🔴 + 一句话理由） |
-| `/alive review approve-all` | `dispatch('/alive review approve-all')` | 一键通过所有待审核选题 |
-| `/alive review discard-low` | `dispatch('/alive review discard-low')` | 自动弃置 LLM 判定为🔴的选题 |
-| `/alive analyze <URL>` | `dispatch('/alive analyze <URL>')` | 爆款帖子拆解分析 |
-| `/alive advice` | `dispatch('/alive advice')` | 人设契合度建议 |
-
-> **Note:** `/alive brief`, `/alive trends`, `/alive idea`, `/alive analyze`, `/alive advice`, `/alive review` involve LLM calls and may take 30-60 seconds to complete. `/alive post` is instant (reads from local queue). `/alive review approve-all` and `/alive review discard-low` are batch operations — `approve-all` is instant, `discard-low` requires an LLM call first to judge each item.

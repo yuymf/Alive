@@ -14,9 +14,6 @@ import {
   ChainAndCooldownState, DEFAULT_CHAIN_STATE,
   IntentPool,
   isFeatureEnabled,
-  ContentStrategy,
-  CompetitorLog,
-  ContentTaste, DEFAULT_CONTENT_TASTE,
 } from '../utils/types';
 import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate, readAllJSON, writeSocialRelation } from '../utils/file-utils';
 import { now, getLocalDate, formatLocalTime, setTimezone } from '../utils/time-utils';
@@ -184,65 +181,6 @@ export async function runNightReflect(
     // inspiration-state not available, skip
   }
 
-  // Build content taste summary (accumulated aesthetic preferences from taste-engine)
-  let tasteSummary = '';
-  try {
-    const taste = readJSON<ContentTaste>(PATHS.contentTaste, DEFAULT_CONTENT_TASTE);
-    if (taste.last_updated) {
-      const parts: string[] = [];
-      const strongHooks = taste.hook_formulas
-        .filter(h => h.affinity >= 0.3 && h.sample_count >= 2)
-        .sort((a, b) => b.affinity - a.affinity)
-        .slice(0, 3);
-      if (strongHooks.length > 0) {
-        parts.push(`效果好的标题公式：${strongHooks.map(h => `${h.label}(${(h.affinity * 100).toFixed(0)}%)`).join('、')}`);
-      }
-      const strongVisuals = taste.visual_styles
-        .filter(v => v.affinity >= 0.3 && v.sample_count >= 2)
-        .sort((a, b) => b.affinity - a.affinity)
-        .slice(0, 3);
-      if (strongVisuals.length > 0) {
-        parts.push(`偏好的视觉风格：${strongVisuals.map(v => v.label).join('、')}`);
-      }
-      const strongTones = taste.tone_preferences
-        .filter(t => t.affinity >= 0.3 && t.sample_count >= 2)
-        .sort((a, b) => b.affinity - a.affinity)
-        .slice(0, 3);
-      if (strongTones.length > 0) {
-        parts.push(`擅长的内容调性：${strongTones.map(t => t.label).join('、')}`);
-      }
-      const strongAngles = taste.angle_preferences
-        .filter(a => a.affinity >= 0.3 && a.sample_count >= 2)
-        .sort((a, b) => b.affinity - a.affinity)
-        .slice(0, 3);
-      if (strongAngles.length > 0) {
-        parts.push(`高效切入角度：${strongAngles.map(a => a.label).join('、')}`);
-      }
-      const strongTopics = taste.topic_preferences
-        .filter(t => t.affinity >= 0.3 && t.sample_count >= 2)
-        .sort((a, b) => b.affinity - a.affinity)
-        .slice(0, 3);
-      if (strongTopics.length > 0) {
-        parts.push(`热门话题方向：${strongTopics.map(t => t.label).join('、')}`);
-      }
-      const strongModes = taste.persona_mode_preferences
-        .filter(m => m.affinity >= 0.3 && m.sample_count >= 2)
-        .sort((a, b) => b.affinity - a.affinity)
-        .slice(0, 3);
-      if (strongModes.length > 0) {
-        parts.push(`偏好人设模式：${strongModes.map(m => m.label).join('、')}`);
-      }
-      if (taste.anti_patterns.length > 0) {
-        parts.push(`要避免的风格：${taste.anti_patterns.slice(0, 3).join('、')}`);
-      }
-      if (parts.length > 0) {
-        tasteSummary = '网感记忆（从数据中学到的审美偏好）：\n' + parts.map(p => `- ${p}`).join('\n');
-      }
-    }
-  } catch {
-    // content-taste not available, skip
-  }
-
   // Build prompt (inject persona placeholders)
   let template = readTemplate('night-reflect-prompt.md');
   template = injectPersona(template, persona);
@@ -250,7 +188,7 @@ export async function runNightReflect(
   const prompt = template
     .replace('{current_time}', formatLocalTime(currentTime))
     .replace('{today_diary}', todayDiary || '今天似乎没写什么日记。')
-    .replace('{today_heartbeat_summary}', [logSummary, flowSummary, procrastinationSummary, browsingInsights, tasteSummary].filter(Boolean).join('\n') || '没有心跳记录。')
+    .replace('{today_heartbeat_summary}', [logSummary, flowSummary, procrastinationSummary, browsingInsights].filter(Boolean).join('\n') || '没有心跳记录。')
     .replace('{core_wisdom}', wisdom.wisdom.length > 0
       ? wisdom.wisdom.map(w => `- ${w.lesson} (重要性: ${w.importance})`).join('\n')
       : '还没有积累人生教训。')
@@ -448,123 +386,6 @@ export async function runNightReflect(
     logs: [...heartbeatLog.logs, nightLogEntry],
   };
   writeJSON(PATHS.heartbeatLog, updatedLog);
-
-  // ─── Content performance review (ops desk) ──────────────────────────────
-  if (persona.ops?.enabled) {
-    try {
-      const { getEntriesForPeriod, aggregateByIdentity, aggregateByTemplate } = await import('../ops/performance-tracker');
-
-      const entries7d = getEntriesForPeriod(7);
-      if (entries7d.length > 0) {
-        const byIdentity = aggregateByIdentity(entries7d);
-        const byTemplate = aggregateByTemplate(entries7d);
-
-        const identitySummary = Object.entries(byIdentity)
-          .map(([mode, stats]) => `${mode}: ${stats.count}条, 平均${stats.avg_likes}赞 ${stats.avg_comments}评`)
-          .join('\n');
-
-        const templateSummary = Object.entries(byTemplate)
-          .map(([tmpl, stats]) => `${tmpl}: ${stats.count}条, 平均${stats.avg_likes}赞`)
-          .join('\n');
-
-        const exampleWeights = Object.fromEntries(
-          Object.keys(byIdentity).map((k, i, arr) => [k, parseFloat((1 / arr.length).toFixed(2))]),
-        );
-
-        const reviewPrompt = `你是运营分析师。基于过去7天的内容数据，分析表现趋势。
-
-【按身份模式汇总】
-${identitySummary}
-
-【按模板类型汇总】
-${templateSummary}
-
-请输出JSON:
-{
-  "best_performing": { "identity": "...", "template": "...", "reason": "..." },
-  "worst_performing": { "identity": "...", "template": "...", "reason": "..." },
-  "audience_feedback": "根据数据推测的受众反馈",
-  "strategy_adjustments": ["调整建议1", "调整建议2"],
-  "next_week_focus": {
-    "identity_weights": ${JSON.stringify(exampleWeights)},
-    "recommended_templates": ["模板1"],
-    "avoid_templates": ["模板2"],
-    "post_time_suggestion": "18:00-20:00"
-  }
-}`;
-
-        try {
-          const strategy = await llm.callJSON<ContentStrategy>(reviewPrompt, 1500);
-          const contentStrategy = {
-            ...strategy,
-            updated_at: now().toISOString(),
-            period: `${getLocalDate(new Date(now().getTime() - 7 * 24 * 3600 * 1000))} ~ ${getLocalDate(now())}`,
-          };
-          writeJSON(PATHS.contentStrategy, contentStrategy);
-          console.log(`[night-reflect] content strategy updated`);
-        } catch (err) {
-          console.error(`[night-reflect] content strategy LLM call failed:`, err);
-        }
-      }
-    } catch (err) {
-      console.log(`[night-reflect] content performance review failed:`, err);
-    }
-
-    // ─── Competitor deep analysis (Phase 2 network sense) ─────────────────
-    try {
-      const { addPattern, buildAnalysisPrompt } = await import('../ops/content-analyzer');
-      const competitorLog = readJSON<CompetitorLog>(PATHS.competitorLog, { entries: [], last_updated: '' });
-
-      const oneDayAgo = new Date(now().getTime() - 24 * 3600 * 1000).toISOString();
-      // Collect all recent posts from competitor entries, flatten into a single list
-      const allRecentPosts = competitorLog.entries
-        .filter(e => e.fetched_at >= oneDayAgo && e.latest_post)
-        .flatMap(e => (e.recent_posts?.length ? e.recent_posts : (e.latest_post ? [e.latest_post] : []))
-          .map(post => ({ ...post, account: e.account, platform: e.platform })));
-
-      const topEntries = allRecentPosts
-        .sort((a, b) => b.engagement - a.engagement)
-        .slice(0, 3);
-
-      if (topEntries.length > 0 && persona.ops?.competitors) {
-        const personaSummary = `${persona.meta.name}: ${persona.personality.mbti}, ${persona.personality.core_traits.join('、')}`;
-
-        for (const entry of topEntries) {
-          const profile = persona.ops.competitors.find(
-            c => c.name === entry.account || c.url?.includes(entry.account),
-          );
-          if (!profile) continue;
-
-          const prompt = buildAnalysisPrompt(
-            { name: profile.name, platform: profile.platform, tag_desc: profile.tag_desc, content_mix: profile.content_mix as Record<string, number> | undefined },
-            { title: entry.topic, content: entry.summary, likes: entry.engagement, comments: 0 },
-            personaSummary,
-          );
-
-          try {
-            const analysis = await llm.callJSON<{
-              title_formula: { type: string; pattern: string; example: string };
-              viral_factors: string[];
-            }>(prompt, 1500);
-
-            addPattern({
-              type: analysis.title_formula.type,
-              source: profile.name,
-              source_post: entry.topic,
-              formula: analysis.title_formula.pattern,
-              examples: [analysis.title_formula.example],
-            });
-
-            console.log(`[night-reflect] analyzed competitor post: ${profile.name} - ${entry.topic}`);
-          } catch (err) {
-            console.error(`[night-reflect] competitor analysis LLM failed for ${profile.name}:`, err);
-          }
-        }
-      }
-    } catch (err) {
-      console.log(`[night-reflect] competitor deep analysis failed:`, err);
-    }
-  }
 
   // Rebalance social graph tiers at end of day (generic, not platform-specific)
   const socialMeta = readJSON<SocialMeta>(PATHS.socialMeta, { following: {}, stats: { core: 0, familiar: 0, cognitive: 0, dormant: 0 } });
