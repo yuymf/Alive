@@ -5,12 +5,11 @@
 //   2. Guided mode: step-by-step user input → persona with AI fill-in
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import YAML from 'yaml';
 import type { PersonaConfig } from '../utils/types';
 import { callLLMJSON } from '../utils/llm-client';
-import { readTemplate } from '../utils/file-utils';
+import { readTemplate, getAliveHome } from '../utils/file-utils';
 
 // ── Random Pools (Chinese) ───────────────────────────────────────
 
@@ -479,16 +478,12 @@ export function savePersona(persona: PersonaConfig): string {
 /**
  * Resolve the personas directory path.
  * In development: alive/personas/ in the source tree.
- * In installed mode: ~/.openclaw/skills/alive/personas/
+ * In installed mode: $ALIVE_HOME/personas-src/ or the skill copy's personas/
  */
 function resolvePersonasDir(): string {
-  // Check installed skill path first
-  const installedDir = path.join(
-    os.homedir(),
-    '.openclaw', 'skills', 'alive', 'personas'
-  );
-  if (fs.existsSync(path.dirname(installedDir))) {
-    return installedDir;
+  const homeDir = path.join(getAliveHome(), 'created-personas');
+  if (fs.existsSync(getAliveHome())) {
+    return homeDir;
   }
 
   // Fall back to source tree (development mode)

@@ -3,8 +3,6 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { extractHighImportanceMemories } from '../scripts/lifecycle/memory-reflect';
-import { buildCronExpression } from '../scripts/lifecycle/cron-sync';
-import type { CronSchedule } from '../scripts/utils/types';
 
 // ── memory-reflect/extractHighImportanceMemories ─────────────────
 
@@ -68,109 +66,5 @@ describe('memory-reflect/extractHighImportanceMemories', () => {
     ).join('\n\n');
     const results = extractHighImportanceMemories(manyEntries);
     expect(results.length).toBeLessThanOrEqual(20);
-  });
-});
-
-// ── cron-sync/buildCronExpression ────────────────────────────────
-
-describe('cron-sync/buildCronExpression', () => {
-  it('returns defaults for empty heartbeat list', () => {
-    const schedule: CronSchedule = { date: '2026-03-24', heartbeats: [] };
-    const expr = buildCronExpression(schedule);
-    expect(expr.morning).toBe('0 7 * * *');
-    expect(expr.tick).toBe('0 8-22 * * *');
-    expect(expr.night).toBe('0 23 * * *');
-  });
-
-  it('extracts morning hour correctly', () => {
-    const schedule: CronSchedule = {
-      date: '2026-03-24',
-      heartbeats: [
-        { time: '06:30', type: 'morning' },
-        { time: '22:00', type: 'night' },
-      ],
-    };
-    const expr = buildCronExpression(schedule);
-    expect(expr.morning).toBe('0 6 * * *');
-    expect(expr.night).toBe('0 22 * * *');
-  });
-
-  it('builds tick expression from regular heartbeats', () => {
-    const schedule: CronSchedule = {
-      date: '2026-03-24',
-      heartbeats: [
-        { time: '07:00', type: 'morning' },
-        { time: '09:00', type: 'regular' },
-        { time: '12:00', type: 'regular' },
-        { time: '15:00', type: 'regular' },
-        { time: '18:00', type: 'regular' },
-        { time: '23:00', type: 'night' },
-      ],
-    };
-    const expr = buildCronExpression(schedule);
-    expect(expr.tick).toBe('0 9,12,15,18 * * *');
-  });
-
-  it('returns null tick when no regular heartbeats', () => {
-    const schedule: CronSchedule = {
-      date: '2026-03-24',
-      heartbeats: [
-        { time: '07:00', type: 'morning' },
-        { time: '23:00', type: 'night' },
-      ],
-    };
-    const expr = buildCronExpression(schedule);
-    expect(expr.tick).toBeNull();
-  });
-
-  it('sorts regular hours in ascending order', () => {
-    const schedule: CronSchedule = {
-      date: '2026-03-24',
-      heartbeats: [
-        { time: '07:00', type: 'morning' },
-        { time: '18:00', type: 'regular' },
-        { time: '10:00', type: 'regular' },
-        { time: '14:00', type: 'regular' },
-        { time: '23:00', type: 'night' },
-      ],
-    };
-    const expr = buildCronExpression(schedule);
-    expect(expr.tick).toBe('0 10,14,18 * * *');
-  });
-
-  it('handles single regular heartbeat', () => {
-    const schedule: CronSchedule = {
-      date: '2026-03-24',
-      heartbeats: [
-        { time: '07:00', type: 'morning' },
-        { time: '12:00', type: 'regular' },
-        { time: '23:00', type: 'night' },
-      ],
-    };
-    const expr = buildCronExpression(schedule);
-    expect(expr.tick).toBe('0 12 * * *');
-  });
-
-  it('defaults morning to 7 when not in heartbeats', () => {
-    const schedule: CronSchedule = {
-      date: '2026-03-24',
-      heartbeats: [
-        { time: '12:00', type: 'regular' },
-      ],
-    };
-    const expr = buildCronExpression(schedule);
-    expect(expr.morning).toBe('0 7 * * *');
-  });
-
-  it('defaults night to 23 when not in heartbeats', () => {
-    const schedule: CronSchedule = {
-      date: '2026-03-24',
-      heartbeats: [
-        { time: '08:00', type: 'morning' },
-        { time: '12:00', type: 'regular' },
-      ],
-    };
-    const expr = buildCronExpression(schedule);
-    expect(expr.night).toBe('0 23 * * *');
   });
 });

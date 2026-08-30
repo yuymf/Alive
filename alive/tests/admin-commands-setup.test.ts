@@ -40,7 +40,7 @@ beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-setup-test-'));
   memoryDir = path.join(tmpDir, 'memory');
   skillDir = path.join(tmpDir, 'skill');
-  configFile = path.join(tmpDir, 'openclaw.json');
+  configFile = path.join(tmpDir, '.env');
   fs.mkdirSync(memoryDir, { recursive: true });
   fs.mkdirSync(skillDir, { recursive: true });
   fs.writeFileSync(path.join(skillDir, 'persona.yaml'), TEST_PERSONA_YAML);
@@ -51,15 +51,14 @@ afterEach(() => {
   resetBasePaths();
   clearPersonaCache();
   fs.rmSync(tmpDir, { recursive: true, force: true });
-  delete process.env.OPENCLAW_CONFIG_FILE;
+  delete process.env.ALIVE_ENV_FILE;
+  delete process.env.ALIVE_HOME;
 });
 
 describe('/alive setup', () => {
   it('returns env status table when no subarg given', async () => {
-    fs.writeFileSync(configFile, JSON.stringify({
-      skills: { entries: { alive: { env: { LLM_API_KEY: 'sk-test', INSTAGRAM_USERNAME: 'user1' } } } }
-    }));
-    process.env.OPENCLAW_CONFIG_FILE = configFile;
+    fs.writeFileSync(configFile, 'LLM_API_KEY=sk-test\nINSTAGRAM_USERNAME=user1\n');
+    process.env.ALIVE_ENV_FILE = configFile;
 
     const result = await dispatch('/alive setup');
 
@@ -75,7 +74,7 @@ describe('/alive setup', () => {
 
     expect(result.error).toBeFalsy();
     expect(result.output).toContain('LLM_API_KEY');
-    expect(result.output).toContain('openclaw env set');
+    expect(result.output).toContain('ALIVE_HOME');
   });
 
   it('returns setup instructions for /alive setup instagram', async () => {
@@ -84,7 +83,7 @@ describe('/alive setup', () => {
     expect(result.error).toBeFalsy();
     expect(result.output).toContain('INSTAGRAM_USERNAME');
     expect(result.output).toContain('INSTAGRAM_PASSWORD');
-    expect(result.output).toContain('openclaw env set');
+    expect(result.output).toContain('ALIVE_HOME');
   });
 
   it('returns error for unknown setup subarg', async () => {

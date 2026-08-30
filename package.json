@@ -1,7 +1,7 @@
 {
   "name": "alive",
-  "version": "0.3.0",
-  "description": "Alive — a generalized digital-life engine for creating AI personas with evolving memory, social presence, and autonomous behavior.",
+  "version": "0.4.0",
+  "description": "Alive — portable digital-life Agent Skill for Claude Code, Cursor, Codex, and other SKILL.md hosts.",
   "main": "bin/cli.js",
   "bin": {
     "alive": "bin/cli.js"

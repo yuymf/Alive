@@ -4,6 +4,18 @@ All notable changes to Alive are documented here.
 
 ---
 
+## [0.4.0] — 2026-08-30
+
+### Changed
+- Alive is an **Agent Skill**, not an OpenClaw product. `alive init` copies `alive/SKILL.md` into Code Agent skill dirs (`~/.agents`, `~/.claude`, `~/.cursor`, `~/.codex`, or project `.agents/skills`).
+- Memory and env live in `$ALIVE_HOME` (default `~/.alive`). Conversation uses the host model. Heartbeat scripts require `LLM_API_KEY`.
+- Proactive send writes `$ALIVE_HOME/outbox/` for the host agent to deliver.
+
+### Removed
+- OpenClaw plugin, gateway RPC, cron-sync, ClawHub installer, Gateway LLM fallback.
+
+---
+
 ## [0.3.0] — 2026-08-30
 
 ### Removed

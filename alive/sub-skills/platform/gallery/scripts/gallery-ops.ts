@@ -12,8 +12,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../../../../scripts/utils/file-utils';
+import { deliverMedia } from '../../../../scripts/host/outbox';
 import { now, getLocalDate, getLocalHour } from '../../../../scripts/utils/time-utils';
 // Re-export shared types from alive/scripts/utils/types.ts (single source of truth)
 export type { GalleryPhoto, PhotoGallery, ContentStyle } from '../../../../scripts/utils/types';
@@ -136,10 +136,8 @@ export function pruneGallery(): PhotoGallery {
 
 // ── Send helpers ─────────────────────────────────────────────────
 
-export function sendViaOpenClaw(mediaUrl: string, channel: string, target: string, caption?: string): void {
-  const args = ['message', 'send', '--media', mediaUrl, '--channel', channel, '--target', target];
-  if (caption) args.push('--message', caption);
-  execFileSync('openclaw', args, { timeout: 30_000, encoding: 'utf8' });
+export function sendViaOpenClaw(mediaUrl: string, _channel: string, _target: string, caption?: string): void {
+  deliverMedia(mediaUrl, caption);
 }
 
 /**

@@ -83,7 +83,7 @@ OpenClaw cron 触发入口：
 
 ## 状态文件路径
 
-所有运行时状态文件位于 `$MEMORY_BASE`（`~/.openclaw/workspace/memory/{persona.meta.id}/`）：
+所有运行时状态文件位于 `$MEMORY_BASE`（`$ALIVE_HOME/personas/{persona.meta.id}/`）：
 
 | 文件 | 用途 |
 |------|------|

@@ -63,7 +63,7 @@
 ## 存储结构
 
 ```
-~/.openclaw/workspace/memory/{persona.meta.id}/relations/
+$ALIVE_HOME/personas/{persona.meta.id}/relations/
   {user_id}.json          # 用户关系（存 intimacy）
   social/
     {platform}/           # 各平台关系目录（动态，由 sub-skill 创建）

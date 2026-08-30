@@ -43,7 +43,7 @@ function resolveXhsCacheFile(): string {
   if (envOverride) return envOverride;
   const persona = process.env.ALIVE_PERSONA ?? 'default';
   const home = os.homedir();
-  return path.join(home, '.openclaw', 'workspace', 'memory', persona, 'xhs-search-cache.json');
+  return path.join(home, '.alive', 'personas', persona, 'xhs-search-cache.json');
 }
 
 interface XhsCacheEntry {
@@ -412,7 +412,7 @@ function resolveXhsDir(): string {
   const envDir = process.env.XHS_SKILLS_DIR;
   if (envDir) return envDir;
   const home = os.homedir();
-  return path.join(home, '.openclaw', 'skills', 'xiaohongshu-skills');
+  return path.join(home, '.alive', 'bridges', 'xiaohongshu-skills');
 }
 
 // ─── 写入命令黑名单 — AI 绝对不允许直接执行任何发布/互动操作 ─────────────

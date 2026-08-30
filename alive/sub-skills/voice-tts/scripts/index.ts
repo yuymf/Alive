@@ -10,8 +10,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
 import type { SubSkillContext, SubSkillResult, EmotionState } from '../../../scripts/utils/types';
+import { deliverMedia } from '../../../scripts/host/outbox';
 import { createResult } from '../../../scripts/router/sub-skill-sdk';
 import { now, getLocalHour, getLocalDate, getLocalTimeHHMM } from '../../../scripts/utils/time-utils';
 import { synthesize } from './tts-provider';
@@ -122,21 +122,11 @@ function loadTemplate(templateName: string): string {
  */
 export function sendVoiceViaOpenClaw(
   audioPath: string,
-  channel?: string,
-  target?: string,
+  _channel?: string,
+  _target?: string,
   caption?: string,
 ): boolean {
-  try {
-    const args = ['message', 'send', '--media', audioPath];
-    if (channel) args.push('--channel', channel);
-    if (target) args.push('--target', target);
-    if (caption) args.push('--message', caption);
-    execFileSync('openclaw', args, { timeout: 30_000, encoding: 'utf8' });
-    return true;
-  } catch (err) {
-    console.error(`[voice-tts] openclaw voice send failed: ${(err as Error).message}`);
-    return false;
-  }
+  return deliverMedia(audioPath, caption);
 }
 
 // ── LLM Message Generation ──────────────────────────────────────

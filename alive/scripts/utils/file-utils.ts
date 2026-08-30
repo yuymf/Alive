@@ -19,25 +19,40 @@ export function getPersonaName(): string {
   return _personaName;
 }
 
+/** Data home: memory, env, outbox. Override with ALIVE_HOME. */
+export function getAliveHome(): string {
+  return process.env.ALIVE_HOME || path.join(os.homedir(), '.alive');
+}
+
 function getMemoryBase(): string {
   if (_memoryBaseOverride) return _memoryBaseOverride;
-  // Multi-agent layout: non-main personas use ~/.openclaw/workspace-{persona}/memory/{persona}
-  // Main/default persona uses ~/.openclaw/workspace/memory/{persona}
-  const home = os.homedir();
-  if (_personaName === 'main' || _personaName === 'default') {
-    return path.join(home, '.openclaw', 'workspace', 'memory', _personaName);
-  }
-  // Check if isolated agent workspace exists; fall back to legacy layout
-  const isolatedPath = path.join(home, '.openclaw', `workspace-${_personaName}`, 'memory', _personaName);
-  const legacyPath = path.join(home, '.openclaw', 'workspace', 'memory', _personaName);
-  if (fs.existsSync(isolatedPath)) return isolatedPath;
-  if (fs.existsSync(legacyPath)) return legacyPath;
-  // Default to isolated path for new installs
-  return isolatedPath;
+  return path.join(getAliveHome(), 'personas', _personaName);
+}
+
+const USER_SKILL_CANDIDATES = [
+  ['.agents', 'skills', 'alive'],
+  ['.claude', 'skills', 'alive'],
+  ['.cursor', 'skills', 'alive'],
+  ['.codex', 'skills', 'alive'],
+] as const;
+
+function resolveBundledSkillDir(): string {
+  const compiledRoot = path.resolve(__dirname, '..', '..');
+  if (fs.existsSync(path.join(compiledRoot, 'SKILL.md'))) return compiledRoot;
+  const repoAlive = path.resolve(__dirname, '..', '..', '..', 'alive');
+  if (fs.existsSync(path.join(repoAlive, 'SKILL.md'))) return repoAlive;
+  return compiledRoot;
 }
 
 function getSkillBase(): string {
-  return _skillBaseOverride ?? path.join(os.homedir(), '.openclaw', 'skills', 'alive');
+  if (_skillBaseOverride) return _skillBaseOverride;
+  if (process.env.ALIVE_SKILL_DIR) return process.env.ALIVE_SKILL_DIR;
+  const home = os.homedir();
+  for (const rel of USER_SKILL_CANDIDATES) {
+    const candidate = path.join(home, ...rel);
+    if (fs.existsSync(path.join(candidate, 'SKILL.md'))) return candidate;
+  }
+  return resolveBundledSkillDir();
 }
 
 function resolveTunablePromptPath(relativePath: string): string | null {
@@ -114,15 +129,11 @@ export const PATHS = {
   // === Global runtime logs (shared across all personas) ===
   get runtimeDir() {
     if (_memoryBaseOverride) return path.join(_memoryBaseOverride, '..', '_runtime');
-    // Use the agent's workspace for runtime logs
-    const home = os.homedir();
-    if (_personaName === 'main' || _personaName === 'default') {
-      return path.join(home, '.openclaw', 'workspace', 'runtime');
-    }
-    const isolatedRuntime = path.join(home, '.openclaw', `workspace-${_personaName}`, 'runtime');
-    const legacyRuntime = path.join(home, '.openclaw', 'workspace', 'runtime');
-    if (fs.existsSync(path.dirname(isolatedRuntime))) return isolatedRuntime;
-    return legacyRuntime;
+    return path.join(getAliveHome(), 'runtime');
+  },
+  get outboxDir() {
+    if (_memoryBaseOverride) return path.join(_memoryBaseOverride, '..', '_outbox');
+    return path.join(getAliveHome(), 'outbox');
   },
   get llmCallLog() { return path.join(this.runtimeDir, 'llm-call-log.jsonl'); },
 
@@ -288,52 +299,33 @@ export function resolveLlmLogPath(): string {
   return newPath;
 }
 
-/**
- * Load skill environment variables from ~/.openclaw/openclaw.json
- * This is needed for cron jobs that run in isolated session mode where process.env
- * is not automatically populated with skill environment variables.
- *
- * Usage: Call this early in cron job entry points (e.g. heartbeat-tick.ts)
- */
-export function loadSkillEnvVars(skillName: string = 'alive'): void {
-  try {
-    const openclawConfigPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-    if (!fs.existsSync(openclawConfigPath)) {
-      console.warn(`[loadSkillEnvVars] openclaw.json not found at ${openclawConfigPath}`);
-      return;
+export function readEnvFile(filePath: string): Record<string, string> {
+  if (!fs.existsSync(filePath)) return {};
+  const out: Record<string, string> = {};
+  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
     }
+    out[key] = value;
+  }
+  return out;
+}
 
-    const config = JSON.parse(fs.readFileSync(openclawConfigPath, 'utf8'));
-    const skillEnv = config?.skills?.entries?.[skillName]?.env;
-    if (!skillEnv || typeof skillEnv !== 'object') {
-      console.warn(`[loadSkillEnvVars] No env found for skill "${skillName}" in openclaw.json`);
-      return;
-    }
-
-    // Load all environment variables from openclaw.json into process.env
-    // Only override if not already set (allows command-line or parent process env to take precedence)
-    let loadedCount = 0;
-    for (const [key, value] of Object.entries(skillEnv)) {
-      if (typeof value === 'string' && !process.env[key]) {
-        process.env[key] = value;
-        loadedCount++;
-      }
-    }
-
-    // Keep the file-utils persona context in sync with ALIVE_PERSONA loaded
-    // from openclaw.json. This matters for long-lived processes such as the
-    // API server: _personaName is initialised before loadSkillEnvVars() runs,
-    // so process.env.ALIVE_PERSONA alone is not enough to switch PATHS away
-    // from the default memory directory.
-    if (process.env.ALIVE_PERSONA && (_personaName === 'default' || _personaName === 'main')) {
-      setPersonaName(process.env.ALIVE_PERSONA);
-    }
-
-    if (process.env.ALIVE_DEBUG === '1' || process.env.ALIVE_DEBUG === 'true') {
-      console.log(`[loadSkillEnvVars] Loaded ${loadedCount} environment variables for skill "${skillName}"`);
-    }
-  } catch (err) {
-    console.error(`[loadSkillEnvVars] Failed to load environment variables:`, err);
+/** Load `$ALIVE_HOME/.env` into process.env without overriding existing keys. */
+export function loadAliveEnv(): void {
+  const envPath = path.join(getAliveHome(), '.env');
+  const parsed = readEnvFile(envPath);
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!process.env[key]) process.env[key] = value;
+  }
+  if (process.env.ALIVE_PERSONA && (_personaName === 'default' || _personaName === 'main')) {
+    setPersonaName(process.env.ALIVE_PERSONA);
   }
 }
 

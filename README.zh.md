@@ -6,7 +6,7 @@
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
-[![OpenClaw Skill](https://img.shields.io/badge/OpenClaw-skill-purple.svg)](https://openclaw.ai)
+[![Agent Skill](https://img.shields.io/badge/Agent%20Skills-SKILL.md-purple.svg)](https://agentskills.io/specification)
 
 **情绪 · 疲惫 · 拖延 · 心流 · 随机生活事件**
 
@@ -78,24 +78,23 @@
 
 ## 🚀 快速开始
 
+Alive 是一份 [Agent Skill](https://agentskills.io/specification)。装进 Claude Code、Cursor、Codex，以及任何读取 `SKILL.md` 的 Code Agent。
+
 ```bash
-npx alive
+npx alive init
 ```
 
-这是 **OpenClaw 技能安装器**，不是独立运行时。
+会把技能拷到：
 
-> **前置条件：** 已安装 [OpenClaw](https://openclaw.ai)，且存在 `~/.openclaw`（Node.js ≥ 18）。
->
-> 没有宿主时，`npx alive` 无法调度心跳、落盘记忆或调用模型。不配 `LLM_API_KEY` 时会尝试 OpenClaw 内置 Claude——这不是「零配置」。
+- `~/.agents/skills/alive`（Cursor + Codex）
+- 若有 Claude Code：`~/.claude/skills/alive`
+- 若有 Cursor：`~/.cursor/skills/alive`
 
-### 安装
+记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。
 
-```
-1. 先装好 OpenClaw，保证 `openclaw` 在 PATH 上
-2. npx alive                    # 拷贝技能并注册 cron
-3. 选一个角色                    # 水瀬、V姐，或导入自定义角色
-4. /alive setup                 # 建议立刻配置 LLM_API_KEY
-```
+对话走宿主模型。只有脚本心跳需要 `LLM_API_KEY`。
+
+项目内安装：`npx alive init --project`
 
 ## ⌨️ 命令
 
@@ -115,8 +114,8 @@ npx alive
 
 | 功能 | 需要配置 | 效果 |
 |:---|:---|:---|
-| 对话 + 情绪记忆 | OpenClaw 宿主 | 技能 + `~/.openclaw` 下的记忆文件 |
-| 心跳自主行为 | OpenClaw cron | 每小时 tick；LLM 走 key 或宿主 Claude |
+| 对话 + 情绪记忆 | 会加载 skill 的 Code Agent | `SKILL.md` + `~/.alive` |
+| 心跳自主行为 | `LLM_API_KEY` | `alive tick` 或 `alive start` |
 | 自定义 LLM | `LLM_API_KEY` | 任意 OpenAI 兼容接口 |
 | AI 图片生成 | `AIHUBMIX_API_KEY` / `FAL_KEY` | 自动配图发帖 |
 | Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | 自主发帖 |
@@ -130,7 +129,7 @@ npx alive
 
 ```
 alive/
-├── SKILL.md                  # OpenClaw skill 入口
+├── SKILL.md                  # Agent Skills 入口（跨宿主）
 ├── persona-schema.yaml       # 配置 schema + MBTI 表
 ├── personas/                 # 内置预设角色
 ├── templates/                # LLM 提示词模板（{persona.*}）

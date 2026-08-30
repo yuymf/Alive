@@ -6,8 +6,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
 import type { SubSkillContext, SubSkillResult, EmotionState } from '../../../scripts/router/sub-skill-sdk';
+import { deliverText } from '../../../scripts/host/outbox';
 import { createResult } from '../../../scripts/router/sub-skill-sdk';
 
 // ── Configuration ────────────────────────────────────────────────
@@ -119,16 +119,7 @@ function loadTemplate(templateName: string): string {
  * Returns true on success, false on failure (never throws).
  */
 export function sendMessageViaOpenClaw(message: string): boolean {
-  try {
-    execFileSync('openclaw', ['message', 'send', '--message', message], {
-      timeout: 15_000,
-      encoding: 'utf8',
-    });
-    return true;
-  } catch (err) {
-    console.error(`[send-message] openclaw message send failed: ${(err as Error).message}`);
-    return false;
-  }
+  return deliverText(message);
 }
 
 // ── LLM Message Generation ──────────────────────────────────────
