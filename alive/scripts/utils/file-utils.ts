@@ -110,6 +110,11 @@ export const PATHS = {
   // === Social (unchanged) ===
   get socialMeta() { return path.join(getMemoryBase(), 'relations', 'social-meta.json'); },
   get socialDir() { return path.join(getMemoryBase(), 'relations', 'social'); },
+  get relationsDir() { return path.join(getMemoryBase(), 'relations'); },
+  userRelation(userId: string) {
+    const safe = userId.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || 'user';
+    return path.join(getMemoryBase(), 'relations', `${safe}.json`);
+  },
 
   // === Root-level files (remain at memory base) ===
   get diary() { return path.join(getMemoryBase(), 'diary.md'); },
@@ -322,6 +327,7 @@ export function loadAliveEnv(): void {
   const envPath = path.join(getAliveHome(), '.env');
   const parsed = readEnvFile(envPath);
   for (const [key, value] of Object.entries(parsed)) {
+    if (!value) continue;
     if (!process.env[key]) process.env[key] = value;
   }
   if (process.env.ALIVE_PERSONA) {

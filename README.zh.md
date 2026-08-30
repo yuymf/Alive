@@ -31,7 +31,7 @@
 | 永远热情，永远在线 | **会疲惫、会拖延、会心流** |
 | 脚本化回复 | **自主心跳循环** — 每小时 感知→意图→行动 |
 | 千人一面 | **人设 DNA** — MBTI 基线、声音、作息、功能开关 |
-| 单一平台 | **7 个内容源** — B站、Reddit、微博、知乎、小红书、抖音、DailyHot |
+| 只有提示词的人设 | **人设 DNA + 引擎** — 情绪、记忆、心跳都是下一轮会读到的文件 |
 
 ## 🧠 核心能力
 
@@ -69,7 +69,7 @@
 
 | | 角色 | 人设 |
 |:---:|:---|:---|
-| 🌸 | **水瀬（Minase）** | INFP 日本女大学生 · 咖啡馆与摄影 |
+| 🌸 | **水瀬（Minase）** | ESTP 旅行 / coser · 咖啡馆、光线、说走就走 |
 | 💎 | **V姐（Miss V）** | ENTJ 三栖虚拟偶像 · 电竞 · 歌手 · 赛车 |
 | 🎭 | **星彤** | 温暖幽默的生活方式创作者 |
 | 🎤 | **郭德纲** | 相声大师，冷幽默 |
@@ -92,7 +92,7 @@ npx alive init
 
 记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。
 
-对话走宿主模型。只有脚本心跳需要 `LLM_API_KEY`。
+对话走宿主模型。宿主跑 `chat.js load` 取上下文，跑 `chat.js save` 写回日记、关系和情绪。不要手改这些文件。只有脚本心跳需要 `LLM_API_KEY`。
 
 项目内安装：`npx alive init --project`
 
@@ -135,7 +135,7 @@ alive/
 ├── templates/                # LLM 提示词模板（{persona.*}）
 ├── protocols/                # 心跳 · 记忆 · 社交图谱 · 意图池
 ├── scripts/
-│   ├── host/                 # init · boot · outbox · 记忆播种
+│   ├── host/                 # init · boot · outbox · 对话 load/save
 │   ├── admin/                # /alive 命令
 │   ├── engines/              # 7 大核心引擎
 │   ├── lifecycle/            # 心跳循环 · 晨间规划 · 晚间反思
@@ -145,13 +145,7 @@ alive/
 └── tests/                    # 引擎、CLI、生命周期测试
 ```
 
-### 子技能（9 个可插拔单元）
-
-`instagram-post` · `voice-tts` · `web-search` · `content-browse` · `social-engage` · `photo-share` · `story-share` · `xhs-post` · `message-send`
-
-### 内容源（7 个平台）
-
-`B站` · `Reddit` · `DailyHot` · `微博` · `知乎` · `小红书` · `抖音`
+心跳可以按需调用平台子技能（浏览、发帖、语音）。对话本身不需要它们。
 
 ## 🛠️ 开发
 

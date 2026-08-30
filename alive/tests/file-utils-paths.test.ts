@@ -1,11 +1,19 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { PATHS, setBasePaths, resetBasePaths, readJSON, writeJSON, setPersonaName, resolveLlmLogPath } from '../scripts/utils/file-utils';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
 describe('file-utils path override', () => {
-  afterEach(() => resetBasePaths());
+  const prevHome = process.env.ALIVE_HOME;
+  afterEach(() => {
+    resetBasePaths();
+    if (prevHome === undefined) delete process.env.ALIVE_HOME;
+    else process.env.ALIVE_HOME = prevHome;
+  });
+  beforeEach(() => {
+    delete process.env.ALIVE_HOME;
+  });
 
   it('PATHS uses default paths when no override set', () => {
     const home = os.homedir();
