@@ -6,7 +6,7 @@
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
-[![Tests](https://img.shields.io/badge/tests-147%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-1200%2B%20engine-brightgreen.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](tsconfig.json)
 
 **Emotions · Fatigue · Procrastination · Flow States · Random Life Events**
@@ -92,7 +92,7 @@ A persona is not a system prompt. It's a **configuration object** with:
 - Voice signature (catchphrases, anti-patterns, platform-specific styles)
 - Schedule (wake/sleep, active peaks)
 - Content sources (platforms, keywords, competitor accounts)
-- Feature flags (ops enabled, voice TTS, image generation)
+- Feature flags (voice TTS, image generation)
 
 This allows the same engine to run Minase (INFP, quiet, photography-focused) and Miss V (ENTJ, aggressive, esports-focused) with zero code changes.
 
@@ -140,8 +140,8 @@ This allows the same engine to run Minase (INFP, quiet, photography-focused) and
 | Memory | 3-tier (research) | Flat context | ✅ 4-tier with cost control |
 | Proactive behavior | ✅ (research demo) | ❌ reactive only | ✅ heartbeat loop |
 | Persona system | Single agent | Pre-built characters | ✅ YAML-driven DNA |
-| Production ready | ❌ research paper | ✅ consumer product | ✅ open source, testable |
-| Test coverage | N/A | N/A | ✅ 147 tests, 37k lines |
+| Production ready | ❌ research paper | ✅ consumer product | ⚠️ open source, testable (needs a host) |
+| Test coverage | N/A | N/A | ✅ 1200+ engine tests |
 
 **Alive bridges the gap** between research prototypes (Stanford) and consumer products (Character.AI) — it has the **architectural depth** of research with the **engineering rigor** of production.
 
@@ -166,18 +166,19 @@ Bring your own — any `persona.yaml` works.
 npx alive
 ```
 
-That's it. The wizard walks you through the rest.
+This is an **OpenClaw skill installer**, not a standalone runtime.
 
-> **Prerequisite:** [OpenClaw](https://openclaw.ai) installed (Node.js ≥ 18)
+> **Prerequisite:** [OpenClaw](https://openclaw.ai) already installed, with `~/.openclaw` present (Node.js ≥ 18).
 >
-> **No API key required** — falls back to OpenClaw's built-in Claude.
+> Without a host, `npx alive` cannot schedule heartbeats, persist memory, or talk to an LLM. If you skip `LLM_API_KEY`, it tries OpenClaw's built-in Claude — that is not “zero config”.
 
-### 30-Second Setup
+### Setup
 
 ```
-1. npx alive                    # Install
-2. Pick a persona               # Minase, Miss V, or import your own
-3. Done ✅                      # Cron jobs auto-registered, she's alive
+1. Install OpenClaw and make sure `openclaw` is on PATH
+2. npx alive                    # copy skill + register cron
+3. Pick a persona               # Minase, Miss V, or import your own
+4. /alive setup                 # set LLM_API_KEY (recommended)
 ```
 
 ---
@@ -202,8 +203,8 @@ That's it. The wizard walks you through the rest.
 
 | Feature | Required | You Get |
 |:---|:---|:---|
-| Chat + emotion memory | _nothing_ | Works out of the box |
-| Heartbeat autonomy | _nothing_ | Uses built-in Claude |
+| Chat + emotion memory | OpenClaw host | Skill + memory files under `~/.openclaw` |
+| Heartbeat autonomy | OpenClaw cron | Hourly tick; LLM via key or host Claude |
 | Custom LLM | `LLM_API_KEY` | Any OpenAI-compatible endpoint |
 | AI image generation | `AIHUBMIX_API_KEY` / `FAL_KEY` | Auto-posting with images |
 | Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | Autonomous posting |

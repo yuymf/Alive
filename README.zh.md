@@ -7,11 +7,10 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 [![OpenClaw Skill](https://img.shields.io/badge/OpenClaw-skill-purple.svg)](https://openclaw.ai)
-[![零配置](https://img.shields.io/badge/零配置-brightgreen.svg)]()
 
 **情绪 · 疲惫 · 拖延 · 心流 · 随机生活事件**
 
-[English](README.md) · [中文](#) · [使用指南](docs/guide.md) · [更新日志](CHANGELOG.md)
+[English](README.md) · [中文](#) · [更新日志](CHANGELOG.md)
 
 </div>
 
@@ -83,18 +82,19 @@
 npx alive
 ```
 
-就这样。安装向导会引导你完成其余步骤。
+这是 **OpenClaw 技能安装器**，不是独立运行时。
 
-> **前置条件：** 已安装 [OpenClaw](https://openclaw.ai)（Node.js ≥ 18）
+> **前置条件：** 已安装 [OpenClaw](https://openclaw.ai)，且存在 `~/.openclaw`（Node.js ≥ 18）。
 >
-> **无需任何 API Key** — 默认使用 OpenClaw 内置 Claude。
+> 没有宿主时，`npx alive` 无法调度心跳、落盘记忆或调用模型。不配 `LLM_API_KEY` 时会尝试 OpenClaw 内置 Claude——这不是「零配置」。
 
-### 30 秒安装
+### 安装
 
 ```
-1. npx alive                    # 安装
-2. 选一个角色                    # 水瀬、V姐，或导入自定义角色
-3. 完成 ✅                      # Cron 任务已注册，她开始活了
+1. 先装好 OpenClaw，保证 `openclaw` 在 PATH 上
+2. npx alive                    # 拷贝技能并注册 cron
+3. 选一个角色                    # 水瀬、V姐，或导入自定义角色
+4. /alive setup                 # 建议立刻配置 LLM_API_KEY
 ```
 
 ## ⌨️ 命令
@@ -115,8 +115,8 @@ npx alive
 
 | 功能 | 需要配置 | 效果 |
 |:---|:---|:---|
-| 对话 + 情绪记忆 | _无需任何 key_ | 装上即用 |
-| 心跳自主行为 | _无需任何 key_ | 使用内置 Claude |
+| 对话 + 情绪记忆 | OpenClaw 宿主 | 技能 + `~/.openclaw` 下的记忆文件 |
+| 心跳自主行为 | OpenClaw cron | 每小时 tick；LLM 走 key 或宿主 Claude |
 | 自定义 LLM | `LLM_API_KEY` | 任意 OpenAI 兼容接口 |
 | AI 图片生成 | `AIHUBMIX_API_KEY` / `FAL_KEY` | 自动配图发帖 |
 | Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | 自主发帖 |

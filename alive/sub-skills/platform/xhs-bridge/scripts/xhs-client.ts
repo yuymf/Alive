@@ -416,7 +416,7 @@ function resolveXhsDir(): string {
 }
 
 // ─── 写入命令黑名单 — AI 绝对不允许直接执行任何发布/互动操作 ─────────────
-// 所有内容必须走 review-queue → 运营确认 → 运营手动发布 → 回传 URL 记录。
+// 写入命令硬锁：AI 不得直接发布/互动，只允许读浏览。
 const XHS_WRITE_COMMANDS: ReadonlySet<string> = new Set([
   'publish', 'publish-video', 'fill-publish', 'click-publish',
   'save-draft', 'post-comment', 'like-feed', 'favorite-feed',
@@ -428,8 +428,7 @@ async function callXhsCli(command: string, args: string[] = []): Promise<unknown
   if (XHS_WRITE_COMMANDS.has(command)) {
     throw new Error(
       `[xhs-bridge] WRITE_BLOCKED: command "${command}" is blocked. ` +
-      `AI must NOT publish directly. Prepare content → push to review queue → ` +
-      `operator publishes manually → mark as published via "已发 <URL>".`
+      `AI must NOT publish or interact. Read-only browse is allowed.`
     );
   }
 

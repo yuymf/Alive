@@ -1,6 +1,6 @@
 {
   "name": "alive",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Alive — a generalized digital-life engine for creating AI personas with evolving memory, social presence, and autonomous behavior.",
   "main": "bin/cli.js",
   "bin": {
@@ -11,7 +11,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:eval": "vitest run --config e2e/harness/vitest.harness.config.ts",
     "prepack": "npm run build"
   },
   "files": [
