@@ -110,20 +110,12 @@ npx alive init
 /alive help                # 所有命令
 ```
 
-## 🔓 渐进式解锁
+## 🔓 你需要什么
 
-| 功能 | 需要配置 | 效果 |
-|:---|:---|:---|
-| 对话 + 情绪记忆 | 会加载 skill 的 Code Agent | `SKILL.md` + `~/.alive` |
-| 心跳自主行为 | `LLM_API_KEY` | `alive tick` 或 `alive start` |
-| 自定义 LLM | `LLM_API_KEY` | 任意 OpenAI 兼容接口 |
-| AI 图片生成 | `AIHUBMIX_API_KEY` / `FAL_KEY` | 自动配图发帖 |
-| Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | 自主发帖 |
-| 小红书浏览/互动 | `XHS_SKILLS_DIR` | 完整小红书集成 |
-| 语音消息 | _无需 key_ | Noiz TTS，≤3次/天 |
-| 图片托管 | `IMGURL_TOKEN` | ImgURL 公共上传 |
-
-随时可改：`/alive setup`
+| 功能 | 需要 |
+|:---|:---|
+| 对话 + 记忆 | 会加载 `SKILL.md` 的 Code Agent |
+| 心跳 | `~/.alive/.env` 里的 `LLM_API_KEY` |
 
 ## 🏗️ 架构
 

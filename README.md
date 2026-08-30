@@ -89,10 +89,9 @@ Sleep → Night Reflect (consolidate memory, update personality drift)
 A persona is not a system prompt. It's a **configuration object** with:
 
 - MBTI baseline (drift range for each dimension)
-- Voice signature (catchphrases, anti-patterns, platform-specific styles)
+- Voice signature (catchphrases, anti-patterns)
 - Schedule (wake/sleep, active peaks)
-- Content sources (platforms, keywords, competitor accounts)
-- Feature flags (voice TTS, image generation)
+- Feature flags
 
 This allows the same engine to run Minase (ESTP, in-the-moment, photography-focused) and Miss V (ENTJ, aggressive, esports-focused) with zero code changes.
 
@@ -129,21 +128,6 @@ This allows the same engine to run Minase (ESTP, in-the-moment, photography-focu
 </td>
 </tr>
 </table>
-
----
-
-## 🔬 What Makes This Different
-
-| Feature | Stanford Generative Agents | Character.AI | **Alive** |
-|:---|:---:|:---:|:---:|
-| Emotion model | Basic (valence only) | None | ✅ 6D + 3-layer inertia |
-| Memory | 3-tier (research) | Flat context | ✅ 4-tier with cost control |
-| Proactive behavior | ✅ (research demo) | ❌ reactive only | ✅ heartbeat loop |
-| Persona system | Single agent | Pre-built characters | ✅ YAML-driven DNA |
-| Production ready | ❌ research paper | ✅ consumer product | ⚠️ open source, testable (needs a host) |
-| Test coverage | N/A | N/A | ✅ 1200+ engine tests |
-
-**Alive bridges the gap** between research prototypes (Stanford) and consumer products (Character.AI) — it has the **architectural depth** of research with the **engineering rigor** of production.
 
 ---
 
@@ -208,20 +192,12 @@ npx alive init --project
 
 ---
 
-## 🔓 Progressive Unlock
+## 🔓 What you need
 
-| Feature | Required | You Get |
-|:---|:---|:---|
-| Chat + emotion memory | A Code Agent that loads skills | `SKILL.md` + `~/.alive` |
-| Heartbeat autonomy | `LLM_API_KEY` | `alive tick` or `alive start` |
-| Custom LLM | `LLM_API_KEY` | Any OpenAI-compatible endpoint |
-| AI image generation | `AIHUBMIX_API_KEY` / `FAL_KEY` | Auto-posting with images |
-| Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | Autonomous posting |
-| 小红书 browse/engage | `XHS_SKILLS_DIR` | Full XHS integration |
-| Voice messages | _nothing_ | Noiz TTS Guest Mode, ≤3/day |
-| Image hosting | `IMGURL_TOKEN` | Public ImgURL uploads |
-
-Reconfigure anytime: `/alive setup`
+| Feature | Required |
+|:---|:---|
+| Chat + memory | A Code Agent that loads `SKILL.md` |
+| Heartbeat | `LLM_API_KEY` in `~/.alive/.env` |
 
 ---
 
@@ -260,7 +236,7 @@ npm run test        # Run all tests (vitest)
 ### Testing Philosophy
 
 - **Unit tests**: Mock LLM client, mock filesystem — test engines in isolation
-- **CLI smoke**: `init` → `status` → `remember` → `context` against an isolated `$ALIVE_HOME`
+- **Host path**: the installed `scripts/host/chat.js` load → save → load loop
 
 PRs welcome! Persona configs (`alive/personas/*.yaml`) especially welcome.
 
