@@ -147,11 +147,17 @@ function cmdUninstall(flags) {
 async function main() {
   const { flags, positional } = parseArgs(process.argv.slice(2));
   const cmd = positional[0];
-  if (!cmd || cmd === 'help' || flags.help === 'true') {
-    if (cmd === 'help') return cmdAdmin('help');
+  if (flags.help === 'true') {
     printHelp();
     return;
   }
+  if (!cmd) {
+    const home = flags.home || process.env.ALIVE_HOME || path.join(os.homedir(), '.alive');
+    if (!fs.existsSync(path.join(home, '.env'))) return cmdInit(flags);
+    printHelp();
+    return;
+  }
+  if (cmd === 'help') return cmdAdmin('help');
   if (cmd === 'init') return cmdInit(flags);
   if (cmd === 'uninstall') return cmdUninstall(flags);
   if (cmd === 'start') return cmdStart();

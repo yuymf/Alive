@@ -41,6 +41,7 @@ describe('initMemory', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-home-'));
     initMemory(tmp, 'minase', repoRootFromHere());
     expect(fs.existsSync(path.join(tmp, 'personas', 'minase', 'persona', 'persona.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'personas', 'minase', 'state', 'emotion-state.json'))).toBe(true);
     const env = fs.readFileSync(path.join(tmp, '.env'), 'utf8');
     expect(env).toContain('ALIVE_PERSONA=minase');
     fs.rmSync(tmp, { recursive: true, force: true });

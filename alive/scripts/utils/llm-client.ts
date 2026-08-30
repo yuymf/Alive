@@ -13,7 +13,7 @@ import { PATHS } from './file-utils';
 /**
  * LLM client interface used by all alive engines and sub-skills.
  *
- * Design decision: The host application (e.g. OpenClaw) injects an LLM client
+ * Design decision: The host application injects an LLM client
  * instance at startup. Alive never imports a concrete LLM SDK — this keeps the
  * framework model-agnostic and testable.
  */

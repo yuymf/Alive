@@ -13,7 +13,7 @@ import {
   addPhotoToGallery,
   updateGalleryAfterShare,
   pruneGallery,
-  sendViaOpenClaw,
+  sendMedia,
 } from './gallery-ops';
 import { uploadToImgURL } from './imgurl-upload';
 
@@ -25,7 +25,7 @@ export {
   addPhotoToGallery,
   updateGalleryAfterShare,
   pruneGallery,
-  sendViaOpenClaw,
+  sendMedia,
 } from './gallery-ops';
 
 export { uploadToImgURL } from './imgurl-upload';

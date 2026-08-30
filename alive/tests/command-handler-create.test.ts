@@ -27,10 +27,13 @@ beforeEach(() => {
     }
   }
   setBasePaths(tmpMemory, tmpSkill);
+  process.env.ALIVE_HOME = tmpDir;
+  delete process.env.LLM_API_KEY;
 });
 
 afterEach(() => {
   resetBasePaths();
+  delete process.env.ALIVE_HOME;
   fs.rmSync(tmpDir, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -44,8 +47,8 @@ describe('/alive create (async dispatch)', () => {
     vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
       .mockResolvedValue({
         meta: { name: 'TestChar', id: 'test', gender: '女', tagline: '测试' },
-        personality: { mbti: 'ENFP', core_traits: ['creative'], description: 'test' },
-        voice: { language: 'zh-CN', style: 'casual', emoji_density: 'low', sample_lines: ['hi'] },
+        personality: { mbti: 'ENFP', core_traits: ['creative', 'curious'], description: 'test' },
+        voice: { language: 'zh-CN', style: 'casual', emoji_density: 'low', sample_lines: ['hi', 'hello', 'hey'] },
         sub_skills: [],
       });
 
@@ -63,8 +66,8 @@ describe('/alive create (async dispatch)', () => {
     vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
       .mockResolvedValue({
         meta: { name: 'TestChar', id: 'test', gender: '女', tagline: '测试' },
-        personality: { mbti: 'ENFP', core_traits: ['creative'], description: 'test' },
-        voice: { language: 'zh-CN', style: 'casual', emoji_density: 'low', sample_lines: ['hi'] },
+        personality: { mbti: 'ENFP', core_traits: ['creative', 'curious'], description: 'test' },
+        voice: { language: 'zh-CN', style: 'casual', emoji_density: 'low', sample_lines: ['hi', 'hello', 'hey'] },
         sub_skills: [],
       });
 
@@ -81,8 +84,8 @@ describe('/alive create (async dispatch)', () => {
     const asyncSpy = vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
       .mockResolvedValue({
         meta: { name: '测试角色', id: 'test-char', gender: '女', tagline: '测试' },
-        personality: { mbti: 'ENFP', core_traits: ['温柔'], description: '测试描述' },
-        voice: { language: 'zh-CN', style: '温柔', emoji_density: 'low', sample_lines: ['你好'] },
+        personality: { mbti: 'ENFP', core_traits: ['温柔', '好奇'], description: '测试描述' },
+        voice: { language: 'zh-CN', style: '温柔', emoji_density: 'low', sample_lines: ['你好', '今天怎么样', '一起走走'] },
         sub_skills: [],
       });
     const syncSpy = vi.spyOn(creatorModule, 'generatePersonaQuick');
@@ -100,8 +103,8 @@ describe('/alive create (async dispatch)', () => {
     const asyncSpy = vi.spyOn(creatorModule, 'generatePersonaGuidedAsync')
       .mockResolvedValue({
         meta: { name: '引导角色', id: 'guided-char', gender: '男', tagline: '引导测试' },
-        personality: { mbti: 'INTJ', core_traits: ['理性'], description: '引导测试描述' },
-        voice: { language: 'zh-CN', style: '简短', emoji_density: 'low', sample_lines: ['嗯'] },
+        personality: { mbti: 'INTJ', core_traits: ['理性', '克制'], description: '引导测试描述' },
+        voice: { language: 'zh-CN', style: '简短', emoji_density: 'low', sample_lines: ['嗯', '再说一遍', '我知道了'] },
         sub_skills: [],
       });
     const syncSpy = vi.spyOn(creatorModule, 'generatePersonaGuided');
@@ -120,7 +123,7 @@ describe('/alive create (async dispatch)', () => {
       .mockResolvedValue({
         meta: { name: '林微澜', id: 'lin-weilan', gender: '女', tagline: '天文系学生' },
         personality: { mbti: 'INFP', core_traits: ['安静', '敏感细腻'], description: '天文系学生' },
-        voice: { language: 'zh-CN', style: '安静', emoji_density: 'low', sample_lines: ['嗯…', '你好'] },
+        voice: { language: 'zh-CN', style: '安静', emoji_density: 'low', sample_lines: ['嗯…', '你好', '今晚星星很多'] },
         sub_skills: [],
       });
 

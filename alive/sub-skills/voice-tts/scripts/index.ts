@@ -6,7 +6,7 @@
 //   - 社交 → send-message wins (文字优先)
 //   - 表达 → voice-tts wins (语音更有感染力)
 //
-// Flow: gate check → LLM generate → voice enrichment → TTS → send via openclaw → diary
+// Flow: gate check → LLM generate → voice enrichment → TTS → outbox → diary
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -117,10 +117,10 @@ function loadTemplate(templateName: string): string {
 // ── Send via OpenClaw CLI ────────────────────────────────────────
 
 /**
- * Send a voice file via OpenClaw CLI using --media.
+ * Queue a voice file in the host outbox.
  * Returns true on success, false on failure (never throws).
  */
-export function sendVoiceViaOpenClaw(
+export function sendVoice(
   audioPath: string,
   _channel?: string,
   _target?: string,
@@ -244,7 +244,7 @@ export const actions = {
     }
 
     // 7. Send via OpenClaw
-    const sent = sendVoiceViaOpenClaw(audioPath);
+    const sent = sendVoice(audioPath);
 
     // 8. Update state
     const updatedState: VoiceState = {

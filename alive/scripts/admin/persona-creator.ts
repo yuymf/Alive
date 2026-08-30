@@ -9,7 +9,8 @@ import * as path from 'path';
 import YAML from 'yaml';
 import type { PersonaConfig } from '../utils/types';
 import { callLLMJSON } from '../utils/llm-client';
-import { readTemplate, getAliveHome } from '../utils/file-utils';
+import { readTemplate, getAliveHome, setPersonaName } from '../utils/file-utils';
+import { seedPersonaMemory, upsertEnvFile } from '../host/memory';
 
 // ── Random Pools (Chinese) ───────────────────────────────────────
 
@@ -451,45 +452,49 @@ export function personaToYAML(persona: PersonaConfig): string {
   return header + yamlStr;
 }
 
-/**
- * Save persona to alive/personas/ directory.
- * Returns the file path of the saved persona.
- */
-export function savePersona(persona: PersonaConfig): string {
-  // Determine personas dir: try installed skill path, fallback to source tree
-  const personasDir = resolvePersonasDir();
-  const filename = `${persona.meta.id || persona.meta.name.toLowerCase().replace(/\s+/g, '-')}.yaml`;
-  const filePath = path.join(personasDir, filename);
-
-  // Don't overwrite existing files — append a number
-  let finalPath = filePath;
-  let counter = 1;
-  while (fs.existsSync(finalPath)) {
-    const base = filename.replace('.yaml', '');
-    finalPath = path.join(personasDir, `${base}-${counter}.yaml`);
-    counter++;
-  }
-
-  fs.mkdirSync(personasDir, { recursive: true });
-  fs.writeFileSync(finalPath, personaToYAML(persona), 'utf8');
-  return finalPath;
+export function validatePersona(persona: PersonaConfig): string[] {
+  const errors: string[] = [];
+  if (!persona.meta?.name?.trim()) errors.push('meta.name is required');
+  if (!persona.meta?.tagline?.trim()) errors.push('meta.tagline is required');
+  const mbti = persona.personality?.mbti?.toUpperCase() ?? '';
+  if (!/^[EI][NS][TF][JP]$/.test(mbti)) errors.push('personality.mbti must be a valid 4-letter MBTI');
+  const traits = persona.personality?.core_traits ?? [];
+  if (traits.length < 2 || traits.length > 5) errors.push('personality.core_traits must have 2-5 items');
+  if (!persona.voice?.language?.trim()) errors.push('voice.language is required');
+  if (!persona.voice?.style?.trim()) errors.push('voice.style is required');
+  const lines = persona.voice?.sample_lines ?? [];
+  if (lines.length < 3 || lines.length > 10) errors.push('voice.sample_lines must have 3-10 items');
+  return errors;
 }
 
 /**
- * Resolve the personas directory path.
- * In development: alive/personas/ in the source tree.
- * In installed mode: $ALIVE_HOME/personas-src/ or the skill copy's personas/
+ * Validate, write into $ALIVE_HOME/personas/{id}/, seed state, activate.
  */
-function resolvePersonasDir(): string {
-  const homeDir = path.join(getAliveHome(), 'created-personas');
-  if (fs.existsSync(getAliveHome())) {
-    return homeDir;
+export function savePersona(persona: PersonaConfig): string {
+  const errors = validatePersona(persona);
+  if (errors.length > 0) {
+    throw new Error(`Invalid persona:\n- ${errors.join('\n- ')}`);
   }
 
-  // Fall back to source tree (development mode)
-  // Navigate from this file's location to alive/personas/
-  const srcDir = path.resolve(__dirname, '..', '..', 'personas');
-  return srcDir;
+  const baseId = (persona.meta.id || persona.meta.name).toLowerCase().replace(/\s+/g, '-');
+  persona.meta.id = baseId;
+  let personaId = baseId;
+  let memoryRoot = path.join(getAliveHome(), 'personas', personaId);
+  let counter = 1;
+  while (fs.existsSync(path.join(memoryRoot, 'persona', 'persona.yaml'))) {
+    personaId = `${baseId}-${counter}`;
+    persona.meta.id = personaId;
+    memoryRoot = path.join(getAliveHome(), 'personas', personaId);
+    counter++;
+  }
+
+  const finalPath = path.join(memoryRoot, 'persona', 'persona.yaml');
+  fs.mkdirSync(path.dirname(finalPath), { recursive: true });
+  fs.writeFileSync(finalPath, personaToYAML(persona), 'utf8');
+  seedPersonaMemory(memoryRoot);
+  upsertEnvFile(path.join(getAliveHome(), '.env'), { ALIVE_PERSONA: personaId });
+  setPersonaName(personaId);
+  return finalPath;
 }
 
 /**
@@ -729,7 +734,10 @@ export async function generatePersonaQuickAsync(options: QuickCreateOptions = {}
     validateLLMOutput(llmOutput);
 
     // 5. Map to PersonaConfig
-    return mapLLMOutputToPersona(llmOutput);
+    const mapped = mapLLMOutputToPersona(llmOutput);
+    const errors = validatePersona(mapped);
+    if (errors.length > 0) throw new Error(errors.join('; '));
+    return mapped;
   } catch (err) {
     // Fallback to sync generator
     console.warn(`[persona-creator] LLM generation failed, falling back to sync: ${(err as Error).message}`);
@@ -815,7 +823,10 @@ export async function generatePersonaGuidedAsync(options: GuidedCreateOptions): 
     validateLLMOutput(llmOutput);
 
     // 5. Map to PersonaConfig
-    return mapLLMOutputToPersona(llmOutput);
+    const mapped = mapLLMOutputToPersona(llmOutput);
+    const errors = validatePersona(mapped);
+    if (errors.length > 0) throw new Error(errors.join('; '));
+    return mapped;
   } catch (err) {
     // Fallback to sync generator
     console.warn(`[persona-creator] LLM guided generation failed, falling back to sync: ${(err as Error).message}`);

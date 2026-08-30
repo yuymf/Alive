@@ -8,6 +8,7 @@ import {
   generatePersonaGuided,
   personaToYAML,
   savePersona,
+  validatePersona,
   formatPersonaPreview,
   getAvailableMBTI,
   getTraitPool,
@@ -28,10 +29,13 @@ beforeEach(() => {
   fs.mkdirSync(tmpMemory, { recursive: true });
   fs.mkdirSync(path.join(tmpSkill, 'personas'), { recursive: true });
   setBasePaths(tmpMemory, tmpSkill);
+  process.env.ALIVE_HOME = tmpDir;
+  delete process.env.LLM_API_KEY;
 });
 
 afterEach(() => {
   resetBasePaths();
+  delete process.env.ALIVE_HOME;
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -197,8 +201,8 @@ describe('/alive create command', () => {
     vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
       .mockResolvedValue({
         meta: { name: '测试角色', id: 'test-char', gender: '女', tagline: '随机生成测试' },
-        personality: { mbti: 'ENFP', core_traits: ['温柔'], description: '测试' },
-        voice: { language: 'zh-CN', style: '活泼', emoji_density: 'low', sample_lines: ['hi'] },
+        personality: { mbti: 'ENFP', core_traits: ['温柔', '好奇'], description: '测试' },
+        voice: { language: 'zh-CN', style: '活泼', emoji_density: 'low', sample_lines: ['hi', 'hello', 'hey'] },
         sub_skills: [],
       });
     const cmd = parseCommand('/alive create 测试角色 "随机生成测试"');
@@ -223,8 +227,8 @@ describe('/alive create command', () => {
     vi.spyOn(creatorModule, 'generatePersonaGuidedAsync')
       .mockResolvedValue({
         meta: { name: '引导角色', id: 'guided-char', gender: '男', tagline: '引导测试' },
-        personality: { mbti: 'INTJ', core_traits: ['理性'], description: '引导描述' },
-        voice: { language: 'zh-CN', style: '简短', emoji_density: 'low', sample_lines: ['嗯'] },
+        personality: { mbti: 'INTJ', core_traits: ['理性', '克制'], description: '引导描述' },
+        voice: { language: 'zh-CN', style: '简短', emoji_density: 'low', sample_lines: ['嗯', '再说', '好的'] },
         sub_skills: [],
       });
     const cmd = parseCommand('/alive create --guided --name "引导角色" --tagline "引导测试" --mbti INTJ');
@@ -240,8 +244,8 @@ describe('/alive create command', () => {
     vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
       .mockResolvedValue({
         meta: { name: '随机角色', id: 'random-char', gender: '女', tagline: '随机测试' },
-        personality: { mbti: 'INFP', core_traits: ['安静'], description: '随机' },
-        voice: { language: 'zh-CN', style: '温柔', emoji_density: 'low', sample_lines: ['...'] },
+        personality: { mbti: 'INFP', core_traits: ['安静', '敏感'], description: '随机' },
+        voice: { language: 'zh-CN', style: '温柔', emoji_density: 'low', sample_lines: ['...', '今晚星星很多', '要不要听歌'] },
         sub_skills: [],
       });
     const cmd = parseCommand('/alive create');
@@ -497,6 +501,28 @@ describe('personaToYAML — edge cases', () => {
   });
 });
 
+describe('validatePersona', () => {
+  it('rejects a persona missing required fields', () => {
+    const persona = generatePersonaQuick({ name: '缺字段' });
+    persona.voice.sample_lines = ['只有一句'];
+    persona.personality.core_traits = ['一个'];
+    const errors = validatePersona(persona);
+    expect(errors.some((e) => e.includes('sample_lines'))).toBe(true);
+    expect(errors.some((e) => e.includes('core_traits'))).toBe(true);
+    expect(() => savePersona(persona)).toThrow(/Invalid persona/);
+  });
+
+  it('accepts a generated persona and activates it under ALIVE_HOME', () => {
+    const persona = generatePersonaQuick({ name: '激活测试' });
+    expect(validatePersona(persona)).toEqual([]);
+    const savedPath = savePersona(persona);
+    expect(savedPath).toContain(path.join(tmpDir, 'personas'));
+    expect(fs.existsSync(path.join(path.dirname(savedPath), '..', 'state', 'emotion-state.json'))).toBe(true);
+    const env = fs.readFileSync(path.join(tmpDir, '.env'), 'utf8');
+    expect(env).toContain('ALIVE_PERSONA=');
+  });
+});
+
 describe('savePersona — edge cases', () => {
   it('does not overwrite existing file (second save differs from first)', () => {
     const persona1 = generatePersonaQuick({ name: '重名边界' });
@@ -559,7 +585,7 @@ describe('/alive create command — edge cases', () => {
     const mockPersona = (nameOverride?: string) => ({
       meta: { name: nameOverride ?? 'MockChar', id: (nameOverride ?? 'mockchar').toLowerCase().replace(/\s+/g, '-'), gender: '女', tagline: '测试角色' },
       personality: { mbti: 'ENFP', core_traits: ['温柔', '好奇'], description: '测试描述' },
-      voice: { language: 'zh-CN', style: '活泼', emoji_density: 'low', sample_lines: ['你好'] },
+      voice: { language: 'zh-CN', style: '活泼', emoji_density: 'low', sample_lines: ['你好', '今天天气不错', '要不要出去走走'] },
       sub_skills: [],
     });
     vi.spyOn(creatorModule, 'generatePersonaQuickAsync')
@@ -628,8 +654,8 @@ describe('/alive create command — edge cases', () => {
         callCount++;
         return {
           meta: { name: `角色${callCount}`, id: `char-${callCount}`, gender: '女', tagline: '测试' },
-          personality: { mbti: 'ENFP', core_traits: ['温柔'], description: '测试' },
-          voice: { language: 'zh-CN', style: '活泼', emoji_density: 'low', sample_lines: ['hi'] },
+          personality: { mbti: 'ENFP', core_traits: ['温柔', '好奇'], description: '测试' },
+          voice: { language: 'zh-CN', style: '活泼', emoji_density: 'low', sample_lines: ['hi', 'hello', 'hey'] },
           sub_skills: [],
         };
       });

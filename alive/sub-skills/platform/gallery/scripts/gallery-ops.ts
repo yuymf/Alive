@@ -136,7 +136,7 @@ export function pruneGallery(): PhotoGallery {
 
 // ── Send helpers ─────────────────────────────────────────────────
 
-export function sendViaOpenClaw(mediaUrl: string, _channel: string, _target: string, caption?: string): void {
+export function sendMedia(mediaUrl: string, _channel: string, _target: string, caption?: string): void {
   deliverMedia(mediaUrl, caption);
 }
 
@@ -151,7 +151,7 @@ export function sendPhoto(id: string, channel: string, target: string, caption?:
     return { success: false, photoId: id, error: `Photo not found: ${id}` };
   }
   try {
-    sendViaOpenClaw(photo.publicUrl, channel, target, caption);
+    sendMedia(photo.publicUrl, channel, target, caption);
     updateGalleryAfterShare(id);
     return { success: true, photoId: id };
   } catch (err) {
@@ -218,7 +218,7 @@ export async function generateAndSend(
 
   const mediaRef = publicUrl || genResult.localPath;
   try {
-    sendViaOpenClaw(mediaRef, channel, target, caption);
+    sendMedia(mediaRef, channel, target, caption);
     return { success: true, photoId };
   } catch (err) {
     return { success: false, photoId, error: (err as Error).message };

@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
+import { seedPersonaMemory, upsertEnvFile } from './memory';
 
 export interface SkillTarget {
   id: string;
@@ -99,14 +100,16 @@ export function initMemory(aliveHome: string, personaId: string, root = repoRoot
   if (fs.existsSync(yamlSrc)) {
     fs.copyFileSync(yamlSrc, path.join(memory, 'persona', 'persona.yaml'));
   }
+  seedPersonaMemory(memory);
   const envPath = path.join(aliveHome, '.env');
   if (!fs.existsSync(envPath)) {
-    const lines = [
-      `ALIVE_PERSONA=${personaId}`,
-      'LLM_API_KEY=',
-      'LLM_API_BASE=',
-      'LLM_MODEL=',
-    ];
-    fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
+    upsertEnvFile(envPath, {
+      ALIVE_PERSONA: personaId,
+      LLM_API_KEY: '',
+      LLM_API_BASE: '',
+      LLM_MODEL: '',
+    });
+  } else {
+    upsertEnvFile(envPath, { ALIVE_PERSONA: personaId });
   }
 }

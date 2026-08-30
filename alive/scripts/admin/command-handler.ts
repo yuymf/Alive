@@ -702,7 +702,12 @@ async function cmdCreate(cmd: ParsedCommand): Promise<CommandResult> {
   const tagline = cmd.args.slice(1).join(' ') || undefined;
 
   const persona = await generatePersonaQuickAsync({ name, tagline });
-  const savedPath = savePersona(persona);
+  let savedPath: string;
+  try {
+    savedPath = savePersona(persona);
+  } catch (err) {
+    return { output: `❌ ${(err as Error).message}`, error: true };
+  }
   const preview = formatPersonaPreview(persona);
 
   return {
@@ -712,12 +717,9 @@ async function cmdCreate(cmd: ParsedCommand): Promise<CommandResult> {
 
 ✅ 角色已保存到: \`${savedPath}\`
 
-> 💡 使用方式:
-> - 安装此角色: \`alive --persona ${savedPath}\`
-> - 切换到此角色: \`alive --switch-persona --persona ${savedPath}\`
-> - 重新随机: \`/alive create\`
-> - 指定名字: \`/alive create 陈小鱼 "爱吃甜食的插画师"\`
-> - 引导模式: \`/alive create --guided\``,
+> 已写入 \`$ALIVE_HOME\` 并设为当前人设。下一步：\`alive status\`，或在 Code Agent 里直接对话。
+> - 再随机一个: \`/alive create\`
+> - 指定名字: \`/alive create 陈小鱼 "爱吃甜食的插画师"\``
   };
 }
 
@@ -803,7 +805,12 @@ ${scheduleTable}
   };
 
   const persona = await generatePersonaGuidedAsync(guidedOptions);
-  const savedPath = savePersona(persona);
+  let savedPath: string;
+  try {
+    savedPath = savePersona(persona);
+  } catch (err) {
+    return { output: `❌ ${(err as Error).message}`, error: true };
+  }
   const preview = formatPersonaPreview(persona);
 
   return {
@@ -813,10 +820,8 @@ ${scheduleTable}
 
 ✅ 角色已保存到: \`${savedPath}\`
 
-> 💡 使用方式:
-> - 安装此角色: \`alive --persona ${savedPath}\`
-> - 切换到此角色: \`alive --switch-persona --persona ${savedPath}\`
-> - 重新生成: \`/alive create --guided --name "${name}" --tagline "${tagline}"\``,
+> 已写入 \`$ALIVE_HOME\` 并设为当前人设。下一步：\`alive status\`。
+> - 重新生成: \`/alive create --guided --name "${name}" --tagline "${tagline}"\``
   };
 }
 

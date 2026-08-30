@@ -118,7 +118,7 @@ function loadTemplate(templateName: string): string {
  * Send a text message via OpenClaw CLI.
  * Returns true on success, false on failure (never throws).
  */
-export function sendMessageViaOpenClaw(message: string): boolean {
+export function sendMessage(message: string): boolean {
   return deliverText(message);
 }
 
@@ -200,7 +200,7 @@ export const actions = {
     }
 
     // 4. Send
-    const sent = sendMessageViaOpenClaw(llmResult.message);
+    const sent = sendMessage(llmResult.message);
 
     // 5. Update state
     const updatedState: OutreachState = {

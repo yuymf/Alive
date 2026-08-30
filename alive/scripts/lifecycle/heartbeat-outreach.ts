@@ -1,6 +1,6 @@
 // alive/scripts/lifecycle/heartbeat-outreach.ts
 // Proactive message sending from heartbeat — sends natural in-character messages
-// to the user via OpenClaw `message send`.
+// to the host outbox for the Code Agent to deliver.
 //
 // Design principles:
 // - Conservative by default: sends at most 2 messages per day
@@ -147,11 +147,8 @@ export async function generateProactiveMessage(
 
 // ── Send ──────────────────────────────────────────────────────────
 
-/**
- * Send a text message via OpenClaw CLI.
- * Returns true on success, false on failure (never throws).
- */
-export function sendMessageViaOpenClaw(message: string): boolean {
+/** Queue a text message in the host outbox. */
+export function sendMessage(message: string): boolean {
   return deliverText(message);
 }
 
@@ -226,7 +223,7 @@ export async function attemptProactiveOutreach(ctx: OutreachContext): Promise<Ou
   }
 
   // 4. Send
-  const sent = sendMessageViaOpenClaw(llmResult.message);
+  const sent = sendMessage(llmResult.message);
 
   // 5. Update state (whether or not send succeeded — prevent rapid retry)
   outreachState = {
