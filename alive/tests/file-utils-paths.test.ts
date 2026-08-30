@@ -9,7 +9,7 @@ describe('file-utils path override', () => {
 
   it('PATHS uses default paths when no override set', () => {
     const home = os.homedir();
-    expect(PATHS.emotionState).toBe(path.join(home, '.openclaw', 'workspace', 'memory', 'default', 'state', 'emotion-state.json'));
+    expect(PATHS.emotionState).toBe(path.join(home, '.alive', 'personas', 'default', 'state', 'emotion-state.json'));
   });
 
   it('PATHS uses overridden memory base after setBasePaths', () => {
@@ -29,14 +29,14 @@ describe('file-utils path override', () => {
   it('resetBasePaths restores defaults', () => {
     const home = os.homedir();
     resetBasePaths();
-    expect(PATHS.emotionState).toBe(path.join(home, '.openclaw', 'workspace', 'memory', 'default', 'state', 'emotion-state.json'));
+    expect(PATHS.emotionState).toBe(path.join(home, '.alive', 'personas', 'default', 'state', 'emotion-state.json'));
   });
 
   it('PATHS uses default paths when no override set (second check)', () => {
     const home = os.homedir();
     setBasePaths('/tmp/test-memory', '/tmp/test-skill');
     resetBasePaths();
-    expect(PATHS.emotionState).toContain('.openclaw');
+    expect(PATHS.emotionState).toContain(path.join('.alive', 'personas', 'default'));
   });
 
   it('readJSON and writeJSON work with overridden paths', () => {
@@ -137,11 +137,9 @@ describe('runtime log path separation', () => {
 
   it('PATHS.llmCallLog lives outside persona memory (default mode)', () => {
     setPersonaName('miss-v');
-    // Non-default persona uses workspace-{persona}/runtime — llmCallLog should be in runtime dir
     expect(PATHS.llmCallLog).toContain('runtime');
     expect(PATHS.llmCallLog).toContain('llm-call-log.jsonl');
-    // Should NOT be inside memory subdirectory
-    expect(PATHS.llmCallLog).not.toContain('/memory/miss-v');
+    expect(PATHS.llmCallLog).not.toContain(`${path.sep}personas${path.sep}miss-v`);
     setPersonaName('default');
   });
 

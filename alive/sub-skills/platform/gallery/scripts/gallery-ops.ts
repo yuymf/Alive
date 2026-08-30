@@ -12,8 +12,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
 import { PATHS, readJSON, writeJSON } from '../../../../scripts/utils/file-utils';
+import { deliverMedia } from '../../../../scripts/host/outbox';
 import { now, getLocalDate, getLocalHour } from '../../../../scripts/utils/time-utils';
 // Re-export shared types from alive/scripts/utils/types.ts (single source of truth)
 export type { GalleryPhoto, PhotoGallery, ContentStyle } from '../../../../scripts/utils/types';
@@ -136,10 +136,8 @@ export function pruneGallery(): PhotoGallery {
 
 // ── Send helpers ─────────────────────────────────────────────────
 
-export function sendViaOpenClaw(mediaUrl: string, channel: string, target: string, caption?: string): void {
-  const args = ['message', 'send', '--media', mediaUrl, '--channel', channel, '--target', target];
-  if (caption) args.push('--message', caption);
-  execFileSync('openclaw', args, { timeout: 30_000, encoding: 'utf8' });
+export function sendMedia(mediaUrl: string, _channel: string, _target: string, caption?: string): void {
+  deliverMedia(mediaUrl, caption);
 }
 
 /**
@@ -153,7 +151,7 @@ export function sendPhoto(id: string, channel: string, target: string, caption?:
     return { success: false, photoId: id, error: `Photo not found: ${id}` };
   }
   try {
-    sendViaOpenClaw(photo.publicUrl, channel, target, caption);
+    sendMedia(photo.publicUrl, channel, target, caption);
     updateGalleryAfterShare(id);
     return { success: true, photoId: id };
   } catch (err) {
@@ -220,7 +218,7 @@ export async function generateAndSend(
 
   const mediaRef = publicUrl || genResult.localPath;
   try {
-    sendViaOpenClaw(mediaRef, channel, target, caption);
+    sendMedia(mediaRef, channel, target, caption);
     return { success: true, photoId };
   } catch (err) {
     return { success: false, photoId, error: (err as Error).message };

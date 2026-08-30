@@ -101,7 +101,6 @@ content_sources:
 sub_skills:
   - generate-image
   - xhs-bridge
-  - douyin-bridge
   - content-browse
 
 features:

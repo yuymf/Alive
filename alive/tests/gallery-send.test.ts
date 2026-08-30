@@ -2,14 +2,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import * as child_process from 'child_process';
 import { setBasePaths, resetBasePaths, PATHS, writeJSON, readJSON } from '../scripts/utils/file-utils';
+import { listOutbox } from '../scripts/host/outbox';
 import type { PhotoGallery, GalleryPhoto } from '../sub-skills/platform/gallery/scripts/gallery-ops';
 import { DEFAULT_PHOTO_GALLERY } from '../sub-skills/platform/gallery/scripts/gallery-ops';
 import { searchGallery, updateGalleryAfterShare, addPhotoToGallery, pruneGallery, sendPhoto } from '../sub-skills/platform/gallery/scripts/gallery-ops';
-
-vi.mock('child_process');
-const mockedCp = vi.mocked(child_process);
 
 function makePhoto(overrides: Partial<GalleryPhoto> = {}): GalleryPhoto {
   return {
@@ -177,20 +174,14 @@ describe('gallery-send', () => {
   });
 
   describe('sendPhoto', () => {
-    it('calls openclaw message send --media and updates gallery', () => {
+    it('writes an outbox item and updates gallery', () => {
       const gallery: PhotoGallery = { photos: [makePhoto()] };
       writeJSON(PATHS.photoGallery, gallery);
-
-      mockedCp.execFileSync.mockReturnValue('');
 
       const result = sendPhoto('20260313_cos_afternoon_001', 'telegram', '@user123', '看！');
 
       expect(result.success).toBe(true);
-      expect(mockedCp.execFileSync).toHaveBeenCalledWith(
-        'openclaw',
-        ['message', 'send', '--media', 'https://example.com/photo.png', '--channel', 'telegram', '--target', '@user123', '--message', '看！'],
-        expect.objectContaining({ timeout: 30_000 }),
-      );
+      expect(listOutbox().some((item) => item.mediaPath === 'https://example.com/photo.png')).toBe(true);
 
       // Verify gallery was updated
       const updated = readJSON<PhotoGallery>(PATHS.photoGallery, DEFAULT_PHOTO_GALLERY);
@@ -205,17 +196,11 @@ describe('gallery-send', () => {
       expect(result.error).toContain('not found');
     });
 
-    it('returns error when openclaw send fails', () => {
+    it('still succeeds when host delivery is outbox-only', () => {
       const gallery: PhotoGallery = { photos: [makePhoto()] };
       writeJSON(PATHS.photoGallery, gallery);
-
-      mockedCp.execFileSync.mockImplementation(() => {
-        throw new Error('Connection refused');
-      });
-
       const result = sendPhoto('20260313_cos_afternoon_001', 'telegram', '@user123');
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Connection refused');
+      expect(result.success).toBe(true);
     });
   });
 });

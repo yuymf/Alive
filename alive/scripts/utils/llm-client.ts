@@ -6,7 +6,6 @@
 import { now, wallNow } from './time-utils';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { PATHS } from './file-utils';
 // === Core Interface ===
@@ -14,7 +13,7 @@ import { PATHS } from './file-utils';
 /**
  * LLM client interface used by all alive engines and sub-skills.
  *
- * Design decision: The host application (e.g. OpenClaw) injects an LLM client
+ * Design decision: The host application injects an LLM client
  * instance at startup. Alive never imports a concrete LLM SDK — this keeps the
  * framework model-agnostic and testable.
  */
@@ -90,57 +89,6 @@ function isAbortError(err: unknown): boolean {
 
 function isNonRetryableHttpError(message: string): boolean {
   return /(?:Gateway returned|API returned)\s+(400|401|403|404)\b/i.test(message);
-}
-
-/**
- * Resolve the OpenClaw agent ID for Gateway routing.
-
- * Priority: OPENCLAW_AGENT > ALIVE_PERSONA > "main"
- */
-function resolveOpenClawAgentId(): string {
-  const raw = process.env.OPENCLAW_AGENT || process.env.ALIVE_PERSONA || 'main';
-  return raw === 'default' ? 'main' : raw;
-}
-
-/**
- * Read the Gateway base URL.
- * Priority:
- *   1. OPENCLAW_GATEWAY_URL env var (explicit override)
- *   2. Constructed from openclaw.json gateway.port
- *   3. Fallback: http://127.0.0.1:18789/v1
- */
-function resolveGatewayBase(): string {
-  const envUrl = process.env.OPENCLAW_GATEWAY_URL;
-  if (envUrl) return envUrl.replace(/\/+$/, '');
-  try {
-    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-    const raw = fs.readFileSync(configPath, 'utf8');
-    const conf = JSON.parse(raw);
-    const port = conf?.gateway?.port;
-    if (port && typeof port === 'number') {
-      return `http://127.0.0.1:${port}/v1`;
-    }
-  } catch {
-    // openclaw.json not found or unreadable — fall through
-  }
-  return 'http://127.0.0.1:18789/v1';
-}
-
-/**
- * Read the Gateway auth token from openclaw.json.
- * Falls back to OPENCLAW_GATEWAY_TOKEN env var.
- */
-function readGatewayToken(): string | null {
-  const envToken = process.env.OPENCLAW_GATEWAY_TOKEN;
-  if (envToken) return envToken;
-  try {
-    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-    const raw = fs.readFileSync(configPath, 'utf8');
-    const conf = JSON.parse(raw);
-    return conf?.gateway?.auth?.token ?? null;
-  } catch {
-    return null;
-  }
 }
 
 function debugLog(label: string, content: string): void {
@@ -227,121 +175,9 @@ export async function callLLM(
 ): Promise<LLMResult> {
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) {
-    // Route through OpenClaw Gateway HTTP API (OpenAI-compatible)
-    const gatewayBase = resolveGatewayBase();
-    const gatewayToken = readGatewayToken();
-    const agentId = resolveOpenClawAgentId();
-    const model = `openclaw/${agentId}`;
-
-    debugLog('GATEWAY_REQUEST', `model: ${model}\n\n${prompt}`);
-
-    const totalStart = wallNow().getTime();
-    let startTime = totalStart;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        startTime = wallNow().getTime();
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (gatewayToken) headers['Authorization'] = `Bearer ${gatewayToken}`;
-
-        const res = await fetch(`${gatewayBase}/chat/completions`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model,
-            messages: [{ role: 'user', content: prompt }],
-            ...(options?.responseFormat ? { response_format: options.responseFormat } : {}),
-          }),
-          signal: options?.signal,
-        });
-
-        if (!res.ok) {
-          const errText = await res.text();
-          debugLog('GATEWAY_ERROR', `HTTP ${res.status}: ${errText}`);
-          // Rate limit: use Retry-After header or exponential backoff
-          if (res.status === 429) {
-            const retryAfter = res.headers.get('retry-after');
-            const waitMs = retryAfter
-              ? Math.min(parseInt(retryAfter, 10) * 1000, 60_000)
-              : Math.min(LLM_CONFIG.RETRY_DELAY_MS * Math.pow(2, attempt), 60_000);
-            console.warn(`[llm-client] Rate limited (429), waiting ${waitMs}ms before retry`);
-            await new Promise(r => setTimeout(r, waitMs));
-            continue;
-          }
-          throw new Error(`Gateway returned ${res.status}: ${errText}`);
-        }
-
-        const data = await res.json() as OpenAIChatResponse;
-        const content = stripThinkBlocks(data.choices?.[0]?.message?.content ?? '');
-        const finishReason = data.choices?.[0]?.finish_reason ?? 'unknown';
-        const elapsed = wallNow().getTime() - startTime;
-
-        debugLog('GATEWAY_RESPONSE', `elapsed: ${elapsed}ms | attempt: ${attempt + 1} | finish_reason: ${finishReason}\n\n${content}`);
-
-        appendLlmLog({
-          id: crypto.randomUUID(),
-          timestamp: wallNow().toISOString(),
-          caller: caller ?? autoDetectCaller(),
-          prompt,
-          response: content,
-          elapsed_ms: elapsed,
-          input_tokens: data.usage?.prompt_tokens ?? null,
-          output_tokens: data.usage?.completion_tokens ?? null,
-          finish_reason: finishReason,
-          model: data.model ?? model,
-          error_message: null,
-        });
-
-        return { content, finishReason };
-      } catch (err) {
-        if (options?.signal?.aborted || isAbortError(err)) {
-          debugLog('GATEWAY_ABORT', `request aborted: ${(err as Error).message}`);
-          throw err;
-        }
-        const errMsg = (err as Error).message ?? '';
-        if (isNonRetryableHttpError(errMsg)) {
-          debugLog('GATEWAY_NON_RETRYABLE_FAIL', `not retrying: ${errMsg}`);
-          console.error(`Gateway call failed, not retrying: ${errMsg}`);
-          appendLlmLog({
-            id: crypto.randomUUID(),
-            timestamp: wallNow().toISOString(),
-            caller: caller ?? autoDetectCaller(),
-            prompt,
-            response: null,
-            elapsed_ms: wallNow().getTime() - totalStart,
-            input_tokens: null,
-            output_tokens: null,
-            finish_reason: 'error',
-            model,
-            error_message: errMsg,
-          });
-          throw err;
-        }
-        if (attempt === 0) {
-          debugLog('GATEWAY_RETRY', `attempt 1 failed: ${(err as Error).message}`);
-          console.error(`Gateway call failed, retrying in 10s: ${(err as Error).message}`);
-          await new Promise(r => setTimeout(r, LLM_CONFIG.RETRY_DELAY_MS));
-        } else {
-          debugLog('GATEWAY_FAIL', `attempt 2 failed: ${(err as Error).message}`);
-          appendLlmLog({
-            id: crypto.randomUUID(),
-            timestamp: wallNow().toISOString(),
-            caller: caller ?? autoDetectCaller(),
-            prompt,
-            response: null,
-            elapsed_ms: wallNow().getTime() - totalStart,
-            input_tokens: null,
-            output_tokens: null,
-            finish_reason: 'error',
-            model,
-            error_message: (err as Error).message,
-          });
-          throw err;
-        }
-
-      }
-    }
-    throw new Error('Gateway call failed after retry');
+    throw new Error('LLM_API_KEY is required. Set it in $ALIVE_HOME/.env. Chat uses the host agent model and does not need this key.');
   }
+
 
   const apiBase = (process.env.LLM_API_BASE || DEFAULT_API_BASE).replace(/\/+$/, '');
   const model = options?.model || process.env.LLM_MODEL || DEFAULT_MODEL;

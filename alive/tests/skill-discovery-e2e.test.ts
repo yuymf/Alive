@@ -271,10 +271,7 @@ describe('E2E: Skill Discovery Full Pipeline', () => {
         },
       ];
 
-      // Step 3: Mock the skill-hub-client and skill-adapter modules
-      // Since discoverAndInstall calls these internally, we need to mock at the module level
-      const { searchClawHub } = await import('../scripts/hub/skill-hub-client');
-      const { generateAdaptedSkill } = await import('../scripts/hub/skill-adapter');
+      // Step 3: marketplace install is gone; verify local need status flow
 
       // We'll use vi.mock for the actual integration, but since this is an integration test
       // that crosses module boundaries, let's verify the plan-level flow manually

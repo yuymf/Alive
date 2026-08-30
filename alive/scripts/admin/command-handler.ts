@@ -4,10 +4,9 @@
 // Never touches diary, relations, or emotion via conversation hooks.
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import YAML from 'yaml';
-import { readJSON, readText, writeJSON, PATHS, setPersonaName, getPersonaName } from '../utils/file-utils';
+import { readJSON, readText, writeJSON, PATHS, setPersonaName, getPersonaName, getAliveHome, readEnvFile } from '../utils/file-utils';
 import { loadPersona, clearPersonaCache, getScheduleConfig } from '../persona/persona-loader';
 import {
   generatePersonaQuick,
@@ -475,7 +474,7 @@ function cmdMemory(): CommandResult {
 | Post history | ${postHistory.posts.length} |
 | Gallery photos | ${gallery.photos.length} |
 
-> Memory path: \`~/.openclaw/workspace/memory/${getPersonaName()}/\``,
+> Memory path: \`$ALIVE_HOME/personas/${getPersonaName()}/\``,
   };
 }
 
@@ -528,7 +527,7 @@ function resetEmotionInternal(): string {
   if (!persona) return '❌ Persona not found — cannot determine MBTI baseline.';
 
   // Load MBTI baselines from persona-schema.yaml
-  const schemaPath = path.join(path.dirname(PATHS.personaConfig), 'persona-schema.yaml');
+  const schemaPath = path.join(path.dirname(PATHS.skillPersonaConfig), 'persona-schema.yaml');
   let baseline: Record<string, number> | null = null;
 
   if (fs.existsSync(schemaPath)) {
@@ -703,7 +702,12 @@ async function cmdCreate(cmd: ParsedCommand): Promise<CommandResult> {
   const tagline = cmd.args.slice(1).join(' ') || undefined;
 
   const persona = await generatePersonaQuickAsync({ name, tagline });
-  const savedPath = savePersona(persona);
+  let savedPath: string;
+  try {
+    savedPath = savePersona(persona);
+  } catch (err) {
+    return { output: `❌ ${(err as Error).message}`, error: true };
+  }
   const preview = formatPersonaPreview(persona);
 
   return {
@@ -713,12 +717,9 @@ async function cmdCreate(cmd: ParsedCommand): Promise<CommandResult> {
 
 ✅ 角色已保存到: \`${savedPath}\`
 
-> 💡 使用方式:
-> - 安装此角色: \`alive --persona ${savedPath}\`
-> - 切换到此角色: \`alive --switch-persona --persona ${savedPath}\`
-> - 重新随机: \`/alive create\`
-> - 指定名字: \`/alive create 陈小鱼 "爱吃甜食的插画师"\`
-> - 引导模式: \`/alive create --guided\``,
+> 已写入 \`$ALIVE_HOME\` 并设为当前人设。下一步：\`alive status\`，或在 Code Agent 里直接对话。
+> - 再随机一个: \`/alive create\`
+> - 指定名字: \`/alive create 陈小鱼 "爱吃甜食的插画师"\``
   };
 }
 
@@ -804,7 +805,12 @@ ${scheduleTable}
   };
 
   const persona = await generatePersonaGuidedAsync(guidedOptions);
-  const savedPath = savePersona(persona);
+  let savedPath: string;
+  try {
+    savedPath = savePersona(persona);
+  } catch (err) {
+    return { output: `❌ ${(err as Error).message}`, error: true };
+  }
   const preview = formatPersonaPreview(persona);
 
   return {
@@ -814,25 +820,16 @@ ${scheduleTable}
 
 ✅ 角色已保存到: \`${savedPath}\`
 
-> 💡 使用方式:
-> - 安装此角色: \`alive --persona ${savedPath}\`
-> - 切换到此角色: \`alive --switch-persona --persona ${savedPath}\`
-> - 重新生成: \`/alive create --guided --name "${name}" --tagline "${tagline}"\``,
+> 已写入 \`$ALIVE_HOME\` 并设为当前人设。下一步：\`alive status\`。
+> - 重新生成: \`/alive create --guided --name "${name}" --tagline "${tagline}"\``
   };
 }
 
 // ── Setup Command ───────────────────────────────────────────────────
 
-function readOpenClawEnv(): Record<string, string> {
-  const configPath = process.env.OPENCLAW_CONFIG_FILE
-    ?? path.join(os.homedir(), '.openclaw', 'openclaw.json');
-  if (!configPath || !fs.existsSync(configPath)) return {};
-  try {
-    const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    return (cfg?.skills?.entries?.alive?.env as Record<string, string>) ?? {};
-  } catch {
-    return {};
-  }
+function readAliveEnvFile(): Record<string, string> {
+  const envPath = process.env.ALIVE_ENV_FILE ?? path.join(getAliveHome(), '.env');
+  return readEnvFile(envPath);
 }
 
 function maskKey(val: string | undefined): string {
@@ -846,19 +843,17 @@ function cmdSetup(cmd: ParsedCommand): CommandResult {
 
   if (sub === 'llm') {
     return {
-      output: `## 🔧 配置自定义 LLM
+      output: `## 🔧 配置 LLM（仅脚本心跳需要）
 
-在终端运行以下命令（留空则继续使用 OpenClaw 内置 Claude）：
+对话走宿主 Code Agent 的模型。心跳脚本才需要 key。
+
+编辑 \`$ALIVE_HOME/.env\`：
 
 \`\`\`bash
-openclaw env set LLM_API_KEY <your-api-key>
-openclaw env set LLM_API_BASE https://aihubmix.com/v1    # 可选，默认 aihubmix
-openclaw env set LLM_MODEL claude-sonnet-4-20250514       # 可选
-\`\`\`
-
-设置后重启 OpenClaw 生效。
-
-> 💡 留空 \`LLM_API_KEY\` 时，心跳自动使用 OpenClaw 内置 Claude。`,
+LLM_API_KEY=<your-api-key>
+LLM_API_BASE=https://aihubmix.com/v1
+LLM_MODEL=claude-sonnet-4-20250514
+\`\`\``,
     };
   }
 
@@ -869,13 +864,12 @@ openclaw env set LLM_MODEL claude-sonnet-4-20250514       # 可选
 在终端运行以下命令：
 
 \`\`\`bash
-openclaw env set INSTAGRAM_USERNAME <your-username>
-openclaw env set INSTAGRAM_PASSWORD <your-password>
-openclaw env set AIHUBMIX_API_KEY <key>   # 可选，用于 AI 配图生成
-openclaw env set IMGURL_TOKEN <token>     # 可选，用于图片公共托管
-\`\`\`
-
-设置后重启 OpenClaw 生效。`,
+# in $ALIVE_HOME/.env
+INSTAGRAM_USERNAME=<your-username>
+INSTAGRAM_PASSWORD=<your-password>
+AIHUBMIX_API_KEY=<key>
+IMGURL_TOKEN=<token>
+\`\`\``,
     };
   }
 
@@ -887,9 +881,9 @@ openclaw env set IMGURL_TOKEN <token>     # 可选，用于图片公共托管
   }
 
   // No subarg: show current env status
-  const env = readOpenClawEnv();
+  const env = { ...readAliveEnvFile(), ...process.env };
   const rows: [string, string | undefined, string][] = [
-    ['LLM_API_KEY', env.LLM_API_KEY, '自定义 LLM（空=内置 Claude）'],
+    ['LLM_API_KEY', env.LLM_API_KEY, '心跳脚本用（对话走宿主模型）'],
     ['LLM_API_BASE', env.LLM_API_BASE, 'LLM 接口地址'],
     ['LLM_MODEL', env.LLM_MODEL, 'LLM 模型名称'],
     ['AIHUBMIX_API_KEY', env.AIHUBMIX_API_KEY, 'AI 图片生成'],
@@ -915,7 +909,7 @@ ${tableRows}
 - \`/alive setup llm\` — 配置自定义 LLM
 - \`/alive setup instagram\` — 配置 Instagram 发帖
 
-> 🔄 改完后重启 OpenClaw 生效`,
+> 改 \`$ALIVE_HOME/.env\` 后，下一次 \`alive tick\` 生效`,
   };
 }
 

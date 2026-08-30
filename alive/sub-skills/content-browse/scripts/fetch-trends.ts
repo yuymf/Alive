@@ -11,12 +11,11 @@
  */
 
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { getLocalDate } from '../../../scripts/utils/time-utils';
+import { PATHS } from '../../../scripts/utils/file-utils';
 
-const MEMORY_BASE = path.join(os.homedir(), '.openclaw', 'workspace', 'memory', 'minase');
-const WORLD_PATH = path.join(MEMORY_BASE, 'world.md');
+const WORLD_PATH = PATHS.world;
 
 const ARCTIC_SHIFT_BASE = 'https://arctic-shift.photon-reddit.com/api';
 const USER_AGENT = 'minase-digital-life/0.1';
@@ -262,7 +261,7 @@ async function fetchTrends(query?: string): Promise<void> {
   }
   const entry = sections.join('\n') + '\n';
 
-  fs.mkdirSync(MEMORY_BASE, { recursive: true });
+  fs.mkdirSync(path.dirname(WORLD_PATH), { recursive: true });
   if (!fs.existsSync(WORLD_PATH)) {
     fs.writeFileSync(WORLD_PATH, '# 世界观察\n\n_水瀬在浏览网络时学到的事情。_\n');
   }

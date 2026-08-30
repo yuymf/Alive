@@ -21,7 +21,7 @@ import {
 
 
 const DOUYIN_SKILLS_DIR = process.env.DOUYIN_SKILLS_DIR
-  ?? path.join(os.homedir(), '.openclaw', 'skills', 'douyin-skills');
+  ?? path.join(os.homedir(), '.alive', 'bridges', 'douyin-skills');
 const DOUYIN_CLI = path.join(DOUYIN_SKILLS_DIR, 'scripts', 'cli.py');
 
 // ─── 登录状态缓存（60s TTL，避免高频探测触发风控） ─────────────────────────

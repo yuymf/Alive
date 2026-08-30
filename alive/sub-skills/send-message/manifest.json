@@ -7,13 +7,7 @@
     { "intent": "connect", "action": "send-message", "priority": 6 },
     { "intent": "express", "action": "send-message", "priority": 4 }
   ],
-  "config_schema": {
-    "openclaw_send": {
-      "type": "function",
-      "required": false,
-      "description": "Platform-specific message send function"
-    }
-  },
+  "config_schema": {},
   "vitality_cost": { "base": 5 },
   "templates": ["outreach-message-prompt.md"]
 }

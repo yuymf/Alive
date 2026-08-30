@@ -12,8 +12,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { callInstagramBridge } from './bridge-client';
 import { now } from '../../../../scripts/utils/time-utils';
+import { PATHS } from '../../../../scripts/utils/file-utils';
 
-const MEMORY_BASE = path.join(os.homedir(), '.openclaw', 'workspace', 'memory', 'minase');
+const MEMORY_BASE = path.dirname(PATHS.diary);
 
 async function checkStats(mediaPk: string): Promise<void> {
   const data = await callInstagramBridge('get_media_insights', {

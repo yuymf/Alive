@@ -6,12 +6,12 @@
 //   - 社交 → send-message wins (文字优先)
 //   - 表达 → voice-tts wins (语音更有感染力)
 //
-// Flow: gate check → LLM generate → voice enrichment → TTS → send via openclaw → diary
+// Flow: gate check → LLM generate → voice enrichment → TTS → outbox → diary
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
 import type { SubSkillContext, SubSkillResult, EmotionState } from '../../../scripts/utils/types';
+import { deliverMedia } from '../../../scripts/host/outbox';
 import { createResult } from '../../../scripts/router/sub-skill-sdk';
 import { now, getLocalHour, getLocalDate, getLocalTimeHHMM } from '../../../scripts/utils/time-utils';
 import { synthesize } from './tts-provider';
@@ -117,26 +117,16 @@ function loadTemplate(templateName: string): string {
 // ── Send via OpenClaw CLI ────────────────────────────────────────
 
 /**
- * Send a voice file via OpenClaw CLI using --media.
+ * Queue a voice file in the host outbox.
  * Returns true on success, false on failure (never throws).
  */
-export function sendVoiceViaOpenClaw(
+export function sendVoice(
   audioPath: string,
-  channel?: string,
-  target?: string,
+  _channel?: string,
+  _target?: string,
   caption?: string,
 ): boolean {
-  try {
-    const args = ['message', 'send', '--media', audioPath];
-    if (channel) args.push('--channel', channel);
-    if (target) args.push('--target', target);
-    if (caption) args.push('--message', caption);
-    execFileSync('openclaw', args, { timeout: 30_000, encoding: 'utf8' });
-    return true;
-  } catch (err) {
-    console.error(`[voice-tts] openclaw voice send failed: ${(err as Error).message}`);
-    return false;
-  }
+  return deliverMedia(audioPath, caption);
 }
 
 // ── LLM Message Generation ──────────────────────────────────────
@@ -254,7 +244,7 @@ export const actions = {
     }
 
     // 7. Send via OpenClaw
-    const sent = sendVoiceViaOpenClaw(audioPath);
+    const sent = sendVoice(audioPath);
 
     // 8. Update state
     const updatedState: VoiceState = {

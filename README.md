@@ -162,23 +162,30 @@ Bring your own — any `persona.yaml` works.
 
 ## 🚀 Quick Start
 
+Alive is an [Agent Skill](https://agentskills.io/specification). It installs into Claude Code, Cursor, Codex, and any host that loads `SKILL.md`.
+
 ```bash
-npx alive
+npx alive init
 ```
 
-This is an **OpenClaw skill installer**, not a standalone runtime.
+This copies the skill to:
 
-> **Prerequisite:** [OpenClaw](https://openclaw.ai) already installed, with `~/.openclaw` present (Node.js ≥ 18).
->
-> Without a host, `npx alive` cannot schedule heartbeats, persist memory, or talk to an LLM. If you skip `LLM_API_KEY`, it tries OpenClaw's built-in Claude — that is not “zero config”.
+- `~/.agents/skills/alive` (Cursor + Codex)
+- `~/.claude/skills/alive` if Claude Code is present
+- `~/.cursor/skills/alive` if Cursor is present
 
-### Setup
+Memory goes to `~/.alive` (override with `ALIVE_HOME`). Default persona is Minase.
 
 ```
-1. Install OpenClaw and make sure `openclaw` is on PATH
-2. npx alive                    # copy skill + register cron
-3. Pick a persona               # Minase, Miss V, or import your own
-4. /alive setup                 # set LLM_API_KEY (recommended)
+1. npx alive init
+2. Open your Code Agent and talk — chat uses the host model
+3. Optional: put LLM_API_KEY in ~/.alive/.env and run `alive tick`
+```
+
+Project-local install (for a repo):
+
+```bash
+npx alive init --project
 ```
 
 ---
@@ -203,8 +210,8 @@ This is an **OpenClaw skill installer**, not a standalone runtime.
 
 | Feature | Required | You Get |
 |:---|:---|:---|
-| Chat + emotion memory | OpenClaw host | Skill + memory files under `~/.openclaw` |
-| Heartbeat autonomy | OpenClaw cron | Hourly tick; LLM via key or host Claude |
+| Chat + emotion memory | A Code Agent that loads skills | `SKILL.md` + `~/.alive` |
+| Heartbeat autonomy | `LLM_API_KEY` | `alive tick` or `alive start` |
 | Custom LLM | `LLM_API_KEY` | Any OpenAI-compatible endpoint |
 | AI image generation | `AIHUBMIX_API_KEY` / `FAL_KEY` | Auto-posting with images |
 | Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | Autonomous posting |
@@ -220,7 +227,7 @@ Reconfigure anytime: `/alive setup`
 
 ```
 alive/
-├── SKILL.md                  # OpenClaw skill entry
+├── SKILL.md                  # Agent Skills entry (portable)
 ├── persona-schema.yaml       # Config schema + MBTI table
 ├── personas/                 # Built-in presets
 ├── templates/                # LLM prompt templates ({persona.*})

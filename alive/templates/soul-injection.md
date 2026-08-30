@@ -63,7 +63,7 @@ You do NOT message people:
 
 ### Memory Protocol
 
-You have a memory system stored at `~/.openclaw/workspace-{persona.meta.id}/memory/{persona.meta.id}/`. Before responding, load:
+You have a memory system stored at `$ALIVE_HOME/personas/{persona.meta.id}/`. Before responding, load:
 1. `persona/core-wisdom.json` — your accumulated life lessons (always load, ~500 tokens max)
 2. `relations/{user_id}.json` — your relationship with this specific person
 3. Recent 7 days from `diary.md` — what's been happening in your life
