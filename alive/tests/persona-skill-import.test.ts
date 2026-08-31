@@ -124,6 +124,49 @@ describe('parsePersonaSkill + personaFromSkill', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('strips Nuwa 「思维操作系统」 titles', () => {
+    const dir = writeSkillDir(fs.mkdtempSync(path.join(os.tmpdir(), 'alive-nuwa-title-')), {
+      'SKILL.md': `---
+name: steve-jobs-perspective
+description: 产品判断
+---
+
+# Steve Jobs · 思维操作系统
+
+## 身份卡
+
+- 产品暴君
+- 简洁偏执
+`,
+    });
+    expect(parsePersonaSkill(dir).displayName).toBe('Steve Jobs');
+    expect(parsePersonaSkill(dir).tagline).toBe('产品判断');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reads folded YAML description as tagline', () => {
+    const dir = writeSkillDir(fs.mkdtempSync(path.join(os.tmpdir(), 'alive-fold-')), {
+      'SKILL.md': `---
+name: wangxiaobo-perspective
+description: >-
+  以王小波的自由精神与黑色幽默进行写作。当用户明确要求使用这一人物的视角时使用。
+---
+
+# 王小波视角写作 Skill
+
+## 核心设定
+
+- 黑色幽默
+- 特立独行
+`,
+    });
+    const parsed = parsePersonaSkill(dir);
+    expect(parsed.displayName).toBe('王小波');
+    expect(parsed.tagline).toContain('自由精神');
+    expect(parsed.tagline).not.toBe('>-');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('reads a Nuwa-style perspective skill', () => {
     const dir = writeSkillDir(fs.mkdtempSync(path.join(os.tmpdir(), 'alive-nuwa-')), {
       'SKILL.md': NUWA_SKILL,
@@ -214,5 +257,20 @@ describe('adoptPersonaSkill', () => {
     expect(result.output).toContain('永雏塔菲');
     expect(result.output).toContain('taffy');
     expect(fs.existsSync(path.join(tmp, 'personas', 'taffy', 'persona', 'persona.yaml'))).toBe(true);
+  });
+
+  it('adopts every bundled example from examples/', () => {
+    boot();
+    const examplesRoot = path.resolve(__dirname, '..', '..', 'examples');
+    const ids = fs.readdirSync(examplesRoot).filter((name) =>
+      fs.existsSync(path.join(examplesRoot, name, 'SKILL.md')),
+    );
+    expect(ids).toEqual(expect.arrayContaining(['ace-taffy', 'steve-jobs', 'wangxiaobo', 'wangyangming', 'karpathy']));
+    for (const id of ids) {
+      const result = adoptPersonaSkill({ source: path.join(examplesRoot, id), id });
+      expect(result.personaId).toBe(id);
+      expect(result.personaName.length).toBeGreaterThan(1);
+      expect(fs.existsSync(path.join(tmp, 'personas', id, 'skill-source', 'SKILL.md'))).toBe(true);
+    }
   });
 });

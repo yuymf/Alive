@@ -12,7 +12,10 @@ Copies `alive/SKILL.md` into Code Agent skill directories (`~/.agents/skills/ali
 ```bash
 npx alive init --project    # .agents/skills/alive in the current repo
 npx alive adopt <dir|url>   # take in a Nuwa / persona skill
+npx alive adopt ./examples/ace-taffy
 npx alive tick              # optional scripted heartbeat (needs LLM_API_KEY)
 ```
+
+Bundled cases live in `examples/` — 永雏塔菲 plus Jobs / 王小波 / 王阳明 / Karpathy from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation).
 
 Conversation uses the host agent model. See README.md.

@@ -67,6 +67,26 @@ npx alive adopt ~/.agents/skills/jobs-perspective
 4. Optional: put LLM_API_KEY in ~/.alive/.env and run `alive tick`
 ```
 
+### Bundled examples
+
+Public figures, MIT, already adoptable. Jobs / 王小波 / 王阳明 / Karpathy come from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation); `ace-taffy` is the Nuwa-style skill with `persona.md` + `references/`. Full notes in [examples/](examples/).
+
+```bash
+npx alive adopt ./examples/ace-taffy
+npx alive adopt ./examples/steve-jobs
+npx alive adopt ./examples/wangxiaobo
+npx alive adopt ./examples/wangyangming
+npx alive adopt ./examples/karpathy
+```
+
+| Example | Who | After Alive adopts it |
+|:---|:---|:---|
+| `ace-taffy` | 永雏塔菲 | Streamer cadence, memory, hourly life — not just 喵 |
+| `steve-jobs` | Steve Jobs | Product judgment that also gets tired and writes a diary |
+| `wangxiaobo` | 王小波 | Black humor that remembers yesterday |
+| `wangyangming` | 王阳明 | 知行合一 with a heartbeat |
+| `karpathy` | Andrej Karpathy | Engineering realism that can browse and post |
+
 ---
 
 ## Built-in personas

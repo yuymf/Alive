@@ -62,18 +62,49 @@ function parseFrontmatter(raw: string): { matter: Record<string, string>; body: 
   const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!match) return { matter: {}, body: raw };
   const matter: Record<string, string> = {};
-  for (const line of match[1].split('\n')) {
-    const eq = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
-    if (!eq) continue;
-    matter[eq[1]] = eq[2].replace(/^["']|["']$/g, '').trim();
+  const lines = match[1].split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const eq = lines[i].match(/^([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+    if (!eq) {
+      i++;
+      continue;
+    }
+    let val = eq[2].replace(/^["']|["']$/g, '').trim();
+    if (val === '|' || val === '>' || val === '>-' || val === '|-') {
+      const block: string[] = [];
+      i++;
+      while (i < lines.length && (/^\s+/.test(lines[i]) || lines[i].trim() === '')) {
+        block.push(lines[i].replace(/^\s+/, ''));
+        i++;
+      }
+      matter[eq[1]] = block.join(' ').trim();
+      continue;
+    }
+    matter[eq[1]] = val;
+    i++;
   }
   return { matter, body: match[2] };
+}
+
+function firstSentence(text: string): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  const m = t.match(/^(.+?[。！？.!?])(?:\s|$)/);
+  return m?.[1] ?? t;
 }
 
 function firstHeading(md: string): string {
   const m = md.match(/^#\s+(.+)$/m);
   if (!m) return '';
-  return m[1].replace(/\.skill$/i, '').replace(/\s*[—–-]\s*.+$/, '').trim();
+  return m[1]
+    .replace(/\.skill$/i, '')
+    .replace(/\s*[—–·\-]\s*思维操作系统.*$/u, '')
+    .replace(/\s*思维操作系统.*$/u, '')
+    .replace(/视角写作\s*Skill$/i, '')
+    .replace(/\s+Skill$/i, '')
+    .replace(/\s*[—–-]\s*.+$/, '')
+    .trim();
 }
 
 function clip(text: string, max: number): string {
@@ -144,7 +175,10 @@ export function parsePersonaSkill(root: string): ParsedPersonaSkill {
   const combined = `${personaMd}\n${body}`;
   const skillName = (matter.name || firstHeading(body) || path.basename(skillRoot)).trim();
   const displayName = firstHeading(personaMd) || firstHeading(body) || skillName;
-  const tagline = clip(matter.description || bullets(combined)[0] || `${displayName} persona skill`, 80);
+  const tagline = clip(
+    firstSentence(matter.description || '') || bullets(combined)[0] || `${displayName} persona skill`,
+    80,
+  );
   return { skillName, displayName, tagline, body, personaMd, skillMdPath, root: skillRoot };
 }
 

@@ -1,0 +1,10 @@
+id: ace-taffy
+name: 永雏塔菲
+vibe: 虚拟偶像 + 单机主播 · 自称 taffy · 营业口播
+kind: entertainer
+source: https://github.com/ly-xxx/ace-taffy-skill
+author: ly-xxx
+license: MIT
+catalog: https://github.com/mliu98/awesome-human-distillation
+in_catalog: false
+note: 公开人格 skill，不在 awesome-human-distillation 主表，但是本仓库的对接样板。
