@@ -69,7 +69,7 @@ npx alive adopt ~/.agents/skills/jobs-perspective
 
 ### Bundled examples
 
-Picked from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) — public figures only, MIT, already adoptable. Full notes in [examples/](examples/).
+Public figures, MIT, already adoptable. Jobs / 王小波 / 王阳明 / Karpathy come from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation); `ace-taffy` is the Nuwa-style skill with `persona.md` + `references/`. Full notes in [examples/](examples/).
 
 ```bash
 npx alive adopt ./examples/ace-taffy

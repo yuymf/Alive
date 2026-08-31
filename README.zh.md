@@ -68,7 +68,7 @@ npx alive adopt ~/.agents/skills/jobs-perspective
 
 ### 仓库里的例子
 
-从 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) 挑了几份公开人物、MIT、已经能 `adopt` 的 skill。说明在 [examples/](examples/)。
+公开人物、MIT、已经能 `adopt`。Jobs / 王小波 / 王阳明 / Karpathy 来自 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation)；`ace-taffy` 是带 `persona.md` + `references/` 的女娲式样板。说明在 [examples/](examples/)。
 
 ```bash
 npx alive adopt ./examples/ace-taffy
@@ -167,7 +167,7 @@ npx alive adopt ./examples/karpathy
 ## 架构
 
 ```
-examples/                     # 从 awesome-human-distillation 接入的案例
+examples/                     # 可 adopt 的人格 skill 案例
 alive/
 ├── SKILL.md                  # Agent Skills 入口
 ├── personas/                 # 内置预设（水瀬 / 郭德纲）

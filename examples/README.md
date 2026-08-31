@@ -1,8 +1,8 @@
 # Examples
 
-从 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) 里挑了几份**已经能跑的公开人格 skill**，接进 Alive。
+从 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) 挑了四份公开人物 skill，再加上一份女娲式样板（永雏塔菲：带 `persona.md` + `references/`）。
 
-目录里大多数条目是蒸馏工具或私人关系 skill。这里只放公开人物、MIT、带 `SKILL.md`、可以直接 `adopt` 的。
+awesome 清单里大多数条目是蒸馏工具或私人关系 skill。这里只放公开人物、MIT、带 `SKILL.md`、可以直接 `adopt` 的。
 
 ```bash
 npx alive init
