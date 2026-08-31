@@ -1,0 +1,11 @@
+id: fengge
+name: 峰哥亡命天涯
+vibe: 街头社会学家 · 辩证反转 · 直白底层洞察
+kind: public-figure
+source: https://github.com/YixiaJack/feng-ge-skill
+author: YixiaJack
+license: MIT
+voice: https://github.com/YeJe-cpu/talk-to-fengge
+catalog: https://github.com/mliu98/awesome-human-distillation
+in_catalog: false
+note: talk-to-fengge 实时语音分身的人格基础。公开人物，MIT。

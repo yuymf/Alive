@@ -1,15 +1,16 @@
 ---
 name: alive
 description: >
-  Digital life engine for persona skills. Adopt a Nuwa / 永雏塔菲-style
-  SKILL.md and give it emotion, memory, and an hourly life — not just chat.
-  Use when chatting in character, adopting a skill, checking emotion/memory,
-  running a heartbeat, or the user says /alive, adopt, 人设, 心跳, 女娲, 蒸馏.
+  Digital life engine for persona skills. Distill or adopt a Nuwa /
+  永雏塔菲 / 峰哥-style SKILL.md and give it emotion, memory, and an hourly
+  life — not just chat. Use when chatting in character, distilling a person,
+  adopting a skill, checking emotion/memory, running a heartbeat, or the
+  user says /alive, distill, adopt, 人设, 心跳, 女娲, 蒸馏, 峰哥.
 license: MIT
 compatibility: Requires Node.js >= 18
 metadata:
   author: yuymf
-  version: "0.5.0"
+  version: "0.6.0"
 ---
 
 # Alive
@@ -52,9 +53,27 @@ printf '%s' '{"user":"<user text>","reply":"<your reply>"}' | node {baseDir}/scr
 
 If memory or `.env` is missing, tell the user to run `npx alive init` (default persona: 水瀬 / Minase).
 
+## Distill (one command)
+
+If the user wants 蒸馏 / 一键蒸馏 / distill a person, or to bring in [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) / 峰哥:
+
+```bash
+node {baseDir}/scripts/admin/command-handler.js /alive distill <name-or-path-or-git-url>
+```
+
+If stdout contains `<!-- ALIVE_DISTILL_HOST -->`:
+
+1. Do not ask the user to finish it. Complete the protocol yourself.
+2. Research or read the materials as instructed.
+3. Write `SKILL.md` / `persona.md` / `references/*.md` into the printed work directory.
+4. Run the `/alive adopt` command printed at the end.
+5. Return that adopt result to the user.
+
+Known shortcuts: `峰哥` / `talk-to-fengge` / `ace-taffy` / bundled `examples/` ids.
+
 ## Adopt a persona skill
 
-If the user wants to bring in a Nuwa-distilled skill, 永雏塔菲, or any folder with `SKILL.md` + optional `persona.md`:
+If the user already has a Nuwa-distilled skill, 永雏塔菲, 峰哥, or any folder with `SKILL.md` + optional `persona.md`:
 
 ```bash
 node {baseDir}/scripts/admin/command-handler.js /alive adopt <path-or-git-url>

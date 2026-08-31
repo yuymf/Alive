@@ -10,6 +10,7 @@
 - `reflection-prompt.md` — 通用反思
 - `flow-evolution-prompt.md` — 心流进化
 - `persona-generate-prompt.md` — 人格生成
+- `distill-skill-prompt.md` — 一键蒸馏 SKILL.md
 - `diary-entry.md` / `identity.md` / `personality.md` / `simulated-action.md` / `soul-injection.md` / `user.md` — 模板组件
 
 ## `alive/sub-skills/*/templates/` — 子技能 prompt

@@ -18,6 +18,7 @@ const LIFE_SUB_SKILLS = ['web-search', 'content-browse', 'social-engagement', 's
 export interface AdoptOptions {
   source: string;
   id?: string;
+  origin?: string;
 }
 
 export interface AdoptResult {
@@ -103,6 +104,7 @@ function firstHeading(md: string): string {
     .replace(/\s*思维操作系统.*$/u, '')
     .replace(/视角写作\s*Skill$/i, '')
     .replace(/\s+Skill$/i, '')
+    .replace(/视角$/, '')
     .replace(/\s*[—–-]\s*.+$/, '')
     .trim();
 }
@@ -249,20 +251,51 @@ export function personaFromSkill(parsed: ParsedPersonaSkill, origin: string, id?
   };
 }
 
+function copyMarkdownTree(src: string, dest: string): void {
+  if (!fs.existsSync(src) || !fs.statSync(src).isDirectory()) return;
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const from = path.join(src, entry.name);
+    const to = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyMarkdownTree(from, to);
+    else if (entry.isFile() && entry.name.endsWith('.md')) fs.copyFileSync(from, to);
+  }
+}
+
+export function listMarkdownRel(dir: string, prefix = ''): string[] {
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return [];
+  const out: string[] = [];
+  for (const name of fs.readdirSync(dir).sort()) {
+    if (name.startsWith('.')) continue;
+    const full = path.join(dir, name);
+    const rel = prefix ? `${prefix}/${name}` : name;
+    if (fs.statSync(full).isDirectory()) out.push(...listMarkdownRel(full, rel));
+    else if (name.endsWith('.md')) out.push(rel);
+  }
+  return out;
+}
+
 function copySkillSource(skillRoot: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
   const skillMd = path.join(skillRoot, SKILL_MD);
   if (fs.existsSync(skillMd)) fs.copyFileSync(skillMd, path.join(dest, SKILL_MD));
   const personaMd = path.join(skillRoot, PERSONA_MD);
   if (fs.existsSync(personaMd)) fs.copyFileSync(personaMd, path.join(dest, PERSONA_MD));
-  const refs = path.join(skillRoot, REFERENCES_DIR);
-  if (!fs.existsSync(refs) || !fs.statSync(refs).isDirectory()) return;
-  const destRefs = path.join(dest, REFERENCES_DIR);
-  fs.mkdirSync(destRefs, { recursive: true });
-  for (const entry of fs.readdirSync(refs, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
-    fs.copyFileSync(path.join(refs, entry.name), path.join(destRefs, entry.name));
+  copyMarkdownTree(path.join(skillRoot, REFERENCES_DIR), path.join(dest, REFERENCES_DIR));
+}
+
+export function skillMdExists(root: string): boolean {
+  try {
+    findSkillMd(root);
+    return true;
+  } catch {
+    return false;
   }
+}
+
+export function resolveSkillSource(source: string): { root: string; cleanup?: string; origin: string } {
+  return isGitUrl(source) ? cloneGitSource(source) : resolveLocalSource(source);
 }
 
 function resolveLocalSource(source: string): { root: string; cleanup?: string; origin: string } {
@@ -291,7 +324,8 @@ export function adoptPersonaSkill(options: AdoptOptions): AdoptResult {
   const resolved = isGitUrl(source) ? cloneGitSource(source) : resolveLocalSource(source);
   try {
     const parsed = parsePersonaSkill(resolved.root);
-    const persona = personaFromSkill(parsed, resolved.origin, options.id);
+    const origin = options.origin || resolved.origin;
+    const persona = personaFromSkill(parsed, origin, options.id);
     const savedPath = savePersona(persona);
     const personaId = persona.meta.id!;
     const memoryRoot = path.dirname(path.dirname(savedPath));
@@ -300,7 +334,7 @@ export function adoptPersonaSkill(options: AdoptOptions): AdoptResult {
       personaId,
       personaName: persona.meta.name,
       savedPath,
-      origin: resolved.origin,
+      origin,
       skillName: parsed.skillName,
     };
   } finally {
@@ -326,7 +360,7 @@ export function loadSourceSkillContext(maxChars = 16_000): string {
   }
   const refs = path.join(dir, REFERENCES_DIR);
   if (fs.existsSync(refs)) {
-    const names = fs.readdirSync(refs).filter((n) => n.endsWith('.md')).sort();
+    const names = listMarkdownRel(refs);
     if (names.length) parts.push(`### references\n${names.map((n) => `- ${n}`).join('\n')}`);
   }
   return clipBlock(parts.join('\n\n'), maxChars);

@@ -14,6 +14,7 @@ function printHelp() {
 Usage:
   alive init [--project] [--persona <id>] [--home <dir>]
   alive adopt <path|url> [--id <slug>] [--home <dir>]
+  alive distill <name|path|url> [--id <slug>] [--name <name>] [--home <dir>]
   alive tick | morning | night
   alive start
   alive context
@@ -31,6 +32,7 @@ init copies this skill into Code Agent skill dirs:
 Memory and .env go to $ALIVE_HOME (default ~/.alive).
 Conversation uses the host agent. Heartbeat scripts need LLM_API_KEY.
 adopt takes a Nuwa / 永雏塔菲 persona skill (local dir or git URL).
+distill turns materials or talk-to-fengge into a skill, then adopts it.
 `);
 }
 
@@ -168,6 +170,15 @@ async function main() {
     const source = positional[1] || '';
     const id = flags.id ? ` --id ${flags.id}` : '';
     return cmdAdmin(`adopt ${source}${id}`.trim());
+  }
+  if (cmd === 'distill') {
+    if (flags.home) process.env.ALIVE_HOME = flags.home;
+    const source = positional.slice(1).join(' ');
+    const bits = [`distill ${source}`.trim()];
+    if (flags.id) bits.push(`--id ${flags.id}`);
+    if (flags.name) bits.push(`--name ${flags.name}`);
+    if (flags.materials) bits.push(`--materials ${flags.materials}`);
+    return cmdAdmin(bits.join(' '));
   }
   if (cmd === 'uninstall') return cmdUninstall(flags);
   if (cmd === 'start') return cmdStart();

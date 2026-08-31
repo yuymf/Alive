@@ -144,6 +144,24 @@ description: 产品判断
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('strips trailing 视角 from 峰哥 titles', () => {
+    const dir = writeSkillDir(fs.mkdtempSync(path.join(os.tmpdir(), 'alive-fengge-title-')), {
+      'SKILL.md': `---
+name: feng-ge-perspective
+description: 街头社会学家
+---
+
+# 峰哥亡命天涯视角
+
+## 身份卡
+
+- 辩证反转
+`,
+    });
+    expect(parsePersonaSkill(dir).displayName).toBe('峰哥亡命天涯');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('reads folded YAML description as tagline', () => {
     const dir = writeSkillDir(fs.mkdtempSync(path.join(os.tmpdir(), 'alive-fold-')), {
       'SKILL.md': `---
@@ -223,6 +241,17 @@ describe('adoptPersonaSkill', () => {
     expect(fs.readFileSync(path.join(tmp, '.env'), 'utf8')).toContain('ALIVE_PERSONA=ace-taffy');
   });
 
+  it('copies nested references/research markdown', () => {
+    boot();
+    const skillDir = writeSkillDir(path.join(tmp, 'nested-skill'), {
+      'SKILL.md': NUWA_SKILL,
+      'references/research/01-writings.md': '# writings\n公开采访。\n',
+    });
+    const result = adoptPersonaSkill({ source: skillDir, id: 'jobs-nested' });
+    expect(fs.existsSync(path.join(tmp, 'personas', 'jobs-nested', 'skill-source', 'references', 'research', '01-writings.md'))).toBe(true);
+    expect(result.personaId).toBe('jobs-nested');
+  });
+
   it('chat load includes original skill rules after adopt', () => {
     boot();
     const skillDir = writeSkillDir(path.join(tmp, 'incoming'), {
@@ -265,7 +294,7 @@ describe('adoptPersonaSkill', () => {
     const ids = fs.readdirSync(examplesRoot).filter((name) =>
       fs.existsSync(path.join(examplesRoot, name, 'SKILL.md')),
     );
-    expect(ids).toEqual(expect.arrayContaining(['ace-taffy', 'steve-jobs', 'wangxiaobo', 'wangyangming', 'karpathy']));
+    expect(ids).toEqual(expect.arrayContaining(['fengge', 'ace-taffy', 'steve-jobs', 'wangxiaobo', 'wangyangming', 'karpathy']));
     for (const id of ids) {
       const result = adoptPersonaSkill({ source: path.join(examplesRoot, id), id });
       expect(result.personaId).toBe(id);

@@ -22,6 +22,7 @@ import {
   type GuidedCreateOptions,
 } from './persona-creator';
 import { adoptPersonaSkill } from '../hub/persona-skill-import';
+import { distillPersona, formatDistillResult } from '../hub/persona-distill';
 import type {
   EmotionState, IntentPool, VitalityState, ConfidenceState,
   FlowState, HeartbeatLog, WisdomStore, PersonaConfig,
@@ -145,6 +146,7 @@ const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<C
   reset: cmdReset,
   create: cmdCreate,
   adopt: cmdAdopt,
+  distill: cmdDistill,
 };
 
 /**
@@ -206,10 +208,11 @@ function cmdHelp(): CommandResult {
 | \`/alive create\` | 随机生成一个新角色 |
 | \`/alive create <name> <tagline>\` | 用指定名字和定位生成角色 |
 | \`/alive create --guided\` | 引导模式，逐步填写角色信息 |
-| \`/alive adopt <dir 或 git URL>\` | 接入女娲 / 永雏塔菲等 persona skill，让它不只停留在聊天 |
+| \`/alive distill <名字\\|目录\\|git URL>\` | 一键蒸馏：材料 → SKILL.md → adopt |
+| \`/alive adopt <dir 或 git URL>\` | 接入已有的 persona skill，让它不只停留在聊天 |
 
 > ⚡ 这些命令不经过角色人格、不写入日记、不影响记忆。
-> 🌱 \`/alive adopt\` 把一份只负责聊天的 persona skill 接进 Alive：情绪、记忆、心跳、发帖。`,
+> 🌱 \`/alive distill\` 从材料或 talk-to-fengge 抽出脑子；\`/alive adopt\` 给已有 skill 身体。`,
   };
 }
 
@@ -716,8 +719,7 @@ function cmdAdopt(cmd: ParsedCommand): CommandResult {
 /alive adopt ~/.agents/skills/ace-taffy --id ace-taffy
 \`\`\`
 
-女娲本身负责蒸馏：https://github.com/alchaincyf/nuwa-skill
-蒸馏完成后，把生成的 skill 目录交给 \`adopt\`。`,
+已有 skill 用 \`adopt\`；还没有 skill 用 \`/alive distill\`。女娲：https://github.com/alchaincyf/nuwa-skill`,
     };
   }
 
@@ -735,6 +737,21 @@ function cmdAdopt(cmd: ParsedCommand): CommandResult {
 
 下一步：在 Code Agent 里直接说话，或 \`alive tick\` 让这个人开始过自己的一天。`,
     };
+  } catch (err) {
+    return { output: `❌ ${(err as Error).message}`, error: true };
+  }
+}
+
+async function cmdDistill(cmd: ParsedCommand): Promise<CommandResult> {
+  const source = cmd.args.join(' ') || cmd.flags['from'] || cmd.flags['url'] || cmd.flags['path'] || '';
+  try {
+    const outcome = await distillPersona({
+      source,
+      id: cmd.flags['id'],
+      name: cmd.flags['name'],
+      materials: cmd.flags['materials'] || cmd.flags['text'],
+    });
+    return formatDistillResult(outcome);
   } catch (err) {
     return { output: `❌ ${(err as Error).message}`, error: true };
   }
