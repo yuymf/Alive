@@ -16,6 +16,6 @@ npx alive adopt ./examples/ace-taffy
 npx alive tick              # optional scripted heartbeat (needs LLM_API_KEY)
 ```
 
-Bundled cases from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) live in `examples/`.
+Bundled cases live in `examples/` — 永雏塔菲 plus Jobs / 王小波 / 王阳明 / Karpathy from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation).
 
 Conversation uses the host agent model. See README.md.
