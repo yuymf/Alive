@@ -1,24 +1,20 @@
 <div align="center">
-
-<img src="docs/assets/cover.jpg" alt="Alive — 让 skill 活过来" width="100%">
-
-<img src="docs/assets/logo.jpg" alt="Alive logo" width="96">
+  <img src="docs/assets/logo.svg" alt="Alive" width="72" height="72">
 
 # Alive
 
-### 让人格 skill 拥有身体 — 而不只是一个对话框
+**让人格 skill 拥有身体 — 而不只是一个对话框。**
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skills-SKILL.md-purple.svg)](https://agentskills.io/specification)
 
-**接上女娲 / 永雏塔菲这类 skill。然后他们会记得你、会累、会自己行动。**
-
 [English](README.md) · [中文](#) · [更新日志](CHANGELOG.md)
-
 </div>
 
----
+<p align="center">
+  <img src="docs/assets/cover.svg" alt="接入 SKILL.md → 情绪、记忆、心跳 → 这个人开始过日子" width="100%">
+</p>
 
 [女娲.skill](https://github.com/alchaincyf/nuwa-skill) 和 [永雏塔菲](https://github.com/ly-xxx/ace-taffy-skill) 这类 skill，已经知道一个人**怎么说话**。它们停在聊天框里。
 
@@ -28,7 +24,23 @@ Alive 是剩下的那具身体：跨会话的情绪、日记、关系，以及�
 女娲蒸馏一个脑子  →  Alive 接入这份 SKILL.md  →  这个人开始过自己的日子
 ```
 
----
+## 快速开始
+
+```bash
+npx alive init
+npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
+```
+
+或者女娲刚蒸馏完的目录，或者仓库里的 [现成例子](examples/)：
+
+```bash
+npx alive adopt ~/.agents/skills/jobs-perspective
+npx alive adopt ./examples/steve-jobs
+```
+
+然后打开 Claude Code / Cursor / Codex，直接说话。可选：把 `LLM_API_KEY` 写进 `~/.alive/.env`，跑 `alive tick`。
+
+`adopt` 会把 `SKILL.md`、`persona.md`、`references/*.md` 拷进 `$ALIVE_HOME`。对话和心跳都读它们。原始 skill 的自称、口癖、边界优先于通用人设。
 
 ## 这个仓库是干什么的
 
@@ -42,31 +54,7 @@ Alive 是剩下的那具身体：跨会话的情绪、日记、关系，以及�
 
 同一套引擎可以养活一个被蒸馏的虚拟主播，也可以养活一个被蒸馏的思考者。不用改代码。
 
----
-
-## 接入一份 skill
-
-```bash
-npx alive init
-npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
-```
-
-或者女娲刚蒸馏完的目录：
-
-```bash
-npx alive adopt ~/.agents/skills/jobs-perspective
-```
-
-`adopt` 会把 `SKILL.md`、`persona.md`、`references/*.md` 拷进 `$ALIVE_HOME`。对话和心跳都读它们。原始 skill 的自称、口癖、边界优先于通用人设。
-
-```
-1. npx alive init
-2. npx alive adopt <目录或 git URL>
-3. 打开 Claude Code / Cursor / Codex，直接说话
-4. 可选：把 LLM_API_KEY 写进 ~/.alive/.env，跑 `alive tick`
-```
-
-### 仓库里的例子
+## 仓库里的例子
 
 公开人物、MIT、已经能 `adopt`。Jobs / 王小波 / 王阳明 / Karpathy 来自 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation)；`ace-taffy` 是带 `persona.md` + `references/` 的女娲式样板。说明在 [examples/](examples/)。
 
@@ -86,28 +74,9 @@ npx alive adopt ./examples/karpathy
 | `wangyangming` | 王阳明 | 知行合一，加上心跳 |
 | `karpathy` | Andrej Karpathy | 工程现实主义，还能自己去刷、去写 |
 
----
-
-## 内置角色
-
-还没有 skill 可接的时候，用这两个。
-
-| | 角色 | 人设 |
-|:---:|:---|:---|
-| 🌸 | **水瀬（Minase）** | ESTP 旅行 / coser · 咖啡馆、光线、说走就走 |
-| 🎤 | **郭德纲** | 相声大师，冷幽默 |
-
-也可以 `/alive create`，或自己放一份 `persona.yaml`。
-
----
+还没有 skill 可接？用内置的 **水瀬**（ESTP 旅行 / coser）和 **郭德纲**（相声，冷幽默），或 `/alive create`。
 
 ## 核心能力
-
-<table>
-<tr>
-<td width="50%">
-
-### 7 大引擎
 
 - 🎭 **6 维情绪** — 效价 / 唤醒 / 能量 / 压力 / 自信 / 社交欲
 - 🧭 **7 类元意图** — 创作 / 社交 / 消费 / 表达 / 学习 / 休息 / 追求
@@ -117,11 +86,6 @@ npx alive adopt ./examples/karpathy
 - 📈 **自信** — 0.5×–1.5× 质量倍率
 - 🔥 **工作冲动** — 累积到创作爆发
 
-</td>
-<td width="50%">
-
-### 4 层记忆
-
 | 层级 | 保留 | 内容 |
 |:---:|:---:|:---|
 | 0 | 会话内 | 工作记忆 |
@@ -129,13 +93,7 @@ npx alive adopt ./examples/karpathy
 | 2 | 90 天 | 社交关系 |
 | 3 | 永久 | 人生智慧 |
 
-</td>
-</tr>
-</table>
-
 心跳可以按需调用平台子技能（浏览、发帖、语音）。对话本身不需要它们。
-
----
 
 ## 命令
 
@@ -148,21 +106,6 @@ npx alive adopt ./examples/karpathy
 /alive create              # 生成新角色
 /alive help
 ```
-
----
-
-## 你需要什么
-
-| 功能 | 需要 |
-|:---|:---|
-| 对话 + 记忆 | 会加载 `SKILL.md` 的 Code Agent |
-| 心跳 | `~/.alive/.env` 里的 `LLM_API_KEY` |
-
-记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。
-
-项目内安装：`npx alive init --project`
-
----
 
 ## 架构
 
@@ -183,6 +126,13 @@ alive/
 ```
 
 宿主不要手改日记和情绪文件。`chat.js load` 打出上下文；`chat.js save` 写回下一轮要读的记忆。
+
+记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。项目内安装：`npx alive init --project`。
+
+| 功能 | 需要 |
+|:---|:---|
+| 对话 + 记忆 | 会加载 `SKILL.md` 的 Code Agent |
+| 心跳 | `~/.alive/.env` 里的 `LLM_API_KEY` |
 
 ## 开发
 

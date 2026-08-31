@@ -1,25 +1,21 @@
 <div align="center">
-
-<img src="docs/assets/cover.jpg" alt="Alive — skills that live" width="100%">
-
-<img src="docs/assets/logo.jpg" alt="Alive logo" width="96">
+  <img src="docs/assets/logo.svg" alt="Alive" width="72" height="72">
 
 # Alive
 
-### Give a persona skill a body — not just a chat window
+**Give a persona skill a body — not just a chat window.**
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skills-SKILL.md-purple.svg)](https://agentskills.io/specification)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](tsconfig.json)
 
-**Adopt Nuwa / 永雏塔菲-style skills. Then they remember, get tired, and act on their own.**
-
 [English](#) · [中文](README.zh.md) · [Changelog](CHANGELOG.md)
-
 </div>
 
----
+<p align="center">
+  <img src="docs/assets/cover.svg" alt="Adopt a SKILL.md → emotion, memory, heartbeat → they start living" width="100%">
+</p>
 
 [女娲.skill](https://github.com/alchaincyf/nuwa-skill) and skills like [永雏塔菲](https://github.com/ly-xxx/ace-taffy-skill) already know *how a person speaks*. They stop at the chat box.
 
@@ -29,7 +25,23 @@ Alive is the rest of the body: emotion that carries over, a diary, relationships
 Nuwa distills a mind  →  Alive adopts the SKILL.md  →  the person starts living
 ```
 
----
+## Quick start
+
+```bash
+npx alive init
+npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
+```
+
+Or a skill 女娲 just distilled, or one of the [bundled examples](examples/):
+
+```bash
+npx alive adopt ~/.agents/skills/jobs-perspective
+npx alive adopt ./examples/steve-jobs
+```
+
+Then open Claude Code / Cursor / Codex and talk. Optional: put `LLM_API_KEY` in `~/.alive/.env` and run `alive tick`.
+
+`adopt` copies `SKILL.md`, `persona.md`, and `references/*.md` into `$ALIVE_HOME`. Chat load and heartbeat both read them. The original skill's self-reference, catchphrases, and boundaries win over a generic voice.
 
 ## Why this repo exists
 
@@ -43,31 +55,7 @@ Nuwa distills a mind  →  Alive adopts the SKILL.md  →  the person starts liv
 
 Same engine runs a distilled VTuber and a distilled thinker. Zero code change.
 
----
-
-## Adopt a skill
-
-```bash
-npx alive init
-npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
-```
-
-Or a skill 女娲 just distilled:
-
-```bash
-npx alive adopt ~/.agents/skills/jobs-perspective
-```
-
-`adopt` copies `SKILL.md`, `persona.md`, and `references/*.md` into `$ALIVE_HOME`. Chat load and heartbeat both read them. The original skill's self-reference, catchphrases, and boundaries win over a generic voice.
-
-```
-1. npx alive init
-2. npx alive adopt <dir or git URL>
-3. Open Claude Code / Cursor / Codex and talk
-4. Optional: put LLM_API_KEY in ~/.alive/.env and run `alive tick`
-```
-
-### Bundled examples
+## Bundled examples
 
 Public figures, MIT, already adoptable. Jobs / 王小波 / 王阳明 / Karpathy come from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation); `ace-taffy` is the Nuwa-style skill with `persona.md` + `references/`. Full notes in [examples/](examples/).
 
@@ -87,28 +75,9 @@ npx alive adopt ./examples/karpathy
 | `wangyangming` | 王阳明 | 知行合一 with a heartbeat |
 | `karpathy` | Andrej Karpathy | Engineering realism that can browse and post |
 
----
-
-## Built-in personas
-
-Use these if you do not have a skill to adopt yet.
-
-| | Persona | Vibe |
-|:---:|:---|:---|
-| 🌸 | **Minase** | ESTP traveler / coser · cafés, light, saying yes |
-| 🎤 | **Guodegang** | Crosstalk master with dry humor |
-
-Or `/alive create` / drop your own `persona.yaml`.
-
----
+No skill to adopt yet? Built-in **Minase** (ESTP traveler / coser) and **Guodegang** (crosstalk, dry humor), or `/alive create`.
 
 ## What's inside
-
-<table>
-<tr>
-<td width="50%">
-
-### 7 engines
 
 - 🎭 **6D emotion** — valence, arousal, energy, stress, confidence, sociability
 - 🧭 **7 MetaIntent** — produce / connect / consume / express / learn / rest / aspire
@@ -118,11 +87,6 @@ Or `/alive create` / drop your own `persona.yaml`.
 - 📈 **Confidence** — 0.5×–1.5× quality
 - 🔥 **Work impulse** — builds toward a burst
 
-</td>
-<td width="50%">
-
-### 4-layer memory
-
 | Layer | Keep | What |
 |:---:|:---:|:---|
 | 0 | Session | Working memory |
@@ -130,13 +94,7 @@ Or `/alive create` / drop your own `persona.yaml`.
 | 2 | 90 days | Relations |
 | 3 | Forever | Core wisdom |
 
-</td>
-</tr>
-</table>
-
 Heartbeat can call platform sub-skills (browse, post, voice). Chat does not need them.
-
----
 
 ## Commands
 
@@ -150,20 +108,14 @@ Heartbeat can call platform sub-skills (browse, post, voice). Chat does not need
 /alive help
 ```
 
----
+## Architecture
 
-## Architecture (why these layers)
-
-### 6D emotion, not 2D
-
-Valence + arousal cannot decide behavior. Energy gates rest vs. content. Stress triggers a break. Confidence scales quality. Sociability decides outreach vs. withdrawal.
+**6D emotion, not 2D.** Valence + arousal cannot decide behavior. Energy gates rest vs. content. Stress triggers a break. Confidence scales quality. Sociability decides outreach vs. withdrawal.
 
 ```
 Impulse (spike)  →  Momentum (drift)  →  Undertone (MBTI baseline)
    20% / tick           3% / tick              constant
 ```
-
-### Heartbeat
 
 Most agents only answer. Alive runs even when you are gone:
 
@@ -175,30 +127,23 @@ Hourly: perceive → intend → act
 Sleep → night reflect (memory + personality drift)
 ```
 
-### Persona DNA + source skill
-
 A persona is a config object (MBTI, voice, schedule, feature flags) **plus**, when adopted, the original skill documents. The host must not hand-edit diary or emotion files. `chat.js load` prints context; `chat.js save` writes the next turn's memory.
-
----
 
 ## Install
 
 Alive is an [Agent Skill](https://agentskills.io/specification).
 
 ```bash
-npx alive init
+npx alive init              # ~/.agents/skills/alive (+ Claude / Cursor / Codex if present)
+npx alive init --project    # .agents/skills/alive in this repo
 ```
 
-Copies into `~/.agents/skills/alive`, plus `~/.claude` / `~/.cursor` / `~/.codex` when those hosts exist. Memory: `~/.alive` (`ALIVE_HOME`). Default persona: Minase.
-
-Project-local: `npx alive init --project`
+Memory: `~/.alive` (`ALIVE_HOME`). Default persona: Minase.
 
 | Need | Requires |
 |:---|:---|
 | Chat + memory | A host that loads `SKILL.md` |
 | Heartbeat | `LLM_API_KEY` in `~/.alive/.env` |
-
----
 
 ## Develop
 

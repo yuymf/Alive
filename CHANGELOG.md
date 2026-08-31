@@ -10,6 +10,7 @@ All notable changes to Alive are documented here.
 - **`/alive adopt <path|url>`** — 把女娲蒸馏出的人物 skill、或永雏塔菲这类公开人格 skill 接进 Alive。拷贝 `SKILL.md` / `persona.md` / `references/*.md`，对话和心跳都按原文规则说话。
 - **`examples/`** — 可 `adopt` 的案例：女娲式样板永雏塔菲，以及来自 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) 的 Steve Jobs、王小波、王阳明、Karpathy。
 - README 封面与 logo；仓库定位改为「让 persona skill 不只停留在聊天」。
+- README 改为 logo + 排版头图（去掉 AI 插画），安装步骤提前，和常见优秀仓库同一套布局。
 
 ### Removed
 - 内置角色 **Miss V**、**星瞳**。只保留水瀬与郭德纲；其他人设用 `adopt` 或 `/alive create`。

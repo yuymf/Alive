@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 200" role="img" aria-label="SKILL.md ? Alive ? a life">
+  <defs>
+    <linearGradient id="cover-bg" x1="0" y1="0" x2="1200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1A1713"/>
+      <stop offset="1" stop-color="#0C0B09"/>
+    </linearGradient>
+    <linearGradient id="pulse" x1="64" y1="0" x2="1136" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E24B3A" stop-opacity="0"/>
+      <stop offset=".15" stop-color="#E24B3A" stop-opacity=".5"/>
+      <stop offset=".5" stop-color="#F4EFE6" stop-opacity=".95"/>
+      <stop offset=".85" stop-color="#E24B3A" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#E24B3A" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="200" rx="20" fill="url(#cover-bg)"/>
+  <rect x="1" y="1" width="1198" height="198" rx="19" fill="none" stroke="#F4EFE6" stroke-opacity=".08"/>
+
+  <path d="M56 118 H420 C448 118 462 118 478 70 C500 8 524 8 546 70 C562 118 576 118 598 118 C632 118 648 48 682 118 H1144" fill="none" stroke="url(#pulse)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="238" cy="118" r="3.5" fill="#F4EFE6" fill-opacity=".55"/>
+  <circle cx="546" cy="70" r="5" fill="#E24B3A"/>
+  <circle cx="546" cy="70" r="11" fill="none" stroke="#E24B3A" stroke-opacity=".28"/>
+  <circle cx="912" cy="118" r="3.5" fill="#F4EFE6" fill-opacity=".55"/>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" letter-spacing="2">
+    <text x="238" y="154" text-anchor="middle" fill="#F4EFE6" fill-opacity=".42">SKILL.md</text>
+    <text x="546" y="36" text-anchor="middle" fill="#E24B3A">ALIVE</text>
+    <text x="912" y="154" text-anchor="middle" fill="#F4EFE6" fill-opacity=".42">A LIFE</text>
+  </g>
+</svg>

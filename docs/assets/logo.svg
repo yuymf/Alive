@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Alive">
+  <defs>
+    <linearGradient id="alive-bg" x1="16" y1="8" x2="112" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1C1915"/>
+      <stop offset="1" stop-color="#0E0C0A"/>
+    </linearGradient>
+    <linearGradient id="alive-core" x1="50" y1="42" x2="80" y2="78" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F07A62"/>
+      <stop offset="1" stop-color="#C43A2A"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#alive-bg)"/>
+  <rect x="1.25" y="1.25" width="125.5" height="125.5" rx="26.75" fill="none" stroke="#F4EFE6" stroke-opacity=".1"/>
+  <circle cx="64" cy="68" r="34" fill="none" stroke="#F4EFE6" stroke-width="3.5"/>
+  <circle cx="64" cy="58" r="14.5" fill="url(#alive-core)"/>
+</svg>
