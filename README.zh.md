@@ -66,6 +66,26 @@ npx alive adopt ~/.agents/skills/jobs-perspective
 4. 可选：把 LLM_API_KEY 写进 ~/.alive/.env，跑 `alive tick`
 ```
 
+### 仓库里的例子
+
+从 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) 挑了几份公开人物、MIT、已经能 `adopt` 的 skill。说明在 [examples/](examples/)。
+
+```bash
+npx alive adopt ./examples/ace-taffy
+npx alive adopt ./examples/steve-jobs
+npx alive adopt ./examples/wangxiaobo
+npx alive adopt ./examples/wangyangming
+npx alive adopt ./examples/karpathy
+```
+
+| 例子 | 人 | 接进 Alive 之后 |
+|:---|:---|:---|
+| `ace-taffy` | 永雏塔菲 | 主播口吻 + 记忆 + 心跳，不只是喵 |
+| `steve-jobs` | Steve Jobs | 产品判断也会累、会写日记 |
+| `wangxiaobo` | 王小波 | 黑色幽默还记得昨天 |
+| `wangyangming` | 王阳明 | 知行合一，加上心跳 |
+| `karpathy` | Andrej Karpathy | 工程现实主义，还能自己去刷、去写 |
+
 ---
 
 ## 内置角色
@@ -147,6 +167,7 @@ npx alive adopt ~/.agents/skills/jobs-perspective
 ## 架构
 
 ```
+examples/                     # 从 awesome-human-distillation 接入的案例
 alive/
 ├── SKILL.md                  # Agent Skills 入口
 ├── personas/                 # 内置预设（水瀬 / 郭德纲）

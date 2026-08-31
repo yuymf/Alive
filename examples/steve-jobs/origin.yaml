@@ -1,0 +1,9 @@
+id: steve-jobs
+name: Steve Jobs
+vibe: 产品判断 · 叙事 · 决策启发式
+kind: public-figure
+source: https://github.com/alchaincyf/steve-jobs-skill
+author: alchaincyf
+license: MIT
+catalog: https://github.com/mliu98/awesome-human-distillation
+in_catalog: true

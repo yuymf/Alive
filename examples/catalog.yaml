@@ -1,0 +1,27 @@
+catalog: https://github.com/mliu98/awesome-human-distillation
+examples:
+  - id: ace-taffy
+    name: 永雏塔菲
+    vibe: 虚拟偶像 + 单机主播 · 自称 taffy · 营业口播
+    source: https://github.com/ly-xxx/ace-taffy-skill
+    path: examples/ace-taffy
+  - id: steve-jobs
+    name: Steve Jobs
+    vibe: 产品判断 · 叙事 · 决策启发式
+    source: https://github.com/alchaincyf/steve-jobs-skill
+    path: examples/steve-jobs
+  - id: wangxiaobo
+    name: 王小波
+    vibe: 自由精神 · 黑色幽默 · 特立独行
+    source: https://github.com/Panmax/wangxiaobo-skill
+    path: examples/wangxiaobo
+  - id: wangyangming
+    name: 王阳明
+    vibe: 知行合一 · 致良知 · 事上磨练
+    source: https://github.com/Panmax/wangyangming-skill
+    path: examples/wangyangming
+  - id: karpathy
+    name: Andrej Karpathy
+    vibe: AI 工程现实主义 · 构建即理解
+    source: https://github.com/alchaincyf/karpathy-skill
+    path: examples/karpathy

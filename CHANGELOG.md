@@ -8,6 +8,7 @@ All notable changes to Alive are documented here.
 
 ### Added
 - **`/alive adopt <path|url>`** — 把女娲蒸馏出的人物 skill、或永雏塔菲这类公开人格 skill 接进 Alive。拷贝 `SKILL.md` / `persona.md` / `references/*.md`，对话和心跳都按原文规则说话。
+- **`examples/`** — 从 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) 接入 5 个可 `adopt` 的案例：永雏塔菲、Steve Jobs、王小波、王阳明、Karpathy。
 - README 封面与 logo；仓库定位改为「让 persona skill 不只停留在聊天」。
 
 ### Removed

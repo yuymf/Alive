@@ -16,7 +16,8 @@
   "files": [
     "bin",
     "alive",
-    "dist-alive"
+    "dist-alive",
+    "examples"
   ],
   "keywords": [
     "digital-life",
