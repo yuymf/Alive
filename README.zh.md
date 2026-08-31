@@ -31,7 +31,7 @@
 | 永远热情，永远在线 | **会疲惫、会拖延、会心流** |
 | 脚本化回复 | **自主心跳循环** — 每小时 感知→意图→行动 |
 | 千人一面 | **人设 DNA** — MBTI 基线、声音、作息、功能开关 |
-| 单一平台 | **7 个内容源** — B站、Reddit、微博、知乎、小红书、抖音、DailyHot |
+| 只有提示词的人设 | **人设 DNA + 引擎** — 情绪、记忆、心跳都是下一轮会读到的文件 |
 
 ## 🧠 核心能力
 
@@ -69,7 +69,7 @@
 
 | | 角色 | 人设 |
 |:---:|:---|:---|
-| 🌸 | **水瀬（Minase）** | INFP 日本女大学生 · 咖啡馆与摄影 |
+| 🌸 | **水瀬（Minase）** | ESTP 旅行 / coser · 咖啡馆、光线、说走就走 |
 | 💎 | **V姐（Miss V）** | ENTJ 三栖虚拟偶像 · 电竞 · 歌手 · 赛车 |
 | 🎭 | **星彤** | 温暖幽默的生活方式创作者 |
 | 🎤 | **郭德纲** | 相声大师，冷幽默 |
@@ -92,7 +92,7 @@ npx alive init
 
 记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。
 
-对话走宿主模型。只有脚本心跳需要 `LLM_API_KEY`。
+对话走宿主模型。宿主跑 `chat.js load` 取上下文，跑 `chat.js save` 写回日记、关系和情绪。不要手改这些文件。只有脚本心跳需要 `LLM_API_KEY`。
 
 项目内安装：`npx alive init --project`
 
@@ -110,20 +110,12 @@ npx alive init
 /alive help                # 所有命令
 ```
 
-## 🔓 渐进式解锁
+## 🔓 你需要什么
 
-| 功能 | 需要配置 | 效果 |
-|:---|:---|:---|
-| 对话 + 情绪记忆 | 会加载 skill 的 Code Agent | `SKILL.md` + `~/.alive` |
-| 心跳自主行为 | `LLM_API_KEY` | `alive tick` 或 `alive start` |
-| 自定义 LLM | `LLM_API_KEY` | 任意 OpenAI 兼容接口 |
-| AI 图片生成 | `AIHUBMIX_API_KEY` / `FAL_KEY` | 自动配图发帖 |
-| Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | 自主发帖 |
-| 小红书浏览/互动 | `XHS_SKILLS_DIR` | 完整小红书集成 |
-| 语音消息 | _无需 key_ | Noiz TTS，≤3次/天 |
-| 图片托管 | `IMGURL_TOKEN` | ImgURL 公共上传 |
-
-随时可改：`/alive setup`
+| 功能 | 需要 |
+|:---|:---|
+| 对话 + 记忆 | 会加载 `SKILL.md` 的 Code Agent |
+| 心跳 | `~/.alive/.env` 里的 `LLM_API_KEY` |
 
 ## 🏗️ 架构
 
@@ -135,23 +127,17 @@ alive/
 ├── templates/                # LLM 提示词模板（{persona.*}）
 ├── protocols/                # 心跳 · 记忆 · 社交图谱 · 意图池
 ├── scripts/
-│   ├── host/                 # init · boot · outbox · 记忆播种
+│   ├── host/                 # init · boot · outbox · 对话 load/save
 │   ├── admin/                # /alive 命令
 │   ├── engines/              # 7 大核心引擎
 │   ├── lifecycle/            # 心跳循环 · 晨间规划 · 晚间反思
 │   ├── adapters/             # 平台适配器
-│   └── utils/                # 类型 · 配置 · 技能路由 · 内容源
+│   └── utils/                # 类型 · 配置 · 技能路由
 ├── sub-skills/               # 可插拔子技能
 └── tests/                    # 引擎、CLI、生命周期测试
 ```
 
-### 子技能（9 个可插拔单元）
-
-`instagram-post` · `voice-tts` · `web-search` · `content-browse` · `social-engage` · `photo-share` · `story-share` · `xhs-post` · `message-send`
-
-### 内容源（7 个平台）
-
-`B站` · `Reddit` · `DailyHot` · `微博` · `知乎` · `小红书` · `抖音`
+心跳可以按需调用平台子技能（浏览、发帖、语音）。对话本身不需要它们。
 
 ## 🛠️ 开发
 

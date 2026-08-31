@@ -32,7 +32,7 @@
 | Always eager, always on | **Gets tired, procrastinates, enters flow** |
 | Scripted responses | **Autonomous heartbeat loop** — hourly perceive→intend→act |
 | One-size-fits-all | **Persona DNA** — MBTI baselines, voice, schedule, feature flags |
-| Single platform | **7 content providers** — Bilibili, Reddit, Weibo, Zhihu, XHS, Douyin, DailyHot |
+| Prompt-only character | **Persona DNA + engines** — emotion, memory, and heartbeat are files the next turn reads |
 
 ---
 
@@ -89,12 +89,11 @@ Sleep → Night Reflect (consolidate memory, update personality drift)
 A persona is not a system prompt. It's a **configuration object** with:
 
 - MBTI baseline (drift range for each dimension)
-- Voice signature (catchphrases, anti-patterns, platform-specific styles)
+- Voice signature (catchphrases, anti-patterns)
 - Schedule (wake/sleep, active peaks)
-- Content sources (platforms, keywords, competitor accounts)
-- Feature flags (voice TTS, image generation)
+- Feature flags
 
-This allows the same engine to run Minase (INFP, quiet, photography-focused) and Miss V (ENTJ, aggressive, esports-focused) with zero code changes.
+This allows the same engine to run Minase (ESTP, in-the-moment, photography-focused) and Miss V (ENTJ, aggressive, esports-focused) with zero code changes.
 
 ---
 
@@ -132,26 +131,11 @@ This allows the same engine to run Minase (INFP, quiet, photography-focused) and
 
 ---
 
-## 🔬 What Makes This Different
-
-| Feature | Stanford Generative Agents | Character.AI | **Alive** |
-|:---|:---:|:---:|:---:|
-| Emotion model | Basic (valence only) | None | ✅ 6D + 3-layer inertia |
-| Memory | 3-tier (research) | Flat context | ✅ 4-tier with cost control |
-| Proactive behavior | ✅ (research demo) | ❌ reactive only | ✅ heartbeat loop |
-| Persona system | Single agent | Pre-built characters | ✅ YAML-driven DNA |
-| Production ready | ❌ research paper | ✅ consumer product | ⚠️ open source, testable (needs a host) |
-| Test coverage | N/A | N/A | ✅ 1200+ engine tests |
-
-**Alive bridges the gap** between research prototypes (Stanford) and consumer products (Character.AI) — it has the **architectural depth** of research with the **engineering rigor** of production.
-
----
-
 ## 🎭 Built-in Personas
 
 | | Persona | Vibe |
 |:---:|:---|:---|
-| 🌸 | **Minase** | INFP Japanese college student · photography & cafés |
+| 🌸 | **Minase** | ESTP Japanese traveler / coser · cafés, light, and saying yes |
 | 💎 | **Miss V** | ENTJ tri-identity virtual influencer · esports · singer · racer |
 | 🎭 | **Xingtong** | Warm & witty lifestyle creator |
 | 🎤 | **Guodegang** | Crosstalk master with dry humor |
@@ -178,9 +162,11 @@ Memory goes to `~/.alive` (override with `ALIVE_HOME`). Default persona is Minas
 
 ```
 1. npx alive init
-2. Open your Code Agent and talk — chat uses the host model
+2. Open your Code Agent and talk — the host runs chat load / chat save
 3. Optional: put LLM_API_KEY in ~/.alive/.env and run `alive tick`
 ```
+
+The host must not hand-edit diary or emotion files. `chat.js load` prints context; `chat.js save` writes diary, relation, and emotion so the next turn sees them.
 
 Project-local install (for a repo):
 
@@ -206,20 +192,12 @@ npx alive init --project
 
 ---
 
-## 🔓 Progressive Unlock
+## 🔓 What you need
 
-| Feature | Required | You Get |
-|:---|:---|:---|
-| Chat + emotion memory | A Code Agent that loads skills | `SKILL.md` + `~/.alive` |
-| Heartbeat autonomy | `LLM_API_KEY` | `alive tick` or `alive start` |
-| Custom LLM | `LLM_API_KEY` | Any OpenAI-compatible endpoint |
-| AI image generation | `AIHUBMIX_API_KEY` / `FAL_KEY` | Auto-posting with images |
-| Instagram | `INSTAGRAM_USERNAME` + `PASSWORD` | Autonomous posting |
-| 小红书 browse/engage | `XHS_SKILLS_DIR` | Full XHS integration |
-| Voice messages | _nothing_ | Noiz TTS Guest Mode, ≤3/day |
-| Image hosting | `IMGURL_TOKEN` | Public ImgURL uploads |
-
-Reconfigure anytime: `/alive setup`
+| Feature | Required |
+|:---|:---|
+| Chat + memory | A Code Agent that loads `SKILL.md` |
+| Heartbeat | `LLM_API_KEY` in `~/.alive/.env` |
 
 ---
 
@@ -233,7 +211,7 @@ alive/
 ├── templates/                # LLM prompt templates ({persona.*})
 ├── protocols/                # Heartbeat · memory · social-graph · intent-pool
 ├── scripts/
-│   ├── host/                 # init · boot · outbox · memory seed
+│   ├── host/                 # init · boot · outbox · chat load/save
 │   ├── admin/                # /alive commands
 │   ├── engines/              # 7 core state engines
 │   ├── lifecycle/            # Heartbeat loop · morning-plan · night-reflect
@@ -243,13 +221,7 @@ alive/
 └── tests/                    # Engine, CLI, and lifecycle tests
 ```
 
-### Sub-Skills (9 pluggable units)
-
-`instagram-post` · `voice-tts` · `web-search` · `content-browse` · `social-engage` · `photo-share` · `story-share` · `xhs-post` · `message-send`
-
-### Content Providers (7 platforms)
-
-`Bilibili` · `Reddit` · `DailyHot` · `Weibo` · `Zhihu` · `小红书 (XHS)` · `Douyin`
+Heartbeat can optionally call platform sub-skills (browse, post, voice). They are not required for chat.
 
 ---
 
@@ -265,6 +237,7 @@ npm run test        # Run all tests (vitest)
 
 - **Unit tests**: Mock LLM client, mock filesystem — test engines in isolation
 - **CLI smoke**: `npx alive init` then `status` / `emotion` / `help` against an isolated `$ALIVE_HOME`
+- **Host path**: the installed `scripts/host/chat.js` load → save → load loop
 
 PRs welcome! Persona configs (`alive/personas/*.yaml`) especially welcome.
 

@@ -45,6 +45,13 @@ describe('bin/cli.js smoke', () => {
     expect(tick.status).not.toBe(0);
     expect(`${tick.stderr}${tick.stdout}`).toContain('LLM_API_KEY');
 
+    const remember = run(['remember', '--user', '今天去咖啡馆了吗', '--reply', '去了啦光线超好'], env);
+    expect(remember.status).toBe(0);
+    const context = run(['context'], env);
+    expect(context.status).toBe(0);
+    expect(context.stdout).toContain('水瀬');
+    expect(context.stdout).toContain('今天去咖啡馆了吗');
+
     fs.rmSync(root, { recursive: true, force: true });
   });
 });

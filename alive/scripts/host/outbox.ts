@@ -41,6 +41,17 @@ export function listOutbox(): OutboxItem[] {
     .filter((item): item is OutboxItem => item !== null);
 }
 
+/** Return pending items and delete the files so the host delivers them once. */
+export function consumeOutbox(): OutboxItem[] {
+  const dir = outboxDir();
+  if (!fs.existsSync(dir)) return [];
+  const items = listOutbox();
+  for (const name of fs.readdirSync(dir).filter((n) => n.endsWith('.json'))) {
+    fs.unlinkSync(path.join(dir, name));
+  }
+  return items;
+}
+
 function writeItem(partial: Omit<OutboxItem, 'id' | 'created_at'>): boolean {
   try {
     const dir = outboxDir();

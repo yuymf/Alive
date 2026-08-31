@@ -83,6 +83,34 @@ export function buildSkill(): string {
   return root;
 }
 
+const HOST_LAUNCHERS: Array<[string, string]> = [
+  ['scripts/host/chat.js', 'dist-alive/scripts/host/chat.js'],
+  ['scripts/host/boot.js', 'dist-alive/scripts/host/boot.js'],
+  ['scripts/admin/command-handler.js', 'dist-alive/scripts/admin/command-handler.js'],
+];
+
+function writeHostLaunchers(dest: string, root: string): void {
+  fs.writeFileSync(path.join(dest, '.source-root'), `${root}\n`);
+  for (const [rel, target] of HOST_LAUNCHERS) {
+    const file = path.join(dest, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      `'use strict';
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const pkg = fs.readFileSync(path.join(__dirname, '..', '..', '.source-root'), 'utf8').trim();
+const result = spawnSync(process.execPath, [path.join(pkg, ${JSON.stringify(target)}), ...process.argv.slice(2)], {
+  stdio: 'inherit',
+  env: process.env,
+});
+process.exit(result.status ?? 1);
+`,
+    );
+  }
+}
+
 export function installSkillTo(dest: string, root = repoRootFromHere()): void {
   const skillSrc = path.join(root, 'alive');
   const dist = path.join(root, 'dist-alive');
@@ -90,6 +118,7 @@ export function installSkillTo(dest: string, root = repoRootFromHere()): void {
   copyDir(skillSrc, dest);
   copyJsTree(path.join(dist, 'scripts'), path.join(dest, 'scripts'));
   copyJsTree(path.join(dist, 'sub-skills'), path.join(dest, 'sub-skills'));
+  writeHostLaunchers(dest, root);
 }
 
 export const DEFAULT_PERSONAS = ['minase', 'miss-v', 'xingtong', 'guodegang'] as const;

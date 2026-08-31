@@ -12,7 +12,7 @@ import { clearPersonaCache } from '../scripts/persona/persona-loader';
 let tmpDir: string;
 let memoryDir: string;
 let skillDir: string;
-let configFile: string;
+let envFile: string;
 
 const TEST_PERSONA_YAML = `
 meta:
@@ -40,10 +40,11 @@ beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-setup-test-'));
   memoryDir = path.join(tmpDir, 'memory');
   skillDir = path.join(tmpDir, 'skill');
-  configFile = path.join(tmpDir, '.env');
+  envFile = path.join(tmpDir, '.env');
   fs.mkdirSync(memoryDir, { recursive: true });
   fs.mkdirSync(skillDir, { recursive: true });
   fs.writeFileSync(path.join(skillDir, 'persona.yaml'), TEST_PERSONA_YAML);
+  process.env.ALIVE_HOME = tmpDir;
   setBasePaths(memoryDir, skillDir);
 });
 
@@ -51,14 +52,13 @@ afterEach(() => {
   resetBasePaths();
   clearPersonaCache();
   fs.rmSync(tmpDir, { recursive: true, force: true });
-  delete process.env.ALIVE_ENV_FILE;
   delete process.env.ALIVE_HOME;
 });
 
 describe('/alive setup', () => {
   it('returns env status table when no subarg given', async () => {
-    fs.writeFileSync(configFile, 'LLM_API_KEY=sk-test\nINSTAGRAM_USERNAME=user1\n');
-    process.env.ALIVE_ENV_FILE = configFile;
+    fs.writeFileSync(envFile, 'LLM_API_KEY=sk-test\nINSTAGRAM_USERNAME=user1\n');
+    delete process.env.LLM_API_KEY;
 
     const result = await dispatch('/alive setup');
 

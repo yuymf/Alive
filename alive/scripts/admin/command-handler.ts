@@ -829,8 +829,7 @@ ${scheduleTable}
 // ── Setup Command ───────────────────────────────────────────────────
 
 function readAliveEnvFile(): Record<string, string> {
-  const envPath = process.env.ALIVE_ENV_FILE ?? path.join(getAliveHome(), '.env');
-  return readEnvFile(envPath);
+  return readEnvFile(path.join(getAliveHome(), '.env'));
 }
 
 function maskKey(val: string | undefined): string {
@@ -882,7 +881,7 @@ IMGURL_TOKEN=<token>
   }
 
   // No subarg: show current env status
-  const env = { ...readAliveEnvFile(), ...process.env };
+  const env = { ...process.env, ...readAliveEnvFile() };
   const rows: [string, string | undefined, string][] = [
     ['LLM_API_KEY', env.LLM_API_KEY, '心跳脚本用（对话走宿主模型）'],
     ['LLM_API_BASE', env.LLM_API_BASE, 'LLM 接口地址'],

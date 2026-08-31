@@ -15,6 +15,8 @@ Usage:
   alive init [--project] [--persona <id>] [--home <dir>]
   alive tick | morning | night
   alive start
+  alive context
+  alive remember --user <text> --reply <text>
   alive status | emotion | schedule | memory | help
   alive uninstall [--home <dir>]
 
@@ -162,6 +164,24 @@ async function main() {
   if (cmd === 'uninstall') return cmdUninstall(flags);
   if (cmd === 'start') return cmdStart();
   if (cmd === 'tick' || cmd === 'morning' || cmd === 'night') return cmdBoot(cmd);
+  if (cmd === 'context') {
+    ensureBuilt();
+    const chat = require(path.join(ROOT, 'dist-alive', 'scripts', 'host', 'chat.js'));
+    const ctx = chat.loadChatContext(flags.userId || flags['user-id']);
+    process.stdout.write(ctx.markdown.endsWith('\n') ? ctx.markdown : ctx.markdown + '\n');
+    return;
+  }
+  if (cmd === 'remember') {
+    ensureBuilt();
+    const chat = require(path.join(ROOT, 'dist-alive', 'scripts', 'host', 'chat.js'));
+    const result = chat.saveChatTurn({
+      user: flags.user || '',
+      reply: flags.reply || '',
+      userId: flags.userId || flags['user-id'],
+    });
+    process.stdout.write(`saved diary intimacy=${result.intimacy} cause=${result.emotionCause}\n`);
+    return;
+  }
   return cmdAdmin(positional.join(' '));
 }
 

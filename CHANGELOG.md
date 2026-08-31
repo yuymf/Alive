@@ -18,6 +18,10 @@ All notable changes to Alive are documented here.
 ### Fixed
 - `alive status` / admin commands now load `$ALIVE_HOME/.env` so they find the persona seeded by `init`.
 
+### Added
+- Conversation loop: `chat.js load` / `chat.js save` (also `alive context` / `alive remember`). Diary, relation, and emotion are written by the engine so the next host turn can read them.
+- Installed skill launchers jump back to the package so `node {baseDir}/scripts/host/chat.js` works outside the repo (hosts cannot `require('yaml')` from `~/.agents`).
+
 ---
 
 ## [0.3.0] — 2026-08-30

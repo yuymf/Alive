@@ -22,5 +22,8 @@ describe('SKILL.md Agent Skills contract', () => {
     expect(raw).toContain('ALIVE_HOME');
     expect(raw).toContain('command-handler.js');
     expect(raw).toContain('boot.js');
+    expect(raw).toContain('chat.js load');
+    expect(raw).toContain('chat.js save');
+    expect(raw).toContain('Do not edit diary');
   });
 });
