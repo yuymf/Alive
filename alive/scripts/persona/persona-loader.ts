@@ -57,7 +57,7 @@ export function loadPersona(customPath?: string): PersonaConfig {
     return _cachedPersona!;
   }
 
-  throw new Error(`Persona config not found: ${memoryPath}. Run "alive --persona <path>" to install.`);
+  throw new Error(`Persona config not found: ${memoryPath}. Run "npx alive init" first.`);
 }
 
 /** Clear cached persona (for testing). */

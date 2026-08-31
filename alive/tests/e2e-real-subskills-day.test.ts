@@ -7,7 +7,7 @@
 //   - This tests the COMPLETE pipeline end-to-end: LLM + image gen + API calls
 //
 // Usage:
-//   REAL_LLM_E2E=1 KEEP_SANDBOX=1 npx vitest run --config vitest.alive.config.ts alive/tests/e2e-real-subskills-day.test.ts
+//   REAL_LLM_E2E=1 KEEP_SANDBOX=1 npx vitest run alive/tests/e2e-real-subskills-day.test.ts
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'fs';
@@ -161,7 +161,7 @@ describe.skipIf(!shouldRun)('E2E: Real Sub-Skills Full Day (水瀬)', () => {
     const distSubSkillsDir = path.join(__dirname, '..', '..', 'dist-alive', 'sub-skills');
 
     if (!fs.existsSync(distSubSkillsDir)) {
-      throw new Error(`dist-alive not found! Run "npx tsc -p tsconfig.alive.json" first.`);
+      throw new Error(`dist-alive not found! Run "npx tsc -p tsconfig.json" first.`);
     }
 
     // Step 1: Copy resource files (non-TS) from source → dist-alive

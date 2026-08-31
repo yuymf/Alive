@@ -6,7 +6,7 @@
 
 | 类型 | 来源 | 示例 |
 |------|------|------|
-| 用户 | 真实对话（OpenClaw） | 和{persona.meta.name}聊天的人 |
+| 用户 | 真实对话（宿主 Code Agent） | 和{persona.meta.name}聊天的人 |
 | 互动者 | 平台真实互动 | 经常互动的人 |
 | 同行 | 平台发现 | 同领域的人 |
 | 虚拟认知 | 模拟浏览产生 | 关注的账号 |
@@ -29,7 +29,7 @@
 - **closeness（0-10）**：社交媒体关系的亲密度，用于社交关系网
 - **intimacy（1-{persona.intimacy.levels}）**：用户关系的亲密度，用于 `personality.md` 中的行为变化
 
-两者独立运作。当社交媒体关系的 closeness 达到 7+（核心圈），且该人也通过 OpenClaw 与{persona.meta.name}直接对话时，同时生成一个 `relations/{user_id}.json` 用户关系文件，intimacy 初始值 = closeness / 2。
+两者独立运作。当社交媒体关系的 closeness 达到 7+（核心圈），且该人也通过宿主对话与{persona.meta.name}直接聊天时，同时生成一个 `relations/{user_id}.json` 用户关系文件，intimacy 初始值 = closeness / 2。
 
 ## 亲密度变化规则
 

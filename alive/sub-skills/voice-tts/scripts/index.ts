@@ -114,7 +114,7 @@ function loadTemplate(templateName: string): string {
   throw new Error(`[voice-tts] Template not found: ${templateName}`);
 }
 
-// ── Send via OpenClaw CLI ────────────────────────────────────────
+// ── Host outbox ──────────────────────────────────────────────────
 
 /**
  * Queue a voice file in the host outbox.
@@ -243,7 +243,7 @@ export const actions = {
       );
     }
 
-    // 7. Send via OpenClaw
+    // 7. Queue in host outbox
     const sent = sendVoice(audioPath);
 
     // 8. Update state

@@ -324,7 +324,7 @@ export function loadAliveEnv(): void {
   for (const [key, value] of Object.entries(parsed)) {
     if (!process.env[key]) process.env[key] = value;
   }
-  if (process.env.ALIVE_PERSONA && (_personaName === 'default' || _personaName === 'main')) {
+  if (process.env.ALIVE_PERSONA) {
     setPersonaName(process.env.ALIVE_PERSONA);
   }
 }

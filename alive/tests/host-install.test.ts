@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { detectUserSkillTargets, projectSkillTarget, initMemory, repoRootFromHere } from '../scripts/host/install';
+import { detectUserSkillTargets, projectSkillTarget, initMemory, installSkillTo, repoRootFromHere } from '../scripts/host/install';
+import { dispatch } from '../scripts/admin/command-handler';
+import { resetBasePaths, setPersonaName } from '../scripts/utils/file-utils';
+import { clearPersonaCache } from '../scripts/persona/persona-loader';
 
 describe('detectUserSkillTargets', () => {
   it('always installs ~/.agents/skills/alive', () => {
@@ -44,6 +47,46 @@ describe('initMemory', () => {
     expect(fs.existsSync(path.join(tmp, 'personas', 'minase', 'state', 'emotion-state.json'))).toBe(true);
     const env = fs.readFileSync(path.join(tmp, '.env'), 'utf8');
     expect(env).toContain('ALIVE_PERSONA=minase');
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('status reads ALIVE_HOME after init', async () => {
+    const prevHome = process.env.ALIVE_HOME;
+    const prevPersona = process.env.ALIVE_PERSONA;
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-home-'));
+    try {
+      process.env.ALIVE_HOME = tmp;
+      delete process.env.ALIVE_PERSONA;
+      resetBasePaths();
+      setPersonaName('default');
+      clearPersonaCache();
+      initMemory(tmp, 'minase', repoRootFromHere());
+      const result = await dispatch('/alive status');
+      expect(result.error).toBeUndefined();
+      expect(result.output).toContain('Status');
+      expect(result.output).toMatch(/水瀬|Minase|minase/i);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      if (prevHome === undefined) delete process.env.ALIVE_HOME;
+      else process.env.ALIVE_HOME = prevHome;
+      if (prevPersona === undefined) delete process.env.ALIVE_PERSONA;
+      else process.env.ALIVE_PERSONA = prevPersona;
+      resetBasePaths();
+      clearPersonaCache();
+    }
+  });
+});
+
+describe('installSkillTo', () => {
+  it('copies SKILL.md and only official personas', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-skill-'));
+    const dest = path.join(tmp, 'alive');
+    installSkillTo(dest, repoRootFromHere());
+    expect(fs.existsSync(path.join(dest, 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(dest, 'personas', 'minase.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(dest, 'personas', 'test.yaml'))).toBe(false);
+    expect(fs.existsSync(path.join(dest, 'tests'))).toBe(false);
+    expect(fs.existsSync(path.join(dest, 'hooks'))).toBe(false);
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 });

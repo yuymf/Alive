@@ -50,7 +50,7 @@ sub-skills/
 | `priority` | number | ✅ | 路由优先级（1-10，越高越优先） |
 | `vitality_cost` | object | ✅ | 体力消耗配置 |
 | `dependencies.env` | string[] | — | 需要的环境变量 |
-| `dependencies.tools` | string[] | — | 需要的 OpenClaw 工具 |
+| `dependencies.tools` | string[] | — | 需要的宿主工具（如 WebFetch） |
 
 ### 7 大 MetaIntent 类别
 

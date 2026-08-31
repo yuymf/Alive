@@ -6,7 +6,7 @@ Alive is an [Agent Skill](https://agentskills.io/specification).
 npx alive init
 ```
 
-Copies `alive/SKILL.md` into Code Agent skill directories (`~/.agents/skills/alive`, plus `~/.claude` / `~/.cursor` / `~/.codex` when those hosts exist). Memory: `~/.alive`.
+Copies `alive/SKILL.md` into Code Agent skill directories (`~/.agents/skills/alive`, plus `~/.claude` / `~/.cursor` / `~/.codex` when those hosts exist). Memory: `~/.alive`. After init, `alive status` works without an API key.
 
 ```bash
 npx alive init --project    # .agents/skills/alive in the current repo

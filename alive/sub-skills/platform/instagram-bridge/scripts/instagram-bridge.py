@@ -24,7 +24,7 @@ Environment:
   INSTAGRAM_CSRFTOKEN  (optional, cookie-based login — preferred method)
   INSTAGRAM_DS_USER_ID (optional, cookie-based login — preferred method)
 
-Session persisted at ~/.openclaw/workspace/memory/minase/ig-session.json
+Session persisted at $ALIVE_HOME/personas/{persona}/ig-session.json
 All output is JSON on stdout; errors go to stderr.
 
 Login strategy:
@@ -68,7 +68,9 @@ except ImportError:
     sys.exit(1)
 
 
-SESSION_PATH = Path.home() / ".openclaw" / "workspace" / "memory" / "minase" / "ig-session.json"
+_ALIVE_HOME = Path(os.environ.get("ALIVE_HOME") or (Path.home() / ".alive"))
+_PERSONA = os.environ.get("ALIVE_PERSONA") or "minase"
+SESSION_PATH = _ALIVE_HOME / "personas" / _PERSONA / "ig-session.json"
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 5  # seconds
 

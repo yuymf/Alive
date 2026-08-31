@@ -297,7 +297,7 @@ export async function callLLM(
  * Call LLM and parse response as JSON.
  *
  * Design: We do NOT default to response_format: json_object because some
- * backends (e.g. GLM-5.1 via Venus/OpenClaw Gateway) ignore or mishandle
+ * backends (e.g. GLM-5.1 via some OpenAI-compatible gateways) ignore or mishandle
  * it when agentic behaviour is enabled, returning prose, markdown, or
  * file-operation summaries instead of valid JSON.
  *
