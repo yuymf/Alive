@@ -22,26 +22,27 @@
 Alive is the rest of the body: emotion that carries over, a diary, relationships, and an hourly heartbeat that posts, browses, and reaches out — in that person's voice.
 
 ```
-Nuwa distills a mind  →  Alive adopts the SKILL.md  →  the person starts living
+alive distill a mind  →  Alive adopts the SKILL.md  →  the person starts living
 ```
 
 ## Quick start
 
 ```bash
 npx alive init
-npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
+npx alive distill 峰哥
 ```
 
-Or a skill 女娲 just distilled, or one of the [bundled examples](examples/):
+Or an already-distilled skill, or [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) (voice clone repo, no `SKILL.md`):
 
 ```bash
-npx alive adopt ~/.agents/skills/jobs-perspective
+npx alive distill https://github.com/YeJe-cpu/talk-to-fengge
+npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
 npx alive adopt ./examples/steve-jobs
 ```
 
 Then open Claude Code / Cursor / Codex and talk. Optional: put `LLM_API_KEY` in `~/.alive/.env` and run `alive tick`.
 
-`adopt` copies `SKILL.md`, `persona.md`, and `references/*.md` into `$ALIVE_HOME`. Chat load and heartbeat both read them. The original skill's self-reference, catchphrases, and boundaries win over a generic voice.
+`distill` writes a `SKILL.md` then `adopt`s it. A repo that already is a skill is adopted as-is. [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) is converted from `worker/persona.py`. Chat and heartbeat read the original rules.
 
 ## Why this repo exists
 
@@ -57,9 +58,10 @@ Same engine runs a distilled VTuber and a distilled thinker. Zero code change.
 
 ## Bundled examples
 
-Public figures, MIT, already adoptable. Jobs / 王小波 / 王阳明 / Karpathy come from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation); `ace-taffy` is the Nuwa-style skill with `persona.md` + `references/`. Full notes in [examples/](examples/).
+Public figures, MIT, already distillable / adoptable. 峰哥 comes from [feng-ge-skill](https://github.com/YixiaJack/feng-ge-skill) — the persona layer behind [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge). Jobs / 王小波 / 王阳明 / Karpathy come from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation); `ace-taffy` is the Nuwa-style skill with `persona.md` + `references/`. Full notes in [examples/](examples/).
 
 ```bash
+npx alive distill 峰哥
 npx alive adopt ./examples/ace-taffy
 npx alive adopt ./examples/steve-jobs
 npx alive adopt ./examples/wangxiaobo
@@ -69,6 +71,7 @@ npx alive adopt ./examples/karpathy
 
 | Example | Who | After Alive adopts it |
 |:---|:---|:---|
+| `fengge` | 峰哥亡命天涯 | Dialectical reversal that also remembers yesterday |
 | `ace-taffy` | 永雏塔菲 | Streamer cadence, memory, hourly life — not just 喵 |
 | `steve-jobs` | Steve Jobs | Product judgment that also gets tired and writes a diary |
 | `wangxiaobo` | 王小波 | Black humor that remembers yesterday |
@@ -99,7 +102,8 @@ Heartbeat can call platform sub-skills (browse, post, voice). Chat does not need
 ## Commands
 
 ```
-/alive adopt <path|url>    # take in a Nuwa / persona skill
+/alive distill <name|path|url>  # distill then adopt (峰哥 / talk-to-fengge / materials)
+/alive adopt <path|url>         # take in an existing persona skill
 /alive status              # emotion / vitality / flow
 /alive emotion             # 6D detail
 /alive schedule            # wake / sleep

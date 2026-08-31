@@ -1,13 +1,14 @@
 # Examples
 
-从 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) 挑了四份公开人物 skill，再加上一份女娲式样板（永雏塔菲：带 `persona.md` + `references/`）。
+从 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation) 挑了四份公开人物 skill，再加上峰哥（[talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 的人格基础）和一份女娲式样板（永雏塔菲：带 `persona.md` + `references/`）。
 
 awesome 清单里大多数条目是蒸馏工具或私人关系 skill。这里只放公开人物、MIT、带 `SKILL.md`、可以直接 `adopt` 的。
 
 ```bash
 npx alive init
-npx alive adopt ./examples/ace-taffy
+npx alive distill 峰哥
 # 或
+npx alive adopt ./examples/ace-taffy
 npx alive adopt ./examples/steve-jobs
 ```
 
@@ -15,6 +16,7 @@ npx alive adopt ./examples/steve-jobs
 
 | 例子 | 人 | 味道 | 上游 |
 |:---|:---|:---|:---|
+| `fengge` | 峰哥亡命天涯 | 街头社会学家 · 辩证反转 | [feng-ge-skill](https://github.com/YixiaJack/feng-ge-skill) · 语音层 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) |
 | `ace-taffy` | 永雏塔菲 | 虚拟偶像 + 单机主播 | [ace-taffy-skill](https://github.com/ly-xxx/ace-taffy-skill) |
 | `steve-jobs` | Steve Jobs | 产品判断 · 叙事 | [steve-jobs-skill](https://github.com/alchaincyf/steve-jobs-skill) |
 | `wangxiaobo` | 王小波 | 自由精神 · 黑色幽默 | [wangxiaobo-skill](https://github.com/Panmax/wangxiaobo-skill) |

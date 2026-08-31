@@ -21,26 +21,27 @@
 Alive 是剩下的那具身体：跨会话的情绪、日记、关系，以及每小时一次的心跳——用那个人的声音去刷、去评、去找人。
 
 ```
-女娲蒸馏一个脑子  →  Alive 接入这份 SKILL.md  →  这个人开始过自己的日子
+alive distill 蒸馏一个脑子  →  Alive 接入这份 SKILL.md  →  这个人开始过自己的日子
 ```
 
 ## 快速开始
 
 ```bash
 npx alive init
-npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
+npx alive distill 峰哥
 ```
 
-或者女娲刚蒸馏完的目录，或者仓库里的 [现成例子](examples/)：
+或者已经蒸馏好的 skill，或者 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 这种只有人格代码、没有 `SKILL.md` 的工程：
 
 ```bash
-npx alive adopt ~/.agents/skills/jobs-perspective
+npx alive distill https://github.com/YeJe-cpu/talk-to-fengge
+npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
 npx alive adopt ./examples/steve-jobs
 ```
 
 然后打开 Claude Code / Cursor / Codex，直接说话。可选：把 `LLM_API_KEY` 写进 `~/.alive/.env`，跑 `alive tick`。
 
-`adopt` 会把 `SKILL.md`、`persona.md`、`references/*.md` 拷进 `$ALIVE_HOME`。对话和心跳都读它们。原始 skill 的自称、口癖、边界优先于通用人设。
+`distill` 先写出 `SKILL.md` 再 `adopt`。已经是 skill 的仓库会直接接入。[talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 会被抽出 `worker/persona.py` 再接入。对话和心跳都读原始规则。
 
 ## 这个仓库是干什么的
 
@@ -56,9 +57,10 @@ npx alive adopt ./examples/steve-jobs
 
 ## 仓库里的例子
 
-公开人物、MIT、已经能 `adopt`。Jobs / 王小波 / 王阳明 / Karpathy 来自 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation)；`ace-taffy` 是带 `persona.md` + `references/` 的女娲式样板。说明在 [examples/](examples/)。
+公开人物、MIT、已经能 `distill` / `adopt`。峰哥来自 [feng-ge-skill](https://github.com/YixiaJack/feng-ge-skill)，也是 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 的人格层。Jobs / 王小波 / 王阳明 / Karpathy 来自 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation)；`ace-taffy` 是带 `persona.md` + `references/` 的女娲式样板。说明在 [examples/](examples/)。
 
 ```bash
+npx alive distill 峰哥
 npx alive adopt ./examples/ace-taffy
 npx alive adopt ./examples/steve-jobs
 npx alive adopt ./examples/wangxiaobo
@@ -68,6 +70,7 @@ npx alive adopt ./examples/karpathy
 
 | 例子 | 人 | 接进 Alive 之后 |
 |:---|:---|:---|
+| `fengge` | 峰哥亡命天涯 | 辩证反转还记得昨天，也能去刷、去评 |
 | `ace-taffy` | 永雏塔菲 | 主播口吻 + 记忆 + 心跳，不只是喵 |
 | `steve-jobs` | Steve Jobs | 产品判断也会累、会写日记 |
 | `wangxiaobo` | 王小波 | 黑色幽默还记得昨天 |
@@ -98,7 +101,8 @@ npx alive adopt ./examples/karpathy
 ## 命令
 
 ```
-/alive adopt <path|url>    # 接入女娲 / 永雏塔菲等 persona skill
+/alive distill <name|path|url>  # 一键蒸馏并接入（峰哥 / talk-to-fengge / 材料）
+/alive adopt <path|url>         # 接入已有的 persona skill
 /alive status              # 情绪 / 精力 / 心流
 /alive emotion             # 6 维详情
 /alive schedule            # 作息
@@ -118,8 +122,8 @@ alive/
 ├── protocols/                # 心跳 · 记忆 · 社交 · 意图
 ├── scripts/
 │   ├── host/                 # init · boot · chat load/save
-│   ├── admin/                # /alive 命令（含 adopt）
-│   ├── hub/                  # persona skill 接入
+│   ├── admin/                # /alive 命令（含 distill / adopt）
+│   ├── hub/                  # 蒸馏 + persona skill 接入
 │   ├── engines/              # 7 大引擎
 │   └── lifecycle/            # 心跳 · 晨间 · 夜间
 └── sub-skills/               # 浏览 / 发帖 / 语音 …

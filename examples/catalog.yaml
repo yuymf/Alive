@@ -1,5 +1,11 @@
 catalog: https://github.com/mliu98/awesome-human-distillation
 examples:
+  - id: fengge
+    name: 峰哥亡命天涯
+    vibe: 街头社会学家 · 辩证反转 · 直白底层洞察
+    source: https://github.com/YixiaJack/feng-ge-skill
+    voice: https://github.com/YeJe-cpu/talk-to-fengge
+    path: examples/fengge
   - id: ace-taffy
     name: 永雏塔菲
     vibe: 虚拟偶像 + 单机主播 · 自称 taffy · 营业口播
