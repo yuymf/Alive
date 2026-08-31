@@ -13,6 +13,7 @@ function printHelp() {
 
 Usage:
   alive init [--project] [--persona <id>] [--home <dir>]
+  alive adopt <path|url> [--id <slug>] [--home <dir>]
   alive tick | morning | night
   alive start
   alive context
@@ -29,6 +30,7 @@ init copies this skill into Code Agent skill dirs:
 
 Memory and .env go to $ALIVE_HOME (default ~/.alive).
 Conversation uses the host agent. Heartbeat scripts need LLM_API_KEY.
+adopt takes a Nuwa / 永雏塔菲 persona skill (local dir or git URL).
 `);
 }
 
@@ -161,6 +163,12 @@ async function main() {
   }
   if (cmd === 'help') return cmdAdmin('help');
   if (cmd === 'init') return cmdInit(flags);
+  if (cmd === 'adopt') {
+    if (flags.home) process.env.ALIVE_HOME = flags.home;
+    const source = positional[1] || '';
+    const id = flags.id ? ` --id ${flags.id}` : '';
+    return cmdAdmin(`adopt ${source}${id}`.trim());
+  }
   if (cmd === 'uninstall') return cmdUninstall(flags);
   if (cmd === 'start') return cmdStart();
   if (cmd === 'tick' || cmd === 'morning' || cmd === 'night') return cmdBoot(cmd);

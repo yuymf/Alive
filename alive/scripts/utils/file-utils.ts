@@ -125,6 +125,7 @@ export const PATHS = {
   get photoRoll() { return path.join(getMemoryBase(), 'photo-roll'); },
   get inspirationRefs() { return path.join(getMemoryBase(), 'inspiration-refs'); },
   get referencesDir() { return path.join(getMemoryBase(), 'assets', 'references'); },
+  get skillSourceDir() { return path.join(getMemoryBase(), 'skill-source'); },
 
   // === Shared skill infra (global, not per-persona) ===
   get skillRegistry() { return path.join(getSkillBase(), 'skill-registry.json'); },

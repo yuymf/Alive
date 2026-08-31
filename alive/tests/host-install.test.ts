@@ -88,6 +88,9 @@ describe('installSkillTo', () => {
     expect(fs.readFileSync(path.join(dest, 'scripts', 'host', 'chat.js'), 'utf8')).toContain('.source-root');
 
     expect(fs.existsSync(path.join(dest, 'personas', 'minase.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(dest, 'personas', 'guodegang.yaml'))).toBe(true);
+    expect(fs.existsSync(path.join(dest, 'personas', 'miss-v.yaml'))).toBe(false);
+    expect(fs.existsSync(path.join(dest, 'personas', 'xingtong.yaml'))).toBe(false);
     expect(fs.existsSync(path.join(dest, 'personas', 'test.yaml'))).toBe(false);
     expect(fs.existsSync(path.join(dest, 'tests'))).toBe(false);
     expect(fs.existsSync(path.join(dest, 'hooks'))).toBe(false);

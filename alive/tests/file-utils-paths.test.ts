@@ -144,10 +144,10 @@ describe('runtime log path separation', () => {
   afterEach(() => resetBasePaths());
 
   it('PATHS.llmCallLog lives outside persona memory (default mode)', () => {
-    setPersonaName('miss-v');
+    setPersonaName('guodegang');
     expect(PATHS.llmCallLog).toContain('runtime');
     expect(PATHS.llmCallLog).toContain('llm-call-log.jsonl');
-    expect(PATHS.llmCallLog).not.toContain(`${path.sep}personas${path.sep}miss-v`);
+    expect(PATHS.llmCallLog).not.toContain(`${path.sep}personas${path.sep}guodegang`);
     setPersonaName('default');
   });
 
@@ -158,7 +158,7 @@ describe('runtime log path separation', () => {
   });
 
   it('two different personas have llmCallLog in their respective runtime dirs', () => {
-    setPersonaName('miss-v');
+    setPersonaName('guodegang');
     const pathA = PATHS.llmCallLog;
     setPersonaName('minase');
     const pathB = PATHS.llmCallLog;

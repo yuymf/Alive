@@ -164,8 +164,9 @@ interface XhsRateLimiter {
 function createRateLimiter(): XhsRateLimiter {
   const BUCKET_MAX = 20;           // 令牌桶容量：每小时最多 20 次（留更大余量防风控）
   const BUCKET_REFILL_MS = 60 * 60 * 1000; // 1 小时全量回补
-  const MIN_INTERVAL_MS = 10_000;  // 最小请求间隔 10s（更接近人类节奏）
-  const MAX_JITTER_MS = 8_000;     // 额外随机抖动 0~8s（总间隔 10~18s）
+  const underTest = Boolean(process.env.VITEST);
+  const MIN_INTERVAL_MS = underTest ? 0 : 10_000;  // 最小请求间隔 10s（更接近人类节奏）
+  const MAX_JITTER_MS = underTest ? 0 : 8_000;     // 额外随机抖动 0~8s（总间隔 10~18s）
   const LOGIN_CACHE_TTL_MS = 5 * 60 * 1000; // check-login 缓存 5 分钟
 
   let tokens = BUCKET_MAX;

@@ -109,6 +109,12 @@ export interface PersonaConfig {
   conversation_style?: ConversationStyleConfig;
   /** Persona identity tracks used by content-browse search intent */
   identities?: Record<string, { weight?: number; content_types?: string[]; [key: string]: unknown }>;
+  /** Origin when this persona was adopted from a Nuwa / persona SKILL.md */
+  source_skill?: {
+    name: string;
+    origin: string;
+    adopted_at: string;
+  };
 }
 
 // === Features Configuration ===

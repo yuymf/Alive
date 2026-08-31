@@ -5,5 +5,6 @@ export default defineConfig({
     root: '.',
     include: ['alive/tests/**/*.test.ts'],
     globals: true,
+    testTimeout: 30_000,
   },
 });

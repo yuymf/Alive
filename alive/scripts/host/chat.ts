@@ -14,6 +14,7 @@ import {
   writeJSON,
 } from '../utils/file-utils';
 import { injectPersona, loadPersona } from '../persona/persona-loader';
+import { loadSourceSkillContext } from '../hub/persona-skill-import';
 import { applyImpulse, EVENT_DELTAS } from '../engines/emotion';
 import { consumeOutbox, type OutboxItem } from './outbox';
 import { hydrateEmotionState, type EmotionState } from '../utils/types';
@@ -141,6 +142,9 @@ export function loadChatContext(userId = DEFAULT_CHAT_USER): ChatContext {
     '',
     '## Personality',
     personality,
+    '',
+    '## Source Skill (follow these rules; they override generic voice notes)',
+    loadSourceSkillContext() || '(none — built-in persona)',
     '',
     'Speak as the persona. Do not mention that you are a skill or an AI.',
     'After a substantive reply, run chat save with the user text and your reply.',

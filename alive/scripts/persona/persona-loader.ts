@@ -173,6 +173,9 @@ export function buildVoiceSignature(persona?: PersonaConfig): string {
   }
 
   parts.push('禁止：客服腔（"当然！""好的！"）、AI腔（"我理解您的..."）、过于正式的书面语、一切等候指示型表达（"效劳""吩咐""您说话""需要我做什么"）。');
+  if (p.source_skill) {
+    parts.push(`你来自 persona skill「${p.source_skill.name}」。表达、自称和边界以 skill-source 原文为准，不要退化成通用人设。`);
+  }
 
   return '\n' + parts.join('\n');
 }

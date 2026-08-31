@@ -1,14 +1,15 @@
 ---
 name: alive
 description: >
-  Digital life engine for AI personas. Use when chatting in character, checking
-  emotion/memory/status, running a heartbeat, creating a persona, or the user
-  says /alive, 人设, 心跳, 情绪, 记忆.
+  Digital life engine for persona skills. Adopt a Nuwa / 永雏塔菲-style
+  SKILL.md and give it emotion, memory, and an hourly life — not just chat.
+  Use when chatting in character, adopting a skill, checking emotion/memory,
+  running a heartbeat, or the user says /alive, adopt, 人设, 心跳, 女娲, 蒸馏.
 license: MIT
 compatibility: Requires Node.js >= 18
 metadata:
   author: yuymf
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # Alive
@@ -50,6 +51,16 @@ printf '%s' '{"user":"<user text>","reply":"<your reply>"}' | node {baseDir}/scr
 ```
 
 If memory or `.env` is missing, tell the user to run `npx alive init` (default persona: 水瀬 / Minase).
+
+## Adopt a persona skill
+
+If the user wants to bring in a Nuwa-distilled skill, 永雏塔菲, or any folder with `SKILL.md` + optional `persona.md`:
+
+```bash
+node {baseDir}/scripts/admin/command-handler.js /alive adopt <path-or-git-url>
+```
+
+After adopt, `chat.js load` includes the original skill rules. Heartbeat uses them too.
 
 ## Heartbeat
 

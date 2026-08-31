@@ -16,7 +16,7 @@ function run(args: string[], env: NodeJS.ProcessEnv) {
 }
 
 describe('bin/cli.js smoke', () => {
-  it('init then status / emotion / help / tick-without-key', () => {
+  it('init then status / emotion / help / tick-without-key', () => { // compiles tsc via `alive init`
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-cli-'));
     const home = path.join(root, 'home');
     const aliveHome = path.join(root, 'alive-home');

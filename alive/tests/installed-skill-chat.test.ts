@@ -15,7 +15,7 @@ function runInstalled(skillDir: string, args: string[], env: NodeJS.ProcessEnv, 
 }
 
 describe('installed skill chat.js (what the host actually runs)', () => {
-  it('load → save → load keeps 水瀬 memory on the installed copy', () => {
+  it('load → save → load keeps 水瀬 memory on the installed copy', () => { // buildSkill() runs tsc
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-installed-'));
     const home = path.join(root, 'home');
     const aliveHome = path.join(root, 'alive-home');

@@ -4,6 +4,17 @@ All notable changes to Alive are documented here.
 
 ---
 
+## [0.5.0] — 2026-08-31
+
+### Added
+- **`/alive adopt <path|url>`** — 把女娲蒸馏出的人物 skill、或永雏塔菲这类公开人格 skill 接进 Alive。拷贝 `SKILL.md` / `persona.md` / `references/*.md`，对话和心跳都按原文规则说话。
+- README 封面与 logo；仓库定位改为「让 persona skill 不只停留在聊天」。
+
+### Removed
+- 内置角色 **Miss V**、**星瞳**。只保留水瀬与郭德纲；其他人设用 `adopt` 或 `/alive create`。
+
+---
+
 ## [0.4.0] — 2026-08-30
 
 ### Changed
