@@ -21,6 +21,13 @@ import { hydrateEmotionState, type EmotionState } from '../utils/types';
 
 export const DEFAULT_CHAT_USER = 'user';
 
+function formatOutboxLine(item: OutboxItem): string {
+  if (item.kind === 'call') {
+    return `- call: ${item.text ?? '想跟你打个电话'}\n  join: ${item.joinUrl ?? ''}\n  (deliver the invitation in character, then give the user this URL)`;
+  }
+  return `- ${item.kind}: ${item.text ?? item.mediaPath ?? ''}`;
+}
+
 export interface ChatRelationEvent {
   date: string;
   summary: string;
@@ -135,7 +142,7 @@ export function loadChatContext(userId = DEFAULT_CHAT_USER): ChatContext {
       : `(first meeting with ${userId})`,
     '',
     '## Outbox (deliver now, already consumed)',
-    outbox.length === 0 ? '(empty)' : outbox.map((item) => `- ${item.kind}: ${item.text ?? item.mediaPath ?? ''}`).join('\n'),
+    outbox.length === 0 ? '(empty)' : outbox.map(formatOutboxLine).join('\n'),
     '',
     '## Diary (7 days)',
     diary,

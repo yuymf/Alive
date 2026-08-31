@@ -119,6 +119,7 @@ describe('parsePersonaSkill + personaFromSkill', () => {
     expect(persona.personality.core_traits).toEqual(expect.arrayContaining(['虚拟偶像']));
     expect(persona.voice.sample_lines.length).toBeGreaterThanOrEqual(3);
     expect(persona.sub_skills).toContain('web-search');
+    expect(persona.sub_skills).toContain('voice-call');
     expect(persona.source_skill?.name).toBe('ace-taffy');
     expect(persona.conversation_style?.mode).toBe('topic-driver');
     fs.rmSync(dir, { recursive: true, force: true });

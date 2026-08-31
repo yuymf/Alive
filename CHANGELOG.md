@@ -10,6 +10,8 @@ All notable changes to Alive are documented here.
 - **`/alive distill <name|path|url>`** — 一键蒸馏：材料或已有工程写成 `SKILL.md`，立刻 `adopt`。仓库里的峰哥 / 塔菲 / Jobs 等可以直接 `alive distill 峰哥`。
 - **峰哥 example** — 来自 [feng-ge-skill](https://github.com/YixiaJack/feng-ge-skill)（MIT）。[talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 没有 `SKILL.md`，`distill` 会抽出 `worker/persona.py` 再接入。不把 LiveKit / VoxCPM 语音栈并进本仓库。
 - 女娲方法的 host 蒸馏协议：没有现成 skill、也没有 `LLM_API_KEY` 时，Code Agent 按协议写文件并 adopt。
+- **`voice-call` 子技能 + `/alive call`** — 心跳可以主动给主人发起实时语音。邀请进 outbox，加入页是 talk-to-fengge（`TALK_TO_FENGGE_URL`）。一天最多一通。不并 LiveKit。
+- 晨规划允许把「主动找主人说话 / 打电话」写进当天日程。
 
 ### Fixed
 - `adopt` 现在递归拷贝 `references/**/*.md`（峰哥的 `references/research/` 以前会被丢掉）。

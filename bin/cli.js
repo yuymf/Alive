@@ -15,6 +15,7 @@ Usage:
   alive init [--project] [--persona <id>] [--home <dir>]
   alive adopt <path|url> [--id <slug>] [--home <dir>]
   alive distill <name|path|url> [--id <slug>] [--name <name>] [--home <dir>]
+  alive call [--home <dir>]
   alive tick | morning | night
   alive start
   alive context
@@ -33,6 +34,7 @@ Memory and .env go to $ALIVE_HOME (default ~/.alive).
 Conversation uses the host agent. Heartbeat scripts need LLM_API_KEY.
 adopt takes a Nuwa / 永雏塔菲 persona skill (local dir or git URL).
 distill turns materials or talk-to-fengge into a skill, then adopts it.
+call writes a live-voice invitation for the owner (talk-to-fengge join URL).
 `);
 }
 
@@ -170,6 +172,10 @@ async function main() {
     const source = positional[1] || '';
     const id = flags.id ? ` --id ${flags.id}` : '';
     return cmdAdmin(`adopt ${source}${id}`.trim());
+  }
+  if (cmd === 'call') {
+    if (flags.home) process.env.ALIVE_HOME = flags.home;
+    return cmdAdmin('call');
   }
   if (cmd === 'distill') {
     if (flags.home) process.env.ALIVE_HOME = flags.home;

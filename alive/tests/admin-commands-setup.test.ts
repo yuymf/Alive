@@ -77,6 +77,14 @@ describe('/alive setup', () => {
     expect(result.output).toContain('ALIVE_HOME');
   });
 
+  it('returns setup instructions for /alive setup voice', async () => {
+    const result = await dispatch('/alive setup voice');
+
+    expect(result.error).toBeFalsy();
+    expect(result.output).toContain('TALK_TO_FENGGE_URL');
+    expect(result.output).toContain('talk-to-fengge');
+  });
+
   it('returns setup instructions for /alive setup instagram', async () => {
     const result = await dispatch('/alive setup instagram');
 

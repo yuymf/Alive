@@ -294,6 +294,7 @@ sub_skills:
   - social-engagement
   - send-message
   - voice-tts
+  - voice-call
 
 content:
   behavior_examples: |

@@ -23,6 +23,7 @@ import {
 } from './persona-creator';
 import { adoptPersonaSkill } from '../hub/persona-skill-import';
 import { distillPersona, formatDistillResult } from '../hub/persona-distill';
+import { defaultTalkToFenggeUrl, deliverCall } from '../host/outbox';
 import type {
   EmotionState, IntentPool, VitalityState, ConfidenceState,
   FlowState, HeartbeatLog, WisdomStore, PersonaConfig,
@@ -147,6 +148,7 @@ const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<C
   create: cmdCreate,
   adopt: cmdAdopt,
   distill: cmdDistill,
+  call: cmdCall,
 };
 
 /**
@@ -210,6 +212,7 @@ function cmdHelp(): CommandResult {
 | \`/alive create --guided\` | 引导模式，逐步填写角色信息 |
 | \`/alive distill <名字\\|目录\\|git URL>\` | 一键蒸馏：材料 → SKILL.md → adopt |
 | \`/alive adopt <dir 或 git URL>\` | 接入已有的 persona skill，让它不只停留在聊天 |
+| \`/alive call\` | 立刻给主人发一条实时语音邀请（talk-to-fengge） |
 
 > ⚡ 这些命令不经过角色人格、不写入日记、不影响记忆。
 > 🌱 \`/alive distill\` 从材料或 talk-to-fengge 抽出脑子；\`/alive adopt\` 给已有 skill 身体。`,
@@ -757,6 +760,25 @@ async function cmdDistill(cmd: ParsedCommand): Promise<CommandResult> {
   }
 }
 
+function cmdCall(): CommandResult {
+  const persona = safeLoadPersona();
+  if (!persona) return personaNotFound();
+  const joinUrl = defaultTalkToFenggeUrl();
+  const line = persona.voice?.sample_lines?.[0] || `${persona.meta.name}在。`;
+  const text = `${line.replace(/[。！？.!?]+$/, '')}。有空接个电话吗？`;
+  const ok = deliverCall(text, joinUrl);
+  if (!ok) return { output: '❌ 写不出通话邀请', error: true };
+  return {
+    output: `## 📞 ${persona.meta.name}想跟你通话
+
+${text}
+
+打开 [talk-to-fengge](${joinUrl}) 接听。Alive 不跑 LiveKit；那边的页面才是电话。
+
+下一步：在 Code Agent 里再说一句话，\`chat.js load\` 会先把这条邀请交出去。`,
+  };
+}
+
 // ── Create Command ─────────────────────────────────────────────────
 
 async function cmdCreate(cmd: ParsedCommand): Promise<CommandResult> {
@@ -940,9 +962,26 @@ IMGURL_TOKEN=<token>
     };
   }
 
+  if (sub === 'voice') {
+    return {
+      output: `## 📞 配置主动通话（talk-to-fengge）
+
+对话和心跳决定要不要打。电话本身在 talk-to-fengge 里。
+
+1. 另开一份 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge)，按它的 README 把 LiveKit / STT / TTS 跑起来。
+2. 在 \`$ALIVE_HOME/.env\` 写：
+
+\`\`\`bash
+TALK_TO_FENGGE_URL=http://127.0.0.1:8766
+\`\`\`
+
+3. \`/alive call\` 或等心跳选 \`voice-call\`。主人打开这个 URL 接听。`,
+    };
+  }
+
   if (sub !== '') {
     return {
-      output: `❌ 未知配置项: \`${sub}\`\n\n可用选项：\`/alive setup llm\`、\`/alive setup instagram\``,
+      output: `❌ 未知配置项: \`${sub}\`\n\n可用选项：\`/alive setup llm\`、\`/alive setup instagram\`、\`/alive setup voice\``,
       error: true,
     };
   }
@@ -959,6 +998,7 @@ IMGURL_TOKEN=<token>
     ['INSTAGRAM_PASSWORD', env.INSTAGRAM_PASSWORD, 'Instagram 密码'],
     ['IMGURL_TOKEN', env.IMGURL_TOKEN, '图片公共托管'],
     ['XHS_SKILLS_DIR', env.XHS_SKILLS_DIR, '小红书技能目录'],
+    ['TALK_TO_FENGGE_URL', env.TALK_TO_FENGGE_URL, '主动通话加入页（默认 http://127.0.0.1:8766）'],
   ];
 
   const tableRows = rows

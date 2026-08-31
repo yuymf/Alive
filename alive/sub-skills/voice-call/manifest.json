@@ -1,0 +1,19 @@
+{
+  "name": "voice-call",
+  "display_name": "主动通话",
+  "version": "0.1.0",
+  "description": "主动给主人打一通实时语音。房间在 talk-to-fengge，Alive 只决定要不要打、写出邀请。",
+  "intent_bindings": [
+    { "intent": "connect", "action": "call-owner", "priority": 3 }
+  ],
+  "config_schema": {
+    "talk_to_fengge_url": {
+      "type": "string",
+      "required": false,
+      "default": "http://127.0.0.1:8766",
+      "description": "talk-to-fengge 前端地址（TALK_TO_FENGGE_URL）"
+    }
+  },
+  "vitality_cost": { "base": 10 },
+  "templates": ["call-invite-prompt.md"]
+}

@@ -41,6 +41,8 @@ node {baseDir}/scripts/host/chat.js load
 
 Use stdout as the only character context. If it lists outbox items, deliver them in character first.
 
+If an outbox item is `kind: call`, this is a live voice invitation. Speak the invitation as the persona, then give the user the `join` URL so they can pick up in [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge). Do not pretend the call already happened. Do not invent a phone number.
+
 Reply as the persona. Do not announce that you are a skill or an AI.
 
 Conversation uses the **host model**. Do not call an extra LLM API for chat.
@@ -90,3 +92,13 @@ node {baseDir}/scripts/host/boot.js tick
 ```
 
 `morning` / `night` are the same entry with that argument. If the user asks to run a heartbeat, run this and summarize the diary/heartbeat-log change.
+
+## Proactive voice call
+
+If the user wants to start or test a call invitation (`打电话`, `call`, `语音连线`):
+
+```bash
+node {baseDir}/scripts/admin/command-handler.js /alive call
+```
+
+Heartbeat may also write a `call` outbox item when the persona wants to talk. `TALK_TO_FENGGE_URL` (default `http://127.0.0.1:8766`) is the join page. Alive does not run LiveKit.
