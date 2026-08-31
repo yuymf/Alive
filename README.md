@@ -236,6 +236,7 @@ npm run test        # Run all tests (vitest)
 ### Testing Philosophy
 
 - **Unit tests**: Mock LLM client, mock filesystem — test engines in isolation
+- **CLI smoke**: `npx alive init` then `status` / `emotion` / `help` against an isolated `$ALIVE_HOME`
 - **Host path**: the installed `scripts/host/chat.js` load → save → load loop
 
 PRs welcome! Persona configs (`alive/personas/*.yaml`) especially welcome.

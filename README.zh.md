@@ -132,7 +132,7 @@ alive/
 │   ├── engines/              # 7 大核心引擎
 │   ├── lifecycle/            # 心跳循环 · 晨间规划 · 晚间反思
 │   ├── adapters/             # 平台适配器
-│   └── utils/                # 类型 · 配置 · 技能路由 · 内容源
+│   └── utils/                # 类型 · 配置 · 技能路由
 ├── sub-skills/               # 可插拔子技能
 └── tests/                    # 引擎、CLI、生命周期测试
 ```

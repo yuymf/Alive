@@ -86,6 +86,7 @@ describe('installSkillTo', () => {
     expect(fs.existsSync(path.join(dest, 'scripts', 'host', 'chat.js'))).toBe(true);
     expect(fs.readFileSync(path.join(dest, '.source-root'), 'utf8').trim()).toBe(repoRootFromHere());
     expect(fs.readFileSync(path.join(dest, 'scripts', 'host', 'chat.js'), 'utf8')).toContain('.source-root');
+
     expect(fs.existsSync(path.join(dest, 'personas', 'minase.yaml'))).toBe(true);
     expect(fs.existsSync(path.join(dest, 'personas', 'test.yaml'))).toBe(false);
     expect(fs.existsSync(path.join(dest, 'tests'))).toBe(false);
