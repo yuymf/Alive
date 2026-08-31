@@ -121,14 +121,11 @@ export function installSkillTo(dest: string, root = repoRootFromHere()): void {
   writeHostLaunchers(dest, root);
 }
 
-export const DEFAULT_PERSONAS = ['minase', 'miss-v', 'xingtong', 'guodegang'] as const;
+export const DEFAULT_PERSONAS = ['minase', 'guodegang'] as const;
 
 const OFFICIAL_PERSONA_FILES = new Set([
   'minase.yaml',
   'minase-source.png',
-  'miss-v.yaml',
-  'miss-v-source.png',
-  'xingtong.yaml',
   'guodegang.yaml',
 ]);
 

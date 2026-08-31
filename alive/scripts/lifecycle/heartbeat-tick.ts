@@ -44,6 +44,7 @@ import {
 } from '../world/social-graph-engine';
 import { isActiveHeartbeatHour } from '../world/heartbeat-gate';
 import { loadPersona, injectPersona, buildVoiceSignature, getEmotionCouplingConfigs, getContentSourcesConfig } from '../persona/persona-loader';
+import { loadSourceSkillBrief } from '../hub/persona-skill-import';
 import { resolveRoute, resolveRouteBySkillName, fuzzyResolveSkillName, buildContext, executeSubSkill, getRouteTable } from '../router/skill-router';
 import { createInstagramConfig, createSocialEngagementConfig, createContentBrowseConfig } from '../adapters/instagram-adapter';
 import { ContentProviderRegistry } from '../adapters/content-provider';
@@ -593,6 +594,10 @@ export async function regularTick(
   } catch {
     // Fallback to original simple context
     personalityContext = `${persona.personality.mbti}基底。${personalityDrift.modifiers.map((m: { effect: string }) => m.effect).join('；')}`;
+  }
+  const skillBrief = loadSourceSkillBrief();
+  if (skillBrief) {
+    personalityContext += `\n\n## 原始 Persona Skill（表达与边界以此为准）\n${skillBrief}`;
   }
 
   // Build registered skills summary for LLM (filtered by persona.sub_skills)

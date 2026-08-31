@@ -21,6 +21,7 @@ import {
   type QuickCreateOptions,
   type GuidedCreateOptions,
 } from './persona-creator';
+import { adoptPersonaSkill } from '../hub/persona-skill-import';
 import type {
   EmotionState, IntentPool, VitalityState, ConfidenceState,
   FlowState, HeartbeatLog, WisdomStore, PersonaConfig,
@@ -143,6 +144,7 @@ const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<C
   memory: cmdMemory,
   reset: cmdReset,
   create: cmdCreate,
+  adopt: cmdAdopt,
 };
 
 /**
@@ -204,8 +206,10 @@ function cmdHelp(): CommandResult {
 | \`/alive create\` | 随机生成一个新角色 |
 | \`/alive create <name> <tagline>\` | 用指定名字和定位生成角色 |
 | \`/alive create --guided\` | 引导模式，逐步填写角色信息 |
+| \`/alive adopt <dir 或 git URL>\` | 接入女娲 / 永雏塔菲等 persona skill，让它不只停留在聊天 |
 
-> ⚡ 这些命令不经过角色人格、不写入日记、不影响记忆。`,
+> ⚡ 这些命令不经过角色人格、不写入日记、不影响记忆。
+> 🌱 \`/alive adopt\` 把一份只负责聊天的 persona skill 接进 Alive：情绪、记忆、心跳、发帖。`,
   };
 }
 
@@ -688,6 +692,52 @@ function describeMood(valence: number): string {
   if (valence >= -0.1) return '😐 Neutral';
   if (valence >= -0.4) return '😕 Slightly down';
   return '😞 Negative';
+}
+
+// ── Adopt Command ──────────────────────────────────────────────────
+
+function cmdAdopt(cmd: ParsedCommand): CommandResult {
+  const source = cmd.args[0] || cmd.flags['from'] || cmd.flags['url'] || cmd.flags['path'];
+  if (!source) {
+    return {
+      output: `## 🌱 接入 Persona Skill
+
+把女娲蒸馏出的人物 skill、或永雏塔菲这类公开人格 skill 接进 Alive。
+对话仍用原始 skill 的规则；心跳给它情绪、记忆和自主行动。
+
+\`\`\`
+/alive adopt <本地目录或 git URL> [--id slug]
+\`\`\`
+
+例子：
+
+\`\`\`
+/alive adopt https://github.com/ly-xxx/ace-taffy-skill
+/alive adopt ~/.agents/skills/ace-taffy --id ace-taffy
+\`\`\`
+
+女娲本身负责蒸馏：https://github.com/alchaincyf/nuwa-skill
+蒸馏完成后，把生成的 skill 目录交给 \`adopt\`。`,
+    };
+  }
+
+  try {
+    const result = adoptPersonaSkill({ source, id: cmd.flags['id'] });
+    return {
+      output: `## ✅ 已接入 ${result.personaName}
+
+- skill: \`${result.skillName}\`
+- persona: \`${result.personaId}\`
+- origin: \`${result.origin}\`
+- saved: \`${result.savedPath}\`
+
+原始 \`SKILL.md\` / \`persona.md\` 已拷到 \`skill-source/\`。对话和心跳都会读它们。
+
+下一步：在 Code Agent 里直接说话，或 \`alive tick\` 让这个人开始过自己的一天。`,
+    };
+  } catch (err) {
+    return { output: `❌ ${(err as Error).message}`, error: true };
+  }
 }
 
 // ── Create Command ─────────────────────────────────────────────────

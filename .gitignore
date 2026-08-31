@@ -27,7 +27,4 @@ __pycache__/
 alive/personas/*
 !alive/personas/minase.yaml
 !alive/personas/minase-source.png
-!alive/personas/miss-v.yaml
-!alive/personas/miss-v-source.png
-!alive/personas/xingtong.yaml
 !alive/personas/guodegang.yaml

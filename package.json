@@ -1,7 +1,7 @@
 {
   "name": "alive",
-  "version": "0.4.0",
-  "description": "Alive — portable digital-life Agent Skill for Claude Code, Cursor, Codex, and other SKILL.md hosts.",
+  "version": "0.5.0",
+  "description": "Alive — give Nuwa / persona skills a real inner life beyond chat.",
   "main": "bin/cli.js",
   "bin": {
     "alive": "bin/cli.js"
@@ -24,6 +24,8 @@
     "ai-persona",
     "ai-companion",
     "autonomous-agent",
+    "persona-skill",
+    "nuwa",
     "social-media"
   ],
   "license": "MIT",
