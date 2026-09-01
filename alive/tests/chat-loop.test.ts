@@ -7,7 +7,7 @@ import { deliverText } from '../scripts/host/outbox';
 import { loadChatContext, saveChatTurn } from '../scripts/host/chat';
 import { writePresence } from '../scripts/host/presence';
 import { clearPersonaCache } from '../scripts/persona/persona-loader';
-import { resetBasePaths, setPersonaName } from '../scripts/utils/file-utils';
+import { loadAliveEnv, resetBasePaths, setPersonaName } from '../scripts/utils/file-utils';
 
 describe('chat load/save loop', () => {
   const prevHome = process.env.ALIVE_HOME;
@@ -69,6 +69,8 @@ describe('chat load/save loop', () => {
 
   it('load shows what they are doing today', () => {
     boot();
+    loadAliveEnv();
+    setPersonaName('minase');
     writePresence({
       activity: '在改本子',
       inner: '想喝口茶',

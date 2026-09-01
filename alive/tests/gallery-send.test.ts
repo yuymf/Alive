@@ -207,6 +207,7 @@ describe('gallery-send', () => {
 
   describe('shareLifePhoto', () => {
     it('sends an existing selfie to the outbox', () => {
+      consumeOutbox();
       writeJSON(PATHS.photoGallery, { photos: [makePhoto()] });
       const result = shareLifePhoto('看这光');
       expect(result.success).toBe(true);
@@ -217,6 +218,7 @@ describe('gallery-send', () => {
     });
 
     it('falls back to text when the album is empty', () => {
+      consumeOutbox();
       writeJSON(PATHS.photoGallery, DEFAULT_PHOTO_GALLERY);
       const result = shareLifePhoto('刚拍了张，传图失败');
       expect(result.success).toBe(true);
