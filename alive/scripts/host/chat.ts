@@ -17,6 +17,7 @@ import { injectPersona, loadPersona } from '../persona/persona-loader';
 import { loadSourceSkillContext } from '../hub/persona-skill-import';
 import { applyImpulse, EVENT_DELTAS } from '../engines/emotion';
 import { consumeOutbox, type OutboxItem } from './outbox';
+import { formatPresenceBlock, readPresence, type Presence } from './presence';
 import { hydrateEmotionState, type EmotionState } from '../utils/types';
 
 export const DEFAULT_CHAT_USER = 'user';
@@ -66,6 +67,7 @@ export interface ChatContext {
   diary: string;
   personality: string;
   outbox: OutboxItem[];
+  presence: Presence;
   markdown: string;
 }
 
@@ -127,6 +129,7 @@ export function loadChatContext(userId = DEFAULT_CHAT_USER): ChatContext {
     personality = `${persona.meta.name} / ${persona.personality.mbti}\n${persona.voice.sample_lines.join('\n')}`;
   }
   const outbox = consumeOutbox();
+  const presence = readPresence();
   const lines = [
     `# Alive context — ${persona.meta.name}`,
     '',
@@ -135,6 +138,9 @@ export function loadChatContext(userId = DEFAULT_CHAT_USER): ChatContext {
     `tagline: ${persona.meta.tagline}`,
     `mood: ${emotion.mood.description} valence=${emotion.mood.valence.toFixed(2)} energy=${emotion.energy.toFixed(2)} stress=${emotion.stress.toFixed(2)}`,
     `cause: ${emotion.recent_cause || 'none'}`,
+    '',
+    '## Right now (they have their own day — do not pretend they are idle)',
+    formatPresenceBlock(presence),
     '',
     '## Relation',
     relation
@@ -166,6 +172,7 @@ export function loadChatContext(userId = DEFAULT_CHAT_USER): ChatContext {
     diary,
     personality,
     outbox,
+    presence,
     markdown: lines.join('\n'),
   };
 }

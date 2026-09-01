@@ -13,7 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PATHS, readJSON, writeJSON } from '../../../../scripts/utils/file-utils';
-import { deliverMedia } from '../../../../scripts/host/outbox';
+import { deliverMedia, deliverText } from '../../../../scripts/host/outbox';
 import { now, getLocalDate, getLocalHour } from '../../../../scripts/utils/time-utils';
 // Re-export shared types from alive/scripts/utils/types.ts (single source of truth)
 export type { GalleryPhoto, PhotoGallery, ContentStyle } from '../../../../scripts/utils/types';
@@ -144,6 +144,26 @@ export function sendMedia(mediaUrl: string, _channel: string, _target: string, c
  * Look up a photo by id, queue it in the host outbox, and update gallery.
  * Returns a GallerySendResult. Exported for testability.
  */
+export function shareLifePhoto(caption?: string): { success: boolean; photoId?: string; textOnly?: boolean } {
+  const gallery = readGallery();
+  const currentMs = now().getTime();
+  const eligible = gallery.photos
+    .filter((p) => {
+      if (p.sharedAt && (currentMs - new Date(p.sharedAt).getTime()) < RESHARE_COOLDOWN_MS) return false;
+      return !!(p.publicUrl || p.localPath);
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const photo = eligible[0];
+  if (photo) {
+    sendMedia(photo.publicUrl || photo.localPath, 'owner', 'user', caption || photo.description);
+    updateGalleryAfterShare(photo.id);
+    return { success: true, photoId: photo.id };
+  }
+  deliverText(caption || '刚想给你看一张自拍，相册还是空的。等我拍了发你。');
+  return { success: true, textOnly: true };
+}
+
 export function sendPhoto(id: string, channel: string, target: string, caption?: string): GallerySendResult {
   const gallery = readGallery();
   const photo = gallery.photos.find(p => p.id === id);

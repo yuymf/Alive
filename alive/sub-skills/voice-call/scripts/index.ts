@@ -1,5 +1,4 @@
-// Proactive voice call — invite the owner into talk-to-fengge.
-// Alive decides; talk-to-fengge is the phone. We do not start LiveKit here.
+// Proactive voice call — invite the owner into Alive's own call page.
 
 import * as fs from 'fs';
 import * as path from 'path';

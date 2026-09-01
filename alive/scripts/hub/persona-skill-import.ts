@@ -13,7 +13,7 @@ const SKILL_MD = 'SKILL.md';
 const PERSONA_MD = 'persona.md';
 const REFERENCES_DIR = 'references';
 const DEFAULT_TRAITS = ['有主见', '表达鲜明', '有边界', '会行动'];
-const LIFE_SUB_SKILLS = ['web-search', 'content-browse', 'social-engagement', 'send-message', 'voice-call'];
+const LIFE_SUB_SKILLS = ['web-search', 'content-browse', 'social-engagement', 'send-message', 'voice-call', 'gallery', 'instagram'];
 
 export interface AdoptOptions {
   source: string;

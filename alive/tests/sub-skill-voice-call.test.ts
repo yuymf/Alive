@@ -164,6 +164,8 @@ describe('/alive call', () => {
     expect(result.error).toBeUndefined();
     expect(result.output).toContain('通话');
     expect(result.output).toContain('127.0.0.1:8766');
+    expect(result.output).toContain('通话页');
+    expect(result.output).not.toContain('不跑 LiveKit');
 
     const ctx = loadChatContext();
     expect(ctx.outbox[0].kind).toBe('call');

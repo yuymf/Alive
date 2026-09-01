@@ -27,7 +27,8 @@ export function deliverMedia(mediaPath: string, text?: string): boolean {
 }
 
 export function defaultTalkToFenggeUrl(): string {
-  return (process.env.TALK_TO_FENGGE_URL || 'http://127.0.0.1:8766').replace(/\/+$/, '');
+  const port = process.env.ALIVE_VOICE_PORT || '8766';
+  return (process.env.TALK_TO_FENGGE_URL || `http://127.0.0.1:${port}`).replace(/\/+$/, '');
 }
 
 export function deliverCall(text: string, joinUrl = defaultTalkToFenggeUrl()): boolean {

@@ -1,9 +1,12 @@
 {
   "name": "gallery",
   "display_name": "照片画廊",
-  "version": "0.1.0",
-  "description": "照片搜索、分享、画廊管理 — 支持 ImgURL 公开托管和宿主 outbox 投递",
-  "intent_bindings": [],
+  "version": "0.2.0",
+  "description": "自拍、生活照、画廊分享 — 支持 ImgURL 公开托管和宿主 outbox 投递",
+  "intent_bindings": [
+    { "intent": "express", "action": "share-life", "priority": 8 },
+    { "intent": "connect", "action": "share-life", "priority": 6 }
+  ],
   "config_schema": {
     "imgurl_token": {
       "type": "string",

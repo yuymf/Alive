@@ -5,7 +5,9 @@
  * Called by the orchestration layer or other sub-skills.
  */
 
+import * as fs from 'fs';
 import type { SubSkillContext, SubSkillResult } from '../../../../scripts/utils/types';
+import { PATHS } from '../../../../scripts/utils/file-utils';
 import {
   searchGallery,
   sendPhoto,
@@ -14,6 +16,7 @@ import {
   updateGalleryAfterShare,
   pruneGallery,
   sendMedia,
+  shareLifePhoto,
 } from './gallery-ops';
 import { uploadToImgURL } from './imgurl-upload';
 
@@ -26,6 +29,7 @@ export {
   updateGalleryAfterShare,
   pruneGallery,
   sendMedia,
+  shareLifePhoto,
 } from './gallery-ops';
 
 export { uploadToImgURL } from './imgurl-upload';
@@ -86,12 +90,45 @@ export const actions: Record<string, (ctx: SubSkillContext) => Promise<SubSkillR
       narrative: `Gallery pruned, ${gallery.photos.length} photos remaining`,
     };
   },
+
+  async 'share-life'(ctx: SubSkillContext): Promise<SubSkillResult> {
+    const caption = (ctx.config.caption as string)
+      || ctx.intent?.description
+      || '随手拍的';
+    const existing = shareLifePhoto(caption);
+    if (existing.photoId) {
+      return {
+        narrative: `发了张自拍 ${existing.photoId}`,
+        emotion_deltas: [{ sociability: 0.12, valence: 0.1, creativity: 0.05 }],
+        vitality_cost: 6,
+      };
+    }
+    const refsDir = PATHS.referencesDir;
+    if (fs.existsSync(refsDir) && fs.readdirSync(refsDir).some((n) => !n.startsWith('.'))) {
+      const result = await generateAndSend(caption, 'daily', 'owner', 'user', caption);
+      if (result.success) {
+        return {
+          narrative: `拍了张新的发你 ${result.photoId}`,
+          emotion_deltas: [{ creativity: 0.2, sociability: 0.1, valence: 0.15 }],
+          vitality_cost: 10,
+        };
+      }
+    }
+    return {
+      narrative: existing.textOnly ? '相册空，先发了文字心得' : '自拍没发出去',
+      emotion_deltas: [{ valence: 0.04 }],
+      vitality_cost: 2,
+    };
+  },
 };
 
 export const manifest = {
   name: 'gallery',
   display_name: '照片画廊',
-  version: '0.1.0',
-  description: '照片搜索、分享、画廊管理',
-  intent_bindings: [],
+  version: '0.2.0',
+  description: '自拍、生活照、画廊分享',
+  intent_bindings: [
+    { intent: 'express', action: 'share-life', priority: 8 },
+    { intent: 'connect', action: 'share-life', priority: 6 },
+  ],
 };

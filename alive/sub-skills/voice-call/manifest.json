@@ -2,7 +2,7 @@
   "name": "voice-call",
   "display_name": "主动通话",
   "version": "0.1.0",
-  "description": "主动给主人打一通实时语音。房间在 talk-to-fengge，Alive 只决定要不要打、写出邀请。",
+  "description": "主动给主人打一通实时语音。加入页是 Alive 自带通话页（LiveKit 或浏览器直连）。",
   "intent_bindings": [
     { "intent": "connect", "action": "call-owner", "priority": 3 }
   ],
@@ -11,7 +11,7 @@
       "type": "string",
       "required": false,
       "default": "http://127.0.0.1:8766",
-      "description": "talk-to-fengge 前端地址（TALK_TO_FENGGE_URL）"
+      "description": "通话页地址（默认 http://127.0.0.1:8766，可用 TALK_TO_FENGGE_URL 覆盖）"
     }
   },
   "vitality_cost": { "base": 10 },

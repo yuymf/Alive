@@ -212,7 +212,7 @@ function cmdHelp(): CommandResult {
 | \`/alive create --guided\` | 引导模式，逐步填写角色信息 |
 | \`/alive distill <名字\\|目录\\|git URL>\` | 一键蒸馏：材料 → SKILL.md → adopt |
 | \`/alive adopt <dir 或 git URL>\` | 接入已有的 persona skill，让它不只停留在聊天 |
-| \`/alive call\` | 立刻给主人发一条实时语音邀请（talk-to-fengge） |
+| \`/alive call\` | 立刻给主人发一条实时语音邀请（Alive 通话页） |
 
 > ⚡ 这些命令不经过角色人格、不写入日记、不影响记忆。
 > 🌱 \`/alive distill\` 从材料或 talk-to-fengge 抽出脑子；\`/alive adopt\` 给已有 skill 身体。`,
@@ -773,9 +773,9 @@ function cmdCall(): CommandResult {
 
 ${text}
 
-打开 [talk-to-fengge](${joinUrl}) 接听。Alive 不跑 LiveKit；那边的页面才是电话。
+打开 [通话页](${joinUrl}) 接听。这是 Alive 自带的 LiveKit 通话页（没配 \`LIVEKIT_*\` 时用浏览器语音 + 默认音色）。
 
-下一步：在 Code Agent 里再说一句话，\`chat.js load\` 会先把这条邀请交出去。`,
+下一步：先 \`alive start\` 或 \`alive voice\` 把页面拉起来，再点麦克风。`,
   };
 }
 
@@ -964,16 +964,22 @@ IMGURL_TOKEN=<token>
 
   if (sub === 'voice') {
     return {
-      output: `## 📞 配置主动通话（talk-to-fengge）
+      output: `## 📞 配置主动通话（Alive 自带通话页）
 
-对话和心跳决定要不要打。电话本身在 talk-to-fengge 里。
+\`alive start\` / \`alive voice\` 会在本机拉起通话页。对话和心跳决定要不要打。
 
-1. 另开一份 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge)，按它的 README 把 LiveKit / STT / TTS 跑起来。
-2. 在 \`$ALIVE_HOME/.env\` 写：
+有 LiveKit 时走完整 WebRTC；没有也能点麦克风通话（浏览器识别 + 人格回复 + 默认音色）。
 
 \`\`\`bash
+# $ALIVE_HOME/.env
+LIVEKIT_URL=wss://your-livekit-host
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
+ALIVE_VOICE_PORT=8766
 TALK_TO_FENGGE_URL=http://127.0.0.1:8766
 \`\`\`
+
+\`TALK_TO_FENGGE_URL\` 只是加入页覆盖。不配 \`LIVEKIT_*\` 也能打。
 
 3. \`/alive call\` 或等心跳选 \`voice-call\`。主人打开这个 URL 接听。`,
     };
@@ -999,6 +1005,9 @@ TALK_TO_FENGGE_URL=http://127.0.0.1:8766
     ['IMGURL_TOKEN', env.IMGURL_TOKEN, '图片公共托管'],
     ['XHS_SKILLS_DIR', env.XHS_SKILLS_DIR, '小红书技能目录'],
     ['TALK_TO_FENGGE_URL', env.TALK_TO_FENGGE_URL, '主动通话加入页（默认 http://127.0.0.1:8766）'],
+    ['LIVEKIT_URL', env.LIVEKIT_URL, 'LiveKit WebRTC（可选；不配则浏览器直连）'],
+    ['LIVEKIT_API_KEY', env.LIVEKIT_API_KEY, 'LiveKit API Key'],
+    ['LIVEKIT_API_SECRET', env.LIVEKIT_API_SECRET, 'LiveKit API Secret'],
   ];
 
   const tableRows = rows

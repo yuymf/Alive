@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alive · 来电</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #050508;
+    color: #f2f2f6;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+    overflow: hidden;
+  }
+  #glow {
+    position: fixed; inset: -20%;
+    background: radial-gradient(circle at 50% 28%, rgba(80, 90, 160, 0.28), transparent 42%),
+                radial-gradient(circle at 50% 100%, rgba(40, 80, 70, 0.18), transparent 40%);
+    pointer-events: none;
+  }
+  #ui { position: fixed; inset: 0; }
+  #topBar {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 22px 26px; gap: 16px;
+  }
+  #who {
+    max-width: 62%;
+  }
+  #whoName { font-size: 20px; letter-spacing: 0.02em; }
+  #whoTag { margin-top: 6px; font-size: 13px; color: #9a9aa8; }
+  #statusPill {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(20, 20, 24, 0.55);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 999px; padding: 9px 16px; font-size: 13px; color: #d8d8e0;
+  }
+  #statusDot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
+  #statusDot.ready { background: #8e8e93; }
+  #statusDot.connecting { background: #ff9f0a; animation: blink 1s infinite; }
+  #statusDot.connected { background: #34c759; box-shadow: 0 0 8px rgba(52,199,89,.8); }
+  #statusDot.error { background: #ff453a; }
+  @keyframes blink { 50% { opacity: .35; } }
+  #life {
+    position: fixed; top: 96px; left: 26px; right: 26px;
+    font-size: 14px; line-height: 1.55; color: #c8c8d4;
+    max-width: 520px;
+  }
+  #life b { color: #fff; font-weight: 560; }
+  #bottom {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; flex-direction: column; align-items: center;
+    padding-bottom: 44px; gap: 14px;
+  }
+  #micButton {
+    width: 72px; height: 72px; border-radius: 50%;
+    border: 1.5px solid #444; background: rgba(14,14,18,.6);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: #cfcfd6;
+  }
+  #micButton svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.8; }
+  #micButton.connected { border-color: #34c759; box-shadow: 0 0 28px rgba(52,199,89,.22); color: #6fe08e; }
+  #micButton.speaking { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.05); } }
+  #timer { font-size: 13px; opacity: .4; letter-spacing: .08em; height: 16px; }
+  #transcript {
+    font-size: 20px; line-height: 1.5; text-align: center;
+    max-width: 600px; min-height: 32px; padding: 0 24px;
+    text-shadow: 0 1px 12px #000;
+  }
+  #hint { font-size: 12px; color: #7d7d8a; }
+  #toast {
+    position: fixed; top: 76px; left: 50%; transform: translate(-50%, -8px);
+    background: rgba(28,28,32,.85); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 999px; padding: 10px 22px; font-size: 14px; color: #ffd699;
+    opacity: 0; transition: .35s;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<div id="glow"></div>
+<div id="ui">
+  <div id="topBar">
+    <div id="who">
+      <div id="whoName">Alive</div>
+      <div id="whoTag">正在过自己的一天</div>
+    </div>
+    <div id="statusPill">
+      <span id="statusDot" class="ready"></span>
+      <span id="statusText">就绪</span>
+    </div>
+  </div>
+  <div id="life">点麦克风接听。对方可能正在做事。</div>
+  <div id="toast"></div>
+  <div id="bottom">
+    <button id="micButton" aria-label="开始通话">
+      <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2.5" width="6" height="11.5" rx="3"></rect>
+        <path d="M5 11.5a7 7 0 0 0 14 0"></path>
+        <line x1="12" y1="18.5" x2="12" y2="21.5"></line>
+      </svg>
+    </button>
+    <div id="timer">00:00</div>
+    <div id="transcript"></div>
+    <div id="hint">LiveKit 实时语音 · 默认音色</div>
+  </div>
+</div>
+<audio id="remoteAudio" autoplay playsinline></audio>
+<script src="livekit-client.umd.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const statusDot = $('statusDot');
+const statusText = $('statusText');
+const micButton = $('micButton');
+const transcript = $('transcript');
+const timerEl = $('timer');
+const toastEl = $('toast');
+const remoteAudio = $('remoteAudio');
+
+let life = { personaName: 'Alive', livekit: false };
+let connected = false;
+let connecting = false;
+let room = null;
+let mode = 'direct';
+let timer = null;
+let elapsed = 0;
+let recognition = null;
+
+function setStatus(kind, text) {
+  statusDot.className = kind;
+  statusText.textContent = text || ({
+    ready: '就绪', connecting: '接通中', connected: '通话中', error: '未接通',
+  }[kind] || kind);
+}
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+function showTranscript(text) {
+  transcript.textContent = text;
+}
+function startTimer() {
+  elapsed = 0;
+  timerEl.textContent = '00:00';
+  clearInterval(timer);
+  timer = setInterval(() => {
+    elapsed += 1;
+    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const s = String(elapsed % 60).padStart(2, '0');
+    timerEl.textContent = m + ':' + s;
+  }, 1000);
+}
+function stopTimer() {
+  clearInterval(timer);
+  timer = null;
+}
+
+async function loadLife() {
+  const resp = await fetch('/api/life');
+  life = await resp.json();
+  $('whoName').textContent = life.personaName || 'Alive';
+  $('whoTag').textContent = life.tagline || '正在过自己的一天';
+  const bits = [];
+  if (life.mood) bits.push('心情 <b>' + life.mood + '</b>');
+  if (life.activity) bits.push('正在 <b>' + life.activity + '</b>');
+  if (life.schedule && life.schedule.length) {
+    bits.push('今天：' + life.schedule.slice(0, 3).map((x) => x.time + ' ' + x.activity).join(' · '));
+  }
+  $('life').innerHTML = bits.join('<br>') || '点麦克风接听。';
+  document.title = (life.personaName || 'Alive') + ' · 来电';
+  mode = life.livekit ? 'livekit' : 'direct';
+  $('hint').textContent = mode === 'livekit'
+    ? 'LiveKit 实时语音 · 点麦克风接通'
+    : '点麦克风通话（浏览器语音 + 人格）。配 LIVEKIT_* 后走完整 WebRTC。';
+}
+
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'zh-CN';
+  u.rate = 1.05;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+async function directReply(text) {
+  showTranscript('你：' + text);
+  const resp = await fetch('/api/turn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  const data = await resp.json();
+  const reply = data.reply || '在呢。';
+  showTranscript(reply);
+  micButton.classList.add('speaking');
+  speak(reply);
+  setTimeout(() => micButton.classList.remove('speaking'), 1600);
+}
+
+function startDirectListen() {
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Rec) {
+    showToast('这个浏览器没有语音识别，先打字：点麦克风后再说');
+    return;
+  }
+  recognition = new Rec();
+  recognition.lang = 'zh-CN';
+  recognition.interimResults = false;
+  recognition.continuous = true;
+  recognition.onresult = (ev) => {
+    const text = ev.results[ev.results.length - 1][0].transcript;
+    if (text) directReply(text);
+  };
+  recognition.onerror = () => {};
+  recognition.start();
+}
+
+async function connectLiveKit() {
+  const LivekitClient = window.LivekitClient;
+  if (!LivekitClient) throw new Error('LiveKit client missing');
+  const identity = 'owner-' + Math.random().toString(36).slice(2, 8);
+  const resp = await fetch('/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ room: 'alive-room', identity, name: '主人' }),
+  });
+  if (!resp.ok) throw new Error('token failed');
+  const data = await resp.json();
+  room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+  room.on(LivekitClient.RoomEvent.Connected, () => {
+    connected = true;
+    setStatus('connected');
+    micButton.classList.add('connected');
+    startTimer();
+  });
+  room.on(LivekitClient.RoomEvent.Disconnected, () => {
+    connected = false;
+    connecting = false;
+    setStatus('ready', '已挂断');
+    micButton.classList.remove('connected', 'speaking');
+    stopTimer();
+    room = null;
+  });
+  room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+    if (track.kind !== LivekitClient.Track.Kind.Audio) return;
+    track.attach(remoteAudio);
+    remoteAudio.play && remoteAudio.play().catch(() => {});
+  });
+  room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
+    const ai = speakers.some((s) => s.identity !== identity);
+    micButton.classList.toggle('speaking', ai);
+  });
+  await room.connect(data.livekit_url, data.token);
+  try { await room.localParticipant.setMicrophoneEnabled(true); }
+  catch (e) { showToast('请允许使用麦克风'); }
+}
+
+async function connect() {
+  if (connected || connecting) return;
+  connecting = true;
+  setStatus('connecting');
+  try {
+    if (mode === 'livekit') {
+      await connectLiveKit();
+      connecting = false;
+      return;
+    }
+    connected = true;
+    connecting = false;
+    setStatus('connected');
+    micButton.classList.add('connected');
+    startTimer();
+    startDirectListen();
+    showTranscript('接通了。你说。');
+  } catch (err) {
+    console.error(err);
+    connecting = false;
+    connected = false;
+    setStatus('error', '连接失败');
+    showToast(String(err.message || err));
+  }
+}
+
+function hangup() {
+  if (room) { try { room.disconnect(); } catch (e) {} room = null; }
+  if (recognition) { try { recognition.stop(); } catch (e) {} recognition = null; }
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  connected = false;
+  connecting = false;
+  setStatus('ready', '已挂断');
+  micButton.classList.remove('connected', 'speaking');
+  stopTimer();
+}
+
+micButton.addEventListener('click', () => connected ? hangup() : connect());
+loadLife().then(() => setStatus('ready')).catch(() => setStatus('error', '人设未加载'));
+</script>
+</body>
+</html>

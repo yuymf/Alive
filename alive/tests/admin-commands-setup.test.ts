@@ -82,7 +82,8 @@ describe('/alive setup', () => {
 
     expect(result.error).toBeFalsy();
     expect(result.output).toContain('TALK_TO_FENGGE_URL');
-    expect(result.output).toContain('talk-to-fengge');
+    expect(result.output).toContain('LIVEKIT');
+    expect(result.output).toContain('通话');
   });
 
   it('returns setup instructions for /alive setup instagram', async () => {
