@@ -15,6 +15,8 @@ Usage:
   alive init [--project] [--persona <id>] [--home <dir>]
   alive adopt <path|url> [--id <slug>] [--home <dir>]
   alive distill <name|path|url> [--id <slug>] [--name <name>] [--home <dir>]
+  alive call [--home <dir>]
+  alive voice
   alive tick | morning | night
   alive start
   alive context
@@ -33,6 +35,7 @@ Memory and .env go to $ALIVE_HOME (default ~/.alive).
 Conversation uses the host agent. Heartbeat scripts need LLM_API_KEY.
 adopt takes a Nuwa / 永雏塔菲 persona skill (local dir or git URL).
 distill turns materials or talk-to-fengge into a skill, then adopts it.
+call writes a live-voice invitation; voice / start serve the LiveKit call page.
 `);
 }
 
@@ -118,9 +121,20 @@ async function cmdAdmin(raw) {
   if (result.error) process.exitCode = 1;
 }
 
+function startVoiceFromCli() {
+  ensureBuilt();
+  const voice = require(path.join(ROOT, 'dist-alive', 'scripts', 'voice', 'server.js'));
+  return voice.startVoiceServer();
+}
+
+function cmdVoice() {
+  startVoiceFromCli();
+}
+
 async function cmdStart() {
   const host = ensureBuilt();
-  process.stdout.write('alive start — hourly tick (Ctrl+C to stop)\n');
+  startVoiceFromCli();
+  process.stdout.write('alive start — hourly tick + voice page (Ctrl+C to stop)\n');
   let lastHour = -1;
   const tick = async () => {
     const hour = new Date().getHours();
@@ -171,6 +185,10 @@ async function main() {
     const id = flags.id ? ` --id ${flags.id}` : '';
     return cmdAdmin(`adopt ${source}${id}`.trim());
   }
+  if (cmd === 'call') {
+    if (flags.home) process.env.ALIVE_HOME = flags.home;
+    return cmdAdmin('call');
+  }
   if (cmd === 'distill') {
     if (flags.home) process.env.ALIVE_HOME = flags.home;
     const source = positional.slice(1).join(' ');
@@ -182,6 +200,7 @@ async function main() {
   }
   if (cmd === 'uninstall') return cmdUninstall(flags);
   if (cmd === 'start') return cmdStart();
+  if (cmd === 'voice') return cmdVoice();
   if (cmd === 'tick' || cmd === 'morning' || cmd === 'night') return cmdBoot(cmd);
   if (cmd === 'context') {
     ensureBuilt();

@@ -5,8 +5,9 @@ import * as path from 'path';
 import { initMemory, repoRootFromHere } from '../scripts/host/install';
 import { deliverText } from '../scripts/host/outbox';
 import { loadChatContext, saveChatTurn } from '../scripts/host/chat';
+import { writePresence } from '../scripts/host/presence';
 import { clearPersonaCache } from '../scripts/persona/persona-loader';
-import { resetBasePaths, setPersonaName } from '../scripts/utils/file-utils';
+import { loadAliveEnv, resetBasePaths, setPersonaName } from '../scripts/utils/file-utils';
 
 describe('chat load/save loop', () => {
   const prevHome = process.env.ALIVE_HOME;
@@ -64,6 +65,22 @@ describe('chat load/save loop', () => {
     expect(again.relation?.intimacy).toBe(1);
     expect(again.emotion.mood.valence).toBeGreaterThan(valenceBefore);
     expect(again.emotion.recent_cause).toContain('对话');
+  });
+
+  it('load shows what they are doing today', () => {
+    boot();
+    loadAliveEnv();
+    setPersonaName('minase');
+    writePresence({
+      activity: '在改本子',
+      inner: '想喝口茶',
+      schedule: [{ time: '15:00', activity: '喝茶' }],
+    });
+    const ctx = loadChatContext();
+    expect(ctx.presence.activity).toBe('在改本子');
+    expect(ctx.markdown).toContain('正在做: 在改本子');
+    expect(ctx.markdown).toContain('15:00 喝茶');
+    expect(ctx.markdown).toContain('Right now');
   });
 
   it('load consumes outbox once', () => {

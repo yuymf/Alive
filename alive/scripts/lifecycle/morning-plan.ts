@@ -18,6 +18,7 @@ import { PATHS, readJSON, writeJSON, appendText, readText, readTemplate } from '
 import { now, getLocalDate, getLocalWeekday, formatLocalTime, setTimezone } from '../utils/time-utils';
 import { getEmotionBaseline, getDefaultUndertone, getScheduleConfig, loadPersona, injectPersona, buildVoiceSignature } from '../persona/persona-loader';
 import { morningRecovery, DEFAULT_VITALITY } from '../engines/vitality';
+import { persistTickPresence } from '../host/presence';
 
 const VALID_CATEGORIES: ReadonlySet<string> = new Set<IntentCategory>(['produce', 'connect', 'consume', 'express', 'learn', 'rest', 'aspire']);
 
@@ -180,6 +181,12 @@ export async function runMorningPlan(
   writeJSON(PATHS.intentPool, intentPool);
   writeJSON(PATHS.emotionState, emotion);
   writeJSON(PATHS.cronSchedule, cronSchedule);
+
+  persistTickPresence({
+    activity: decision.flexible_schedule[0]?.activity ?? '刚醒，在安排今天',
+    inner: decision.mood_description,
+    schedule: scheduleToday,
+  });
 
   // Reset flow state and chain events for new day
   writeJSON(PATHS.flowState, { ...DEFAULT_FLOW_STATE });

@@ -6,7 +6,8 @@ import { setBasePaths, resetBasePaths, PATHS, writeJSON, readJSON } from '../scr
 import { listOutbox } from '../scripts/host/outbox';
 import type { PhotoGallery, GalleryPhoto } from '../sub-skills/platform/gallery/scripts/gallery-ops';
 import { DEFAULT_PHOTO_GALLERY } from '../sub-skills/platform/gallery/scripts/gallery-ops';
-import { searchGallery, updateGalleryAfterShare, addPhotoToGallery, pruneGallery, sendPhoto } from '../sub-skills/platform/gallery/scripts/gallery-ops';
+import { searchGallery, updateGalleryAfterShare, addPhotoToGallery, pruneGallery, sendPhoto, shareLifePhoto } from '../sub-skills/platform/gallery/scripts/gallery-ops';
+import { consumeOutbox } from '../scripts/host/outbox';
 
 function makePhoto(overrides: Partial<GalleryPhoto> = {}): GalleryPhoto {
   return {
@@ -201,6 +202,30 @@ describe('gallery-send', () => {
       writeJSON(PATHS.photoGallery, gallery);
       const result = sendPhoto('20260313_cos_afternoon_001', 'telegram', '@user123');
       expect(result.success).toBe(true);
+    });
+  });
+
+  describe('shareLifePhoto', () => {
+    it('sends an existing selfie to the outbox', () => {
+      consumeOutbox();
+      writeJSON(PATHS.photoGallery, { photos: [makePhoto()] });
+      const result = shareLifePhoto('看这光');
+      expect(result.success).toBe(true);
+      expect(result.photoId).toBe('20260313_cos_afternoon_001');
+      const items = consumeOutbox();
+      expect(items[0].kind).toBe('media');
+      expect(items[0].text).toBe('看这光');
+    });
+
+    it('falls back to text when the album is empty', () => {
+      consumeOutbox();
+      writeJSON(PATHS.photoGallery, DEFAULT_PHOTO_GALLERY);
+      const result = shareLifePhoto('刚拍了张，传图失败');
+      expect(result.success).toBe(true);
+      expect(result.textOnly).toBe(true);
+      const items = consumeOutbox();
+      expect(items[0].kind).toBe('text');
+      expect(items[0].text).toContain('刚拍了张');
     });
   });
 });

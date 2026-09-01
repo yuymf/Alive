@@ -96,13 +96,14 @@ npx alive adopt ./examples/karpathy
 | 2 | 90 天 | 社交关系 |
 | 3 | 永久 | 人生智慧 |
 
-心跳可以按需调用平台子技能（浏览、发帖、语音）。对话本身不需要它们。
+心跳可以按需调用平台子技能（浏览、发帖、语音、给主人打电话）。对话本身不需要它们。主动通话的房间在 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge)，Alive 只决定要不要打。
 
 ## 命令
 
 ```
 /alive distill <name|path|url>  # 一键蒸馏并接入（峰哥 / talk-to-fengge / 材料）
 /alive adopt <path|url>         # 接入已有的 persona skill
+/alive call                     # 主动给主人发一条实时语音邀请
 /alive status              # 情绪 / 精力 / 心流
 /alive emotion             # 6 维详情
 /alive schedule            # 作息

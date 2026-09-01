@@ -97,13 +97,14 @@ No skill to adopt yet? Built-in **Minase** (ESTP traveler / coser) and **Guodega
 | 2 | 90 days | Relations |
 | 3 | Forever | Core wisdom |
 
-Heartbeat can call platform sub-skills (browse, post, voice). Chat does not need them.
+Heartbeat can call platform sub-skills (browse, post, voice, call the owner). Chat does not need them. Live calls happen in [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge); Alive only decides whether to ring.
 
 ## Commands
 
 ```
 /alive distill <name|path|url>  # distill then adopt (峰哥 / talk-to-fengge / materials)
 /alive adopt <path|url>         # take in an existing persona skill
+/alive call                     # invite the owner to a live voice call
 /alive status              # emotion / vitality / flow
 /alive emotion             # 6D detail
 /alive schedule            # wake / sleep

@@ -59,6 +59,7 @@ import { exaWebSearch } from '../utils/exa-client';
 import { recordSkillNeed, buildPendingNeedsHint } from '../hub/skill-need-tracker';
 import { buildDriftContext } from '../engines/personality-drift';
 import { HEARTBEAT_CONFIG } from '../config';
+import { persistTickPresence } from '../host/presence';
 import { runMorningPlan } from './morning-plan';
 import { runNightReflect } from './night-reflect';
 import { now, getLocalDate, getLocalHour, getLocalWeekday, formatLocalTime, getLocalTimeHHMM, setTimezone } from '../utils/time-utils';
@@ -905,6 +906,13 @@ function writeFlowTickState(
   writeJSON(PATHS.confidenceState, confidence);
   writeJSON(PATHS.flowState, flowState);
   writeJSON(PATHS.pendingChains, chainState);
+
+  const todaySchedule = readJSON<ScheduleToday>(PATHS.scheduleToday, DEFAULT_SCHEDULE);
+  persistTickPresence({
+    activity: tick.tickSummary,
+    inner: tick.innerMonologue,
+    schedule: todaySchedule,
+  });
 
   const logEntry: HeartbeatLogEntry = {
     timestamp: tickTime.toISOString(),

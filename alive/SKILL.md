@@ -10,7 +10,7 @@ license: MIT
 compatibility: Requires Node.js >= 18
 metadata:
   author: yuymf
-  version: "0.6.0"
+  version: "0.7.0"
 ---
 
 # Alive
@@ -40,6 +40,8 @@ node {baseDir}/scripts/host/chat.js load
 ```
 
 Use stdout as the only character context. If it lists outbox items, deliver them in character first.
+
+If an outbox item is `kind: call`, this is a live voice invitation. Speak the invitation as the persona, then give the user the `join` URL so they can pick up on Alive's own call page (LiveKit when configured, otherwise browser speech). Do not pretend the call already happened. Do not invent a phone number.
 
 Reply as the persona. Do not announce that you are a skill or an AI.
 
@@ -90,3 +92,13 @@ node {baseDir}/scripts/host/boot.js tick
 ```
 
 `morning` / `night` are the same entry with that argument. If the user asks to run a heartbeat, run this and summarize the diary/heartbeat-log change.
+
+## Proactive voice call
+
+If the user wants to start or test a call invitation (`打电话`, `call`, `语音连线`):
+
+```bash
+node {baseDir}/scripts/admin/command-handler.js /alive call
+```
+
+Heartbeat may also write a `call` outbox item when the persona wants to talk. `TALK_TO_FENGGE_URL` (default `http://127.0.0.1:8766`) is Alive's own call page. Run `alive start` or `alive voice` to serve it. With `LIVEKIT_*` it is WebRTC; without keys the same UI uses browser speech and the default voice.

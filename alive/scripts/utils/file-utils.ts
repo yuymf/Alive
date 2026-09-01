@@ -96,6 +96,7 @@ export const PATHS = {
   get scheduleToday() { return path.join(getMemoryBase(), 'state', 'schedule-today.json'); },
   get travelState() { return path.join(getMemoryBase(), 'state', 'travel-state.json'); },
   get workImpulse() { return path.join(getMemoryBase(), 'state', 'work-impulse.json'); },
+  get presence() { return path.join(getMemoryBase(), 'state', 'presence.json'); },
   get platformRuntime() { return path.join(getMemoryBase(), 'state', 'platform-runtime.json'); },
 
   // === queues/ — Transient queues & logs ===

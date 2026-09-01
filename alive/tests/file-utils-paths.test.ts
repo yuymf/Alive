@@ -58,6 +58,12 @@ describe('file-utils path override', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  it('PATHS.presence points to state/presence.json', () => {
+    setBasePaths('/tmp/test-memory', '/tmp/test-skill');
+    expect(PATHS.presence).toBe('/tmp/test-memory/state/presence.json');
+    resetBasePaths();
+  });
+
   it('PATHS.photoGallery points to photo-gallery.json', () => {
     setBasePaths('/tmp/test-memory', '/tmp/test-skill');
     expect(PATHS.photoGallery).toBe('/tmp/test-memory/photo-gallery.json');

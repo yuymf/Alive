@@ -8,9 +8,10 @@ import { PATHS } from '../utils/file-utils';
 export interface OutboxItem {
   id: string;
   created_at: string;
-  kind: 'text' | 'media';
+  kind: 'text' | 'media' | 'call';
   text?: string;
   mediaPath?: string;
+  joinUrl?: string;
 }
 
 function outboxDir(): string {
@@ -23,6 +24,15 @@ export function deliverText(text: string): boolean {
 
 export function deliverMedia(mediaPath: string, text?: string): boolean {
   return writeItem({ kind: 'media', mediaPath, text });
+}
+
+export function defaultTalkToFenggeUrl(): string {
+  const port = process.env.ALIVE_VOICE_PORT || '8766';
+  return (process.env.TALK_TO_FENGGE_URL || `http://127.0.0.1:${port}`).replace(/\/+$/, '');
+}
+
+export function deliverCall(text: string, joinUrl = defaultTalkToFenggeUrl()): boolean {
+  return writeItem({ kind: 'call', text, joinUrl });
 }
 
 export function listOutbox(): OutboxItem[] {

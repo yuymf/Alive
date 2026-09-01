@@ -205,11 +205,13 @@ advisors:
 
 sub_skills:
   - instagram
+  - gallery
   - content-browse
   - web-search
   - social-engagement
   - send-message
   - voice-tts
+  - voice-call
 
 content:
   behavior_examples: |

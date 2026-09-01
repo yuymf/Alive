@@ -180,6 +180,7 @@ const SKILL_ALIAS_KEYWORDS: Record<string, string[]> = {
   'content-browse': ['browse', 'feed', 'scroll', 'inspiration', 'explore', 'discover'],
   'web-search': ['search', 'research', 'google', 'lookup', 'query'],
   'voice-tts': ['voice', 'tts', 'audio', 'speak'],
+  'voice-call': ['call', 'phone', 'voice-call', '打电话', '通话', '来电'],
 };
 
 /**
