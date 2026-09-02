@@ -16,7 +16,7 @@ Usage:
   alive adopt <path|url> [--id <slug>] [--home <dir>]
   alive distill <name|path|url> [--id <slug>] [--name <name>] [--home <dir>]
   alive call [--home <dir>]
-  alive voice
+  alive voice [--check] [--livekit-dev]
   alive tick | morning | night
   alive start
   alive context
@@ -35,7 +35,9 @@ Memory and .env go to $ALIVE_HOME (default ~/.alive).
 Conversation uses the host agent. Heartbeat scripts need LLM_API_KEY.
 adopt takes a Nuwa / 永雏塔菲 persona skill (local dir or git URL).
 distill turns materials or talk-to-fengge into a skill, then adopts it.
-call writes a live-voice invitation; voice / start serve the LiveKit call page.
+call writes a live-voice invitation.
+voice / start serve the call page and, when configured, LiveKit + VoxCPM worker.
+See USAGE.md.
 `);
 }
 
@@ -121,20 +123,22 @@ async function cmdAdmin(raw) {
   if (result.error) process.exitCode = 1;
 }
 
-function startVoiceFromCli() {
+function loadVoiceStack() {
   ensureBuilt();
-  const voice = require(path.join(ROOT, 'dist-alive', 'scripts', 'voice', 'server.js'));
-  return voice.startVoiceServer();
+  return require(path.join(ROOT, 'dist-alive', 'scripts', 'voice', 'stack.js'));
 }
 
-function cmdVoice() {
-  startVoiceFromCli();
+async function cmdVoice(flags) {
+  const stack = loadVoiceStack();
+  if (flags.check === 'true') return stack.printVoiceCheck();
+  return stack.startVoiceStack({ livekitDev: flags['livekit-dev'] === 'true' });
 }
 
 async function cmdStart() {
   const host = ensureBuilt();
-  startVoiceFromCli();
-  process.stdout.write('alive start — hourly tick + voice page (Ctrl+C to stop)\n');
+  const stack = loadVoiceStack();
+  await stack.startVoiceStack();
+  process.stdout.write('alive start — hourly tick + voice stack (Ctrl+C to stop)\n');
   let lastHour = -1;
   const tick = async () => {
     const hour = new Date().getHours();
@@ -200,7 +204,7 @@ async function main() {
   }
   if (cmd === 'uninstall') return cmdUninstall(flags);
   if (cmd === 'start') return cmdStart();
-  if (cmd === 'voice') return cmdVoice();
+  if (cmd === 'voice') return cmdVoice(flags);
   if (cmd === 'tick' || cmd === 'morning' || cmd === 'night') return cmdBoot(cmd);
   if (cmd === 'context') {
     ensureBuilt();

@@ -172,9 +172,16 @@ async function loadLife() {
   $('life').innerHTML = bits.join('<br>') || '点麦克风接听。';
   document.title = (life.personaName || 'Alive') + ' · 来电';
   mode = life.livekit ? 'livekit' : 'direct';
-  $('hint').textContent = mode === 'livekit'
-    ? 'LiveKit 实时语音 · 点麦克风接通'
-    : '点麦克风通话（浏览器语音 + 人格）。配 LIVEKIT_* 后走完整 WebRTC。';
+  if (mode === 'livekit') {
+    const bits = ['LiveKit 实时语音'];
+    if (life.voxcpm) bits.push('VoxCPM 已就绪');
+    else bits.push('VoxCPM 未启动（见 USAGE.md）');
+    if (life.worker) bits.push('Agent 在线');
+    else bits.push('Agent 未启动');
+    $('hint').textContent = bits.join(' · ');
+  } else {
+    $('hint').textContent = '点麦克风通话（浏览器语音 + 人格）。配 LiveKit + VoxCPM 后走完整 WebRTC，见 USAGE.md。';
+  }
 }
 
 function speak(text) {

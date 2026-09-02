@@ -41,6 +41,8 @@ npx alive adopt ./examples/steve-jobs
 
 然后打开 Claude Code / Cursor / Codex，直接说话。可选：把 `LLM_API_KEY` 写进 `~/.alive/.env`，跑 `alive tick`。
 
+从空机器配到 LiveKit + VoxCPM 打电话：看 **[USAGE.md](USAGE.md)**。
+
 `distill` 先写出 `SKILL.md` 再 `adopt`。已经是 skill 的仓库会直接接入。[talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 会被抽出 `worker/persona.py` 再接入。对话和心跳都读原始规则。
 
 ## 这个仓库是干什么的
@@ -96,7 +98,7 @@ npx alive adopt ./examples/karpathy
 | 2 | 90 天 | 社交关系 |
 | 3 | 永久 | 人生智慧 |
 
-心跳可以按需调用平台子技能（浏览、发帖、语音、给主人打电话）。对话本身不需要它们。主动通话的房间在 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge)，Alive 只决定要不要打。
+心跳可以按需调用平台子技能（浏览、发帖、语音、给主人打电话）。对话本身不需要它们。打电话走 Alive 自己的 LiveKit + VoxCPM 通话页（`alive voice`）。从新角色到接通，见 [USAGE.md](USAGE.md)。
 
 ## 命令
 

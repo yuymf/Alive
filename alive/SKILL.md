@@ -10,7 +10,7 @@ license: MIT
 compatibility: Requires Node.js >= 18
 metadata:
   author: yuymf
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Alive
@@ -101,4 +101,4 @@ If the user wants to start or test a call invitation (`打电话`, `call`, `语�
 node {baseDir}/scripts/admin/command-handler.js /alive call
 ```
 
-Heartbeat may also write a `call` outbox item when the persona wants to talk. `TALK_TO_FENGGE_URL` (default `http://127.0.0.1:8766`) is Alive's own call page. Run `alive start` or `alive voice` to serve it. With `LIVEKIT_*` it is WebRTC; without keys the same UI uses browser speech and the default voice.
+Heartbeat may also write a `call` outbox item when the persona wants to talk. The join page is Alive's own call page (`http://127.0.0.1:8766`). Run `alive voice` to serve it and dispatch the LiveKit + VoxCPM worker. Hands-on setup: repository `USAGE.md`. Without LiveKit the same UI falls back to browser speech.

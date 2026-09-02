@@ -4,6 +4,14 @@ All notable changes to Alive are documented here.
 
 ---
 
+## [0.8.0] — 2026-09-02
+
+### Added
+- **LiveKit + VoxCPM 通话栈** — `alive voice` 拉起通话页、本机 `livekit-server --dev`、Python Agent。进房时 dispatch `alive-voice`。VoxCPM 走 `VOXCPM_URL`（自带 `alive/voice/voxcpm/server.py`）。
+- **[USAGE.md](USAGE.md)** — 从安装、做一个新角色、文字聊天，到配 LiveKit / STT / VoxCPM 并接通。
+
+---
+
 ## [0.6.0] — 2026-08-31
 
 ### Added
