@@ -964,24 +964,30 @@ IMGURL_TOKEN=<token>
 
   if (sub === 'voice') {
     return {
-      output: `## 📞 配置主动通话（Alive 自带通话页）
+      output: `## 📞 配置 LiveKit + VoxCPM
 
-\`alive start\` / \`alive voice\` 会在本机拉起通话页。对话和心跳决定要不要打。
-
-有 LiveKit 时走完整 WebRTC；没有也能点麦克风通话（浏览器识别 + 人格回复 + 默认音色）。
+手把手：仓库根目录 \`USAGE.md\`。本机开发把下面写进 \`$ALIVE_HOME/.env\`：
 
 \`\`\`bash
-# $ALIVE_HOME/.env
-LIVEKIT_URL=wss://your-livekit-host
-LIVEKIT_API_KEY=
-LIVEKIT_API_SECRET=
-ALIVE_VOICE_PORT=8766
+LIVEKIT_URL=ws://127.0.0.1:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+AGENT_NAME=alive-voice
+STT_PROVIDER=cartesia
+CARTESIA_API_KEY=
+TTS_PROVIDER=voxcpm
+VOXCPM_URL=http://127.0.0.1:8000
+VOXCPM_VOICE=default
 TALK_TO_FENGGE_URL=http://127.0.0.1:8766
 \`\`\`
 
-\`TALK_TO_FENGGE_URL\` 只是加入页覆盖。不配 \`LIVEKIT_*\` 也能打。
+然后：
 
-3. \`/alive call\` 或等心跳选 \`voice-call\`。主人打开这个 URL 接听。`,
+1. \`brew install livekit\`（或按 LiveKit 文档装 \`livekit-server\`）
+2. \`pip install -r alive/voice/agent/requirements.txt\`
+3. GPU 上 \`python alive/voice/voxcpm/server.py\`（没有 GPU 先 \`VOXCPM_MOCK=1\`）
+4. \`alive voice --check\` 全绿后 \`alive voice\`
+5. 打开 http://127.0.0.1:8766 点麦克风`,
     };
   }
 
@@ -1004,10 +1010,13 @@ TALK_TO_FENGGE_URL=http://127.0.0.1:8766
     ['INSTAGRAM_PASSWORD', env.INSTAGRAM_PASSWORD, 'Instagram 密码'],
     ['IMGURL_TOKEN', env.IMGURL_TOKEN, '图片公共托管'],
     ['XHS_SKILLS_DIR', env.XHS_SKILLS_DIR, '小红书技能目录'],
-    ['TALK_TO_FENGGE_URL', env.TALK_TO_FENGGE_URL, '主动通话加入页（默认 http://127.0.0.1:8766）'],
-    ['LIVEKIT_URL', env.LIVEKIT_URL, 'LiveKit WebRTC（可选；不配则浏览器直连）'],
-    ['LIVEKIT_API_KEY', env.LIVEKIT_API_KEY, 'LiveKit API Key'],
-    ['LIVEKIT_API_SECRET', env.LIVEKIT_API_SECRET, 'LiveKit API Secret'],
+    ['TALK_TO_FENGGE_URL', env.TALK_TO_FENGGE_URL, '通话页（默认 http://127.0.0.1:8766）'],
+    ['LIVEKIT_URL', env.LIVEKIT_URL, 'LiveKit（本机 --dev：ws://127.0.0.1:7880）'],
+    ['LIVEKIT_API_KEY', env.LIVEKIT_API_KEY, 'LiveKit API Key（--dev 用 devkey）'],
+    ['LIVEKIT_API_SECRET', env.LIVEKIT_API_SECRET, 'LiveKit API Secret（--dev 用 secret）'],
+    ['CARTESIA_API_KEY', env.CARTESIA_API_KEY, '电话 STT（ink-whisper）'],
+    ['VOXCPM_URL', env.VOXCPM_URL, 'VoxCPM HTTP（默认 http://127.0.0.1:8000）'],
+    ['VOXCPM_VOICE', env.VOXCPM_VOICE, 'VoxCPM 音色名（默认 default）'],
   ];
 
   const tableRows = rows

@@ -3,8 +3,9 @@ import * as http from 'http';
 import * as path from 'path';
 import { loadAliveEnv } from '../utils/file-utils';
 import { createRoomAndToken, livekitConfigured, readLiveKitConfig } from './livekit-token';
-import { loadVoiceLife } from './persona-prompt';
+import { buildVoiceSystemPrompt, loadVoiceLife } from './persona-prompt';
 import { runVoiceTurn } from './turn';
+import { formatVoiceCheck, readVoiceStackStatus } from './config';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -34,6 +35,14 @@ function json(res: http.ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+function text(res: http.ServerResponse, status: number, body: string): void {
+  res.writeHead(status, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.end(body);
+}
+
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -61,7 +70,17 @@ export function createVoiceServer(): http.Server {
 
     try {
       if (req.method === 'GET' && url.pathname === '/api/life') {
-        json(res, 200, { ok: true, livekit: livekitConfigured(), ...loadVoiceLife() });
+        const stack = await readVoiceStackStatus();
+        json(res, 200, { ok: true, ...stack, ...loadVoiceLife() });
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/api/check') {
+        const stack = await readVoiceStackStatus();
+        text(res, 200, `${formatVoiceCheck(stack)}\n`);
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/api/prompt') {
+        text(res, 200, buildVoiceSystemPrompt());
         return;
       }
       if (req.method === 'POST' && url.pathname === '/token') {

@@ -19,4 +19,4 @@ npx alive tick              # optional scripted heartbeat (needs LLM_API_KEY)
 
 Bundled cases live in `examples/` — 峰哥 plus 永雏塔菲, and Jobs / 王小波 / 王阳明 / Karpathy from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation).
 
-Conversation uses the host agent model. See README.md.
+Conversation uses the host agent model. From a new character to a live call: [USAGE.md](USAGE.md).

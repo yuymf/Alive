@@ -1,6 +1,6 @@
 {
   "name": "alive",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Alive — distill a person, adopt the skill, give it a life beyond chat.",
   "main": "bin/cli.js",
   "bin": {
@@ -17,7 +17,9 @@
     "bin",
     "alive",
     "dist-alive",
-    "examples"
+    "examples",
+    "USAGE.md",
+    "INSTALL.md"
   ],
   "keywords": [
     "digital-life",

@@ -42,6 +42,8 @@ npx alive adopt ./examples/steve-jobs
 
 Then open Claude Code / Cursor / Codex and talk. Optional: put `LLM_API_KEY` in `~/.alive/.env` and run `alive tick`.
 
+From a blank machine to a live LiveKit + VoxCPM call: **[USAGE.md](USAGE.md)**.
+
 `distill` writes a `SKILL.md` then `adopt`s it. A repo that already is a skill is adopted as-is. [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) is converted from `worker/persona.py`. Chat and heartbeat read the original rules.
 
 ## Why this repo exists
@@ -97,7 +99,7 @@ No skill to adopt yet? Built-in **Minase** (ESTP traveler / coser) and **Guodega
 | 2 | 90 days | Relations |
 | 3 | Forever | Core wisdom |
 
-Heartbeat can call platform sub-skills (browse, post, voice, call the owner). Chat does not need them. Live calls happen in [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge); Alive only decides whether to ring.
+Heartbeat can call platform sub-skills (browse, post, voice, call the owner). Chat does not need them. Live calls use Alive's own LiveKit + VoxCPM page (`alive voice`). See [USAGE.md](USAGE.md).
 
 ## Commands
 

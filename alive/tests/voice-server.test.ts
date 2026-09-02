@@ -69,6 +69,9 @@ describe('voice server', () => {
     delete process.env.ALIVE_PERSONA;
     delete process.env.LLM_API_KEY;
     delete process.env.LIVEKIT_URL;
+    delete process.env.STT_PROVIDER;
+    delete process.env.CARTESIA_API_KEY;
+    delete process.env.OPENAI_API_KEY;
     delete process.env.LIVEKIT_API_KEY;
     delete process.env.LIVEKIT_API_SECRET;
     resetBasePaths();
@@ -93,6 +96,31 @@ describe('voice server', () => {
     expect(body.personaName).toBe('水瀬');
     expect(body.activity).toBe('在阳台上修图');
     expect((body.schedule as Array<{ activity: string }>)[0].activity).toBe('自拍');
+    expect(body.voxcpm).toBe(false);
+    expect(body.stt).toBe('none');
+  });
+
+  it('GET /api/prompt returns the voice system prompt', async () => {
+    boot();
+    server = createVoiceServer();
+    const port = await listen(server);
+    const resp = await fetch(`http://127.0.0.1:${port}/api/prompt`);
+    const prompt = await resp.text();
+    expect(resp.status).toBe(200);
+    expect(prompt).toContain('水瀬');
+    expect(prompt).toContain('实时语音');
+  });
+
+  it('GET /api/check lists the voice stack', async () => {
+    boot();
+    server = createVoiceServer();
+    const port = await listen(server);
+    const resp = await fetch(`http://127.0.0.1:${port}/api/check`);
+    const text = await resp.text();
+    expect(resp.status).toBe(200);
+    expect(text).toContain('LiveKit');
+    expect(text).toContain('VoxCPM');
+    expect(text).toContain('USAGE.md');
   });
 
   it('POST /token is 503 when LiveKit is not configured', async () => {
