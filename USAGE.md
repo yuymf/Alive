@@ -173,6 +173,14 @@ curl -sS http://127.0.0.1:7880
 
 `alive voice` 发现 `LIVEKIT_URL` 是本机 7880 且 7880 没人占用时，会自己拉起 `livekit-server --dev`。
 
+还没写进 `.env`、只想先用本机默认账密试一次：
+
+```bash
+alive voice --livekit-dev
+```
+
+这会临时加上 `ws://127.0.0.1:7880` / `devkey` / `secret`。长期用还是写进 `.env`。
+
 还没装 LiveKit、只想看页面：
 
 ```bash
@@ -310,7 +318,7 @@ alive voice --check
 
 | 项 | 通过长什么样 |
 |----|----------------|
-| LiveKit | `ws://127.0.0.1:7880` 或你的 `wss://` |
+| LiveKit | `.env` 已配，且本机开发时 `curl http://127.0.0.1:7880` 有响应 |
 | VoxCPM | `http://127.0.0.1:8000` 有响应 |
 | STT | `cartesia` 或 `openai`，不是 `none` |
 | LLM | `LLM_API_KEY` 已填 |

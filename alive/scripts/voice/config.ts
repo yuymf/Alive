@@ -113,8 +113,20 @@ export async function readVoiceStackStatus(): Promise<VoiceStackStatus> {
   const cfg = readLiveKitConfig();
   const voxUrl = voxcpmUrl();
   const wPort = workerPort();
+  let livekitUp = Boolean(cfg);
+  if (cfg) {
+    try {
+      const parsed = new URL(cfg.url.replace(/^ws/i, 'http'));
+      const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80));
+      if ((parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost') && port) {
+        livekitUp = await portOpen(port, parsed.hostname);
+      }
+    } catch {
+      livekitUp = false;
+    }
+  }
   return {
-    livekit: Boolean(cfg),
+    livekit: livekitUp,
     livekitUrl: cfg?.url || '',
     agentName: agentName(),
     voxcpm: await probeVoxCpm(voxUrl),

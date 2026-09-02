@@ -17,6 +17,7 @@ describe('USAGE.md', () => {
     expect(text).toContain('VOXCPM_URL');
     expect(text).toContain('CARTESIA_API_KEY');
     expect(text).toContain('alive voice --check');
+    expect(text).toContain('alive voice --livekit-dev');
     expect(text).toContain('http://127.0.0.1:8766');
     expect(text).toContain('python alive/voice/voxcpm/server.py');
     expect(text).toContain('alive/voice/agent/requirements.txt');
