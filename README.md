@@ -40,7 +40,7 @@ npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
 npx alive adopt ./examples/steve-jobs
 ```
 
-Then open Claude Code / Cursor / Codex and talk. Optional: put `LLM_API_KEY` in `~/.alive/.env` and run `alive tick`.
+Then open Claude Code / Cursor / Codex / Hermes / OpenClaw and talk. Heartbeat reuses a Hermes / OpenClaw model key when present; otherwise put `LLM_API_KEY` in `~/.alive/.env` and run `alive tick`.
 
 From a blank machine to a live LiveKit + VoxCPM call: **[USAGE.md](USAGE.md)**.
 
@@ -141,8 +141,10 @@ A persona is a config object (MBTI, voice, schedule, feature flags) **plus**, wh
 Alive is an [Agent Skill](https://agentskills.io/specification).
 
 ```bash
-npx alive init              # ~/.agents/skills/alive (+ Claude / Cursor / Codex if present)
-npx alive init --project    # .agents/skills/alive in this repo
+npx alive init                      # ~/.agents/skills/alive (+ Claude / Cursor / Codex / Hermes / OpenClaw if present)
+npx alive init --project            # .agents/skills/alive in this repo
+npx alive init --agent hermes       # only Hermes (~/.hermes/skills/alive)
+npx alive init --agent openclaw
 ```
 
 Memory: `~/.alive` (`ALIVE_HOME`). Default persona: Minase.
@@ -150,7 +152,7 @@ Memory: `~/.alive` (`ALIVE_HOME`). Default persona: Minase.
 | Need | Requires |
 |:---|:---|
 | Chat + memory | A host that loads `SKILL.md` |
-| Heartbeat | `LLM_API_KEY` in `~/.alive/.env` |
+| Heartbeat | Hermes / OpenClaw model key, or `LLM_API_KEY` in `~/.alive/.env` |
 
 ## Develop
 

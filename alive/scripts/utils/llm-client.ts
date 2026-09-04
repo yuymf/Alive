@@ -175,7 +175,7 @@ export async function callLLM(
 ): Promise<LLMResult> {
   const apiKey = process.env.LLM_API_KEY;
   if (!apiKey) {
-    throw new Error('LLM_API_KEY is required. Set it in $ALIVE_HOME/.env. Chat uses the host agent model and does not need this key.');
+    throw new Error('LLM_API_KEY is required. Set it in $ALIVE_HOME/.env, or reuse a Hermes / OpenClaw host key. Chat uses the host agent model and does not need this key.');
   }
 
 

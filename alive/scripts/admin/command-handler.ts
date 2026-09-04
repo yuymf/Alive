@@ -194,7 +194,7 @@ function cmdHelp(): CommandResult {
 |---------|-------------|
 | \`/alive status\` | 查看角色综合状态 |
 | \`/alive setup\` | 查看当前 env 配置状态 |
-| \`/alive setup llm\` | 配置自定义 LLM key |
+| \`/alive setup llm\` | 配置自定义 LLM key（Hermes / OpenClaw 可复用宿主 key） |
 | \`/alive setup instagram\` | 配置 Instagram 凭据 |
 | \`/alive emotion\` | 查看情绪详情 |
 | \`/alive emotion --reset\` | 重置情绪到 MBTI 基线 |
@@ -934,9 +934,11 @@ function cmdSetup(cmd: ParsedCommand): CommandResult {
     return {
       output: `## 🔧 配置 LLM（仅脚本心跳需要）
 
-对话走宿主 Code Agent 的模型。心跳脚本才需要 key。
+对话走宿主 Agent 的模型。心跳脚本才需要 key。
 
-编辑 \`$ALIVE_HOME/.env\`：
+装进 Hermes 或 OpenClaw 时，Alive 会直接用那个宿主已经配好的模型 key，不用再填一份 \`LLM_API_KEY\`。
+
+要自己指定，再编辑 \`$ALIVE_HOME/.env\`：
 
 \`\`\`bash
 LLM_API_KEY=<your-api-key>
@@ -999,9 +1001,9 @@ TALK_TO_FENGGE_URL=http://127.0.0.1:8766
   }
 
   // No subarg: show current env status
-  const env = { ...process.env, ...readAliveEnvFile() };
+  const env = { ...readAliveEnvFile(), ...process.env };
   const rows: [string, string | undefined, string][] = [
-    ['LLM_API_KEY', env.LLM_API_KEY, '心跳脚本用（对话走宿主模型）'],
+    ['LLM_API_KEY', env.LLM_API_KEY, '心跳脚本用（对话走宿主模型；Hermes / OpenClaw 可复用）'],
     ['LLM_API_BASE', env.LLM_API_BASE, 'LLM 接口地址'],
     ['LLM_MODEL', env.LLM_MODEL, 'LLM 模型名称'],
     ['AIHUBMIX_API_KEY', env.AIHUBMIX_API_KEY, 'AI 图片生成'],

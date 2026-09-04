@@ -54,4 +54,29 @@ describe('bin/cli.js smoke', () => {
 
     fs.rmSync(root, { recursive: true, force: true });
   });
+
+  it('init --agent hermes and reuses the host key for tick', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-cli-agent-'));
+    const home = path.join(root, 'home');
+    const aliveHome = path.join(root, 'alive-home');
+    fs.mkdirSync(path.join(home, '.hermes'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.hermes', '.env'), 'OPENAI_API_KEY=sk-hermes-cli\n');
+
+    const init = run(['init', '--agent', 'hermes', '--persona', 'minase'], {
+      HOME: home,
+      ALIVE_HOME: aliveHome,
+    });
+    expect(init.status).toBe(0);
+    expect(init.stdout).toContain(path.join(home, '.hermes', 'skills', 'alive'));
+    expect(init.stdout).not.toContain(path.join(home, '.agents', 'skills', 'alive'));
+    expect(init.stdout).toMatch(/reused from hermes/i);
+    expect(fs.existsSync(path.join(home, '.hermes', 'skills', 'alive', 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(home, '.agents', 'skills', 'alive', 'SKILL.md'))).toBe(false);
+
+    const unknown = run(['init', '--agent', 'windsurf'], { HOME: home, ALIVE_HOME: aliveHome });
+    expect(unknown.status).not.toBe(0);
+    expect(`${unknown.stderr}${unknown.stdout}`).toContain('Unknown agent');
+
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 });

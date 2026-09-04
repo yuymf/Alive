@@ -14,11 +14,11 @@ describe('SKILL.md Agent Skills contract', () => {
     const body = match?.[1] ?? '';
     expect(body).toMatch(/^name:\s*alive/m);
     expect(body).toMatch(/^description:/m);
-    expect(body).not.toContain('openclaw');
+    expect(body).not.toMatch(/openclaw run|~\/\.openclaw/i);
   });
 
-  it('does not tell the agent to use OpenClaw paths', () => {
-    expect(raw.toLowerCase()).not.toContain('openclaw');
+  it('does not tell the agent to use OpenClaw runtime paths', () => {
+    expect(raw).not.toMatch(/openclaw run|clawhub|~\/\.openclaw/i);
     expect(raw).toContain('ALIVE_HOME');
     expect(raw).toContain('command-handler.js');
     expect(raw).toContain('boot.js');

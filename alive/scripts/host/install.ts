@@ -5,29 +5,109 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { seedPersonaMemory, upsertEnvFile } from './memory';
+export { harvestHostLlm } from './host-llm';
 
 export interface SkillTarget {
   id: string;
   dir: string;
-  reason: 'always' | 'detected' | 'project';
+  reason: 'always' | 'detected' | 'project' | 'requested';
+}
+
+export interface HostAgent {
+  id: string;
+  label: string;
+  skillRel: string[];
+  detect: 'always' | 'home';
+  detectRel: string[];
+}
+
+export const HOST_AGENTS: Record<string, HostAgent> = {
+  agents: {
+    id: 'agents',
+    label: 'Cursor + Codex (~/.agents)',
+    skillRel: ['.agents', 'skills', 'alive'],
+    detect: 'always',
+    detectRel: ['.agents'],
+  },
+  claude: {
+    id: 'claude',
+    label: 'Claude Code',
+    skillRel: ['.claude', 'skills', 'alive'],
+    detect: 'home',
+    detectRel: ['.claude'],
+  },
+  cursor: {
+    id: 'cursor',
+    label: 'Cursor',
+    skillRel: ['.cursor', 'skills', 'alive'],
+    detect: 'home',
+    detectRel: ['.cursor'],
+  },
+  codex: {
+    id: 'codex',
+    label: 'Codex',
+    skillRel: ['.codex', 'skills', 'alive'],
+    detect: 'home',
+    detectRel: ['.codex'],
+  },
+  hermes: {
+    id: 'hermes',
+    label: 'Hermes',
+    skillRel: ['.hermes', 'skills', 'alive'],
+    detect: 'home',
+    detectRel: ['.hermes'],
+  },
+  openclaw: {
+    id: 'openclaw',
+    label: 'OpenClaw',
+    skillRel: ['.openclaw', 'skills', 'alive'],
+    detect: 'home',
+    detectRel: ['.openclaw'],
+  },
+};
+
+export function knownAgentIds(): string[] {
+  return Object.keys(HOST_AGENTS);
+}
+
+export function parseAgentFlag(raw: string | undefined): string[] {
+  if (!raw || raw === 'true') return [];
+  return raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
+export function resolveUserSkillTargets(agentIds: string[], home = os.homedir()): SkillTarget[] {
+  if (agentIds.length === 0) return detectUserSkillTargets(home);
+  const unknown = agentIds.filter((id) => !HOST_AGENTS[id]);
+  if (unknown.length > 0) {
+    throw new Error(`Unknown agent "${unknown.join(', ')}". Supported: ${knownAgentIds().join(', ')}`);
+  }
+  return agentIds.map((id) => ({
+    id,
+    dir: path.join(home, ...HOST_AGENTS[id].skillRel),
+    reason: 'requested' as const,
+  }));
 }
 
 export function detectUserSkillTargets(home = os.homedir()): SkillTarget[] {
-  const targets: SkillTarget[] = [
-    { id: 'agents', dir: path.join(home, '.agents', 'skills', 'alive'), reason: 'always' },
-  ];
-  const optional: Array<[string, string[]]> = [
-    ['claude', ['.claude']],
-    ['cursor', ['.cursor']],
-    ['codex', ['.codex']],
-  ];
-  for (const [id, rel] of optional) {
-    const hostRoot = path.join(home, ...rel);
-    if (fs.existsSync(hostRoot)) {
-      targets.push({ id, dir: path.join(hostRoot, 'skills', 'alive'), reason: 'detected' });
+  const targets: SkillTarget[] = [];
+  for (const host of Object.values(HOST_AGENTS)) {
+    if (host.detect === 'always') {
+      targets.push({ id: host.id, dir: path.join(home, ...host.skillRel), reason: 'always' });
+      continue;
+    }
+    if (fs.existsSync(path.join(home, ...host.detectRel))) {
+      targets.push({ id: host.id, dir: path.join(home, ...host.skillRel), reason: 'detected' });
     }
   }
   return targets;
+}
+
+export function allUserSkillTargets(home = os.homedir()): SkillTarget[] {
+  return Object.values(HOST_AGENTS).map((host) => ({
+    id: host.id,
+    dir: path.join(home, ...host.skillRel),
+    reason: host.detect === 'always' ? 'always' : 'detected',
+  }));
 }
 
 export function projectSkillTarget(cwd = process.cwd()): SkillTarget {
@@ -143,15 +223,5 @@ export function initMemory(aliveHome: string, personaId: string, root = repoRoot
     fs.copyFileSync(yamlSrc, path.join(memory, 'persona', 'persona.yaml'));
   }
   seedPersonaMemory(memory);
-  const envPath = path.join(aliveHome, '.env');
-  if (!fs.existsSync(envPath)) {
-    upsertEnvFile(envPath, {
-      ALIVE_PERSONA: personaId,
-      LLM_API_KEY: '',
-      LLM_API_BASE: '',
-      LLM_MODEL: '',
-    });
-  } else {
-    upsertEnvFile(envPath, { ALIVE_PERSONA: personaId });
-  }
+  upsertEnvFile(path.join(aliveHome, '.env'), { ALIVE_PERSONA: personaId });
 }

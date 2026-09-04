@@ -1,6 +1,6 @@
 {
   "name": "alive",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Alive — distill a person, adopt the skill, give it a life beyond chat.",
   "main": "bin/cli.js",
   "bin": {

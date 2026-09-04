@@ -19,9 +19,18 @@ alive init
 
 `alive init` 会：
 
-- 把 skill 拷到 `~/.agents/skills/alive`（以及本机已有的 Claude / Cursor / Codex skill 目录）
+- 把 skill 拷到 `~/.agents/skills/alive`（以及本机已有的 Claude / Cursor / Codex / Hermes / OpenClaw skill 目录）
 - 在 `~/.alive` 写下记忆和 `.env`
 - 默认角色是 **水瀬**
+- 若 Hermes / OpenClaw 已经有模型 key，心跳直接复用，不必再填 `LLM_API_KEY`
+
+只装某一家：
+
+```bash
+alive init --agent hermes
+alive init --agent openclaw
+alive init --agent hermes,openclaw
+```
 
 数据都在 `$ALIVE_HOME`，默认 `~/.alive`。以后改配置只改这个文件：
 
@@ -98,7 +107,9 @@ alive context
 
 ## 4. 让他自己过日子（可选，但推荐）
 
-文字聊天走宿主模型，不需要额外 key。心跳（自己排日程、发自拍、发社媒、主动打电话）需要 LLM：
+文字聊天走宿主模型，不需要额外 key。心跳（自己排日程、发自拍、发社媒、主动打电话）需要一份 OpenAI 兼容的 LLM。装在 Hermes / OpenClaw 里时，Alive 会读那个宿主已经配好的 key，不用再写一份。
+
+没有这两家、或想覆盖宿主配置时，再写 `~/.alive/.env`：
 
 ```bash
 # ~/.alive/.env
@@ -321,7 +332,7 @@ alive voice --check
 | LiveKit | `.env` 已配，且本机开发时 `curl http://127.0.0.1:7880` 有响应 |
 | VoxCPM | `http://127.0.0.1:8000` 有响应 |
 | STT | `cartesia` 或 `openai`，不是 `none` |
-| LLM | `LLM_API_KEY` 已填 |
+| LLM | Hermes / OpenClaw 宿主 key，或 `LLM_API_KEY` 已填 |
 | Agent worker | `127.0.0.1:8081` 在听 |
 | 通话页 | `http://127.0.0.1:8766` |
 

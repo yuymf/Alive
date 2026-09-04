@@ -4,6 +4,15 @@ All notable changes to Alive are documented here.
 
 ---
 
+## [0.9.0] — 2026-09-04
+
+### Added
+- **`alive init --agent`** — 只装到指定宿主，逗号分隔。支持 `agents` / `claude` / `cursor` / `codex` / `hermes` / `openclaw`。
+- **Hermes / OpenClaw** — 检测到 `~/.hermes` 或 `~/.openclaw` 时自动装 skill；也可 `alive init --agent hermes` / `--agent openclaw`。
+- **复用宿主 LLM key** — 心跳不再强制另填 `LLM_API_KEY`。有 Hermes 或 OpenClaw 的模型配置时直接用那份。
+
+---
+
 ## [0.8.0] — 2026-09-02
 
 ### Added

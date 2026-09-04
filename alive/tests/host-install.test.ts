@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { detectUserSkillTargets, projectSkillTarget, initMemory, installSkillTo, repoRootFromHere } from '../scripts/host/install';
+import { detectUserSkillTargets, projectSkillTarget, initMemory, installSkillTo, repoRootFromHere, resolveUserSkillTargets, parseAgentFlag, knownAgentIds, allUserSkillTargets } from '../scripts/host/install';
 import { dispatch } from '../scripts/admin/command-handler';
 import { resetBasePaths, setPersonaName } from '../scripts/utils/file-utils';
 import { clearPersonaCache } from '../scripts/persona/persona-loader';
@@ -19,13 +19,44 @@ describe('detectUserSkillTargets', () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it('adds claude/cursor/codex only when those homes exist', () => {
+  it('adds claude/cursor/codex/hermes/openclaw only when those homes exist', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-hosts-'));
     fs.mkdirSync(path.join(tmp, '.claude'));
     fs.mkdirSync(path.join(tmp, '.cursor'));
+    fs.mkdirSync(path.join(tmp, '.hermes'));
+    fs.mkdirSync(path.join(tmp, '.openclaw'));
     const targets = detectUserSkillTargets(tmp);
-    expect(targets.map((t) => t.id)).toEqual(['agents', 'claude', 'cursor']);
+    expect(targets.map((t) => t.id)).toEqual(['agents', 'claude', 'cursor', 'hermes', 'openclaw']);
     fs.rmSync(tmp, { recursive: true, force: true });
+  });
+});
+
+describe('resolveUserSkillTargets', () => {
+  it('parses comma-separated --agent ids', () => {
+    expect(parseAgentFlag('hermes,openclaw')).toEqual(['hermes', 'openclaw']);
+    expect(parseAgentFlag(' Hermes , Cursor ')).toEqual(['hermes', 'cursor']);
+    expect(parseAgentFlag('true')).toEqual([]);
+    expect(knownAgentIds()).toEqual(['agents', 'claude', 'cursor', 'codex', 'hermes', 'openclaw']);
+  });
+
+  it('installs only the requested agents', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-hosts-'));
+    const targets = resolveUserSkillTargets(['hermes', 'openclaw'], tmp);
+    expect(targets).toEqual([
+      { id: 'hermes', dir: path.join(tmp, '.hermes', 'skills', 'alive'), reason: 'requested' },
+      { id: 'openclaw', dir: path.join(tmp, '.openclaw', 'skills', 'alive'), reason: 'requested' },
+    ]);
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('rejects unknown agents', () => {
+    expect(() => resolveUserSkillTargets(['windsurf'], '/tmp')).toThrow(/Unknown agent "windsurf"/);
+  });
+
+  it('lists every known host for uninstall', () => {
+    const targets = allUserSkillTargets('/home/me');
+    expect(targets.map((t) => t.id)).toEqual(knownAgentIds());
+    expect(targets.find((t) => t.id === 'hermes')?.dir).toBe(path.join('/home/me', '.hermes', 'skills', 'alive'));
   });
 });
 

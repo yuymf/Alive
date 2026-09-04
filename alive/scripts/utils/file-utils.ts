@@ -4,6 +4,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { applyHostLlmToEnv, harvestHostLlm } from '../host/host-llm';
 
 let _memoryBaseOverride: string | null = null;
 let _skillBaseOverride: string | null = null;
@@ -34,6 +35,8 @@ const USER_SKILL_CANDIDATES = [
   ['.claude', 'skills', 'alive'],
   ['.cursor', 'skills', 'alive'],
   ['.codex', 'skills', 'alive'],
+  ['.hermes', 'skills', 'alive'],
+  ['.openclaw', 'skills', 'alive'],
 ] as const;
 
 function resolveBundledSkillDir(): string {
@@ -331,6 +334,9 @@ export function loadAliveEnv(): void {
   for (const [key, value] of Object.entries(parsed)) {
     if (!value) continue;
     if (!process.env[key]) process.env[key] = value;
+  }
+  if (!process.env.LLM_API_KEY) {
+    applyHostLlmToEnv(harvestHostLlm());
   }
   if (process.env.ALIVE_PERSONA) {
     setPersonaName(process.env.ALIVE_PERSONA);
