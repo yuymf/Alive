@@ -223,14 +223,14 @@ function resolveSecret(value: unknown, env: Record<string, string>): string | nu
     const trimmed = value.trim();
     if (!trimmed) return null;
     const interp = trimmed.match(/^\$\{([A-Z0-9_]+)\}$/);
-    if (interp) return firstString(env[interp[1]], process.env[interp[1]]);
+    if (interp) return firstString(env[interp[1]], process.env[interp[1]]) ?? null;
     if (/^secretref-/i.test(trimmed)) return null;
     return trimmed;
   }
   if (value && typeof value === 'object') {
     const rec = value as Record<string, unknown>;
     if (rec.source === 'env' && typeof rec.id === 'string') {
-      return firstString(env[rec.id], process.env[rec.id]);
+      return firstString(env[rec.id], process.env[rec.id]) ?? null;
     }
     if (rec.source === 'file' && typeof rec.path === 'string') {
       const filePath = rec.path.replace(/^~(?=\/|$)/, os.homedir());
