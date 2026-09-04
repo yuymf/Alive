@@ -10,12 +10,12 @@ license: MIT
 compatibility: Requires Node.js >= 18
 metadata:
   author: yuymf
-  version: "0.8.0"
+  version: "0.9.0"
 ---
 
 # Alive
 
-Portable Agent Skill. Works in Claude Code, Cursor, Codex, and any host that loads `SKILL.md`.
+Portable Agent Skill. Works in Claude Code, Cursor, Codex, Hermes, OpenClaw, and any host that loads `SKILL.md`.
 
 Data lives in `$ALIVE_HOME` (default `~/.alive`). The skill directory is `{baseDir}`.
 
@@ -85,7 +85,7 @@ After adopt, `chat.js load` includes the original skill rules. Heartbeat uses th
 
 ## Heartbeat
 
-Autonomous ticks need `LLM_API_KEY` in `$ALIVE_HOME/.env`.
+Autonomous ticks use `LLM_API_KEY` in `$ALIVE_HOME/.env`. Hermes and OpenClaw hosts reuse their existing model key — no second key.
 
 ```bash
 node {baseDir}/scripts/host/boot.js tick

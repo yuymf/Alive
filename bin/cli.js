@@ -12,7 +12,7 @@ function printHelp() {
   process.stdout.write(`Alive — portable digital-life skill for Code Agents
 
 Usage:
-  alive init [--project] [--persona <id>] [--home <dir>]
+  alive init [--project] [--agent <id[,id]>] [--persona <id>] [--home <dir>]
   alive adopt <path|url> [--id <slug>] [--home <dir>]
   alive distill <name|path|url> [--id <slug>] [--name <name>] [--home <dir>]
   alive call [--home <dir>]
@@ -29,10 +29,16 @@ init copies this skill into Code Agent skill dirs:
   ~/.claude/skills/alive          (if ~/.claude exists)
   ~/.cursor/skills/alive          (if ~/.cursor exists)
   ~/.codex/skills/alive           (if ~/.codex exists)
+  ~/.hermes/skills/alive          (if ~/.hermes exists)
+  ~/.openclaw/skills/alive        (if ~/.openclaw exists)
   .agents/skills/alive            (--project)
 
+--agent installs only to the named hosts (comma-separated):
+  agents, claude, cursor, codex, hermes, openclaw
+
 Memory and .env go to $ALIVE_HOME (default ~/.alive).
-Conversation uses the host agent. Heartbeat scripts need LLM_API_KEY.
+Conversation uses the host agent. Heartbeat reuses a Hermes / OpenClaw
+model key when present; otherwise set LLM_API_KEY.
 adopt takes a Nuwa / 永雏塔菲 persona skill (local dir or git URL).
 distill turns materials or talk-to-fengge into a skill, then adopts it.
 call writes a live-voice invitation.
@@ -91,13 +97,17 @@ function ensureBuilt() {
 
 function cmdInit(flags) {
   const host = ensureBuilt();
-  const { detectUserSkillTargets, projectSkillTarget, installSkillTo, initMemory, buildSkill } = host.install;
+  const { parseAgentFlag, resolveUserSkillTargets, projectSkillTarget, installSkillTo, initMemory, buildSkill, knownAgentIds, harvestHostLlm } = host.install;
   buildSkill();
   const persona = flags.persona || 'minase';
   const aliveHome = flags.home || process.env.ALIVE_HOME || path.join(os.homedir(), '.alive');
+  const agentIds = parseAgentFlag(flags.agent || flags.agents);
+  if ((flags.agent === 'true' || flags.agents === 'true') && agentIds.length === 0) {
+    throw new Error(`--agent needs an id. Supported: ${knownAgentIds().join(', ')}`);
+  }
   const targets = flags.project === 'true'
     ? [projectSkillTarget(process.cwd())]
-    : detectUserSkillTargets();
+    : resolveUserSkillTargets(agentIds);
 
   initMemory(aliveHome, persona, ROOT);
   for (const target of targets) {
@@ -106,8 +116,14 @@ function cmdInit(flags) {
   }
   process.stdout.write(`memory → ${path.join(aliveHome, 'personas', persona)}\n`);
   process.stdout.write(`env    → ${path.join(aliveHome, '.env')}\n`);
-  process.stdout.write('\nNext: add LLM_API_KEY to .env if you want scripted heartbeats.\n');
-  process.stdout.write('Then open Claude Code / Cursor / Codex and talk to the persona, or run `alive tick`.\n');
+  const creds = harvestHostLlm(os.homedir(), agentIds);
+  if (creds) {
+    process.stdout.write(`llm    → reused from ${creds.source} (no extra LLM_API_KEY needed)\n`);
+  } else {
+    process.stdout.write('\nNext: add LLM_API_KEY to .env if you want scripted heartbeats.\n');
+    process.stdout.write('Hermes / OpenClaw users can skip this — Alive reuses that host key.\n');
+  }
+  process.stdout.write('Then open the host agent and talk to the persona, or run `alive tick`.\n');
 }
 
 async function cmdBoot(command) {
@@ -157,7 +173,7 @@ async function cmdStart() {
 function cmdUninstall(flags) {
   const aliveHome = flags.home || process.env.ALIVE_HOME || path.join(os.homedir(), '.alive');
   const host = loadHost() || ensureBuilt();
-  const targets = host.install.detectUserSkillTargets();
+  const targets = host.install.allUserSkillTargets();
   targets.push(host.install.projectSkillTarget(process.cwd()));
   for (const target of targets) {
     if (fs.existsSync(target.dir)) {

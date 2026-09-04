@@ -150,7 +150,7 @@ export function formatVoiceCheck(status: VoiceStackStatus): string {
     row(status.livekit, 'LiveKit', status.livekit ? status.livekitUrl : '未配置 LIVEKIT_URL / KEY / SECRET'),
     row(status.voxcpm, 'VoxCPM', status.voxcpm ? `${status.voxcpmUrl} voice=${status.voxcpmVoice}` : `${status.voxcpmUrl} 无响应`),
     row(status.stt !== 'none', 'STT', status.stt === 'none' ? '需要 CARTESIA_API_KEY 或 OPENAI_API_KEY' : status.stt),
-    row(status.llm, 'LLM', status.llm ? (process.env.LLM_MODEL || '已配置') : '需要 LLM_API_KEY'),
+    row(status.llm, 'LLM', status.llm ? (process.env.LLM_MODEL || '已配置') : '需要 Hermes/OpenClaw 宿主 key 或 LLM_API_KEY'),
     row(status.worker, 'Agent worker', status.worker ? `127.0.0.1:${status.workerPort}` : `还没起来（${status.agentName}）`),
     row(true, '通话页', `http://127.0.0.1:${status.voicePort}`),
     '',

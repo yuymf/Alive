@@ -12,7 +12,7 @@ export async function boot(command: BootCommand = 'tick'): Promise<void> {
   loadAliveEnv();
   if (!process.env.LLM_API_KEY) {
     throw new Error(
-      'LLM_API_KEY is required for heartbeat scripts. Put it in $ALIVE_HOME/.env or export it. Conversation chat uses the host agent model and does not need this key.',
+      'LLM_API_KEY is required for heartbeat scripts. Put it in $ALIVE_HOME/.env, or install into Hermes / OpenClaw so their existing model key is reused. Conversation chat uses the host agent model and does not need this key.',
     );
   }
   const llm = createRealLLMClient();

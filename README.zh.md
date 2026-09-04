@@ -39,7 +39,7 @@ npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
 npx alive adopt ./examples/steve-jobs
 ```
 
-然后打开 Claude Code / Cursor / Codex，直接说话。可选：把 `LLM_API_KEY` 写进 `~/.alive/.env`，跑 `alive tick`。
+然后打开 Claude Code / Cursor / Codex / Hermes / OpenClaw，直接说话。心跳会复用 Hermes / OpenClaw 已有的模型 key；没有这两家再把 `LLM_API_KEY` 写进 `~/.alive/.env`，跑 `alive tick`。
 
 从空机器配到 LiveKit + VoxCPM 打电话：看 **[USAGE.md](USAGE.md)**。
 
@@ -134,12 +134,12 @@ alive/
 
 宿主不要手改日记和情绪文件。`chat.js load` 打出上下文；`chat.js save` 写回下一轮要读的记忆。
 
-记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。项目内安装：`npx alive init --project`。
+记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。项目内安装：`npx alive init --project`。指定宿主：`npx alive init --agent hermes` 或 `--agent openclaw`。
 
 | 功能 | 需要 |
 |:---|:---|
-| 对话 + 记忆 | 会加载 `SKILL.md` 的 Code Agent |
-| 心跳 | `~/.alive/.env` 里的 `LLM_API_KEY` |
+| 对话 + 记忆 | 会加载 `SKILL.md` 的 Agent |
+| 心跳 | Hermes / OpenClaw 的模型 key，或 `~/.alive/.env` 里的 `LLM_API_KEY` |
 
 ## 开发
 
