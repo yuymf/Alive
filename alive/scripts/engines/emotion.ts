@@ -6,14 +6,11 @@ import { EmotionState, EmotionDelta, EmotionMomentum, ImpulseHistoryEntry, MetaI
 import { getEmotionBaseline } from '../persona/persona-loader';
 import { now } from '../utils/time-utils';
 import { EMOTION_CONFIG } from '../config';
+import { clamp } from '../utils/math-utils';
 
 const DECAY_RATE = 0.1;
 const IMPULSE_DECAY = EMOTION_CONFIG.IMPULSE_DECAY;
 const MAX_IMPULSE_HISTORY = EMOTION_CONFIG.MAX_IMPULSE_HISTORY;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
 
 function finiteOr(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;

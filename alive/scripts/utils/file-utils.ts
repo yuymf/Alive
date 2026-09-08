@@ -58,10 +58,6 @@ function getSkillBase(): string {
   return resolveBundledSkillDir();
 }
 
-function resolveTunablePromptPath(relativePath: string): string | null {
-  const installedPath = path.join(getSkillBase(), 'tunable', 'prompts', relativePath);
-  return fs.existsSync(installedPath) ? installedPath : null;
-}
 
 /** Override base paths for testing (sandbox isolation). */
 export function setBasePaths(memoryBase: string, skillBase: string): void {
@@ -191,55 +187,6 @@ export function writeJSON<T>(filePath: string, data: T): void {
   fs.renameSync(tmpPath, filePath);
 }
 
-const LOCK_STALE_MS = 30_000;
-
-/**
- * Execute a callback while holding an advisory file lock.
- * Prevents concurrent read-modify-write races on the same file.
- * Lock is automatically released when the callback completes or throws.
- */
-export async function withFileLock<T>(filePath: string, fn: () => T | Promise<T>): Promise<T> {
-  const lockPath = `${filePath}.lock`;
-  const lockContent = `${process.pid}\n${Date.now()}`;
-
-  // Acquire lock (spin with backoff)
-  let acquired = false;
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try {
-      // O_EXCL ensures atomic creation — fails if file already exists
-      fs.writeFileSync(lockPath, lockContent, { flag: 'wx' });
-      acquired = true;
-      break;
-    } catch {
-      // Check if existing lock is stale
-      try {
-        const existing = fs.readFileSync(lockPath, 'utf8');
-        const lockTime = parseInt(existing.split('\n')[1] ?? '0', 10);
-        if (Date.now() - lockTime > LOCK_STALE_MS) {
-          // Stale lock — remove and retry
-          try { fs.unlinkSync(lockPath); } catch { /* race ok */ }
-          continue;
-        }
-      } catch {
-        // Lock file disappeared between our check — retry
-        continue;
-      }
-      // Wait with exponential backoff
-      await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
-    }
-  }
-
-  if (!acquired) {
-    throw new Error(`Failed to acquire file lock for ${filePath} after 10 attempts`);
-  }
-
-  try {
-    return await fn();
-  } finally {
-    try { fs.unlinkSync(lockPath); } catch { /* already removed */ }
-  }
-}
-
 export function appendText(filePath: string, text: string): void {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
@@ -253,22 +200,15 @@ export function readText(filePath: string, fallback = ''): string {
 
 /**
  * Read a prompt template from templates/ directory.
- *
- * Tunable override priority:
- * 1. <skillBase>/tunable/prompts/lifecycle/<templateName>
- * 2. <repoRoot>/alive/templates/<templateName>
  */
 export function readTemplate(templateName: string): string {
-  const tunablePath = resolveTunablePromptPath(path.join('lifecycle', templateName));
-  if (tunablePath) return fs.readFileSync(tunablePath, 'utf8');
-
   const installedPath = path.join(getSkillBase(), 'templates', templateName);
   if (fs.existsSync(installedPath)) return fs.readFileSync(installedPath, 'utf8');
 
   const devPath = path.join(__dirname, '..', '..', 'templates', templateName);
   if (fs.existsSync(devPath)) return fs.readFileSync(devPath, 'utf8');
 
-  throw new Error(`Template not found: ${templateName} (tried tunable override, ${installedPath} and ${devPath})`);
+  throw new Error(`Template not found: ${templateName} (tried ${installedPath} and ${devPath})`);
 }
 
 export function readAllJSON<T>(dirPath: string): T[] {

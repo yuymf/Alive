@@ -61,12 +61,15 @@ describe('talk-to-fengge conversion', () => {
 });
 
 describe('distillPersona', () => {
+  const prevUserHome = process.env.HOME;
   const prevHome = process.env.ALIVE_HOME;
   const prevPersona = process.env.ALIVE_PERSONA;
   let tmp = '';
 
   afterEach(() => {
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+    if (prevUserHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevUserHome;
     if (prevHome === undefined) delete process.env.ALIVE_HOME;
     else process.env.ALIVE_HOME = prevHome;
     if (prevPersona === undefined) delete process.env.ALIVE_PERSONA;
@@ -77,8 +80,10 @@ describe('distillPersona', () => {
 
   function boot() {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-distill-home-'));
+    process.env.HOME = tmp;
     process.env.ALIVE_HOME = tmp;
     delete process.env.ALIVE_PERSONA;
+    delete process.env.LLM_API_KEY;
     resetBasePaths();
     setPersonaName('default');
     clearPersonaCache();

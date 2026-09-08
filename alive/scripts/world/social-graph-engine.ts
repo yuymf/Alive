@@ -4,6 +4,7 @@
 
 import { SocialRelation, SocialMeta, IntentCategory } from '../utils/types';
 import { SOCIAL_GRAPH_CONFIG } from '../config';
+import { clamp } from '../utils/math-utils';
 
 // === Tier Classification ===
 
@@ -40,7 +41,7 @@ const CLOSENESS_DELTAS: Record<ClosenessEventType, number> = {
 };
 
 function clampCloseness(value: number): number {
-  return Math.min(10, Math.max(0, value));
+  return clamp(value, 0, 10);
 }
 
 export function applyClosenessChange(

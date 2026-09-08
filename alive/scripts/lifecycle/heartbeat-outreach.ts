@@ -132,8 +132,13 @@ interface ProactiveMessageOutput {
  */
 export async function generateProactiveMessage(
   input: ProactiveMessageInput,
-): Promise<ProactiveMessageOutput> {
-  const template = readTemplate('outreach-message-prompt.md');
+): Promise<ProactiveMessageOutput | null> {
+  let template: string;
+  try {
+    template = readTemplate('outreach-message-prompt.md');
+  } catch {
+    return { should_send: false, message: '', reason: 'template not found' };
+  }
   const prompt = template
     .replace('{action_description}', input.actionDescription)
     .replace('{inner_monologue}', input.innerMonologue)
@@ -201,7 +206,7 @@ export async function attemptProactiveOutreach(ctx: OutreachContext): Promise<Ou
   }
 
   // 3. LLM: should we send? what to say?
-  let llmResult: ProactiveMessageOutput;
+  let llmResult: ProactiveMessageOutput | null;
   try {
     const emotionSummary = `${ctx.emotion.mood.description} (v:${ctx.emotion.mood.valence.toFixed(1)} a:${ctx.emotion.mood.arousal.toFixed(1)} e:${ctx.emotion.energy.toFixed(1)} soc:${ctx.emotion.sociability.toFixed(1)})`;
     llmResult = await generateProactiveMessage({
@@ -217,9 +222,10 @@ export async function attemptProactiveOutreach(ctx: OutreachContext): Promise<Ou
     return { attempted: true, sent: false, message: null, reason: `llm-error: ${(err as Error).message}` };
   }
 
-  if (!llmResult.should_send) {
-    console.log(`[outreach] LLM decided not to send: ${llmResult.reason}`);
-    return { attempted: true, sent: false, message: null, reason: `llm-skip: ${llmResult.reason}` };
+  if (!llmResult || !llmResult.should_send) {
+    const reason = !llmResult ? 'llm-returned-null' : llmResult.reason;
+    console.log(`[outreach] LLM decided not to send: ${reason}`);
+    return { attempted: true, sent: false, message: null, reason: `llm-skip: ${reason}` };
   }
 
   // 4. Send

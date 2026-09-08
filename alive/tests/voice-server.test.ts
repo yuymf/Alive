@@ -30,6 +30,7 @@ async function json(port: number, pathname: string, opts: { method?: string; bod
 }
 
 describe('voice server', () => {
+  const prevUserHome = process.env.HOME;
   const prevHome = process.env.ALIVE_HOME;
   const prevPersona = process.env.ALIVE_PERSONA;
   const prevKey = process.env.LLM_API_KEY;
@@ -47,6 +48,8 @@ describe('voice server', () => {
       server = null;
     }
     if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+    if (prevUserHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevUserHome;
     if (prevHome === undefined) delete process.env.ALIVE_HOME;
     else process.env.ALIVE_HOME = prevHome;
     if (prevPersona === undefined) delete process.env.ALIVE_PERSONA;
@@ -65,6 +68,7 @@ describe('voice server', () => {
 
   function boot() {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-voice-'));
+    process.env.HOME = tmp;
     process.env.ALIVE_HOME = tmp;
     delete process.env.ALIVE_PERSONA;
     delete process.env.LLM_API_KEY;

@@ -1,4 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { setBasePaths, resetBasePaths } from '../scripts/utils/file-utils';
 
 vi.mock('child_process', () => ({
   execFile: vi.fn(),
@@ -15,14 +19,25 @@ function simulateExecFile(stdout: string, stderr = '', error: Error | null = nul
 }
 
 describe('xhs-bridge-client', () => {
+  let tmpDir: string;
+
   beforeEach(async () => {
     vi.clearAllMocks();
-    vi.resetModules();
     mockExecFile.mockReset();
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-xhs-test-'));
+    process.env.ALIVE_HOME = tmpDir;
+    setBasePaths(tmpDir, tmpDir);
     // Reset rate limiter and search cache between tests
     const mod = await import('../sub-skills/platform/xhs-bridge/scripts/xhs-client');
     mod.resetRateLimiterForTests();
     mod.resetSearchCacheForTests();
+  });
+
+  afterEach(() => {
+    resetBasePaths();
+    if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+    delete process.env.ALIVE_HOME;
+    vi.useRealTimers();
   });
 
   describe('isXhsAvailable', () => {

@@ -4,14 +4,14 @@
 import { VitalityState, EmotionState } from '../utils/types';
 import { now, getLocalDate } from '../utils/time-utils';
 import { VITALITY_CONFIG } from '../config';
+import { clamp } from '../utils/math-utils';
 
 const VITALITY_MAX = VITALITY_CONFIG.VITALITY_MAX;
 const VITALITY_MIN = 0;
 const BASE_DRAIN_PER_TICK = VITALITY_CONFIG.BASE_DRAIN_PER_TICK;  // 从 3 降到 2：减缓全天活力消耗（之前 85→8.6 太快）
 
 function clampVitality(v: number): number {
-  if (!Number.isFinite(v)) return VITALITY_MIN;
-  return Math.min(VITALITY_MAX, Math.max(VITALITY_MIN, v));
+  return clamp(v, VITALITY_MIN, VITALITY_MAX);
 }
 
 function safeNonNegative(value: number, fallback = 0): number {

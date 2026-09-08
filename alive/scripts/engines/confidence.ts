@@ -5,6 +5,7 @@
 import { ConfidenceState, FeedbackEvent } from '../utils/types';
 import { now } from '../utils/time-utils';
 import { CONFIDENCE_CONFIG } from '../config';
+import { clamp } from '../utils/math-utils';
 
 const CONFIDENCE_MIN = CONFIDENCE_CONFIG.CONFIDENCE_MIN;
 const CONFIDENCE_MAX = CONFIDENCE_CONFIG.CONFIDENCE_MAX;
@@ -12,7 +13,7 @@ const CONFIDENCE_NEUTRAL = CONFIDENCE_CONFIG.CONFIDENCE_NEUTRAL;
 const DECAY_RATE = CONFIDENCE_CONFIG.DECAY_RATE;
 
 function clampConfidence(v: number): number {
-  return Math.min(CONFIDENCE_MAX, Math.max(CONFIDENCE_MIN, v));
+  return clamp(v, CONFIDENCE_MIN, CONFIDENCE_MAX);
 }
 
 /**

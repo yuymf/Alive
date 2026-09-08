@@ -6,6 +6,7 @@
 import { WorkImpulseState } from '../utils/types';
 import { now, getLocalDate } from '../utils/time-utils';
 import { WORK_IMPULSE_CONFIG } from '../config';
+import { clamp } from '../utils/math-utils';
 
 const BASE_DECAY = WORK_IMPULSE_CONFIG.BASE_DECAY;
 const EXTRA_DECAY_1_OUTPUT = 5;
@@ -13,10 +14,6 @@ const EXTRA_DECAY_2_OUTPUTS = 15;
 const IMPULSE_THRESHOLD = WORK_IMPULSE_CONFIG.IMPULSE_THRESHOLD;
 const DORMANCY_DAYS = WORK_IMPULSE_CONFIG.DORMANCY_DAYS;
 const DORMANCY_BOOST = WORK_IMPULSE_CONFIG.DORMANCY_BOOST;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
 
 /**
  * Accumulate work impulse by delta, clamped to 0-100.

@@ -20,7 +20,7 @@ afterAll(() => {
 
 // Import after mock setup — use dynamic import to get around resolution
 // We need to use the real module but test with real temp files
-import { readJSON, writeJSON, appendText, readText, withFileLock } from '../scripts/utils/file-utils';
+import { readJSON, writeJSON, appendText, readText } from '../scripts/utils/file-utils';
 
 describe('file-utils', () => {
   describe('readJSON', () => {
@@ -143,73 +143,5 @@ describe('file-utils', () => {
       expect(readText(filePath, 'default content')).toBe('default content');
     });
   });
-
-  describe('withFileLock', () => {
-    it('should acquire lock, run callback, and release lock', async () => {
-      const filePath = path.join(TEST_DIR, 'lockable.json');
-      fs.writeFileSync(filePath, '{}');
-
-      const result = await withFileLock(filePath, () => 'done');
-
-      expect(result).toBe('done');
-      // Lock file should be cleaned up
-      expect(fs.existsSync(filePath + '.lock')).toBe(false);
-    });
-
-    it('should release lock even if callback throws', async () => {
-      const filePath = path.join(TEST_DIR, 'lockable2.json');
-      fs.writeFileSync(filePath, '{}');
-
-      await expect(
-        withFileLock(filePath, () => { throw new Error('boom'); })
-      ).rejects.toThrow('boom');
-
-      // Lock should still be cleaned up
-      expect(fs.existsSync(filePath + '.lock')).toBe(false);
-    });
-
-    it('should handle async callbacks', async () => {
-      const filePath = path.join(TEST_DIR, 'lockable3.json');
-      fs.writeFileSync(filePath, '{}');
-
-      const result = await withFileLock(filePath, async () => {
-        return 42;
-      });
-
-      expect(result).toBe(42);
-      expect(fs.existsSync(filePath + '.lock')).toBe(false);
-    });
-
-    it('should remove stale locks and retry', async () => {
-      const filePath = path.join(TEST_DIR, 'stale.json');
-      fs.writeFileSync(filePath, '{}');
-
-      // Create a stale lock (timestamp 60s ago)
-      const staleTimestamp = Date.now() - 60_000;
-      fs.writeFileSync(filePath + '.lock', `99999\n${staleTimestamp}`);
-
-      const result = await withFileLock(filePath, () => 'recovered');
-
-      expect(result).toBe('recovered');
-      expect(fs.existsSync(filePath + '.lock')).toBe(false);
-    });
-
-    it('should protect against concurrent read-modify-write', async () => {
-      const filePath = path.join(TEST_DIR, 'counter.json');
-      writeJSON(filePath, { count: 0 });
-
-      // Run 5 concurrent increments with lock protection
-      const increments = Array.from({ length: 5 }, () =>
-        withFileLock(filePath, () => {
-          const data = readJSON<{ count: number }>(filePath, { count: 0 });
-          writeJSON(filePath, { count: data.count + 1 });
-        })
-      );
-
-      await Promise.all(increments);
-
-      const final = readJSON<{ count: number }>(filePath, { count: 0 });
-      expect(final.count).toBe(5);
-    });
-  });
 });
+

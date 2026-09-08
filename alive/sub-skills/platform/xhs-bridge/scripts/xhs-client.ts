@@ -42,8 +42,8 @@ function resolveXhsCacheFile(): string {
   const envOverride = process.env.XHS_CACHE_FILE_OVERRIDE;
   if (envOverride) return envOverride;
   const persona = process.env.ALIVE_PERSONA ?? 'default';
-  const home = os.homedir();
-  return path.join(home, '.alive', 'personas', persona, 'xhs-search-cache.json');
+  const home = process.env.ALIVE_HOME || path.join(os.homedir(), '.alive');
+  return path.join(home, 'personas', persona, 'xhs-search-cache.json');
 }
 
 interface XhsCacheEntry {
@@ -118,6 +118,7 @@ async function withCache(
 
 /** 测试用：重置搜索缓存状态（删除缓存文件或清空内存中的 entries） */
 export function resetSearchCacheForTests(): void {
+  _feedCache = null;
   const filePath = resolveXhsCacheFile();
   try {
     fs.unlinkSync(filePath);

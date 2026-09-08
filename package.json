@@ -38,12 +38,10 @@
   "dependencies": {
     "jimp": "^1.6.0",
     "livekit-server-sdk": "^2.18.0",
-    "node-fetch": "^3.3.2",
     "yaml": "^2.8.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "docx": "^9.6.1",
     "typescript": "^5.7.0",
     "vitest": "^4.0.18"
   }

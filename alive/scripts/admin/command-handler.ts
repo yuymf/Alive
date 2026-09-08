@@ -533,24 +533,41 @@ function resetEmotion(): CommandResult {
   return { output: `## 🔄 Emotion Reset\n\n${msg}` };
 }
 
+const MBTI_BASELINES: Record<string, { valence: number; arousal: number; energy: number; stress: number; creativity: number; sociability: number }> = {
+  ESTP: { valence: 0.3, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.4, sociability: 0.5 },
+  ENFP: { valence: 0.4, arousal: 0.6, energy: 0.5, stress: 0.2, creativity: 0.6, sociability: 0.7 },
+  INTJ: { valence: 0.1, arousal: 0.3, energy: 0.5, stress: 0.3, creativity: 0.6, sociability: 0.2 },
+  INFP: { valence: 0.2, arousal: 0.3, energy: 0.4, stress: 0.3, creativity: 0.7, sociability: 0.3 },
+  ENTP: { valence: 0.3, arousal: 0.6, energy: 0.5, stress: 0.2, creativity: 0.7, sociability: 0.5 },
+  ISFJ: { valence: 0.2, arousal: 0.3, energy: 0.5, stress: 0.2, creativity: 0.3, sociability: 0.4 },
+  ENTJ: { valence: 0.2, arousal: 0.5, energy: 0.6, stress: 0.3, creativity: 0.5, sociability: 0.4 },
+  INTP: { valence: 0.1, arousal: 0.3, energy: 0.4, stress: 0.3, creativity: 0.7, sociability: 0.2 },
+  ESFP: { valence: 0.4, arousal: 0.6, energy: 0.6, stress: 0.1, creativity: 0.4, sociability: 0.7 },
+  ISTJ: { valence: 0.1, arousal: 0.3, energy: 0.5, stress: 0.2, creativity: 0.3, sociability: 0.2 },
+  ENFJ: { valence: 0.3, arousal: 0.5, energy: 0.5, stress: 0.2, creativity: 0.5, sociability: 0.7 },
+  ISTP: { valence: 0.1, arousal: 0.3, energy: 0.5, stress: 0.2, creativity: 0.5, sociability: 0.2 },
+  ESFJ: { valence: 0.3, arousal: 0.4, energy: 0.5, stress: 0.2, creativity: 0.3, sociability: 0.7 },
+  INFJ: { valence: 0.2, arousal: 0.3, energy: 0.4, stress: 0.3, creativity: 0.6, sociability: 0.3 },
+  ISFP: { valence: 0.2, arousal: 0.3, energy: 0.4, stress: 0.2, creativity: 0.6, sociability: 0.3 },
+  ESTJ: { valence: 0.2, arousal: 0.5, energy: 0.6, stress: 0.2, creativity: 0.3, sociability: 0.4 },
+  default: { valence: 0.2, arousal: 0.4, energy: 0.5, stress: 0.2, creativity: 0.4, sociability: 0.4 },
+};
+
 function resetEmotionInternal(): string {
   const persona = safeLoadPersona();
   if (!persona) return '❌ Persona not found — cannot determine MBTI baseline.';
 
-  // Load MBTI baselines from persona-schema.yaml
-  const schemaPath = path.join(path.dirname(PATHS.skillPersonaConfig), 'persona-schema.yaml');
-  let baseline: Record<string, number> | null = null;
+  const mbti = persona.personality?.mbti?.toUpperCase() ?? 'DEFAULT';
+  let baseline = MBTI_BASELINES[mbti] ?? MBTI_BASELINES.default;
 
+  // Optional schema override if file present
+  const schemaPath = path.join(path.dirname(PATHS.skillPersonaConfig), 'persona-schema.yaml');
   if (fs.existsSync(schemaPath)) {
     try {
       const schema = YAML.parse(fs.readFileSync(schemaPath, 'utf8'));
-      const mbti = persona.personality.mbti.toUpperCase();
-      baseline = schema?.mbti_baselines?.[mbti] ?? schema?.mbti_baselines?.default ?? null;
-    } catch { /* use fallback */ }
-  }
-
-  if (!baseline) {
-    baseline = { valence: 0.2, arousal: 0.4, energy: 0.5, stress: 0.2, creativity: 0.4, sociability: 0.4 };
+      const override = schema?.mbti_baselines?.[mbti] ?? schema?.mbti_baselines?.default;
+      if (override) baseline = override;
+    } catch { /* use baseline */ }
   }
 
   const now = new Date().toISOString();

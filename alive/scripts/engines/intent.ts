@@ -4,11 +4,12 @@
 import { Intent, IntentPool, IntentCategory, EmotionState, ScheduleToday, EventQueue, BASE_RESISTANCE, MetaIntent, ALL_META_INTENTS } from '../utils/types';
 import { now } from '../utils/time-utils';
 import { INTENT_CONFIG } from '../config';
+import { clamp } from '../utils/math-utils';
 
 const INTENSITY_CAP = INTENT_CONFIG.INTENSITY_CAP;
 
 function cap(value: number): number {
-  return Math.min(INTENSITY_CAP, Math.max(0, value));
+  return clamp(value, 0, INTENSITY_CAP);
 }
 
 function generateId(): string {
