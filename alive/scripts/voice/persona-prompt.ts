@@ -26,15 +26,30 @@ export function findPersonaAvatarPath(): string | null {
       const ref = persona.meta.reference_image;
       if (path.isAbsolute(ref)) candidates.push(ref);
       candidates.push(path.resolve(path.dirname(PATHS.personaConfig), ref));
+      candidates.push(path.resolve(path.dirname(PATHS.personaConfig), '..', ref));
       candidates.push(path.resolve(path.dirname(PATHS.skillPersonaConfig), ref));
       candidates.push(path.resolve(__dirname, '..', '..', 'personas', ref));
       candidates.push(path.resolve(__dirname, '..', '..', '..', 'alive', 'personas', ref));
     }
-    const personaDir = path.dirname(PATHS.personaConfig);
-    for (const ext of ['.png', '.jpg', '.jpeg', '.webp', '.svg']) {
-      candidates.push(path.join(personaDir, `avatar${ext}`));
-      candidates.push(path.join(personaDir, `portrait${ext}`));
-      candidates.push(path.join(personaDir, `${persona.meta?.id || 'persona'}-source${ext}`));
+    const personaDirs = [
+      path.dirname(PATHS.personaConfig),
+      path.resolve(path.dirname(PATHS.personaConfig), '..'),
+      path.resolve(__dirname, '..', '..', '..', 'examples', persona.meta?.id || 'persona'),
+      path.resolve(__dirname, '..', '..', '..', 'alive', 'personas'),
+    ];
+    const imageNames = [
+      'avatar',
+      'portrait',
+      'taffy',
+      persona.meta?.id || 'persona',
+      `${persona.meta?.id || 'persona'}-source`,
+    ];
+    for (const dir of personaDirs) {
+      for (const name of imageNames) {
+        for (const ext of ['.png', '.jpg', '.jpeg', '.webp', '.svg']) {
+          candidates.push(path.join(dir, `${name}${ext}`));
+        }
+      }
     }
     for (const file of candidates) {
       if (fs.existsSync(file) && fs.statSync(file).isFile()) {
