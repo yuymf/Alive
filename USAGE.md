@@ -24,12 +24,18 @@ alive init
 - 默认角色是 **水瀬**
 - 若 Hermes / OpenClaw 已经有模型 key，心跳直接复用，不必再填 `LLM_API_KEY`
 
-只装某一家：
+只装某一家或指定 Profile / Agent：
 
 ```bash
 alive init --agent hermes
 alive init --agent openclaw
 alive init --agent hermes,openclaw
+
+# Hermes Profile 原生接入（如永雏塔菲）：
+alive init --hermes taffy
+
+# OpenClaw 专属 Agent 工作区接入（如 miss-v）：
+alive init --openclaw miss-v
 ```
 
 数据都在 `$ALIVE_HOME`，默认 `~/.alive`。以后改配置只改这个文件：

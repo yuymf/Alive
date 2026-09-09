@@ -5,9 +5,10 @@
 
 **让人格 skill 拥有身体 — 而不只是一个对话框。**
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
-[![Agent Skill](https://img.shields.io/badge/Agent%20Skills-SKILL.md-purple.svg)](https://agentskills.io/specification)
+[![npm](https://img.shields.io/npm/v/@yuymf/alive?style=flat-square)](https://www.npmjs.com/package/@yuymf/alive)
+[![Node.js](https://img.shields.io/node/v/@yuymf/alive?style=flat-square)](https://nodejs.org)
+[![License](https://img.shields.io/npm/l/@yuymf/alive?style=flat-square)](./LICENSE)
+[![Agent Skill](https://img.shields.io/badge/Agent%20Skills-SKILL.md-purple.svg?style=flat-square)](https://agentskills.io/specification)
 
 [English](README.md) · [中文](#) · [更新日志](CHANGELOG.md)
 </div>
@@ -26,17 +27,49 @@ alive distill 蒸馏一个脑子  →  Alive 接入这份 SKILL.md  →  这个�
 
 ## 快速开始
 
+### 1. 安装 Alive
+
+**方式 A — npm 全局安装（推荐 / 终端直接可用）：**
+
 ```bash
-npx alive init
-npx alive distill 峰哥
+npm install -g @yuymf/alive
 ```
 
-或者已经蒸馏好的 skill，或者 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 这种只有人格代码、没有 `SKILL.md` 的工程：
+安装后即可直接在终端运行：
 
 ```bash
-npx alive distill https://github.com/YeJe-cpu/talk-to-fengge
-npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
-npx alive adopt ./examples/steve-jobs
+alive init
+alive distill 峰哥
+```
+
+**方式 B — npx 免安装运行：**
+
+```bash
+npx @yuymf/alive init
+npx @yuymf/alive distill 峰哥
+```
+
+或者接入已有蒸馏好的 skill，或 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 这种只有人格代码、没有 `SKILL.md` 的工程：
+
+```bash
+alive distill https://github.com/YeJe-cpu/talk-to-fengge
+alive adopt https://github.com/ly-xxx/ace-taffy-skill
+alive adopt ./examples/steve-jobs
+```
+
+### 2. 给 AI Agent（Claude Code, Cursor, Codex, Hermes, OpenClaw 等）
+
+**通过 Agent Skills 包管理器安装：**
+
+```bash
+npx skills add yuymf/Alive
+```
+
+**或者通过内置初始化命令自动安装到已安装的宿主 Agent 目录：**
+
+```bash
+alive init
+# 或免安装运行：npx @yuymf/alive init
 ```
 
 然后打开 Claude Code / Cursor / Codex / Hermes / OpenClaw，直接说话。心跳会复用 Hermes / OpenClaw 已有的模型 key；没有这两家再把 `LLM_API_KEY` 写进 `~/.alive/.env`，跑 `alive tick`。
@@ -62,13 +95,14 @@ npx alive adopt ./examples/steve-jobs
 公开人物、MIT、已经能 `distill` / `adopt`。峰哥来自 [feng-ge-skill](https://github.com/YixiaJack/feng-ge-skill)，也是 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 的人格层。Jobs / 王小波 / 王阳明 / Karpathy 来自 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation)；`ace-taffy` 是带 `persona.md` + `references/` 的女娲式样板。说明在 [examples/](examples/)。
 
 ```bash
-npx alive distill 峰哥
-npx alive adopt ./examples/ace-taffy
-npx alive adopt ./examples/steve-jobs
-npx alive adopt ./examples/wangxiaobo
-npx alive adopt ./examples/wangyangming
-npx alive adopt ./examples/karpathy
+alive distill 峰哥
+alive adopt ./examples/ace-taffy
+alive adopt ./examples/steve-jobs
+alive adopt ./examples/wangxiaobo
+alive adopt ./examples/wangyangming
+alive adopt ./examples/karpathy
 ```
+*(若未全局安装，命令前加上 `npx @yuymf/alive` 即可)*
 
 | 例子 | 人 | 接进 Alive 之后 |
 |:---|:---|:---|
@@ -134,7 +168,7 @@ alive/
 
 宿主不要手改日记和情绪文件。`chat.js load` 打出上下文；`chat.js save` 写回下一轮要读的记忆。
 
-记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。项目内安装：`npx alive init --project`。指定宿主：`npx alive init --agent hermes` 或 `--agent openclaw`。
+记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。项目内安装：`alive init --project` 或 `npx @yuymf/alive init --project`。指定宿主：`alive init --agent hermes` 或 `--agent openclaw`。
 
 | 功能 | 需要 |
 |:---|:---|

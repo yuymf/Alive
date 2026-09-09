@@ -5,12 +5,13 @@
 awesome 清单里大多数条目是蒸馏工具或私人关系 skill。这里只放公开人物、MIT、带 `SKILL.md`、可以直接 `adopt` 的。
 
 ```bash
-npx alive init
-npx alive distill 峰哥
+alive init
+alive distill 峰哥
 # 或
-npx alive adopt ./examples/ace-taffy
-npx alive adopt ./examples/steve-jobs
+alive adopt ./examples/ace-taffy
+alive adopt ./examples/steve-jobs
 ```
+*(若未全局安装，命令前加上 `npx @yuymf/alive`)*
 
 也可以不经过本目录，直接对上游 git 跑 `adopt`。
 

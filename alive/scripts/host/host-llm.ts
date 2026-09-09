@@ -42,10 +42,14 @@ export function applyHostLlmToEnv(creds: HostLlmCreds | null): void {
   if (creds.model && !process.env.LLM_MODEL) process.env.LLM_MODEL = creds.model;
 }
 
-export function harvestHostLlm(home = process.env.HOME || os.homedir(), prefer: string[] = []): HostLlmCreds | null {
+export function harvestHostLlm(
+  home = process.env.HOME || os.homedir(),
+  prefer: string[] = [],
+  hermesProfile?: string,
+): HostLlmCreds | null {
   const readers: Array<[string, (h: string) => HostLlmCreds | null]> = [
     ['openclaw', harvestOpenClaw],
-    ['hermes', harvestHermes],
+    ['hermes', (h) => harvestHermes(h, hermesProfile)],
   ];
   const ordered = [
     ...readers.filter(([id]) => prefer.includes(id)),
@@ -89,45 +93,57 @@ function harvestOpenClaw(home: string): HostLlmCreds | null {
   return credsFromCompatEnv(hostEnv, 'openclaw .env');
 }
 
-function harvestHermes(home: string): HostLlmCreds | null {
-  const root = path.join(home, '.hermes');
-  if (!fs.existsSync(root)) return null;
-  const hostEnv = readEnvFile(path.join(root, '.env'));
-  const yamlPath = path.join(root, 'config.yaml');
-  let model: Record<string, unknown> = {};
-  if (fs.existsSync(yamlPath)) {
-    try {
-      const parsed = YAML.parse(fs.readFileSync(yamlPath, 'utf8'));
-      if (parsed && typeof parsed === 'object' && parsed.model && typeof parsed.model === 'object') {
-        model = parsed.model as Record<string, unknown>;
+function harvestHermes(home: string, profileName?: string): HostLlmCreds | null {
+  const baseHermes = path.join(home, '.hermes');
+  if (!fs.existsSync(baseHermes)) return null;
+
+  const rootsToTry = profileName
+    ? [path.join(baseHermes, 'profiles', profileName), baseHermes]
+    : [baseHermes];
+
+  for (const root of rootsToTry) {
+    if (!fs.existsSync(root)) continue;
+    const hostEnv = readEnvFile(path.join(root, '.env'));
+    const yamlPath = path.join(root, 'config.yaml');
+    let model: Record<string, unknown> = {};
+    if (fs.existsSync(yamlPath)) {
+      try {
+        const parsed = YAML.parse(fs.readFileSync(yamlPath, 'utf8'));
+        if (parsed && typeof parsed === 'object' && parsed.model && typeof parsed.model === 'object') {
+          model = parsed.model as Record<string, unknown>;
+        }
+      } catch {
+        // ignore malformed config
       }
-    } catch {
-      // ignore malformed config
     }
-  }
-  const modelName = firstString(model.default, model.model);
-  const provider = firstString(model.provider) || '';
-  const baseUrl = firstString(model.base_url, model.baseUrl);
-  const inlineKey = resolveSecret(model.api_key ?? model.apiKey, hostEnv);
-  if (inlineKey && (baseUrl || OPENAI_COMPAT[provider])) {
-    return {
-      apiKey: inlineKey,
-      apiBase: baseUrl || OPENAI_COMPAT[provider]?.base,
-      model: modelName,
-      source: 'hermes config.yaml',
-    };
-  }
-  if (provider && (baseUrl || OPENAI_COMPAT[provider])) {
-    const fromProvider = credsFromCompat(provider, modelName, hostEnv, baseUrl, 'hermes');
-    if (fromProvider) return fromProvider;
-  }
-  if (baseUrl) {
-    const key = firstCompatKey(hostEnv);
-    if (key) {
-      return { apiKey: key.value, apiBase: baseUrl, model: modelName, source: `hermes ${key.name}` };
+    const modelName = firstString(model.default, model.model);
+    const provider = firstString(model.provider) || '';
+    const baseUrl = firstString(model.base_url, model.baseUrl);
+    const inlineKey = resolveSecret(model.api_key ?? model.apiKey, hostEnv);
+    const srcLabel = root === baseHermes ? 'hermes' : `hermes profile (${profileName})`;
+
+    if (inlineKey && (baseUrl || OPENAI_COMPAT[provider])) {
+      return {
+        apiKey: inlineKey,
+        apiBase: baseUrl || OPENAI_COMPAT[provider]?.base,
+        model: modelName,
+        source: `${srcLabel} config.yaml`,
+      };
     }
+    if (provider && (baseUrl || OPENAI_COMPAT[provider])) {
+      const fromProvider = credsFromCompat(provider, modelName, hostEnv, baseUrl, srcLabel);
+      if (fromProvider) return fromProvider;
+    }
+    if (baseUrl) {
+      const key = firstCompatKey(hostEnv);
+      if (key) {
+        return { apiKey: key.value, apiBase: baseUrl, model: modelName, source: `${srcLabel} ${key.name}` };
+      }
+    }
+    const envCreds = credsFromCompatEnv(hostEnv, `${srcLabel} .env`, modelName);
+    if (envCreds) return envCreds;
   }
-  return credsFromCompatEnv(hostEnv, 'hermes .env', modelName);
+  return null;
 }
 
 function credsFromMap(

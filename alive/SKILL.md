@@ -53,7 +53,7 @@ After a substantive reply, persist the turn (engine writes diary / relation / em
 printf '%s' '{"user":"<user text>","reply":"<your reply>"}' | node {baseDir}/scripts/host/chat.js save
 ```
 
-If memory or `.env` is missing, tell the user to run `npx alive init` (default persona: 水瀬 / Minase).
+If memory or `.env` is missing, tell the user to run `alive init` (or `npx @yuymf/alive init`) (default persona: 水瀬 / Minase).
 
 ## Distill (one command)
 

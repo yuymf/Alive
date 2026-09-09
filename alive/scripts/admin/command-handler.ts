@@ -683,7 +683,7 @@ function safeLoadPersona(): PersonaConfig | null {
 
 function personaNotFound(): CommandResult {
   return {
-    output: '❌ Persona not found. Run `npx alive init` first.',
+    output: '❌ Persona not found. Run `alive init` (or `npx @yuymf/alive init`) first.',
     error: true,
   };
 }

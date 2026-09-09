@@ -5,10 +5,10 @@
 
 **Give a persona skill a body — not just a chat window.**
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
-[![Agent Skill](https://img.shields.io/badge/Agent%20Skills-SKILL.md-purple.svg)](https://agentskills.io/specification)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](tsconfig.json)
+[![npm](https://img.shields.io/npm/v/@yuymf/alive?style=flat-square)](https://www.npmjs.com/package/@yuymf/alive)
+[![Node.js Version](https://img.shields.io/node/v/@yuymf/alive?style=flat-square)](https://nodejs.org)
+[![License](https://img.shields.io/npm/l/@yuymf/alive?style=flat-square)](./LICENSE)
+[![Agent Skill](https://img.shields.io/badge/Agent%20Skills-SKILL.md-purple.svg?style=flat-square)](https://agentskills.io/specification)
 
 [English](#) · [中文](README.zh.md) · [Changelog](CHANGELOG.md)
 </div>
@@ -27,17 +27,49 @@ alive distill a mind  →  Alive adopts the SKILL.md  →  the person starts liv
 
 ## Quick start
 
+### 1. Install Alive
+
+**Option A — npm global install (recommended / direct CLI access):**
+
 ```bash
-npx alive init
-npx alive distill 峰哥
+npm install -g @yuymf/alive
+```
+
+After global install, use the `alive` command directly:
+
+```bash
+alive init
+alive distill 峰哥
+```
+
+**Option B — npx (run without install):**
+
+```bash
+npx @yuymf/alive init
+npx @yuymf/alive distill 峰哥
 ```
 
 Or an already-distilled skill, or [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) (voice clone repo, no `SKILL.md`):
 
 ```bash
-npx alive distill https://github.com/YeJe-cpu/talk-to-fengge
-npx alive adopt https://github.com/ly-xxx/ace-taffy-skill
-npx alive adopt ./examples/steve-jobs
+alive distill https://github.com/YeJe-cpu/talk-to-fengge
+alive adopt https://github.com/ly-xxx/ace-taffy-skill
+alive adopt ./examples/steve-jobs
+```
+
+### 2. For AI Agents (Claude Code, Cursor, Codex, Hermes, OpenClaw, etc.)
+
+**Install via Agent Skills package manager:**
+
+```bash
+npx skills add yuymf/Alive
+```
+
+**Or auto-install to detected hosts via CLI:**
+
+```bash
+alive init
+# Or via npx: npx @yuymf/alive init
 ```
 
 Then open Claude Code / Cursor / Codex / Hermes / OpenClaw and talk. Heartbeat reuses a Hermes / OpenClaw model key when present; otherwise put `LLM_API_KEY` in `~/.alive/.env` and run `alive tick`.
@@ -63,13 +95,14 @@ Same engine runs a distilled VTuber and a distilled thinker. Zero code change.
 Public figures, MIT, already distillable / adoptable. 峰哥 comes from [feng-ge-skill](https://github.com/YixiaJack/feng-ge-skill) — the persona layer behind [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge). Jobs / 王小波 / 王阳明 / Karpathy come from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation); `ace-taffy` is the Nuwa-style skill with `persona.md` + `references/`. Full notes in [examples/](examples/).
 
 ```bash
-npx alive distill 峰哥
-npx alive adopt ./examples/ace-taffy
-npx alive adopt ./examples/steve-jobs
-npx alive adopt ./examples/wangxiaobo
-npx alive adopt ./examples/wangyangming
-npx alive adopt ./examples/karpathy
+alive distill 峰哥
+alive adopt ./examples/ace-taffy
+alive adopt ./examples/steve-jobs
+alive adopt ./examples/wangxiaobo
+alive adopt ./examples/wangyangming
+alive adopt ./examples/karpathy
 ```
+*(If running via npx without global install, prepend `npx @yuymf/alive`)*
 
 | Example | Who | After Alive adopts it |
 |:---|:---|:---|
@@ -141,11 +174,12 @@ A persona is a config object (MBTI, voice, schedule, feature flags) **plus**, wh
 Alive is an [Agent Skill](https://agentskills.io/specification).
 
 ```bash
-npx alive init                      # ~/.agents/skills/alive (+ Claude / Cursor / Codex / Hermes / OpenClaw if present)
-npx alive init --project            # .agents/skills/alive in this repo
-npx alive init --agent hermes       # only Hermes (~/.hermes/skills/alive)
-npx alive init --agent openclaw
+alive init                      # ~/.agents/skills/alive (+ Claude / Cursor / Codex / Hermes / OpenClaw if present)
+alive init --project            # .agents/skills/alive in this repo
+alive init --agent hermes       # only Hermes (~/.hermes/skills/alive)
+alive init --agent openclaw
 ```
+*(Or via npx: `npx @yuymf/alive init ...`)*
 
 Memory: `~/.alive` (`ALIVE_HOME`). Default persona: Minase.
 

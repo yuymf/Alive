@@ -1,25 +1,42 @@
 {
-  "name": "alive",
+  "name": "@yuymf/alive",
   "version": "0.9.0",
   "description": "Alive — distill a person, adopt the skill, give it a life beyond chat.",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "bin/cli.js",
   "bin": {
     "alive": "bin/cli.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuymf/Alive.git"
+  },
+  "homepage": "https://github.com/yuymf/Alive#readme",
+  "bugs": {
+    "url": "https://github.com/yuymf/Alive/issues"
+  },
+  "author": "yuymf",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run bundle",
+    "bundle": "node scripts/bundle.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build"
   },
   "files": [
     "bin",
     "alive",
+    "skills",
     "dist-alive",
     "examples",
     "USAGE.md",
-    "INSTALL.md"
+    "INSTALL.md",
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "digital-life",

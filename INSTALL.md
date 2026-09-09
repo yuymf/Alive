@@ -2,23 +2,61 @@
 
 Alive is an [Agent Skill](https://agentskills.io/specification). It gives a persona skill (女娲 / 永雏塔菲 / any `SKILL.md`) a body beyond chat.
 
-```bash
-npx alive init
-npx alive distill 峰哥
-```
+## 1. Install CLI
 
-Copies `alive/SKILL.md` into Code Agent skill directories (`~/.agents/skills/alive`, plus `~/.claude` / `~/.cursor` / `~/.codex` / `~/.hermes` / `~/.openclaw` when those hosts exist). Memory: `~/.alive`. After init, `alive status` works without an API key. Chat goes through `chat.js load` / `chat.js save` so the next turn reads diary and emotion. Heartbeat reuses a Hermes / OpenClaw model key when present.
+### Option A — npm global install (recommended):
 
 ```bash
-npx alive init --project              # .agents/skills/alive in the current repo
-npx alive init --agent hermes         # only Hermes
-npx alive init --agent openclaw
-npx alive init --agent hermes,openclaw
-npx alive distill <name|dir|url>      # materials / talk-to-fengge → skill → adopt
-npx alive adopt <dir|url>             # take in a Nuwa / persona skill
-npx alive adopt ./examples/fengge
-npx alive tick                        # scripted heartbeat (host key or LLM_API_KEY)
+npm install -g @yuymf/alive
 ```
+
+After global install, use the `alive` command directly:
+
+```bash
+alive init
+alive distill 峰哥
+```
+
+### Option B — npx (run without install):
+
+```bash
+npx @yuymf/alive init
+npx @yuymf/alive distill 峰哥
+```
+
+## 2. Install Skill to AI Agents
+
+### Via Agent Skills CLI (skills.sh):
+
+```bash
+npx skills add yuymf/Alive
+```
+
+### Via built-in installer:
+
+`alive init` (or `npx @yuymf/alive init`) automatically detects and copies the skill into Code Agent directories:
+- `~/.agents/skills/alive` (Cursor + Codex)
+- `~/.claude/skills/alive` (Claude Code, if present)
+- `~/.cursor/skills/alive` (Cursor, if present)
+- `~/.codex/skills/alive` (Codex, if present)
+- `~/.hermes/skills/alive` (Hermes, if present)
+- `~/.openclaw/skills/alive` (OpenClaw, if present)
+
+Memory lives at `~/.alive` (customizable via `ALIVE_HOME`). After init, `alive status` works without an API key.
+
+## Common commands
+
+```bash
+alive init --project              # .agents/skills/alive in the current repo
+alive init --agent hermes         # only Hermes
+alive init --agent openclaw       # only OpenClaw
+alive init --agent hermes,openclaw
+alive distill <name|dir|url>      # materials / talk-to-fengge → skill → adopt
+alive adopt <dir|url>             # take in a Nuwa / persona skill
+alive adopt ./examples/fengge
+alive tick                        # scripted heartbeat (host key or LLM_API_KEY)
+```
+*(If running via npx without global install, prepend `npx @yuymf/alive`)*
 
 Bundled cases live in `examples/` — 峰哥 plus 永雏塔菲, and Jobs / 王小波 / 王阳明 / Karpathy from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation).
 

@@ -13,6 +13,7 @@ function printHelp() {
 
 Usage:
   alive init [--project] [--agent <id[,id]>] [--persona <id>] [--home <dir>]
+             [--hermes [profile]] [--openclaw [agent]]
   alive adopt <path|url> [--id <slug>] [--home <dir>]
   alive distill <name|path|url> [--id <slug>] [--name <name>] [--home <dir>]
   alive call [--home <dir>]
@@ -35,6 +36,9 @@ init copies this skill into Code Agent skill dirs:
 
 --agent installs only to the named hosts (comma-separated):
   agents, claude, cursor, codex, hermes, openclaw
+
+--hermes [profile] initializes a Hermes profile (e.g. \`alive init --hermes taffy\`).
+--openclaw [agent] initializes an OpenClaw agent workspace (e.g. \`alive init --openclaw miss-v\`).
 
 Memory and .env go to $ALIVE_HOME (default ~/.alive).
 Conversation uses the host agent. Heartbeat reuses a Hermes / OpenClaw
@@ -82,13 +86,13 @@ function loadHost() {
 function ensureBuilt() {
   let host = loadHost();
   if (host) return host;
-  const result = spawnSync('npx', ['tsc', '-p', 'tsconfig.json'], {
+  const result = spawnSync('npm', ['run', 'build'], {
     cwd: ROOT,
     stdio: 'inherit',
     encoding: 'utf8',
   });
   if (result.status !== 0) {
-    throw new Error('TypeScript build failed. Run npm install && npm run build.');
+    throw new Error('Build failed. Run npm install && npm run build.');
   }
   host = loadHost();
   if (!host) throw new Error('Build succeeded but host modules were not found in dist-alive/.');
@@ -97,11 +101,67 @@ function ensureBuilt() {
 
 function cmdInit(flags) {
   const host = ensureBuilt();
-  const { parseAgentFlag, resolveUserSkillTargets, projectSkillTarget, installSkillTo, initMemory, buildSkill, knownAgentIds, harvestHostLlm } = host.install;
+  const {
+    parseAgentFlag,
+    resolveUserSkillTargets,
+    projectSkillTarget,
+    installSkillTo,
+    initMemory,
+    buildSkill,
+    knownAgentIds,
+    harvestHostLlm,
+    initHermesProfile,
+    initOpenClawAgent,
+  } = host.install;
   buildSkill();
-  const persona = flags.persona || 'minase';
   const aliveHome = flags.home || process.env.ALIVE_HOME || path.join(os.homedir(), '.alive');
-  const agentIds = parseAgentFlag(flags.agent || flags.agents);
+
+  if (flags.hermes && flags.hermes !== 'true') {
+    const res = initHermesProfile({
+      profileName: flags.hermes,
+      personaId: flags.persona,
+      aliveHome,
+      root: ROOT,
+    });
+    process.stdout.write(`✓ Hermes profile "${res.profileName}" initialized with persona "${res.personaName}"!\n`);
+    process.stdout.write(`  skill    → ${res.skillDir}\n`);
+    process.stdout.write(`  soul     → ${res.soulPath}\n`);
+    process.stdout.write(`  memory   → ${path.join(aliveHome, 'personas', res.personaId)}\n`);
+    process.stdout.write(`  env      → ${path.join(aliveHome, '.env')}\n`);
+    if (res.llmSource) {
+      process.stdout.write(`  llm      → reused from ${res.llmSource} (no extra LLM_API_KEY needed)\n`);
+    }
+    process.stdout.write(`\nTo start real-time chat with ${res.personaName}:\n`);
+    process.stdout.write(`  hermes -p ${res.profileName}\n`);
+    process.stdout.write(`  hermes -p ${res.profileName} --tui\n`);
+    return;
+  }
+
+  if (flags.openclaw && flags.openclaw !== 'true') {
+    const res = initOpenClawAgent({
+      agentName: flags.openclaw,
+      personaId: flags.persona,
+      aliveHome,
+      root: ROOT,
+    });
+    process.stdout.write(`✓ OpenClaw agent "${res.agentName}" initialized with persona "${res.personaName}"!\n`);
+    process.stdout.write(`  workspace → ${res.workspaceDir}\n`);
+    process.stdout.write(`  skill     → ${res.skillDir}\n`);
+    process.stdout.write(`  soul      → ${res.soulPath}\n`);
+    process.stdout.write(`  memory    → ${path.join(aliveHome, 'personas', res.personaId)}\n`);
+    process.stdout.write(`  env       → ${path.join(aliveHome, '.env')}\n`);
+    if (res.llmSource) {
+      process.stdout.write(`  llm       → reused from ${res.llmSource}\n`);
+    }
+    return;
+  }
+
+  const persona = flags.persona || 'minase';
+  const rawAgents = flags.agent || flags.agents;
+  let agentIds = parseAgentFlag(rawAgents);
+  if (flags.hermes === 'true' && !agentIds.includes('hermes')) agentIds.push('hermes');
+  if (flags.openclaw === 'true' && !agentIds.includes('openclaw')) agentIds.push('openclaw');
+
   if ((flags.agent === 'true' || flags.agents === 'true') && agentIds.length === 0) {
     throw new Error(`--agent needs an id. Supported: ${knownAgentIds().join(', ')}`);
   }
