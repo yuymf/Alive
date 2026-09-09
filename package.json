@@ -30,7 +30,6 @@
   "files": [
     "bin",
     "alive",
-    "skills",
     "dist-alive",
     "examples",
     "USAGE.md",

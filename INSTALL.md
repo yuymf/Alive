@@ -26,16 +26,16 @@ npx @yuymf/alive distill 峰哥
 
 ## 2. Install Skill to AI Agents
 
-### Via Agent Skills CLI (skills.sh):
+Use the built-in initializer (`alive init` or `npx @yuymf/alive init`) to automatically configure your Agent environment and install the skill:
 
 ```bash
-npx skills add yuymf/Alive
+alive init
+# or run directly via npx:
+npx @yuymf/alive init
 ```
 
-### Via built-in installer:
-
-`alive init` (or `npx @yuymf/alive init`) automatically detects and copies the skill into Code Agent directories:
-- `~/.agents/skills/alive` (Cursor + Codex)
+This automatically detects and installs the skill into your Code Agent directories:
+- `~/.agents/skills/alive` (Cursor + Codex global fallback)
 - `~/.claude/skills/alive` (Claude Code, if present)
 - `~/.cursor/skills/alive` (Cursor, if present)
 - `~/.codex/skills/alive` (Codex, if present)

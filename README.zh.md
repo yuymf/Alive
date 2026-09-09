@@ -59,17 +59,12 @@ alive adopt ./examples/steve-jobs
 
 ### 2. 给 AI Agent（Claude Code, Cursor, Codex, Hermes, OpenClaw 等）
 
-**通过 Agent Skills 包管理器安装：**
-
-```bash
-npx skills add yuymf/Alive
-```
-
-**或者通过内置初始化命令自动安装到已安装的宿主 Agent 目录：**
+运行内置初始化命令，自动识别并安装到当前机器上的 Agent 宿主目录：
 
 ```bash
 alive init
-# 或免安装运行：npx @yuymf/alive init
+# 或免安装直接运行：
+npx @yuymf/alive init
 ```
 
 然后打开 Claude Code / Cursor / Codex / Hermes / OpenClaw，直接说话。心跳会复用 Hermes / OpenClaw 已有的模型 key；没有这两家再把 `LLM_API_KEY` 写进 `~/.alive/.env`，跑 `alive tick`。

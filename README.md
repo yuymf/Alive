@@ -59,17 +59,12 @@ alive adopt ./examples/steve-jobs
 
 ### 2. For AI Agents (Claude Code, Cursor, Codex, Hermes, OpenClaw, etc.)
 
-**Install via Agent Skills package manager:**
-
-```bash
-npx skills add yuymf/Alive
-```
-
-**Or auto-install to detected hosts via CLI:**
+Run the built-in initializer to auto-detect and install the skill into your Agent host directories:
 
 ```bash
 alive init
-# Or via npx: npx @yuymf/alive init
+# Or run directly without installation:
+npx @yuymf/alive init
 ```
 
 Then open Claude Code / Cursor / Codex / Hermes / OpenClaw and talk. Heartbeat reuses a Hermes / OpenClaw model key when present; otherwise put `LLM_API_KEY` in `~/.alive/.env` and run `alive tick`.
