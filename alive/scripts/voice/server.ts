@@ -101,16 +101,6 @@ export function createVoiceServer(): http.Server {
       if (req.method === 'POST' && url.pathname === '/api/turn') {
         const raw = await readBody(req);
         const data = raw ? JSON.parse(raw) as { text?: string } : {};
-        if (!process.env.LLM_API_KEY) {
-          const life = loadVoiceLife();
-          json(res, 200, {
-            reply: life.activity
-              ? `在呢。我这边在${life.activity}，你说。`
-              : '在呢。你说。',
-            offline: true,
-          });
-          return;
-        }
         try {
           const result = await runVoiceTurn(data.text || '');
           json(res, 200, result);
