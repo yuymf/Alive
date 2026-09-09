@@ -111,8 +111,20 @@ export function createVoiceServer(): http.Server {
           });
           return;
         }
-        const result = await runVoiceTurn(data.text || '');
-        json(res, 200, result);
+        try {
+          const result = await runVoiceTurn(data.text || '');
+          json(res, 200, result);
+        } catch (err) {
+          const life = loadVoiceLife();
+          console.warn(`[voice] /api/turn error: ${(err as Error).message}`);
+          json(res, 200, {
+            reply: life.activity
+              ? `在呢。我正在${life.activity}，你说。（提示: LLM 返回 ${(err as Error).message}）`
+              : `在呢。你说。（提示: LLM 返回 ${(err as Error).message}）`,
+            offline: true,
+            error: (err as Error).message,
+          });
+        }
         return;
       }
 

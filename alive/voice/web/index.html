@@ -104,6 +104,10 @@
     </button>
     <div id="timer">00:00</div>
     <div id="transcript"></div>
+    <form id="textForm" onsubmit="event.preventDefault(); sendText();" style="display: flex; gap: 8px; max-width: 480px; width: 90%; margin: 8px 0;">
+      <input id="textInput" type="text" placeholder="输入想说的话（回车直接发送）..." style="flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); border-radius: 999px; padding: 10px 18px; color: #fff; font-size: 14px; outline: none;">
+      <button type="submit" style="background: #34c759; color: #000; border: none; border-radius: 999px; padding: 0 18px; font-weight: 600; cursor: pointer; font-size: 14px;">发送</button>
+    </form>
     <div id="hint">LiveKit 实时语音 · 默认音色</div>
   </div>
 </div>
@@ -171,16 +175,17 @@ async function loadLife() {
   }
   $('life').innerHTML = bits.join('<br>') || '点麦克风接听。';
   document.title = (life.personaName || 'Alive') + ' · 来电';
-  mode = life.livekit ? 'livekit' : 'direct';
+  mode = (life.livekit && life.worker) ? 'livekit' : 'direct';
   if (mode === 'livekit') {
-    const bits = ['LiveKit 实时语音'];
+    const bits = ['LiveKit 实时语音 · Agent 在线'];
     if (life.voxcpm) bits.push('VoxCPM 已就绪');
-    else bits.push('VoxCPM 未启动（见 USAGE.md）');
-    if (life.worker) bits.push('Agent 在线');
-    else bits.push('Agent 未启动');
     $('hint').textContent = bits.join(' · ');
   } else {
-    $('hint').textContent = '点麦克风通话（浏览器语音 + 人格）。配 LiveKit + VoxCPM 后走完整 WebRTC，见 USAGE.md。';
+    if (life.livekit && !life.worker) {
+      $('hint').textContent = '已自动使用浏览器直接通话（LiveKit 房间已开，但 Agent 离线）';
+    } else {
+      $('hint').textContent = '浏览器直接通话（点麦克风说话，或在下方打字）';
+    }
   }
 }
 
@@ -195,23 +200,42 @@ function speak(text) {
 
 async function directReply(text) {
   showTranscript('你：' + text);
-  const resp = await fetch('/api/turn', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
-  const data = await resp.json();
-  const reply = data.reply || '在呢。';
-  showTranscript(reply);
-  micButton.classList.add('speaking');
-  speak(reply);
-  setTimeout(() => micButton.classList.remove('speaking'), 1600);
+  try {
+    const resp = await fetch('/api/turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const data = await resp.json();
+    const reply = data.reply || '在呢。你说。';
+    showTranscript(reply);
+    micButton.classList.add('speaking');
+    speak(reply);
+    setTimeout(() => micButton.classList.remove('speaking'), 1600);
+  } catch (err) {
+    showTranscript('（连接后台服务失败，请检查服务状态）');
+    speak('连接后台服务失败，请检查服务状态');
+  }
+}
+
+async function sendText() {
+  const input = $('textInput');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  if (!connected) {
+    connected = true;
+    setStatus('connected');
+    micButton.classList.add('connected');
+    startTimer();
+  }
+  await directReply(text);
 }
 
 function startDirectListen() {
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Rec) {
-    showToast('这个浏览器没有语音识别，先打字：点麦克风后再说');
+    showToast('当前浏览器不支持语音识别，请在下方打字沟通');
     return;
   }
   recognition = new Rec();
@@ -222,8 +246,15 @@ function startDirectListen() {
     const text = ev.results[ev.results.length - 1][0].transcript;
     if (text) directReply(text);
   };
-  recognition.onerror = () => {};
-  recognition.start();
+  recognition.onerror = (ev) => {
+    console.warn('SpeechRecognition error:', ev.error);
+    if (ev.error === 'not-allowed') {
+      showToast('麦克风权限未开启，可直接在下方打字');
+    } else if (ev.error === 'network') {
+      showToast('语音听写需要联网，可直接在下方打字');
+    }
+  };
+  try { recognition.start(); } catch (e) {}
 }
 
 async function connectLiveKit() {
@@ -256,6 +287,13 @@ async function connectLiveKit() {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
     track.attach(remoteAudio);
     remoteAudio.play && remoteAudio.play().catch(() => {});
+  });
+  room.on(LivekitClient.RoomEvent.DataReceived, (payload) => {
+    try {
+      const text = new TextDecoder().decode(payload);
+      const msg = JSON.parse(text);
+      if (msg.transcript || msg.text) showTranscript(msg.transcript || msg.text);
+    } catch {}
   });
   room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
     const ai = speakers.some((s) => s.identity !== identity);
