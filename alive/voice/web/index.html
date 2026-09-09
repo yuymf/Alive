@@ -732,7 +732,71 @@ function speak(text) {
   }, 40);
 }
 
+let turnAbortController = null;
+let localMicStream = null;
+
+function interruptSpeaking(reason = 'user_interrupted') {
+  const isSpeaking = voiceStage.classList.contains('speaking')
+    || (window.speechSynthesis && (speechSynthesis.speaking || speechSynthesis.pending))
+    || (greetingAudio && !greetingAudio.paused)
+    || (hangupAudio && !hangupAudio.paused)
+    || (remoteAudio && !remoteAudio.paused);
+
+  if (isSpeaking || voiceStage.classList.contains('thinking')) {
+    // 1. 强力掐断语音合成与所有音频播放（秒级打断）
+    if (window.speechSynthesis) {
+      speechSynthesis.cancel();
+    }
+    if (greetingAudio && !greetingAudio.paused) {
+      greetingAudio.pause();
+      greetingAudio.currentTime = 0;
+    }
+    if (hangupAudio && !hangupAudio.paused) {
+      hangupAudio.pause();
+      hangupAudio.currentTime = 0;
+    }
+    if (remoteAudio && !remoteAudio.paused) {
+      remoteAudio.pause();
+    }
+    // 2. 中止当前在途请求，避免上一句推理结果迟到覆盖新打断
+    if (turnAbortController) {
+      turnAbortController.abort();
+      turnAbortController = null;
+    }
+    // 3. 视觉状态即时切回聆听
+    voiceStage.classList.remove('speaking');
+    voiceStage.classList.remove('thinking');
+    console.log('[voice] barge-in interrupted:', reason);
+    return true;
+  }
+  return false;
+}
+
+async function setupLocalMicAcoustics() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  try {
+    ensureAudioGraph();
+    if (!audioCtx || !analyser || localMicStream) return;
+    localMicStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    const micSource = audioCtx.createMediaStreamSource(localMicStream);
+    const micGain = audioCtx.createGain();
+    micGain.gain.value = 0.4;
+    micSource.connect(micGain);
+    micGain.connect(analyser); // 只进 analyser，不连 destination 防止啸叫
+  } catch (err) {
+    console.warn('[voice] local mic acoustic setup error:', err);
+  }
+}
+
 async function directReply(text) {
+  if (turnAbortController) {
+    turnAbortController.abort();
+  }
+  turnAbortController = new AbortController();
+  const currentSignal = turnAbortController.signal;
+
   showTranscript('你：' + text);
   const targetName = life.personaName || '对方';
   voiceStage.classList.add('thinking');
@@ -747,8 +811,10 @@ async function directReply(text) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
+      signal: currentSignal,
     });
     clearTimeout(thinkTimer);
+    if (currentSignal.aborted) return;
     voiceStage.classList.remove('thinking');
     const data = await resp.json();
     const reply = data.reply || '在呢。你说。';
@@ -756,10 +822,18 @@ async function directReply(text) {
     speak(reply);
   } catch (err) {
     clearTimeout(thinkTimer);
+    if (err.name === 'AbortError') {
+      console.log('[voice] turn request aborted by barge-in');
+      return;
+    }
     voiceStage.classList.remove('thinking');
     voiceStage.classList.remove('speaking');
     showTranscript('（连接后台服务失败，请检查服务状态）');
     speak('连接后台服务失败，请检查服务状态');
+  } finally {
+    if (turnAbortController && turnAbortController.signal === currentSignal) {
+      turnAbortController = null;
+    }
   }
 }
 
@@ -773,6 +847,7 @@ async function sendText() {
     setStatus('connected');
     startTimer();
   }
+  interruptSpeaking('text_input');
   await directReply(text);
 }
 
@@ -782,15 +857,42 @@ function startDirectListen() {
     showToast('当前浏览器不支持内置听写，可直接在下方打字');
     return;
   }
+  setupLocalMicAcoustics();
   try {
     recognition = new Rec();
     recognition.lang = 'zh-CN';
-    recognition.interimResults = false;
+    recognition.interimResults = true; // 开启临时结果，秒级感知开口打断
     recognition.continuous = true;
-    recognition.onresult = (ev) => {
-      const text = ev.results[ev.results.length - 1][0].transcript;
-      if (text) directReply(text);
+
+    recognition.onspeechstart = () => {
+      // 只要麦克风检测到用户开口发声，立即打断对方说话！
+      if (interruptSpeaking('speech_start')) {
+        showTranscript('（已打断对方，正在听你说...）');
+      }
     };
+
+    recognition.onresult = (ev) => {
+      let interim = '';
+      let final = '';
+      for (let i = ev.resultIndex; i < ev.results.length; ++i) {
+        const item = ev.results[i];
+        if (item.isFinal) {
+          final += item[0].transcript;
+        } else {
+          interim += item[0].transcript;
+        }
+      }
+
+      // 如果收到即时 interim 文本且 AI 正在出声，立即打断
+      if (interim && (voiceStage.classList.contains('speaking') || (window.speechSynthesis && speechSynthesis.speaking))) {
+        interruptSpeaking('interim_transcript');
+      }
+
+      if (final.trim()) {
+        directReply(final.trim());
+      }
+    };
+
     recognition.onerror = (ev) => {
       console.warn('SpeechRecognition error:', ev.error);
       if (ev.error === 'not-allowed') {
@@ -799,6 +901,14 @@ function startDirectListen() {
         showToast('语音听写需要联网，可在下方直接打字');
       }
     };
+
+    recognition.onend = () => {
+      // 通话期间保持麦克风持续在线（全双工电话模式）
+      if (connected && mode === 'direct') {
+        try { recognition.start(); } catch (_) {}
+      }
+    };
+
     recognition.start();
   } catch (e) {
     console.warn('SpeechRecognition start error:', e);
@@ -895,6 +1005,13 @@ async function connect() {
 }
 
 function hangup() {
+  interruptSpeaking('hangup');
+  if (localMicStream) {
+    try {
+      localMicStream.getTracks().forEach(t => t.stop());
+    } catch (_) {}
+    localMicStream = null;
+  }
   if (room) {
     try { room.disconnect(); } catch (e) {}
     room = null;
