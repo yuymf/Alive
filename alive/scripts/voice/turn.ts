@@ -52,6 +52,27 @@ function queryHermesOneShot(bin: string, profile: string, prompt: string): Promi
   });
 }
 
+const SENTENCE_END_PUNCT = /[。！？；!?;]/;
+
+/**
+ * 峰哥流式分句切片算法：按句子标点断句，切出完整短句并保留剩余未完成文本。
+ * 可用于大模型流式生成时首句极速送入 TTS 合成，将首句延迟缩短至 1~1.5s。
+ */
+export function splitWithRemainder(text: string): { sentences: string[]; remainder: string } {
+  const sentences: string[] = [];
+  let last = 0;
+  for (let j = 0; j < text.length; j++) {
+    if (SENTENCE_END_PUNCT.test(text[j])) {
+      const s = text.slice(last, j + 1).trim();
+      if (s) sentences.push(s);
+      last = j + 1;
+    }
+  }
+  return { sentences, remainder: text.slice(last) };
+}
+
+export const MAX_VOICE_CONTEXT = 20;
+
 export interface VoiceTurnAction {
   skill: string;
   description: string;
@@ -84,7 +105,7 @@ export async function runVoiceTurn(userText: string): Promise<VoiceTurnResult> {
       reply = await queryHermesOneShot(
         hermesBin,
         hermesProfile,
-        `（电话实时通话中）对方刚说：${user}。请用你的电话口吻回复一到两句话。`,
+        `（实时电话通话中，对方刚说：${user}。请用你的人设口吻以一到两句简短口语回复。禁止客服腔、禁止列点、禁止客套废话）`,
       );
       if (reply) source = `hermes:${hermesProfile}`;
     } catch (err) {

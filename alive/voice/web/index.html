@@ -117,17 +117,11 @@
     position: absolute; border-radius: 50%;
     border: 1px solid var(--border);
     pointer-events: none;
+    transition: transform 0.08s ease-out, border-color 0.2s ease-out;
   }
   .orbit-a { inset: 5%; border-color: var(--border-strong); }
   .orbit-b { inset: -8%; border-color: rgba(255,255,255,0.04); }
 
-  .speaking .orbit-a {
-    animation: pulseRing 1.6s ease-out infinite;
-    border-color: var(--green);
-  }
-  .speaking .orbit-b {
-    animation: pulseRing 2.2s ease-out 0.4s infinite;
-  }
   .thinking .orbit-a {
     animation: thinkingPulse 1.2s ease-in-out infinite;
     border-color: var(--yellow);
@@ -136,11 +130,6 @@
     0% { transform: scale(0.98); opacity: 0.4; }
     50% { transform: scale(1.04); opacity: 0.9; }
     100% { transform: scale(0.98); opacity: 0.4; }
-  }
-  @keyframes pulseRing {
-    0% { transform: scale(0.95); opacity: 0.8; }
-    50% { opacity: 0.4; }
-    100% { transform: scale(1.12); opacity: 0; }
   }
 
   .portrait-wrap {
@@ -186,21 +175,8 @@
   }
   .level-bars i {
     width: 3px; height: 5px; border-radius: 2px;
-    background: var(--text-dim); transition: 0.2s;
-  }
-  .speaking .level-bars i {
-    background: var(--green);
-    animation: bounceBar 0.75s ease-in-out infinite alternate;
-  }
-  .speaking .level-bars i:nth-child(2) { animation-delay: -0.2s; }
-  .speaking .level-bars i:nth-child(3) { animation-delay: -0.45s; }
-  .speaking .level-bars i:nth-child(4) { animation-delay: -0.1s; }
-  .speaking .level-bars i:nth-child(5) { animation-delay: -0.6s; }
-  .speaking .level-bars i:nth-child(6) { animation-delay: -0.35s; }
-  .speaking .level-bars i:nth-child(7) { animation-delay: -0.5s; }
-  @keyframes bounceBar {
-    from { height: 4px; }
-    to { height: 18px; }
+    background: var(--text-dim);
+    transition: height 0.05s ease-out, background-color 0.2s ease-out, box-shadow 0.2s ease-out;
   }
 
   .persona-details { max-width: 380px; }
@@ -550,13 +526,170 @@ const greetingAudio = new Audio('/greeting.mp3');
 const hangupAudio = new Audio('/hangup.mp3');
 let currentUtterance = null;
 
-function unlockAudio() {
-  if (window.AudioContext || window.webkitAudioContext) {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if (ctx.state === 'suspended') ctx.resume();
-    } catch {}
+// ================================================================
+//  声学感知引擎 (Web Audio API + Fast Attack / Slow Release 滤波)
+// ================================================================
+let audioCtx = null;
+let analyser = null;
+let freqData = null;
+const hookedElements = new WeakSet();
+
+function ensureAudioGraph() {
+  if (audioCtx) {
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return;
   }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try {
+    audioCtx = new AC();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 64;
+    analyser.smoothingTimeConstant = 0.4;
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+  } catch (e) {
+    console.warn('AudioContext init error:', e);
+  }
+}
+
+function hookAudioElement(el) {
+  if (!el || hookedElements.has(el)) return;
+  ensureAudioGraph();
+  if (!audioCtx || !analyser) return;
+  try {
+    const src = audioCtx.createMediaElementSource(el);
+    src.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    hookedElements.add(el);
+  } catch (e) {
+    // MediaElementSource may already be attached or cross-origin
+  }
+}
+
+const targets = { audio: 0, bass: 0, treble: 0 };
+const levels = { audio: 0, bass: 0, treble: 0 };
+let lastAcousticTime = performance.now();
+
+function sampleAudio() {
+  if (analyser && freqData) {
+    analyser.getByteFrequencyData(freqData);
+    let sum = 0;
+    for (let i = 0; i < freqData.length; i++) sum += freqData[i];
+    targets.audio = sum / freqData.length / 255;
+
+    let bass = 0;
+    const bassBins = Math.min(4, freqData.length);
+    for (let i = 0; i < bassBins; i++) bass += freqData[i];
+    targets.bass = bass / Math.max(1, bassBins) / 255;
+
+    let treble = 0;
+    const trStart = Math.min(10, freqData.length - 1);
+    const trEnd = Math.min(26, freqData.length);
+    for (let i = trStart; i < trEnd; i++) treble += freqData[i];
+    targets.treble = treble / Math.max(1, trEnd - trStart) / 255;
+  }
+
+  // 语音合成或无原生音频流时的有机声波脉冲驱动（呼吸感算法）
+  if (voiceStage.classList.contains('speaking') && targets.audio < 0.04) {
+    const t = performance.now() * 0.006;
+    const waveA = 0.5 + 0.5 * Math.sin(t * 3.7);
+    const waveB = 0.5 + 0.5 * Math.cos(t * 6.1);
+    targets.audio = 0.35 + 0.45 * waveA;
+    targets.bass = 0.3 + 0.55 * waveB;
+    targets.treble = 0.25 + 0.4 * Math.sin(t * 8.9);
+  } else if (!voiceStage.classList.contains('speaking') && targets.audio < 0.03) {
+    targets.audio = 0;
+    targets.bass = 0;
+    targets.treble = 0;
+  }
+}
+
+function smoothLevels(dt) {
+  // Fast attack (10.0), slow release (2.8) —— 峰哥经典有机生命滤波
+  for (const k of ['audio', 'bass', 'treble']) {
+    const t = targets[k];
+    const rate = t > levels[k] ? 10.0 : 2.8;
+    levels[k] += (t - levels[k]) * Math.min(1, rate * dt);
+  }
+}
+
+const barElements = document.querySelectorAll('.level-bars i');
+const orbitA = document.querySelector('.orbit-a');
+const orbitB = document.querySelector('.orbit-b');
+const portraitWrap = document.querySelector('.portrait-wrap');
+
+function startAcousticEngine() {
+  function loop() {
+    requestAnimationFrame(loop);
+    const now = performance.now();
+    const dt = Math.min((now - lastAcousticTime) / 1000, 0.05);
+    lastAcousticTime = now;
+
+    sampleAudio();
+    smoothLevels(dt);
+
+    // 1. 驱动 7 柱音频跳动条（分频段映射）
+    if (barElements && barElements.length >= 7) {
+      const weights = [
+        levels.treble * 0.9,
+        (levels.audio + levels.treble) * 0.6,
+        (levels.audio + levels.bass) * 0.7,
+        levels.bass * 1.25,
+        (levels.audio + levels.bass) * 0.7,
+        (levels.audio + levels.treble) * 0.6,
+        levels.treble * 0.9,
+      ];
+      barElements.forEach((bar, idx) => {
+        const height = Math.max(4, Math.min(22, 4 + weights[idx] * 20));
+        bar.style.height = `${height.toFixed(1)}px`;
+        if (levels.audio > 0.06) {
+          bar.style.background = 'var(--green)';
+          bar.style.boxShadow = `0 0 ${Math.round(levels.audio * 8)}px var(--green-glow)`;
+        } else {
+          bar.style.background = '';
+          bar.style.boxShadow = '';
+        }
+      });
+    }
+
+    // 2. 驱动外同心轨道微动
+    if (orbitA && orbitB) {
+      if (voiceStage.classList.contains('thinking')) {
+        // 保持思考黄色脉冲
+      } else if (levels.audio > 0.04) {
+        const scaleA = 1 + levels.bass * 0.08;
+        const scaleB = 1 + levels.audio * 0.14;
+        orbitA.style.transform = `scale(${scaleA.toFixed(3)})`;
+        orbitB.style.transform = `scale(${scaleB.toFixed(3)})`;
+        orbitA.style.borderColor = `rgba(52, 199, 89, ${(0.25 + levels.bass * 0.7).toFixed(2)})`;
+        orbitB.style.borderColor = `rgba(52, 199, 89, ${(0.08 + levels.audio * 0.35).toFixed(2)})`;
+      } else {
+        orbitA.style.transform = '';
+        orbitB.style.transform = '';
+        orbitA.style.borderColor = '';
+        orbitB.style.borderColor = '';
+      }
+    }
+
+    // 3. 驱动头像外发光与微动
+    if (portraitWrap) {
+      if (levels.audio > 0.04) {
+        const pScale = 1 + levels.bass * 0.035;
+        portraitWrap.style.transform = `scale(${pScale.toFixed(3)})`;
+        const glowSpread = Math.round(25 + levels.bass * 25);
+        portraitWrap.style.boxShadow = `0 0 ${glowSpread}px var(--green-glow)`;
+      } else if (connected) {
+        portraitWrap.style.transform = '';
+        portraitWrap.style.boxShadow = '';
+      }
+    }
+  }
+  requestAnimationFrame(loop);
+}
+startAcousticEngine();
+
+function unlockAudio() {
+  ensureAudioGraph();
   if (window.speechSynthesis) {
     try {
       if (speechSynthesis.paused) speechSynthesis.resume();
@@ -696,6 +829,7 @@ async function connectLiveKit() {
   room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
     track.attach(remoteAudio);
+    hookAudioElement(remoteAudio);
     remoteAudio.play && remoteAudio.play().catch(() => {});
   });
   room.on(LivekitClient.RoomEvent.DataReceived, (payload) => {
@@ -739,6 +873,7 @@ async function connect() {
     const isTaffy = (life.personaName || '').includes('塔菲') || (life.personaName || '').toLowerCase().includes('taffy');
     if (isTaffy) {
       showTranscript('电话接通了。塔菲：嗨~ 干什么呀？');
+      hookAudioElement(greetingAudio);
       greetingAudio.currentTime = 0;
       greetingAudio.play().then(() => {
         voiceStage.classList.add('speaking');
@@ -773,6 +908,7 @@ function hangup() {
   }
   const isTaffy = (life.personaName || '').includes('塔菲') || (life.personaName || '').toLowerCase().includes('taffy');
   if (isTaffy && connected) {
+    hookAudioElement(hangupAudio);
     hangupAudio.currentTime = 0;
     hangupAudio.play().catch(() => {});
   }

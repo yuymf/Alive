@@ -185,4 +185,26 @@ describe('voice server', () => {
     expect(info.hasSample).toBe(true);
     expect(info.promptText).toBe('这是测试声音文本');
   });
+
+  it('splitWithRemainder splits on sentence punctuation and retains uncompleted buffer', async () => {
+    const { splitWithRemainder, MAX_VOICE_CONTEXT } = await import('../scripts/voice/turn');
+    expect(MAX_VOICE_CONTEXT).toBe(20);
+
+    const res1 = splitWithRemainder('这是个好事儿啊！早发现比晚发现强。你说对吧？还有就是');
+    expect(res1.sentences).toEqual(['这是个好事儿啊！', '早发现比晚发现强。', '你说对吧？']);
+    expect(res1.remainder).toBe('还有就是');
+
+    const res2 = splitWithRemainder('没有标点符号的一整段');
+    expect(res2.sentences).toEqual([]);
+    expect(res2.remainder).toBe('没有标点符号的一整段');
+  });
+
+  it('voice prompt includes anti-AI constraints and phone tone rules', async () => {
+    boot();
+    const { buildVoiceSystemPrompt } = await import('../scripts/voice/persona-prompt');
+    const prompt = buildVoiceSystemPrompt();
+    expect(prompt).toContain('反 AI 化硬约束');
+    expect(prompt).toContain('绝对禁止以「好的」「当然」「没问题」「明白」等客服用语开头');
+    expect(prompt).toContain('用口语短句');
+  });
 });
