@@ -154,7 +154,6 @@ Heartbeat can call platform sub-skills (browse, post, voice, call the owner). Ch
 ```
 /alive distill <name|path|url>  # distill then adopt (峰哥 / talk-to-fengge / materials)
 /alive adopt <path|url>         # take in an existing persona skill
-/alive call                     # invite the owner to a live voice call
 /alive status              # emotion / vitality / flow
 /alive emotion             # 6D detail
 /alive schedule            # wake / sleep

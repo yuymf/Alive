@@ -158,4 +158,31 @@ describe('voice server', () => {
     expect(html).toContain('LiveKit');
     expect(html).toContain('/api/life');
   });
+
+  it('GET /api/avatar serves the persona reference image', async () => {
+    boot();
+    server = createVoiceServer();
+    const port = await listen(server);
+    const resp = await fetch(`http://127.0.0.1:${port}/api/avatar`);
+    expect(resp.status).toBe(200);
+    expect(resp.headers.get('content-type')).toContain('image');
+    const buf = await resp.arrayBuffer();
+    expect(buf.byteLength).toBeGreaterThan(100);
+  });
+
+  it('voice-setup detects voice dir and sample files', async () => {
+    boot();
+    const { ensureVoiceDir, hasVoiceSample, getVoiceInfo } = await import('../scripts/voice/voice-setup');
+    const dir = ensureVoiceDir('test-voice');
+    expect(fs.existsSync(dir)).toBe(true);
+    expect(hasVoiceSample('test-voice')).toBe(false);
+
+    fs.writeFileSync(path.join(dir, 'ref.wav'), Buffer.alloc(200));
+    fs.writeFileSync(path.join(dir, 'prompt.txt'), '这是测试声音文本');
+    expect(hasVoiceSample('test-voice')).toBe(true);
+
+    const info = getVoiceInfo('test-voice');
+    expect(info.hasSample).toBe(true);
+    expect(info.promptText).toBe('这是测试声音文本');
+  });
 });

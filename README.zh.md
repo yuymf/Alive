@@ -154,7 +154,6 @@ alive adopt ./examples/karpathy
 ```
 /alive distill <name|path|url>  # 一键蒸馏并接入（峰哥 / talk-to-fengge / 材料）
 /alive adopt <path|url>         # 接入已有的 persona skill
-/alive call                     # 主动给主人发一条实时语音邀请
 /alive status              # 情绪 / 精力 / 心流
 /alive emotion             # 6 维详情
 /alive schedule            # 作息

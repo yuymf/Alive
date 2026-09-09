@@ -23,7 +23,6 @@ import {
 } from './persona-creator';
 import { adoptPersonaSkill } from '../hub/persona-skill-import';
 import { distillPersona, formatDistillResult } from '../hub/persona-distill';
-import { defaultTalkToFenggeUrl, deliverCall } from '../host/outbox';
 import type {
   EmotionState, IntentPool, VitalityState, ConfidenceState,
   FlowState, HeartbeatLog, WisdomStore, PersonaConfig,
@@ -148,7 +147,6 @@ const COMMANDS: Record<string, (cmd: ParsedCommand) => CommandResult | Promise<C
   create: cmdCreate,
   adopt: cmdAdopt,
   distill: cmdDistill,
-  call: cmdCall,
 };
 
 /**
@@ -212,7 +210,6 @@ function cmdHelp(): CommandResult {
 | \`/alive create --guided\` | 引导模式，逐步填写角色信息 |
 | \`/alive distill <名字\\|目录\\|git URL>\` | 一键蒸馏：材料 → SKILL.md → adopt |
 | \`/alive adopt <dir 或 git URL>\` | 接入已有的 persona skill，让它不只停留在聊天 |
-| \`/alive call\` | 立刻给主人发一条实时语音邀请（Alive 通话页） |
 
 > ⚡ 这些命令不经过角色人格、不写入日记、不影响记忆。
 > 🌱 \`/alive distill\` 从材料或 talk-to-fengge 抽出脑子；\`/alive adopt\` 给已有 skill 身体。`,
@@ -775,25 +772,6 @@ async function cmdDistill(cmd: ParsedCommand): Promise<CommandResult> {
   } catch (err) {
     return { output: `❌ ${(err as Error).message}`, error: true };
   }
-}
-
-function cmdCall(): CommandResult {
-  const persona = safeLoadPersona();
-  if (!persona) return personaNotFound();
-  const joinUrl = defaultTalkToFenggeUrl();
-  const line = persona.voice?.sample_lines?.[0] || `${persona.meta.name}在。`;
-  const text = `${line.replace(/[。！？.!?]+$/, '')}。有空接个电话吗？`;
-  const ok = deliverCall(text, joinUrl);
-  if (!ok) return { output: '❌ 写不出通话邀请', error: true };
-  return {
-    output: `## 📞 ${persona.meta.name}想跟你通话
-
-${text}
-
-打开 [通话页](${joinUrl}) 接听。这是 Alive 自带的 LiveKit 通话页（没配 \`LIVEKIT_*\` 时用浏览器语音 + 默认音色）。
-
-下一步：先 \`alive start\` 或 \`alive voice\` 把页面拉起来，再点麦克风。`,
-  };
 }
 
 // ── Create Command ─────────────────────────────────────────────────

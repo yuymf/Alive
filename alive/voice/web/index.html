@@ -3,124 +3,431 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Alive · 来电</title>
+<title>Alive · 实时语音电话</title>
 <style>
+  :root {
+    color-scheme: dark;
+    --bg: #070a0e;
+    --surface: #0f151c;
+    --surface-raised: #151d27;
+    --border: #222d38;
+    --border-strong: #303e4d;
+    --text: #f0f4f8;
+    --text-muted: #8899a6;
+    --text-dim: #546573;
+    --green: #34c759;
+    --green-glow: rgba(52, 199, 89, 0.28);
+    --red: #ff3b30;
+    --red-glow: rgba(255, 59, 48, 0.28);
+    --yellow: #ff9f0a;
+    --radius: 20px;
+  }
+
   * { margin: 0; padding: 0; box-sizing: border-box; }
+
   html, body {
     width: 100%; height: 100%;
-    background: #050508;
-    color: #f2f2f6;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
-    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    overflow-x: hidden;
   }
+
   #glow {
-    position: fixed; inset: -20%;
-    background: radial-gradient(circle at 50% 28%, rgba(80, 90, 160, 0.28), transparent 42%),
-                radial-gradient(circle at 50% 100%, rgba(40, 80, 70, 0.18), transparent 40%);
+    position: fixed; inset: -30%;
+    background: radial-gradient(circle at 35% 20%, rgba(52, 199, 89, 0.08), transparent 45%),
+                radial-gradient(circle at 70% 80%, rgba(30, 80, 160, 0.12), transparent 40%),
+                radial-gradient(circle at 50% 50%, rgba(15, 25, 35, 0.6), transparent 70%);
     pointer-events: none;
+    z-index: 0;
   }
-  #ui { position: fixed; inset: 0; }
-  #topBar {
-    position: fixed; top: 0; left: 0; right: 0;
-    display: flex; justify-content: space-between; align-items: flex-start;
-    padding: 22px 26px; gap: 16px;
+
+  .container {
+    position: relative; z-index: 1;
+    max-width: 1120px; min-height: 100vh;
+    margin: 0 auto;
+    padding: 24px 28px 40px;
+    display: flex; flex-direction: column;
+    justify-content: space-between;
   }
-  #who {
-    max-width: 62%;
+
+  /* Header */
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
   }
-  #whoName { font-size: 20px; letter-spacing: 0.02em; }
-  #whoTag { margin-top: 6px; font-size: 13px; color: #9a9aa8; }
+
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 16px; letter-spacing: 0.02em;
+    color: var(--text); text-decoration: none;
+  }
+  .brand-badge {
+    width: 12px; height: 12px; border-radius: 3px;
+    background: var(--green);
+    box-shadow: 0 0 10px var(--green-glow);
+  }
+  .brand-sub {
+    font-size: 11px; font-family: ui-monospace, monospace;
+    color: var(--text-dim); letter-spacing: 0.1em;
+  }
+
   #statusPill {
     display: flex; align-items: center; gap: 8px;
-    background: rgba(20, 20, 24, 0.55);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 999px; padding: 9px 16px; font-size: 13px; color: #d8d8e0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px; padding: 7px 16px;
+    font-size: 13px; color: var(--text-muted);
   }
-  #statusDot { width: 8px; height: 8px; border-radius: 50%; background: #666; }
-  #statusDot.ready { background: #8e8e93; }
-  #statusDot.connecting { background: #ff9f0a; animation: blink 1s infinite; }
-  #statusDot.connected { background: #34c759; box-shadow: 0 0 8px rgba(52,199,89,.8); }
-  #statusDot.error { background: #ff453a; }
-  @keyframes blink { 50% { opacity: .35; } }
-  #life {
-    position: fixed; top: 96px; left: 26px; right: 26px;
-    font-size: 14px; line-height: 1.55; color: #c8c8d4;
-    max-width: 520px;
+  #statusDot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim); transition: 0.3s;
   }
-  #life b { color: #fff; font-weight: 560; }
-  #bottom {
-    position: fixed; bottom: 0; left: 0; right: 0;
-    display: flex; flex-direction: column; align-items: center;
-    padding-bottom: 44px; gap: 14px;
+  #statusDot.ready { background: var(--text-muted); }
+  #statusDot.connecting { background: var(--yellow); animation: blink 1s infinite; }
+  #statusDot.connected { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  #statusDot.error { background: var(--red); }
+  @keyframes blink { 50% { opacity: 0.3; } }
+
+  /* Main Stage */
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: center;
+    padding: 36px 0;
   }
-  #micButton {
-    width: 72px; height: 72px; border-radius: 50%;
-    border: 1.5px solid #444; background: rgba(14,14,18,.6);
+
+  /* Left: Persona & Stage */
+  .hero-side {
+    display: flex; flex-direction: column;
+    align-items: center; text-align: center;
+  }
+
+  .voice-stage {
+    position: relative;
+    width: min(300px, 75vw);
+    aspect-ratio: 1;
     display: flex; align-items: center; justify-content: center;
-    cursor: pointer; color: #cfcfd6;
+    margin-bottom: 28px;
   }
-  #micButton svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.8; }
-  #micButton.connected { border-color: #34c759; box-shadow: 0 0 28px rgba(52,199,89,.22); color: #6fe08e; }
-  #micButton.speaking { animation: pulse 2s ease-in-out infinite; }
-  @keyframes pulse { 50% { transform: scale(1.05); } }
-  #timer { font-size: 13px; opacity: .4; letter-spacing: .08em; height: 16px; }
+
+  .orbit {
+    position: absolute; border-radius: 50%;
+    border: 1px solid var(--border);
+    pointer-events: none;
+  }
+  .orbit-a { inset: 5%; border-color: var(--border-strong); }
+  .orbit-b { inset: -8%; border-color: rgba(255,255,255,0.04); }
+
+  .speaking .orbit-a {
+    animation: pulseRing 1.6s ease-out infinite;
+    border-color: var(--green);
+  }
+  .speaking .orbit-b {
+    animation: pulseRing 2.2s ease-out 0.4s infinite;
+  }
+  @keyframes pulseRing {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    50% { opacity: 0.4; }
+    100% { transform: scale(1.12); opacity: 0; }
+  }
+
+  .portrait-wrap {
+    position: relative; z-index: 2;
+    width: 170px; height: 170px;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    border: 3px solid var(--border-strong);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.4);
+    transition: transform 0.3s, border-color 0.3s, box-shadow 0.3s;
+  }
+  .connected .portrait-wrap {
+    border-color: var(--green);
+    box-shadow: 0 0 30px var(--green-glow);
+  }
+  .speaking .portrait-wrap {
+    transform: scale(1.04);
+    border-color: var(--green);
+    box-shadow: 0 0 45px var(--green-glow);
+  }
+
+  #avatarImg {
+    width: 100%; height: 100%; object-fit: cover;
+    display: none;
+  }
+  #portraitLetter {
+    font-size: 64px; font-weight: 600;
+    color: var(--text);
+    font-family: Georgia, "Songti SC", serif;
+  }
+
+  /* 7 Audio Bars */
+  .level-bars {
+    position: absolute; bottom: 8px; z-index: 3;
+    display: flex; align-items: center; gap: 4px;
+    height: 24px; padding: 4px 10px;
+    background: rgba(15, 21, 28, 0.88);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+  }
+  .level-bars i {
+    width: 3px; height: 5px; border-radius: 2px;
+    background: var(--text-dim); transition: 0.2s;
+  }
+  .speaking .level-bars i {
+    background: var(--green);
+    animation: bounceBar 0.75s ease-in-out infinite alternate;
+  }
+  .speaking .level-bars i:nth-child(2) { animation-delay: -0.2s; }
+  .speaking .level-bars i:nth-child(3) { animation-delay: -0.45s; }
+  .speaking .level-bars i:nth-child(4) { animation-delay: -0.1s; }
+  .speaking .level-bars i:nth-child(5) { animation-delay: -0.6s; }
+  .speaking .level-bars i:nth-child(6) { animation-delay: -0.35s; }
+  .speaking .level-bars i:nth-child(7) { animation-delay: -0.5s; }
+  @keyframes bounceBar {
+    from { height: 4px; }
+    to { height: 18px; }
+  }
+
+  .persona-details { max-width: 380px; }
+  .persona-badge {
+    display: inline-block; font-size: 11px; font-family: ui-monospace, monospace;
+    letter-spacing: 0.12em; color: var(--green); text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  #whoName {
+    font-size: clamp(28px, 4vw, 38px);
+    font-weight: 700; letter-spacing: -0.02em;
+    color: #fff; line-height: 1.2;
+  }
+  #whoTag {
+    margin-top: 8px; font-size: 14px;
+    color: var(--text-muted); line-height: 1.6;
+  }
+
+  .life-bar {
+    margin-top: 14px; font-size: 13px; color: var(--text-muted);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 14px; text-align: left;
+    line-height: 1.6;
+  }
+  .life-bar b { color: #fff; font-weight: 500; }
+
+  /* Right: Call Control & Dialogue Panel */
+  .call-panel {
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 32px;
+    display: flex; flex-direction: column;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  }
+
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 16px; border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .call-state-title {
+    font-size: 13px; font-weight: 600;
+    color: var(--text-muted); letter-spacing: 0.05em;
+  }
+  #timer {
+    font-family: ui-monospace, "SF Pro Text", monospace;
+    font-size: 15px; font-weight: 600;
+    color: var(--green); letter-spacing: 0.08em;
+  }
+
+  /* Dialogue / Transcript Box */
+  .transcript-wrap {
+    min-height: 130px; max-height: 200px;
+    overflow-y: auto; margin-bottom: 24px;
+    padding: 16px 20px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
   #transcript {
-    font-size: 20px; line-height: 1.5; text-align: center;
-    max-width: 600px; min-height: 32px; padding: 0 24px;
-    text-shadow: 0 1px 12px #000;
+    font-size: 17px; line-height: 1.6;
+    color: var(--text);
+    text-wrap: pretty;
   }
-  #hint { font-size: 12px; color: #7d7d8a; }
+
+  /* Main Action Button (Phone Call Style) */
+  .action-wrap {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 16px; margin-bottom: 20px;
+  }
+
+  #callButton, #micButton {
+    width: 100%; max-width: 320px; height: 56px;
+    border-radius: 999px; border: none;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    font-size: 16px; font-weight: 700; cursor: pointer;
+    transition: transform 0.15s, filter 0.15s, background-color 0.3s;
+    background: var(--green); color: #070a0e;
+    box-shadow: 0 4px 20px var(--green-glow);
+  }
+  #callButton:hover, #micButton:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  #callButton:active, #micButton:active { transform: translateY(1px); }
+  #callButton.connected, #micButton.connected {
+    background: var(--red); color: #fff;
+    box-shadow: 0 4px 20px var(--red-glow);
+  }
+  #callButton svg, #micButton svg { width: 22px; height: 22px; fill: currentColor; }
+
+  /* Direct Text Form */
+  #textForm {
+    display: flex; gap: 8px; width: 100%;
+  }
+  #textInput {
+    flex: 1; height: 44px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px; padding: 0 18px;
+    color: #fff; font-size: 14px; outline: none;
+    transition: border-color 0.2s;
+  }
+  #textInput:focus { border-color: var(--green); }
+  #sendBtn {
+    height: 44px; padding: 0 20px;
+    border-radius: 999px; border: 1px solid var(--border-strong);
+    background: var(--surface-raised); color: var(--text);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  #sendBtn:hover { background: var(--border-strong); border-color: var(--text-muted); }
+
+  /* Footer Notes */
+  .panel-footer {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: var(--text-dim);
+  }
+  #hint { color: var(--text-muted); }
+
+  /* Toast Notification */
   #toast {
-    position: fixed; top: 76px; left: 50%; transform: translate(-50%, -8px);
-    background: rgba(28,28,32,.85); border: 1px solid rgba(255,255,255,.12);
-    border-radius: 999px; padding: 10px 22px; font-size: 14px; color: #ffd699;
-    opacity: 0; transition: .35s;
+    position: fixed; top: 24px; left: 50%; transform: translate(-50%, -20px);
+    background: rgba(25, 33, 44, 0.94); backdrop-filter: blur(10px);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px; padding: 10px 24px;
+    font-size: 14px; color: #ffe3a8;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    opacity: 0; pointer-events: none; transition: 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    z-index: 100;
   }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* Responsive Mobile View */
+  @media (max-width: 820px) {
+    main { grid-template-columns: 1fr; gap: 32px; padding: 20px 0; }
+    .container { padding: 16px 20px 32px; }
+    .call-panel { padding: 24px; }
+    .voice-stage { width: 220px; }
+    .portrait-wrap { width: 135px; height: 135px; }
+    #portraitLetter { font-size: 52px; }
+    #whoName { font-size: 28px; }
+  }
 </style>
 </head>
 <body>
 <div id="glow"></div>
-<div id="ui">
-  <div id="topBar">
-    <div id="who">
-      <div id="whoName">Alive</div>
-      <div id="whoTag">正在过自己的一天</div>
-    </div>
+<div class="container">
+  <header>
+    <a class="brand" href="/">
+      <span class="brand-badge" aria-hidden="true"></span>
+      <span>Alive Voice</span>
+      <span class="brand-sub">PHONE / 01</span>
+    </a>
     <div id="statusPill">
       <span id="statusDot" class="ready"></span>
       <span id="statusText">就绪</span>
     </div>
-  </div>
-  <div id="life">点麦克风接听。对方可能正在做事。</div>
+  </header>
+
+  <main>
+    <!-- Left: Persona Stage -->
+    <div class="hero-side">
+      <div class="voice-stage" id="voiceStage">
+        <div class="orbit orbit-a"></div>
+        <div class="orbit orbit-b"></div>
+        <div class="portrait-wrap">
+          <img id="avatarImg" alt="Avatar">
+          <span id="portraitLetter">A</span>
+        </div>
+        <div class="level-bars">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+      </div>
+
+      <div class="persona-details">
+        <span class="persona-badge" id="channelTag">一对一语音连线</span>
+        <h1 id="whoName">Alive</h1>
+        <p id="whoTag">正在过自己的一天</p>
+        <div class="life-bar" id="lifeBlock">点接听按钮即可开始通话。</div>
+      </div>
+    </div>
+
+    <!-- Right: Dialogue & Control Panel -->
+    <div class="call-panel">
+      <div class="panel-header">
+        <span class="call-state-title" id="callStateTitle">READY TO CALL</span>
+        <span id="timer">00:00</span>
+      </div>
+
+      <div class="transcript-wrap">
+        <p id="transcript">通话未开始。按下下方按钮开始连线。</p>
+      </div>
+
+      <div class="action-wrap">
+        <button id="micButton" type="button" aria-label="开始通话">
+          <svg id="callIcon" viewBox="0 0 24 24">
+            <path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24 11.36 11.36 0 003.58.57 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1 11.36 11.36 0 00.57 3.58 1 1 0 01-.24 1.02l-2.21 2.19z"/>
+          </svg>
+          <span id="callLabel">开始通话</span>
+        </button>
+      </div>
+
+      <form id="textForm" onsubmit="event.preventDefault(); sendText();">
+        <input id="textInput" type="text" placeholder="键盘打字也可以直接回复（回车发送）...">
+        <button id="sendBtn" type="submit">发送</button>
+      </form>
+
+      <div class="panel-footer">
+        <span id="hint">正在检测语音环境...</span>
+        <span id="engineBadge">Alive Engine</span>
+      </div>
+    </div>
+  </main>
+
   <div id="toast"></div>
-  <div id="bottom">
-    <button id="micButton" aria-label="开始通话">
-      <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="9" y="2.5" width="6" height="11.5" rx="3"></rect>
-        <path d="M5 11.5a7 7 0 0 0 14 0"></path>
-        <line x1="12" y1="18.5" x2="12" y2="21.5"></line>
-      </svg>
-    </button>
-    <div id="timer">00:00</div>
-    <div id="transcript"></div>
-    <form id="textForm" onsubmit="event.preventDefault(); sendText();" style="display: flex; gap: 8px; max-width: 480px; width: 90%; margin: 8px 0;">
-      <input id="textInput" type="text" placeholder="输入想说的话（回车直接发送）..." style="flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); border-radius: 999px; padding: 10px 18px; color: #fff; font-size: 14px; outline: none;">
-      <button type="submit" style="background: #34c759; color: #000; border: none; border-radius: 999px; padding: 0 18px; font-weight: 600; cursor: pointer; font-size: 14px;">发送</button>
-    </form>
-    <div id="hint">LiveKit 实时语音 · 默认音色</div>
-  </div>
 </div>
+
 <audio id="remoteAudio" autoplay playsinline></audio>
 <script src="livekit-client.umd.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const statusDot = $('statusDot');
 const statusText = $('statusText');
+const voiceStage = $('voiceStage');
+const avatarImg = $('avatarImg');
+const portraitLetter = $('portraitLetter');
 const micButton = $('micButton');
+const callButton = micButton;
+const callLabel = $('callLabel');
+const callStateTitle = $('callStateTitle');
 const transcript = $('transcript');
 const timerEl = $('timer');
 const toastEl = $('toast');
+const hintEl = $('hint');
 const remoteAudio = $('remoteAudio');
 
 let life = { personaName: 'Alive', livekit: false };
@@ -135,17 +442,32 @@ let recognition = null;
 function setStatus(kind, text) {
   statusDot.className = kind;
   statusText.textContent = text || ({
-    ready: '就绪', connecting: '接通中', connected: '通话中', error: '未接通',
+    ready: '待机', connecting: '接通中', connected: '通话中', error: '未接通',
   }[kind] || kind);
+
+  if (kind === 'connected') {
+    document.body.classList.add('connected');
+    callButton.classList.add('connected');
+    callLabel.textContent = '挂断电话';
+    callStateTitle.textContent = `正在与 ${life.personaName || 'Alive'} 通话中`;
+  } else {
+    document.body.classList.remove('connected');
+    callButton.classList.remove('connected');
+    callLabel.textContent = kind === 'connecting' ? '正在接通...' : '开始通话';
+    callStateTitle.textContent = kind === 'connecting' ? 'CONNECTING...' : 'READY TO CALL';
+  }
 }
+
 function showToast(msg) {
   toastEl.textContent = msg;
   toastEl.classList.add('show');
-  setTimeout(() => toastEl.classList.remove('show'), 2400);
+  setTimeout(() => toastEl.classList.remove('show'), 2600);
 }
+
 function showTranscript(text) {
   transcript.textContent = text;
 }
+
 function startTimer() {
   elapsed = 0;
   timerEl.textContent = '00:00';
@@ -157,35 +479,61 @@ function startTimer() {
     timerEl.textContent = m + ':' + s;
   }, 1000);
 }
+
 function stopTimer() {
   clearInterval(timer);
   timer = null;
+  timerEl.textContent = '00:00';
 }
 
 async function loadLife() {
-  const resp = await fetch('/api/life');
-  life = await resp.json();
-  $('whoName').textContent = life.personaName || 'Alive';
-  $('whoTag').textContent = life.tagline || '正在过自己的一天';
-  const bits = [];
-  if (life.mood) bits.push('心情 <b>' + life.mood + '</b>');
-  if (life.activity) bits.push('正在 <b>' + life.activity + '</b>');
-  if (life.schedule && life.schedule.length) {
-    bits.push('今天：' + life.schedule.slice(0, 3).map((x) => x.time + ' ' + x.activity).join(' · '));
-  }
-  $('life').innerHTML = bits.join('<br>') || '点麦克风接听。';
-  document.title = (life.personaName || 'Alive') + ' · 来电';
-  mode = (life.livekit && life.worker) ? 'livekit' : 'direct';
-  if (mode === 'livekit') {
-    const bits = ['LiveKit 实时语音 · Agent 在线'];
-    if (life.voxcpm) bits.push('VoxCPM 已就绪');
-    $('hint').textContent = bits.join(' · ');
-  } else {
-    if (life.livekit && !life.worker) {
-      $('hint').textContent = '已自动使用浏览器直接通话（LiveKit 房间已开，但 Agent 离线）';
+  try {
+    const resp = await fetch('/api/life');
+    life = await resp.json();
+    const name = life.personaName || 'Alive';
+    $('whoName').textContent = name;
+    $('whoTag').textContent = life.tagline || '正在过自己的一天';
+    portraitLetter.textContent = name.trim().charAt(0).toUpperCase();
+
+    if (life.avatar) {
+      avatarImg.src = life.avatar;
+      avatarImg.style.display = 'block';
+      portraitLetter.style.display = 'none';
+      avatarImg.onerror = () => {
+        avatarImg.style.display = 'none';
+        portraitLetter.style.display = 'block';
+      };
     } else {
-      $('hint').textContent = '浏览器直接通话（点麦克风说话，或在下方打字）';
+      avatarImg.style.display = 'none';
+      portraitLetter.style.display = 'block';
     }
+
+    const bits = [];
+    if (life.mood) bits.push('心情 <b>' + life.mood + '</b>');
+    if (life.activity) bits.push('当前 <b>' + life.activity + '</b>');
+    if (life.schedule && life.schedule.length) {
+      bits.push('日程：' + life.schedule.slice(0, 2).map((x) => x.time + ' ' + x.activity).join(' · '));
+    }
+    $('lifeBlock').innerHTML = bits.join('<br>') || '点开始通话接通。';
+    document.title = name + ' · 实时语音电话';
+
+    mode = (life.livekit && life.worker) ? 'livekit' : 'direct';
+    const hintBits = [];
+    if (mode === 'livekit') {
+      hintBits.push('LiveKit 实时语音 · Agent 在线');
+    } else if (life.livekit && !life.worker) {
+      hintBits.push('浏览器语音（LiveKit 房间已开，但 Agent 离线）');
+    } else {
+      hintBits.push('浏览器直接通话（麦克风 + 打字双通道）');
+    }
+
+    if (life.voxcpm) {
+      hintBits.push(life.voiceSample ? '已载入克隆音色' : 'VoxCPM 默认音色');
+    }
+    hintEl.textContent = hintBits.join(' · ');
+  } catch (err) {
+    console.error('loadLife error:', err);
+    hintEl.textContent = '无法读取人设服务状态';
   }
 }
 
@@ -194,12 +542,16 @@ function speak(text) {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = 'zh-CN';
   u.rate = 1.05;
+  u.onstart = () => voiceStage.classList.add('speaking');
+  u.onend = () => voiceStage.classList.remove('speaking');
+  u.onerror = () => voiceStage.classList.remove('speaking');
   speechSynthesis.cancel();
   speechSynthesis.speak(u);
 }
 
 async function directReply(text) {
   showTranscript('你：' + text);
+  voiceStage.classList.add('speaking');
   try {
     const resp = await fetch('/api/turn', {
       method: 'POST',
@@ -208,11 +560,10 @@ async function directReply(text) {
     });
     const data = await resp.json();
     const reply = data.reply || '在呢。你说。';
-    showTranscript(reply);
-    micButton.classList.add('speaking');
+    showTranscript((life.personaName || 'AI') + '：' + reply);
     speak(reply);
-    setTimeout(() => micButton.classList.remove('speaking'), 1600);
   } catch (err) {
+    voiceStage.classList.remove('speaking');
     showTranscript('（连接后台服务失败，请检查服务状态）');
     speak('连接后台服务失败，请检查服务状态');
   }
@@ -226,7 +577,6 @@ async function sendText() {
   if (!connected) {
     connected = true;
     setStatus('connected');
-    micButton.classList.add('connected');
     startTimer();
   }
   await directReply(text);
@@ -235,26 +585,30 @@ async function sendText() {
 function startDirectListen() {
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Rec) {
-    showToast('当前浏览器不支持语音识别，请在下方打字沟通');
+    showToast('当前浏览器不支持内置听写，可直接在下方打字');
     return;
   }
-  recognition = new Rec();
-  recognition.lang = 'zh-CN';
-  recognition.interimResults = false;
-  recognition.continuous = true;
-  recognition.onresult = (ev) => {
-    const text = ev.results[ev.results.length - 1][0].transcript;
-    if (text) directReply(text);
-  };
-  recognition.onerror = (ev) => {
-    console.warn('SpeechRecognition error:', ev.error);
-    if (ev.error === 'not-allowed') {
-      showToast('麦克风权限未开启，可直接在下方打字');
-    } else if (ev.error === 'network') {
-      showToast('语音听写需要联网，可直接在下方打字');
-    }
-  };
-  try { recognition.start(); } catch (e) {}
+  try {
+    recognition = new Rec();
+    recognition.lang = 'zh-CN';
+    recognition.interimResults = false;
+    recognition.continuous = true;
+    recognition.onresult = (ev) => {
+      const text = ev.results[ev.results.length - 1][0].transcript;
+      if (text) directReply(text);
+    };
+    recognition.onerror = (ev) => {
+      console.warn('SpeechRecognition error:', ev.error);
+      if (ev.error === 'not-allowed') {
+        showToast('麦克风权限未开启，可在下方直接打字');
+      } else if (ev.error === 'network') {
+        showToast('语音听写需要联网，可在下方直接打字');
+      }
+    };
+    recognition.start();
+  } catch (e) {
+    console.warn('SpeechRecognition start error:', e);
+  }
 }
 
 async function connectLiveKit() {
@@ -272,16 +626,11 @@ async function connectLiveKit() {
   room.on(LivekitClient.RoomEvent.Connected, () => {
     connected = true;
     setStatus('connected');
-    micButton.classList.add('connected');
     startTimer();
+    showTranscript('电话接通了。随便说点什么，我在听。');
   });
   room.on(LivekitClient.RoomEvent.Disconnected, () => {
-    connected = false;
-    connecting = false;
-    setStatus('ready', '已挂断');
-    micButton.classList.remove('connected', 'speaking');
-    stopTimer();
-    room = null;
+    hangup();
   });
   room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
     if (track.kind !== LivekitClient.Track.Kind.Audio) return;
@@ -292,16 +641,21 @@ async function connectLiveKit() {
     try {
       const text = new TextDecoder().decode(payload);
       const msg = JSON.parse(text);
-      if (msg.transcript || msg.text) showTranscript(msg.transcript || msg.text);
+      if (msg.transcript || msg.text) {
+        showTranscript((life.personaName || 'AI') + '：' + (msg.transcript || msg.text));
+      }
     } catch {}
   });
   room.on(LivekitClient.RoomEvent.ActiveSpeakersChanged, (speakers) => {
-    const ai = speakers.some((s) => s.identity !== identity);
-    micButton.classList.toggle('speaking', ai);
+    const aiSpeaking = speakers.some((s) => s.identity !== identity);
+    voiceStage.classList.toggle('speaking', aiSpeaking);
   });
   await room.connect(data.livekit_url, data.token);
-  try { await room.localParticipant.setMicrophoneEnabled(true); }
-  catch (e) { showToast('请允许使用麦克风'); }
+  try {
+    await room.localParticipant.setMicrophoneEnabled(true);
+  } catch (e) {
+    showToast('请在浏览器中允许麦克风权限');
+  }
 }
 
 async function connect() {
@@ -317,12 +671,11 @@ async function connect() {
     connected = true;
     connecting = false;
     setStatus('connected');
-    micButton.classList.add('connected');
     startTimer();
     startDirectListen();
-    showTranscript('接通了。你说。');
+    showTranscript('电话接通了。我在听，你说吧。');
   } catch (err) {
-    console.error(err);
+    console.error('connect error:', err);
     connecting = false;
     connected = false;
     setStatus('error', '连接失败');
@@ -331,17 +684,33 @@ async function connect() {
 }
 
 function hangup() {
-  if (room) { try { room.disconnect(); } catch (e) {} room = null; }
-  if (recognition) { try { recognition.stop(); } catch (e) {} recognition = null; }
-  if (window.speechSynthesis) speechSynthesis.cancel();
+  if (room) {
+    try { room.disconnect(); } catch (e) {}
+    room = null;
+  }
+  if (recognition) {
+    try { recognition.stop(); } catch (e) {}
+    recognition = null;
+  }
+  if (window.speechSynthesis) {
+    speechSynthesis.cancel();
+  }
   connected = false;
   connecting = false;
+  voiceStage.classList.remove('speaking');
   setStatus('ready', '已挂断');
-  micButton.classList.remove('connected', 'speaking');
   stopTimer();
+  showTranscript('通话已结束。');
 }
 
-micButton.addEventListener('click', () => connected ? hangup() : connect());
+callButton.addEventListener('click', () => {
+  if (connected || connecting) {
+    hangup();
+  } else {
+    connect();
+  }
+});
+
 loadLife().then(() => setStatus('ready')).catch(() => setStatus('error', '人设未加载'));
 </script>
 </body>

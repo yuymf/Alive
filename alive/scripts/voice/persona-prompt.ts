@@ -4,6 +4,9 @@ import { formatPresenceBlock, readPresence } from '../host/presence';
 import { PATHS, readJSON, readTemplate, readText } from '../utils/file-utils';
 import { hydrateEmotionState, type EmotionState } from '../utils/types';
 
+import * as fs from 'fs';
+import * as path from 'path';
+
 export interface VoiceLifeSnapshot {
   personaName: string;
   tagline: string;
@@ -12,12 +15,43 @@ export interface VoiceLifeSnapshot {
   inner: string;
   schedule: Array<{ time: string; activity: string }>;
   joinHint: string;
+  avatar?: string;
+}
+
+export function findPersonaAvatarPath(): string | null {
+  try {
+    const persona = loadPersona();
+    const candidates: string[] = [];
+    if (persona.meta?.reference_image) {
+      const ref = persona.meta.reference_image;
+      if (path.isAbsolute(ref)) candidates.push(ref);
+      candidates.push(path.resolve(path.dirname(PATHS.personaConfig), ref));
+      candidates.push(path.resolve(path.dirname(PATHS.skillPersonaConfig), ref));
+      candidates.push(path.resolve(__dirname, '..', '..', 'personas', ref));
+      candidates.push(path.resolve(__dirname, '..', '..', '..', 'alive', 'personas', ref));
+    }
+    const personaDir = path.dirname(PATHS.personaConfig);
+    for (const ext of ['.png', '.jpg', '.jpeg', '.webp', '.svg']) {
+      candidates.push(path.join(personaDir, `avatar${ext}`));
+      candidates.push(path.join(personaDir, `portrait${ext}`));
+      candidates.push(path.join(personaDir, `${persona.meta?.id || 'persona'}-source${ext}`));
+    }
+    for (const file of candidates) {
+      if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+        return file;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 export function loadVoiceLife(): VoiceLifeSnapshot {
   const persona = loadPersona();
   const presence = readPresence();
   const emotion = hydrateEmotionState(readJSON<Record<string, unknown>>(PATHS.emotionState, {}));
+  const hasAvatar = Boolean(findPersonaAvatarPath());
   return {
     personaName: persona.meta.name,
     tagline: persona.meta.tagline,
@@ -26,6 +60,7 @@ export function loadVoiceLife(): VoiceLifeSnapshot {
     inner: presence.inner,
     schedule: presence.schedule,
     joinHint: liveHint(),
+    avatar: hasAvatar ? '/api/avatar' : undefined,
   };
 }
 

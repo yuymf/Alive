@@ -16,7 +16,6 @@ Usage:
              [--hermes [profile]] [--openclaw [agent]]
   alive adopt <path|url> [--id <slug>] [--home <dir>]
   alive distill <name|path|url> [--id <slug>] [--name <name>] [--home <dir>]
-  alive call [--home <dir>]
   alive voice [--check] [--livekit-dev]
   alive tick | morning | night
   alive start
@@ -45,7 +44,6 @@ Conversation uses the host agent. Heartbeat reuses a Hermes / OpenClaw
 model key when present; otherwise set LLM_API_KEY.
 adopt takes a Nuwa / 永雏塔菲 persona skill (local dir or git URL).
 distill turns materials or talk-to-fengge into a skill, then adopts it.
-call writes a live-voice invitation.
 voice / start serve the call page and, when configured, LiveKit + VoxCPM worker.
 See USAGE.md.
 `);
@@ -264,10 +262,6 @@ async function main() {
     const source = positional[1] || '';
     const id = flags.id ? ` --id ${flags.id}` : '';
     return cmdAdmin(`adopt ${source}${id}`.trim());
-  }
-  if (cmd === 'call') {
-    if (flags.home) process.env.ALIVE_HOME = flags.home;
-    return cmdAdmin('call');
   }
   if (cmd === 'distill') {
     if (flags.home) process.env.ALIVE_HOME = flags.home;

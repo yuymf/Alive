@@ -3,7 +3,7 @@ import * as http from 'http';
 import * as path from 'path';
 import { loadAliveEnv } from '../utils/file-utils';
 import { createRoomAndToken, livekitConfigured, readLiveKitConfig } from './livekit-token';
-import { buildVoiceSystemPrompt, loadVoiceLife } from './persona-prompt';
+import { buildVoiceSystemPrompt, findPersonaAvatarPath, loadVoiceLife } from './persona-prompt';
 import { runVoiceTurn } from './turn';
 import { formatVoiceCheck, readVoiceStackStatus } from './config';
 
@@ -13,6 +13,9 @@ const MIME: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.json': 'application/json; charset=utf-8',
 };
 
@@ -72,6 +75,22 @@ export function createVoiceServer(): http.Server {
       if (req.method === 'GET' && url.pathname === '/api/life') {
         const stack = await readVoiceStackStatus();
         json(res, 200, { ok: true, ...stack, ...loadVoiceLife() });
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/api/avatar') {
+        const avatarPath = findPersonaAvatarPath();
+        if (!avatarPath || !fs.existsSync(avatarPath)) {
+          json(res, 404, { error: 'avatar not found' });
+          return;
+        }
+        const ext = path.extname(avatarPath).toLowerCase();
+        const mime = MIME[ext] || 'image/png';
+        res.writeHead(200, {
+          'Content-Type': mime,
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=60',
+        });
+        fs.createReadStream(avatarPath).pipe(res);
         return;
       }
       if (req.method === 'GET' && url.pathname === '/api/check') {

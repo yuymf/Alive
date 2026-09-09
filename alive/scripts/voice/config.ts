@@ -18,6 +18,7 @@ export interface VoiceStackStatus {
   voxcpm: boolean;
   voxcpmUrl: string;
   voxcpmVoice: string;
+  voiceSample: boolean;
   stt: string;
   llm: boolean;
   worker: boolean;
@@ -125,13 +126,16 @@ export async function readVoiceStackStatus(): Promise<VoiceStackStatus> {
       livekitUp = false;
     }
   }
+  const { hasVoiceSample } = await import('./voice-setup');
+  const vVoice = voxcpmVoice();
   return {
     livekit: livekitUp,
     livekitUrl: cfg?.url || '',
     agentName: agentName(),
     voxcpm: await probeVoxCpm(voxUrl),
     voxcpmUrl: voxUrl,
-    voxcpmVoice: voxcpmVoice(),
+    voxcpmVoice: vVoice,
+    voiceSample: hasVoiceSample(vVoice),
     stt: sttProvider(),
     llm: Boolean((process.env.LLM_API_KEY || '').trim()),
     worker: await portOpen(wPort),
@@ -148,7 +152,7 @@ export function formatVoiceCheck(status: VoiceStackStatus): string {
     '## Alive 通话栈',
     '',
     row(status.livekit, 'LiveKit', status.livekit ? status.livekitUrl : '未配置 LIVEKIT_URL / KEY / SECRET'),
-    row(status.voxcpm, 'VoxCPM', status.voxcpm ? `${status.voxcpmUrl} voice=${status.voxcpmVoice}` : `${status.voxcpmUrl} 无响应`),
+    row(status.voxcpm, 'VoxCPM', status.voxcpm ? `${status.voxcpmUrl} voice=${status.voxcpmVoice}${status.voiceSample ? ' (已载入克隆样本)' : ' (默认音色)'}` : `${status.voxcpmUrl} 无响应`),
     row(status.stt !== 'none', 'STT', status.stt === 'none' ? '需要 CARTESIA_API_KEY 或 OPENAI_API_KEY' : status.stt),
     row(status.llm, 'LLM', status.llm ? (process.env.LLM_MODEL || '已配置') : '需要 Hermes/OpenClaw 宿主 key 或 LLM_API_KEY'),
     row(status.worker, 'Agent worker', status.worker ? `127.0.0.1:${status.workerPort}` : `还没起来（${status.agentName}）`),

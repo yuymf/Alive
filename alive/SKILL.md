@@ -95,10 +95,4 @@ node {baseDir}/scripts/host/boot.js tick
 
 ## Proactive voice call
 
-If the user wants to start or test a call invitation (`打电话`, `call`, `语音连线`):
-
-```bash
-node {baseDir}/scripts/admin/command-handler.js /alive call
-```
-
-Heartbeat may also write a `call` outbox item when the persona wants to talk. The join page is Alive's own call page (`http://127.0.0.1:8766`). Run `alive voice` to serve it and dispatch the LiveKit + VoxCPM worker. Hands-on setup: repository `USAGE.md`. Without LiveKit the same UI falls back to browser speech.
+Heartbeat may write a `call` outbox item when the persona wants to talk. The join page is Alive's own call page (`http://127.0.0.1:8766`). Run `alive voice` to serve it and dispatch the LiveKit + VoxCPM worker. Hands-on setup: repository `USAGE.md`. Without LiveKit the same UI falls back to browser speech.

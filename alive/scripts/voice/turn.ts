@@ -52,7 +52,26 @@ function queryHermesOneShot(bin: string, profile: string, prompt: string): Promi
   });
 }
 
-export async function runVoiceTurn(userText: string): Promise<{ reply: string; source?: string; offline?: boolean }> {
+export interface VoiceTurnAction {
+  skill: string;
+  description: string;
+  result?: unknown;
+}
+
+export interface VoiceTurnResult {
+  reply: string;
+  source?: string;
+  offline?: boolean;
+  error?: string;
+  /**
+   * Reserved for sub-skill execution triggered during voice conversation
+   * (e.g. web-search, send-message, instagram photo generation).
+   * Can be dispatched via executeSubSkill(route, ctx).
+   */
+  actions?: VoiceTurnAction[];
+}
+
+export async function runVoiceTurn(userText: string): Promise<VoiceTurnResult> {
   const user = userText.trim();
   if (!user) return { reply: '嗯？' };
 

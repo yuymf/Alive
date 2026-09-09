@@ -28,7 +28,6 @@ describe('SKILL.md Agent Skills contract', () => {
     expect(raw).toContain('/alive adopt');
     expect(raw).toContain('/alive distill');
     expect(raw).toContain('ALIVE_DISTILL_HOST');
-    expect(raw).toContain('/alive call');
     expect(raw).toContain('kind: call');
   });
 });
