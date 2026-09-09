@@ -57,7 +57,7 @@ alive adopt https://github.com/ly-xxx/ace-taffy-skill
 alive adopt ./examples/steve-jobs
 ```
 
-### 2. For AI Agents (Claude Code, Cursor, Codex, Hermes, OpenClaw, etc.)
+### 2. For AI Agents (Hermes, OpenClaw, Claude Code, Cursor, Codex, etc.)
 
 Run the built-in initializer to auto-detect and install the skill into your Agent host directories:
 
@@ -65,6 +65,26 @@ Run the built-in initializer to auto-detect and install the skill into your Agen
 alive init
 # Or run directly without installation:
 npx @yuymf/alive init
+```
+
+#### Dedicated Profiles for Hermes & OpenClaw
+
+Alive natively integrates with isolated profiles and workspaces:
+
+```bash
+# Initialize a dedicated Hermes profile (~/.hermes/profiles/taffy)
+alive init --hermes taffy
+
+# Chat with the persona directly via Hermes (loads Alive skill & memory):
+hermes -p taffy
+# Or launch interactive TUI:
+hermes -p taffy --tui
+
+# Initialize a dedicated OpenClaw agent workspace:
+alive init --openclaw miss-v
+
+# Install locally to the current repository:
+alive init --project
 ```
 
 Then open Claude Code / Cursor / Codex / Hermes / OpenClaw and talk. Heartbeat reuses a Hermes / OpenClaw model key when present; otherwise put `LLM_API_KEY` in `~/.alive/.env` and run `alive tick`.

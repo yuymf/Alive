@@ -47,14 +47,14 @@ Memory lives at `~/.alive` (customizable via `ALIVE_HOME`). After init, `alive s
 ## Common commands
 
 ```bash
-alive init --project              # .agents/skills/alive in the current repo
-alive init --agent hermes         # only Hermes
-alive init --agent openclaw       # only OpenClaw
-alive init --agent hermes,openclaw
-alive distill <name|dir|url>      # materials / talk-to-fengge → skill → adopt
-alive adopt <dir|url>             # take in a Nuwa / persona skill
+alive init --hermes taffy          # Hermes dedicated profile (~/.hermes/profiles/taffy)
+alive init --openclaw miss-v       # OpenClaw dedicated workspace (~/.openclaw/agents/miss-v)
+alive init --project               # .agents/skills/alive in the current repo
+alive init --agent hermes,openclaw # only target specific hosts
+alive distill <name|dir|url>       # materials / talk-to-fengge → skill → adopt
+alive adopt <dir|url>              # take in a Nuwa / persona skill
 alive adopt ./examples/fengge
-alive tick                        # scripted heartbeat (host key or LLM_API_KEY)
+alive tick                         # scripted heartbeat (host key or LLM_API_KEY)
 ```
 *(If running via npx without global install, prepend `npx @yuymf/alive`)*
 

@@ -57,7 +57,7 @@ alive adopt https://github.com/ly-xxx/ace-taffy-skill
 alive adopt ./examples/steve-jobs
 ```
 
-### 2. 给 AI Agent（Claude Code, Cursor, Codex, Hermes, OpenClaw 等）
+### 2. 给 AI Agent（Hermes, OpenClaw, Claude Code, Cursor, Codex 等）
 
 运行内置初始化命令，自动识别并安装到当前机器上的 Agent 宿主目录：
 
@@ -65,6 +65,26 @@ alive adopt ./examples/steve-jobs
 alive init
 # 或免安装直接运行：
 npx @yuymf/alive init
+```
+
+#### 为 Hermes / OpenClaw 配置独立 Profile
+
+Alive 深度支持多 Agent 宿主的隔离 Profile 与工作区：
+
+```bash
+# 为 Hermes 创建独立的永雏塔菲 Profile (~/.hermes/profiles/taffy)
+alive init --hermes taffy
+
+# 直接启动 Hermes 与角色对话（自动加载 Alive 技能设定与记忆）：
+hermes -p taffy
+# 或启动交互式 TUI：
+hermes -p taffy --tui
+
+# 为 OpenClaw 创建专属 Agent 工作区：
+alive init --openclaw miss-v
+
+# 安装到当前项目代码库：
+alive init --project
 ```
 
 然后打开 Claude Code / Cursor / Codex / Hermes / OpenClaw，直接说话。心跳会复用 Hermes / OpenClaw 已有的模型 key；没有这两家再把 `LLM_API_KEY` 写进 `~/.alive/.env`，跑 `alive tick`。
