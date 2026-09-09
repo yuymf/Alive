@@ -2,7 +2,6 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import YAML from 'yaml';
 import { callLLM } from '../utils/llm-client';
 import { buildVoiceSystemPrompt } from './persona-prompt';
 import { saveChatTurn } from '../host/chat';
@@ -32,7 +31,7 @@ function findHermesProfile(): string | null {
   return null;
 }
 
-function queryHermesOneShot(bin: string, profile: string, prompt: string, timeoutMs = 12000): Promise<string> {
+function queryHermesOneShot(bin: string, profile: string, prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, ['-p', profile, '-z', prompt], {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -40,25 +39,16 @@ function queryHermesOneShot(bin: string, profile: string, prompt: string, timeou
     });
     let out = '';
     let err = '';
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      reject(new Error(`Hermes query timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-
     child.stdout.on('data', (d) => { out += d.toString(); });
     child.stderr.on('data', (d) => { err += d.toString(); });
     child.on('close', (code) => {
-      clearTimeout(timer);
       if (code === 0 && out.trim()) {
         resolve(out.trim());
       } else {
         reject(new Error(err.trim() || `Hermes exited with code ${code}`));
       }
     });
-    child.on('error', (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
+    child.on('error', reject);
   });
 }
 
@@ -87,72 +77,37 @@ export async function runVoiceTurn(userText: string): Promise<VoiceTurnResult> {
   const hermesBin = findHermesBinary();
   const hermesProfile = findHermesProfile();
 
-  // 1. If Hermes profile configures a local provider (like LM Studio on 127.0.0.1), use fast direct call
-  const initialKey = process.env.LLM_API_KEY;
-  const initialBase = process.env.LLM_API_BASE;
-  const initialModel = process.env.LLM_MODEL;
-  let injectedLocal = false;
-
-  if (hermesProfile && !initialKey) {
+  // 1. If Hermes is available and configured, prefer Hermes profile directly
+  // (reusing Hermes's credentials pool, memory, and persona without needing LLM_API_KEY)
+  if (hermesBin && hermesProfile) {
     try {
-      const cfgPath = path.join(os.homedir(), '.hermes', 'profiles', hermesProfile, 'config.yaml');
-      if (fs.existsSync(cfgPath)) {
-        const doc = YAML.parse(fs.readFileSync(cfgPath, 'utf8'));
-        const baseUrl = doc?.model?.base_url || doc?.model?.baseUrl;
-        if (baseUrl && (baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost'))) {
-          const probe = await fetch(`${baseUrl.replace(/\/+$/, '')}/models`, { signal: AbortSignal.timeout(600) });
-          if (probe.ok) {
-            process.env.LLM_API_KEY = 'lm-studio';
-            process.env.LLM_API_BASE = baseUrl;
-            process.env.LLM_MODEL = doc?.model?.default || doc?.model?.model || 'gemma-4-e4b-it';
-            injectedLocal = true;
-          }
-        }
-      }
-    } catch {}
+      reply = await queryHermesOneShot(
+        hermesBin,
+        hermesProfile,
+        `（电话实时通话中）对方刚说：${user}。请用你的电话口吻回复一到两句话。`,
+      );
+      if (reply) source = `hermes:${hermesProfile}`;
+    } catch (err) {
+      console.warn(`[voice] Hermes query failed, falling back to direct LLM: ${(err as Error).message}`);
+    }
   }
 
-  // 2. Direct LLM call if credentials are available (takes 2-4s vs 18s of Hermes subshell)
-  if (process.env.LLM_API_KEY) {
+  // 2. If Hermes wasn't used or failed, try standard callLLM
+  if (!reply && process.env.LLM_API_KEY) {
     try {
       const system = buildVoiceSystemPrompt();
-      const result = await callLLM(`${system}\n\n对方刚说：${user}\n\n用电话口气回一句到两句。`, 'voice-turn', {
+      const result = await callLLM(`${system}\n\n对方刚说：${user}\n\n用电话口气回一句到三句。`, 'voice-turn', {
         system,
         temperature: 0.8,
       });
       reply = (result.content || '').trim();
-      if (reply) source = `llm:${process.env.LLM_MODEL || 'local'}`;
+      if (reply) source = 'llm-api';
     } catch (err) {
       console.warn(`[voice] callLLM error: ${(err as Error).message}`);
     }
   }
 
-  if (injectedLocal) {
-    if (!initialKey) delete process.env.LLM_API_KEY;
-    if (!initialBase) delete process.env.LLM_API_BASE;
-    if (!initialModel) delete process.env.LLM_MODEL;
-  }
-
-  // 3. Fallback to Hermes profile with a 12-second timeout
-  if (!reply) {
-    const hermesBin = findHermesBinary();
-    const hermesProfile = findHermesProfile();
-    if (hermesBin && hermesProfile) {
-      try {
-        reply = await queryHermesOneShot(
-          hermesBin,
-          hermesProfile,
-          `（电话实时通话中）对方刚说：${user}。请用你的电话口吻回复一到两句话。`,
-          12000,
-        );
-        if (reply) source = `hermes:${hermesProfile}`;
-      } catch (err) {
-        console.warn(`[voice] Hermes query failed: ${(err as Error).message}`);
-      }
-    }
-  }
-
-  // 4. In-character offline fallback
+  // 3. In-character offline fallback
   if (!reply) {
     const { loadVoiceLife } = require('./persona-prompt');
     let life: any = {};
