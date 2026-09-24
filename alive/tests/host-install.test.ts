@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { detectUserSkillTargets, projectSkillTarget, initMemory, installSkillTo, repoRootFromHere, resolveUserSkillTargets, parseAgentFlag, knownAgentIds, allUserSkillTargets } from '../scripts/host/install';
+import { detectUserSkillTargets, projectSkillTarget, initMemory, buildSkill, installSkillTo, repoRootFromHere, resolveUserSkillTargets, parseAgentFlag, knownAgentIds, allUserSkillTargets } from '../scripts/host/install';
 import { dispatch } from '../scripts/admin/command-handler';
 import { resetBasePaths, setPersonaName } from '../scripts/utils/file-utils';
 import { clearPersonaCache } from '../scripts/persona/persona-loader';
@@ -112,6 +112,8 @@ describe('installSkillTo', () => {
   it('copies SKILL.md and only official personas', () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'alive-skill-'));
     const dest = path.join(tmp, 'alive');
+    // Fresh checkout has no dist-alive/; mirror installed-skill-chat and build first.
+    buildSkill();
     installSkillTo(dest, repoRootFromHere());
     expect(fs.existsSync(path.join(dest, 'SKILL.md'))).toBe(true);
     expect(fs.existsSync(path.join(dest, 'scripts', 'host', 'chat.js'))).toBe(true);
