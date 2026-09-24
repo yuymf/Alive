@@ -47,38 +47,53 @@ Alive 不是一个传统的聊天机器人框架。它是一个 **生命模拟�
 
 ### 安装
 
+**Option A — 全局安装：**
+
 ```bash
-git clone https://github.com/yourname/alive.git
-cd alive
+npm install -g @yuymf/alive
+alive init
+```
+
+**Option B — npx（无需安装）：**
+
+```bash
+npx @yuymf/alive init
+```
+
+源码开发（可选）：
+
+```bash
+git clone https://github.com/yuymf/Alive.git
+cd Alive
 npm install
 npm run build
 ```
 
-### 三种启动方式
+### 初始化与常用 CLI
 
 ```bash
-# 方式 1：选择内置预设角色
-alive
+# 安装 Alive skill 到本机 Agent 宿主目录（Claude / Cursor / Codex / Hermes / OpenClaw 等）
+alive init
+# 或：npx @yuymf/alive init
 
-# 方式 2：自动生成随机角色
-alive --create
-
-# 方式 3：安装自定义 persona
-alive --persona ./my-persona.yaml
+# 蒸馏 / 收养已有 persona skill
+alive distill 峰哥
+alive adopt ./examples/steve-jobs
 ```
 
-### 创建角色的三种模式
+### 创建角色（宿主内 skill 命令，不是 CLI flag）
+
+在已 `alive init` 的 Agent 宿主里使用：
 
 ```bash
 # 纯随机 — 引擎自动生成名字、性格、语言风格等
-alive --create
-
-# 半指定 — 你给名字和定位，引擎补全其余
-alive --create --name "陈小鱼" --tagline "爱吃甜食的插画师"
+/alive create
 
 # 引导模式 — 一步步回答问题来创建
-alive --create --guided
+/alive create --guided
 ```
+
+> 旧文档里的 `alive --create` / `alive --persona` CLI flag 已废弃；请用 `alive init` + `/alive create` / `alive adopt`。
 
 ---
 

@@ -210,6 +210,8 @@ npm run typecheck
 npm run test
 ```
 
+Secret-free nightly / cloud-computer gate (mocked Vitest + CLI smoke; real-LLM E2E stays skipped unless keys are set): see [docs/NIGHTLY-E2E.md](docs/NIGHTLY-E2E.md).
+
 PRs welcome — especially adopted-skill fixtures and new `persona.yaml` files.
 
 ## License
