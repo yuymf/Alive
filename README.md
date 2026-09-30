@@ -132,7 +132,7 @@ No skill to adopt yet? Built-in **Minase** (ESTP traveler / coser) and **Guodega
 
 ## What's inside
 
-- 🎭 **6D emotion** — valence, arousal, energy, stress, confidence, sociability
+- 🎭 **6D emotion** — valence, arousal, energy, stress, creativity, sociability
 - 🧭 **7 MetaIntent** — produce / connect / consume / express / learn / rest / aspire
 - 🫀 **Heartbeat** — hourly perceive → intend → act
 - 🌊 **Flow & drift**
@@ -164,7 +164,7 @@ Heartbeat can call platform sub-skills (browse, post, voice, call the owner). Ch
 
 ## Architecture
 
-**6D emotion, not 2D.** Valence + arousal cannot decide behavior. Energy gates rest vs. content. Stress triggers a break. Confidence scales quality. Sociability decides outreach vs. withdrawal.
+**6D emotion, not 2D.** Valence + arousal cannot decide behavior. Energy gates rest vs. content. Stress triggers a break. Creativity gates produce vs. browse. Sociability decides outreach vs. withdrawal.
 
 ```
 Impulse (spike)  →  Momentum (drift)  →  Undertone (MBTI baseline)
