@@ -132,7 +132,7 @@ alive adopt ./examples/karpathy
 
 ## 核心能力
 
-- 🎭 **6 维情绪** — 效价 / 唤醒 / 能量 / 压力 / 自信 / 社交欲
+- 🎭 **6 维情绪** — 效价 / 唤醒 / 能量 / 压力 / 创造力 / 社交欲
 - 🧭 **7 类元意图** — 创作 / 社交 / 消费 / 表达 / 学习 / 休息 / 追求
 - 🫀 **心跳循环** — 每小时 感知 → 意图 → 行动
 - 🌊 **心流与漂移**
@@ -196,6 +196,8 @@ npm run build
 npm run typecheck
 npm run test
 ```
+
+无密钥 nightly / 云机门禁（mocked Vitest + CLI smoke；真实 LLM E2E 在未设 key 时保持 skip）：见 [docs/NIGHTLY-E2E.md](docs/NIGHTLY-E2E.md)。
 
 欢迎 PR。尤其欢迎把更多女娲产物接进来的 fixture。
 
