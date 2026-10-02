@@ -9,7 +9,7 @@ on:
 
 permissions:
   contents: write # gh release create
-  id-token: write # npm --provenance (OIDC)
+  id-token: write # npm --provenance (OIDC); only exercised when the source repo is public
 
 jobs:
   publish:
@@ -54,9 +54,22 @@ jobs:
         run: npm run build
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          # Provenance (npm OIDC) is only supported for PUBLIC source repositories.
+          # On a private repo npm returns 422 ("Unsupported GitHub Actions source
+          # repository visibility: private"), so only request it when public and
+          # otherwise publish without it rather than failing the release.
+          args=(--access public)
+          if [ "$REPO_VISIBILITY" = "public" ]; then
+            args+=(--provenance)
+            echo "Source repo is public — publishing with provenance."
+          else
+            echo "::warning title=Provenance skipped::Source repository visibility is '${REPO_VISIBILITY:-unknown}'; npm provenance requires a public source repository. Publishing without provenance."
+          fi
+          npm publish "${args[@]}"
 
       - name: Create GitHub Release
         run: |

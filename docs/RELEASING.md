@@ -9,9 +9,14 @@ which typechecks, tests, builds, publishes to npm, and opens a GitHub Release. T
 npm run release -- patch     # or: minor | major | 0.10.0
 ```
 
-The script refuses to run unless the working tree is clean, HEAD is on `main`, and `main` is in sync with
-`origin/main`. It then bumps `package.json`, commits `chore(release): vX.Y.Z`, tags `vX.Y.Z`, and pushes the
-branch and the tag. Preview without writing anything:
+The script refuses to run unless the working tree is clean, HEAD is on `main`, and `main` is exactly in sync
+with the remote. The sync check reads the remote's real SHA with `git ls-remote` (after a best-effort
+`git fetch`), so it cannot be fooled by a stale local remote-tracking ref when the remote has moved ahead.
+It then bumps `package.json`, commits `chore(release): vX.Y.Z`, tags `vX.Y.Z`, and pushes the branch and the
+tag. If a push is rejected, the script prints the exact commands to undo the local commit/tag before retrying —
+it never force-pushes.
+
+Preview without writing anything:
 
 ```bash
 npm run release -- minor --dry-run
@@ -25,5 +30,10 @@ npm run release -- minor --dry-run
 
 The workflow fails loudly if `NPM_TOKEN` is missing, rather than silently skipping the publish step.
 
-Publishing uses `--provenance` (npm OIDC), so the package is published with a signed build attestation linking it
-to this repository and workflow run.
+## Provenance
+
+npm provenance (the signed build attestation linking a package to its source repo and workflow run) is
+**only supported for public source repositories**. The workflow therefore requests `--provenance` only when
+`github.event.repository.visibility` is `public`; on a private repo it logs a warning and publishes without
+provenance instead of failing with npm's `422 ... Unsupported GitHub Actions source repository visibility:
+"private"` error. Make the repository public if you want provenance on releases.
