@@ -199,6 +199,16 @@ npm run test
 
 无密钥 nightly / 云机门禁（mocked Vitest + CLI smoke；真实 LLM E2E 在未设 key 时保持 skip）：见 [docs/NIGHTLY-E2E.md](docs/NIGHTLY-E2E.md)。
 
+## 发布
+
+打 tag 自动发布，无需手动 `npm publish`。一条命令完成 bump / commit / tag / push：
+
+```bash
+npm run release -- patch     # 或 minor | major | 0.10.0
+```
+
+push 的 `v*` tag 会触发 [`.github/workflows/publish.yml`](.github/workflows/publish.yml)（typecheck → test → build → `npm publish` → GitHub Release）。需要仓库 secret `NPM_TOKEN`。详见 [docs/RELEASING.md](docs/RELEASING.md)。
+
 欢迎 PR。尤其欢迎把更多女娲产物接进来的 fixture。
 
 ## License

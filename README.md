@@ -212,6 +212,16 @@ npm run test
 
 Secret-free nightly / cloud-computer gate (mocked Vitest + CLI smoke; real-LLM E2E stays skipped unless keys are set): see [docs/NIGHTLY-E2E.md](docs/NIGHTLY-E2E.md).
 
+## Release
+
+Tag-driven, no manual publish. Bump, commit, tag, and push in one shot:
+
+```bash
+npm run release -- patch     # or: minor | major | 0.10.0
+```
+
+The pushed `v*` tag runs [`.github/workflows/publish.yml`](.github/workflows/publish.yml) (typecheck → test → build → `npm publish` → GitHub Release). Needs the repository secret `NPM_TOKEN`. Details: [docs/RELEASING.md](docs/RELEASING.md).
+
 PRs welcome — especially adopted-skill fixtures and new `persona.yaml` files.
 
 ## License

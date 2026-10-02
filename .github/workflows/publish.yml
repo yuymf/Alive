@@ -1,0 +1,68 @@
+name: publish
+
+# Tag-driven release: `git push origin v0.10.0` publishes to npm and opens a
+# GitHub Release. Nothing here runs on ordinary branch pushes.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # gh release create
+  id-token: write # npm --provenance (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check NPM_TOKEN is configured
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error title=Missing NPM_TOKEN::Repository secret NPM_TOKEN is not set. Add it under Settings → Secrets and variables → Actions (npm Automation token with publish rights on @yuymf/alive), then re-run this workflow."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so gh release notes can diff from the previous tag
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error title=Version mismatch::Tag $GITHUB_REF_NAME does not match package.json version $PKG. Bump the version (npm run release -- $TAG) and re-tag."
+            exit 1
+          fi
+          echo "Tag $GITHUB_REF_NAME matches package.json $PKG"
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
