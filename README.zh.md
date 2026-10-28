@@ -7,10 +7,10 @@
 
 [![npm](https://img.shields.io/npm/v/@yuymf/alive?style=flat-square)](https://www.npmjs.com/package/@yuymf/alive)
 [![Node.js](https://img.shields.io/node/v/@yuymf/alive?style=flat-square)](https://nodejs.org)
-[![License](https://img.shields.io/npm/l/@yuymf/alive?style=flat-square)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](./LICENSE)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skills-SKILL.md-purple.svg?style=flat-square)](https://agentskills.io/specification)
 
-[English](README.md) · [中文](#) · [更新日志](CHANGELOG.md)
+[English](README.md) · [中文](#) · [安装](INSTALL.md) · [用法](USAGE.md) · [更新日志](CHANGELOG.md)
 </div>
 
 <p align="center">
@@ -25,89 +25,81 @@ Alive 是剩下的那具身体：跨会话的情绪、日记、关系，以及�
 alive distill 蒸馏一个脑子  →  Alive 接入这份 SKILL.md  →  这个人开始过自己的日子
 ```
 
-## 快速开始
+## 功能
 
-### 1. 安装 Alive
+- 🎭 **6 维情绪** — 效价 / 唤醒 / 能量 / 压力 / 创造力 / 社交欲
+- 🧭 **7 类元意图** — 创作 / 社交 / 消费 / 表达 / 学习 / 休息 / 追求
+- 🫀 **每小时心跳** — 感知 → 意图 → 行动（你不在也会继续）
+- 🧠 **4 层记忆** — 会话 → 日记 → 关系 → 人生智慧
+- 📞 **通话页** — `alive voice` 拉起 LiveKit + VoxCPM
+- 🧩 **Agent Skill** — 装进 Hermes / OpenClaw / Claude Code / Cursor / Codex …
 
-**方式 A — npm 全局安装（推荐 / 终端直接可用）：**
+## 快速开始（Docker）
+
+Alive 是 **Node CLI + Agent Skill**，不是 Next.js 应用——**没有**一键 Vercel 按钮。给陌生人的一键路径是 Docker Compose（Railway / Fly / Render 的 Docker 部署同样适用）。
+
+```bash
+git clone https://github.com/yuymf/Alive.git
+cd Alive
+cp .env.example .env          # 需要心跳时填 LLM_API_KEY
+docker compose up --build
+```
+
+打开 **http://127.0.0.1:8766** 进通话页。记忆落在 `alive-home` 卷（容器内 `ALIVE_HOME=/data/alive`）。
+
+```bash
+# 单次心跳（.env 里需要 LLM_API_KEY）
+docker compose run --rm alive node bin/cli.js tick
+
+docker compose run --rm alive node bin/cli.js status
+```
+
+### 环境变量
+
+| 变量 | 必需 | 用途 |
+|:---|:---:|:---|
+| `LLM_API_KEY` | 心跳需要 | `alive tick` / `alive start` |
+| `LLM_API_BASE` / `LLM_MODEL` | 可选 | OpenAI 兼容接口 |
+| `ALIVE_PERSONA` | 可选 | 默认 `minase` |
+| `ALIVE_VOICE_PORT` | 可选 | 默认 `8766` |
+| `LIVEKIT_*` / `CARTESIA_API_KEY` / `VOXCPM_URL` | 可选 | 完整语音栈，见 [USAGE.md](USAGE.md) |
+| 平台相关 Key | 可选 | 见 [`.env.example`](.env.example) |
+
+**不要**提交真实的 `.env`。
+
+## 快速开始（npm）
 
 ```bash
 npm install -g @yuymf/alive
-```
-
-安装后即可直接在终端运行：
-
-```bash
 alive init
 alive distill 峰哥
+# 或：alive adopt ./examples/steve-jobs
 ```
 
-**方式 B — npx 免安装运行：**
+免安装：`npx @yuymf/alive init`。
+
+### 宿主 Agent
 
 ```bash
-npx @yuymf/alive init
-npx @yuymf/alive distill 峰哥
-```
-
-或者接入已有蒸馏好的 skill，或 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 这种只有人格代码、没有 `SKILL.md` 的工程：
-
-```bash
-alive distill https://github.com/YeJe-cpu/talk-to-fengge
-alive adopt https://github.com/ly-xxx/ace-taffy-skill
-alive adopt ./examples/steve-jobs
-```
-
-### 2. 给 AI Agent（Hermes, OpenClaw, Claude Code, Cursor, Codex 等）
-
-运行内置初始化命令，自动识别并安装到当前机器上的 Agent 宿主目录：
-
-```bash
-alive init
-# 或免安装直接运行：
-npx @yuymf/alive init
-```
-
-#### 为 Hermes / OpenClaw 配置独立 Profile
-
-Alive 深度支持多 Agent 宿主的隔离 Profile 与工作区：
-
-```bash
-# 为 Hermes 创建独立的永雏塔菲 Profile (~/.hermes/profiles/taffy)
 alive init --hermes taffy
-
-# 直接启动 Hermes 与角色对话（自动加载 Alive 技能设定与记忆）：
-hermes -p taffy
-# 或启动交互式 TUI：
-hermes -p taffy --tui
-
-# 为 OpenClaw 创建专属 Agent 工作区：
 alive init --openclaw miss-v
-
-# 安装到当前项目代码库：
 alive init --project
+alive tick
 ```
 
-然后打开 Claude Code / Cursor / Codex / Hermes / OpenClaw，直接说话。心跳会复用 Hermes / OpenClaw 已有的模型 key；没有这两家再把 `LLM_API_KEY` 写进 `~/.alive/.env`，跑 `alive tick`。
+对话走宿主模型。从空机器到接通电话：**[USAGE.md](USAGE.md)**。安装细节：**[INSTALL.md](INSTALL.md)**。
 
-从空机器配到 LiveKit + VoxCPM 打电话：看 **[USAGE.md](USAGE.md)**。
-
-`distill` 先写出 `SKILL.md` 再 `adopt`。已经是 skill 的仓库会直接接入。[talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 会被抽出 `worker/persona.py` 再接入。对话和心跳都读原始规则。
-
-## 这个仓库是干什么的
+## 为什么需要 Alive
 
 | 只有 persona skill | 被 Alive 接入之后 |
 |:---|:---|
-| @ 它才会用角色说话 | **照样用角色说话** — 原始 `SKILL.md` / `persona.md` 仍在上下文里 |
-| 关了就忘 | **4 层记忆** — 日记、关系、智慧 |
-| 永远在线、永远平稳 | **会疲惫、会拖延、会心流** |
-| 等你开口 | **每小时心跳** — 感知 → 意图 → 行动 |
-| 只会聊天 | **浏览、评论、私信、发帖** 走子技能 |
-
-同一套引擎可以养活一个被蒸馏的虚拟主播，也可以养活一个被蒸馏的思考者。不用改代码。
+| @ 才用角色说话 | **照样用角色说话** |
+| 关了就忘 | **4 层记忆** |
+| 永远平稳 | **会累、会拖延、会心流** |
+| 等你开口 | **每小时心跳** |
+| 只会聊天 | **浏览 / 评论 / 私信 / 发帖** |
 
 ## 仓库里的例子
-
-公开人物、MIT、已经能 `distill` / `adopt`。峰哥来自 [feng-ge-skill](https://github.com/YixiaJack/feng-ge-skill)，也是 [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) 的人格层。Jobs / 王小波 / 王阳明 / Karpathy 来自 [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation)；`ace-taffy` 是带 `persona.md` + `references/` 的女娲式样板。说明在 [examples/](examples/)。
 
 ```bash
 alive distill 峰哥
@@ -117,90 +109,39 @@ alive adopt ./examples/wangxiaobo
 alive adopt ./examples/wangyangming
 alive adopt ./examples/karpathy
 ```
-*(若未全局安装，命令前加上 `npx @yuymf/alive` 即可)*
 
-| 例子 | 人 | 接进 Alive 之后 |
-|:---|:---|:---|
-| `fengge` | 峰哥亡命天涯 | 辩证反转还记得昨天，也能去刷、去评 |
-| `ace-taffy` | 永雏塔菲 | 主播口吻 + 记忆 + 心跳，不只是喵 |
-| `steve-jobs` | Steve Jobs | 产品判断也会累、会写日记 |
-| `wangxiaobo` | 王小波 | 黑色幽默还记得昨天 |
-| `wangyangming` | 王阳明 | 知行合一，加上心跳 |
-| `karpathy` | Andrej Karpathy | 工程现实主义，还能自己去刷、去写 |
+内置 **水瀬** / **郭德纲**，或 `/alive create`。说明在 [`examples/`](examples/)。
 
-还没有 skill 可接？用内置的 **水瀬**（ESTP 旅行 / coser）和 **郭德纲**（相声，冷幽默），或 `/alive create`。
-
-## 核心能力
-
-- 🎭 **6 维情绪** — 效价 / 唤醒 / 能量 / 压力 / 创造力 / 社交欲
-- 🧭 **7 类元意图** — 创作 / 社交 / 消费 / 表达 / 学习 / 休息 / 追求
-- 🫀 **心跳循环** — 每小时 感知 → 意图 → 行动
-- 🌊 **心流与漂移**
-- ⚡ **活力** — 0–100
-- 📈 **自信** — 0.5×–1.5× 质量倍率
-- 🔥 **工作冲动** — 累积到创作爆发
-
-| 层级 | 保留 | 内容 |
-|:---:|:---:|:---|
-| 0 | 会话内 | 工作记忆 |
-| 1 | 30 天 | 日记 |
-| 2 | 90 天 | 社交关系 |
-| 3 | 永久 | 人生智慧 |
-
-心跳可以按需调用平台子技能（浏览、发帖、语音、给主人打电话）。对话本身不需要它们。打电话走 Alive 自己的 LiveKit + VoxCPM 通话页（`alive voice`）。从新角色到接通，见 [USAGE.md](USAGE.md)。
-
-## 命令
+## 架构速览
 
 ```
-/alive distill <name|path|url>  # 一键蒸馏并接入（峰哥 / talk-to-fengge / 材料）
-/alive adopt <path|url>         # 接入已有的 persona skill
-/alive status              # 情绪 / 精力 / 心流
-/alive emotion             # 6 维详情
-/alive schedule            # 作息
-/alive memory              # 记忆统计
-/alive create              # 生成新角色
-/alive help
-```
-
-## 架构
-
-```
-examples/                     # 可 adopt 的人格 skill 案例
+examples/                 可 adopt 的人格 skill
 alive/
-├── SKILL.md                  # Agent Skills 入口
-├── personas/                 # 内置预设（水瀬 / 郭德纲）
-├── templates/                # 提示词模板
-├── protocols/                # 心跳 · 记忆 · 社交 · 意图
+├── SKILL.md              Agent Skills 入口
+├── personas/             内置预设
+├── templates/            提示词
+├── protocols/            心跳 · 记忆 · 社交 · 意图
 ├── scripts/
-│   ├── host/                 # init · boot · chat load/save
-│   ├── admin/                # /alive 命令（含 distill / adopt）
-│   ├── hub/                  # 蒸馏 + persona skill 接入
-│   ├── engines/              # 7 大引擎
-│   └── lifecycle/            # 心跳 · 晨间 · 夜间
-└── sub-skills/               # 浏览 / 发帖 / 语音 …
+│   ├── host/             init · boot · chat
+│   ├── admin/            /alive 命令
+│   ├── hub/              蒸馏 + 接入
+│   ├── engines/          情绪 · 活力 · 心流 …
+│   ├── lifecycle/        tick · morning · night
+│   └── voice/            通话页
+└── sub-skills/           浏览 / 发帖 / TTS / 通话 …
 ```
 
-宿主不要手改日记和情绪文件。`chat.js load` 打出上下文；`chat.js save` 写回下一轮要读的记忆。
-
-记忆在 `~/.alive`（可用 `ALIVE_HOME` 覆盖）。默认人设是水瀬。项目内安装：`alive init --project` 或 `npx @yuymf/alive init --project`。指定宿主：`alive init --agent hermes` 或 `--agent openclaw`。
-
-| 功能 | 需要 |
-|:---|:---|
-| 对话 + 记忆 | 会加载 `SKILL.md` 的 Agent |
-| 心跳 | Hermes / OpenClaw 的模型 key，或 `~/.alive/.env` 里的 `LLM_API_KEY` |
+记忆在 `$ALIVE_HOME`（默认 `~/.alive`；Docker：`/data/alive`）。
 
 ## 开发
 
 ```bash
+npm ci
 npm run build
 npm run typecheck
-npm run test
+npm test
 ```
-
-无密钥 nightly / 云机门禁（mocked Vitest + CLI smoke；真实 LLM E2E 在未设 key 时保持 skip）：见 [docs/NIGHTLY-E2E.md](docs/NIGHTLY-E2E.md)。
-
-欢迎 PR。尤其欢迎把更多女娲产物接进来的 fixture。
 
 ## License
 
-MIT
+[MIT](./LICENSE)

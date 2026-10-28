@@ -2,6 +2,15 @@
 
 Alive is an [Agent Skill](https://agentskills.io/specification). It gives a persona skill (女娲 / 永雏塔菲 / any `SKILL.md`) a body beyond chat.
 
+## 0. Docker (one-command runtime)
+
+```bash
+cp .env.example .env   # optional: LLM_API_KEY for heartbeats
+docker compose up --build
+```
+
+Call page: http://127.0.0.1:8766. This is the supported stranger deploy path (any Docker host: Railway / Fly / Render). Alive is **not** a Next.js / Vercel app.
+
 ## 1. Install CLI
 
 ### Option A — npm global install (recommended):

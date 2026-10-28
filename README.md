@@ -7,10 +7,10 @@
 
 [![npm](https://img.shields.io/npm/v/@yuymf/alive?style=flat-square)](https://www.npmjs.com/package/@yuymf/alive)
 [![Node.js Version](https://img.shields.io/node/v/@yuymf/alive?style=flat-square)](https://nodejs.org)
-[![License](https://img.shields.io/npm/l/@yuymf/alive?style=flat-square)](./LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](./LICENSE)
 [![Agent Skill](https://img.shields.io/badge/Agent%20Skills-SKILL.md-purple.svg?style=flat-square)](https://agentskills.io/specification)
 
-[English](#) · [中文](README.zh.md) · [Changelog](CHANGELOG.md)
+[English](#) · [中文](README.zh.md) · [Install](INSTALL.md) · [Usage](USAGE.md) · [Changelog](CHANGELOG.md)
 </div>
 
 <p align="center">
@@ -25,89 +25,82 @@ Alive is the rest of the body: emotion that carries over, a diary, relationships
 alive distill a mind  →  Alive adopts the SKILL.md  →  the person starts living
 ```
 
-## Quick start
+## Features
 
-### 1. Install Alive
+- 🎭 **6D emotion** — valence, arousal, energy, stress, creativity, sociability
+- 🧭 **7 MetaIntent** — produce / connect / consume / express / learn / rest / aspire
+- 🫀 **Hourly heartbeat** — perceive → intend → act (even when you are away)
+- 🧠 **4-layer memory** — session → diary → relations → core wisdom
+- 📞 **Voice call page** — LiveKit + VoxCPM stack via `alive voice`
+- 🧩 **Agent Skill** — installs into Hermes, OpenClaw, Claude Code, Cursor, Codex, …
 
-**Option A — npm global install (recommended / direct CLI access):**
+## Quick start (Docker)
+
+Alive is a **Node CLI + Agent Skill**, not a Next.js app — there is no one-click Vercel button. The supported one-command path for strangers is Docker Compose (also works on Railway / Fly / Render as a Docker deploy).
+
+```bash
+git clone https://github.com/yuymf/Alive.git
+cd Alive
+cp .env.example .env          # optional: set LLM_API_KEY for heartbeats
+docker compose up --build
+```
+
+Open **http://127.0.0.1:8766** for the call page. Persist memory with the `alive-home` volume (`ALIVE_HOME=/data/alive` in the container).
+
+```bash
+# one-shot heartbeat (needs LLM_API_KEY in .env)
+docker compose run --rm alive node bin/cli.js tick
+
+# status
+docker compose run --rm alive node bin/cli.js status
+```
+
+### Environment
+
+| Variable | Required | Purpose |
+|:---|:---:|:---|
+| `LLM_API_KEY` | for heartbeat | Scripted `alive tick` / `alive start` |
+| `LLM_API_BASE` / `LLM_MODEL` | optional | OpenAI-compatible endpoint |
+| `ALIVE_PERSONA` | optional | Default `minase` |
+| `ALIVE_VOICE_PORT` | optional | Default `8766` |
+| `LIVEKIT_*` / `CARTESIA_API_KEY` / `VOXCPM_URL` | optional | Full duplex voice — see [USAGE.md](USAGE.md) |
+| `FAL_KEY` / `AIHUBMIX_API_KEY` / Instagram / XHS | optional | Platform unlocks |
+
+Full template: [`.env.example`](.env.example). Never commit a real `.env`.
+
+## Quick start (npm)
 
 ```bash
 npm install -g @yuymf/alive
-```
-
-After global install, use the `alive` command directly:
-
-```bash
 alive init
 alive distill 峰哥
+# or: alive adopt ./examples/steve-jobs
 ```
 
-**Option B — npx (run without install):**
+Or without install: `npx @yuymf/alive init`.
+
+### Host agents (Hermes / OpenClaw / …)
 
 ```bash
-npx @yuymf/alive init
-npx @yuymf/alive distill 峰哥
+alive init --hermes taffy      # ~/.hermes/profiles/taffy
+alive init --openclaw miss-v   # OpenClaw agent workspace
+alive init --project           # .agents/skills/alive in this repo
+alive tick                     # heartbeat (host key or LLM_API_KEY)
 ```
 
-Or an already-distilled skill, or [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) (voice clone repo, no `SKILL.md`):
+Conversation uses the host agent model. From a blank machine to a live call: **[USAGE.md](USAGE.md)**. Install details: **[INSTALL.md](INSTALL.md)**.
 
-```bash
-alive distill https://github.com/YeJe-cpu/talk-to-fengge
-alive adopt https://github.com/ly-xxx/ace-taffy-skill
-alive adopt ./examples/steve-jobs
-```
-
-### 2. For AI Agents (Hermes, OpenClaw, Claude Code, Cursor, Codex, etc.)
-
-Run the built-in initializer to auto-detect and install the skill into your Agent host directories:
-
-```bash
-alive init
-# Or run directly without installation:
-npx @yuymf/alive init
-```
-
-#### Dedicated Profiles for Hermes & OpenClaw
-
-Alive natively integrates with isolated profiles and workspaces:
-
-```bash
-# Initialize a dedicated Hermes profile (~/.hermes/profiles/taffy)
-alive init --hermes taffy
-
-# Chat with the persona directly via Hermes (loads Alive skill & memory):
-hermes -p taffy
-# Or launch interactive TUI:
-hermes -p taffy --tui
-
-# Initialize a dedicated OpenClaw agent workspace:
-alive init --openclaw miss-v
-
-# Install locally to the current repository:
-alive init --project
-```
-
-Then open Claude Code / Cursor / Codex / Hermes / OpenClaw and talk. Heartbeat reuses a Hermes / OpenClaw model key when present; otherwise put `LLM_API_KEY` in `~/.alive/.env` and run `alive tick`.
-
-From a blank machine to a live LiveKit + VoxCPM call: **[USAGE.md](USAGE.md)**.
-
-`distill` writes a `SKILL.md` then `adopt`s it. A repo that already is a skill is adopted as-is. [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge) is converted from `worker/persona.py`. Chat and heartbeat read the original rules.
-
-## Why this repo exists
+## Why Alive
 
 | Persona skill alone | After Alive adopts it |
 |:---|:---|
-| Speaks in character when you @ it | **Still speaks in character** — original `SKILL.md` / `persona.md` stay in context |
-| Forgets you between sessions | **4-layer memory** — diary, relations, wisdom |
+| Speaks in character when you @ it | **Still in character** — original `SKILL.md` stays in context |
+| Forgets you between sessions | **4-layer memory** |
 | Always on, always even | **Gets tired, procrastinates, enters flow** |
-| Waits for a prompt | **Hourly heartbeat** — perceive → intend → act |
-| Chat-only | **Browse, comment, message, post** through sub-skills |
-
-Same engine runs a distilled VTuber and a distilled thinker. Zero code change.
+| Waits for a prompt | **Hourly heartbeat** |
+| Chat-only | **Browse, comment, message, post** via sub-skills |
 
 ## Bundled examples
-
-Public figures, MIT, already distillable / adoptable. 峰哥 comes from [feng-ge-skill](https://github.com/YixiaJack/feng-ge-skill) — the persona layer behind [talk-to-fengge](https://github.com/YeJe-cpu/talk-to-fengge). Jobs / 王小波 / 王阳明 / Karpathy come from [awesome-human-distillation](https://github.com/mliu98/awesome-human-distillation); `ace-taffy` is the Nuwa-style skill with `persona.md` + `references/`. Full notes in [examples/](examples/).
 
 ```bash
 alive distill 峰哥
@@ -117,61 +110,36 @@ alive adopt ./examples/wangxiaobo
 alive adopt ./examples/wangyangming
 alive adopt ./examples/karpathy
 ```
-*(If running via npx without global install, prepend `npx @yuymf/alive`)*
 
-| Example | Who | After Alive adopts it |
-|:---|:---|:---|
-| `fengge` | 峰哥亡命天涯 | Dialectical reversal that also remembers yesterday |
-| `ace-taffy` | 永雏塔菲 | Streamer cadence, memory, hourly life — not just 喵 |
-| `steve-jobs` | Steve Jobs | Product judgment that also gets tired and writes a diary |
-| `wangxiaobo` | 王小波 | Black humor that remembers yesterday |
-| `wangyangming` | 王阳明 | 知行合一 with a heartbeat |
-| `karpathy` | Andrej Karpathy | Engineering realism that can browse and post |
+| Example | Who |
+|:---|:---|
+| `fengge` | 峰哥亡命天涯 |
+| `ace-taffy` | 永雏塔菲 |
+| `steve-jobs` | Steve Jobs |
+| `wangxiaobo` | 王小波 |
+| `wangyangming` | 王阳明 |
+| `karpathy` | Andrej Karpathy |
 
-No skill to adopt yet? Built-in **Minase** (ESTP traveler / coser) and **Guodegang** (crosstalk, dry humor), or `/alive create`.
+Built-ins: **Minase** and **Guodegang**, or `/alive create`. Notes in [`examples/`](examples/).
 
-## What's inside
-
-- 🎭 **6D emotion** — valence, arousal, energy, stress, creativity, sociability
-- 🧭 **7 MetaIntent** — produce / connect / consume / express / learn / rest / aspire
-- 🫀 **Heartbeat** — hourly perceive → intend → act
-- 🌊 **Flow & drift**
-- ⚡ **Vitality** — 0–100
-- 📈 **Confidence** — 0.5×–1.5× quality
-- 🔥 **Work impulse** — builds toward a burst
-
-| Layer | Keep | What |
-|:---:|:---:|:---|
-| 0 | Session | Working memory |
-| 1 | 30 days | Diary |
-| 2 | 90 days | Relations |
-| 3 | Forever | Core wisdom |
-
-Heartbeat can call platform sub-skills (browse, post, voice, call the owner). Chat does not need them. Live calls use Alive's own LiveKit + VoxCPM page (`alive voice`). See [USAGE.md](USAGE.md).
-
-## Commands
+## Architecture (sketch)
 
 ```
-/alive distill <name|path|url>  # distill then adopt (峰哥 / talk-to-fengge / materials)
-/alive adopt <path|url>         # take in an existing persona skill
-/alive status              # emotion / vitality / flow
-/alive emotion             # 6D detail
-/alive schedule            # wake / sleep
-/alive memory              # memory stats
-/alive create              # generate a new persona
-/alive help
+examples/                 adoptable persona skills
+alive/
+├── SKILL.md              Agent Skills entry
+├── personas/             built-in presets
+├── templates/            prompts
+├── protocols/            heartbeat · memory · social · intent
+├── scripts/
+│   ├── host/             init · boot · chat load/save
+│   ├── admin/            /alive commands (distill / adopt)
+│   ├── hub/              distill + adopt
+│   ├── engines/          emotion · vitality · flow · …
+│   ├── lifecycle/        tick · morning · night
+│   └── voice/            call page + LiveKit helpers
+└── sub-skills/           browse / post / TTS / call …
 ```
-
-## Architecture
-
-**6D emotion, not 2D.** Valence + arousal cannot decide behavior. Energy gates rest vs. content. Stress triggers a break. Creativity gates produce vs. browse. Sociability decides outreach vs. withdrawal.
-
-```
-Impulse (spike)  →  Momentum (drift)  →  Undertone (MBTI baseline)
-   20% / tick           3% / tick              constant
-```
-
-Most agents only answer. Alive runs even when you are gone:
 
 ```
 Wake → morning plan
@@ -181,39 +149,28 @@ Hourly: perceive → intend → act
 Sleep → night reflect (memory + personality drift)
 ```
 
-A persona is a config object (MBTI, voice, schedule, feature flags) **plus**, when adopted, the original skill documents. The host must not hand-edit diary or emotion files. `chat.js load` prints context; `chat.js save` writes the next turn's memory.
+Memory lives in `$ALIVE_HOME` (default `~/.alive`; Docker: `/data/alive`).
 
-## Install
+## Commands
 
-Alive is an [Agent Skill](https://agentskills.io/specification).
-
-```bash
-alive init                      # ~/.agents/skills/alive (+ Claude / Cursor / Codex / Hermes / OpenClaw if present)
-alive init --project            # .agents/skills/alive in this repo
-alive init --agent hermes       # only Hermes (~/.hermes/skills/alive)
-alive init --agent openclaw
 ```
-*(Or via npx: `npx @yuymf/alive init ...`)*
+alive init | adopt | distill | voice | tick | morning | night | start
+alive status | emotion | schedule | memory | context | help
+```
 
-Memory: `~/.alive` (`ALIVE_HOME`). Default persona: Minase.
-
-| Need | Requires |
-|:---|:---|
-| Chat + memory | A host that loads `SKILL.md` |
-| Heartbeat | Hermes / OpenClaw model key, or `LLM_API_KEY` in `~/.alive/.env` |
+Inside a host chat you can also use `/alive …` slash commands.
 
 ## Develop
 
 ```bash
+npm ci
 npm run build
 npm run typecheck
-npm run test
+npm test
 ```
-
-Secret-free nightly / cloud-computer gate (mocked Vitest + CLI smoke; real-LLM E2E stays skipped unless keys are set): see [docs/NIGHTLY-E2E.md](docs/NIGHTLY-E2E.md).
 
 PRs welcome — especially adopted-skill fixtures and new `persona.yaml` files.
 
 ## License
 
-MIT
+[MIT](./LICENSE)
