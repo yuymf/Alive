@@ -64,4 +64,9 @@ export function upsertEnvFile(envPath: string, updates: Record<string, string>):
   const body = Object.entries(merged).map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
   fs.mkdirSync(path.dirname(envPath), { recursive: true });
   fs.writeFileSync(envPath, body, 'utf8');
+  try {
+    fs.chmodSync(envPath, 0o600);
+  } catch {
+    // best-effort on platforms without chmod
+  }
 }

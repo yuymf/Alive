@@ -16,9 +16,10 @@ import {
 import { injectPersona, loadPersona } from '../persona/persona-loader';
 import { loadSourceSkillContext } from '../hub/persona-skill-import';
 import { applyImpulse, EVENT_DELTAS } from '../engines/emotion';
-import { consumeOutbox, type OutboxItem } from './outbox';
+import { ackOutbox, listOutbox, type OutboxItem } from './outbox';
 import { formatPresenceBlock, readPresence, type Presence } from './presence';
 import { hydrateEmotionState, type EmotionState } from '../utils/types';
+import { getLocalDate, getLocalTimeHHMM, setTimezone } from '../utils/time-utils';
 
 export const DEFAULT_CHAT_USER = 'user';
 
@@ -83,9 +84,8 @@ function nowIso(): string {
 }
 
 function todayStamp(): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // Caller must setTimezone from persona first (persona-local diary day).
+  return `${getLocalDate()} ${getLocalTimeHHMM()}`;
 }
 
 function recentDiary(raw: string, days = 7): string {
@@ -128,7 +128,7 @@ export function loadChatContext(userId = DEFAULT_CHAT_USER): ChatContext {
   } catch {
     personality = `${persona.meta.name} / ${persona.personality.mbti}\n${persona.voice.sample_lines.join('\n')}`;
   }
-  const outbox = consumeOutbox();
+  const outbox = listOutbox();
   const presence = readPresence();
   const lines = [
     `# Alive context — ${persona.meta.name}`,
@@ -147,7 +147,7 @@ export function loadChatContext(userId = DEFAULT_CHAT_USER): ChatContext {
       ? `user=${relation.user_id} intimacy=${relation.intimacy} last=${relation.last_contact}\n${relation.recent_events.slice(-5).map((e) => `- ${e.summary}`).join('\n') || '(no events yet)'}`
       : `(first meeting with ${userId})`,
     '',
-    '## Outbox (deliver now, already consumed)',
+    '## Outbox (deliver these; cleared on chat save / outbox-ack)',
     outbox.length === 0 ? '(empty)' : outbox.map(formatOutboxLine).join('\n'),
     '',
     '## Diary (7 days)',
@@ -191,6 +191,7 @@ export function saveChatTurn(turn: ChatTurn): ChatSaveResult {
   }
   const userId = (turn.userId ?? DEFAULT_CHAT_USER).trim() || DEFAULT_CHAT_USER;
   const persona = loadPersona();
+  setTimezone(persona.schedule?.timezone ?? null);
   const stamp = todayStamp();
   const iso = nowIso();
 
@@ -224,6 +225,9 @@ export function saveChatTurn(turn: ChatTurn): ChatSaveResult {
   const event = EVENT_DELTAS.warm_interaction;
   const next = applyImpulse(readEmotion(), event.delta, `对话:${clip(user, 40)}`, 5);
   writeJSON(PATHS.emotionState, next);
+
+  // Host delivered outbox lines from load; clear after a successful turn.
+  ackOutbox();
 
   return {
     diaryPath: PATHS.diary,
@@ -260,6 +264,11 @@ function readStdin(): string {
 
 async function main(): Promise<void> {
   const { cmd, flags } = parseArgs(process.argv.slice(2));
+  if (cmd === 'outbox-ack') {
+    const n = ackOutbox();
+    process.stdout.write(`acked ${n} outbox item(s)\n`);
+    return;
+  }
   if (cmd === 'save') {
     let turn: ChatTurn = {
       user: flags.user ?? '',
@@ -280,7 +289,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd !== 'load') {
-    throw new Error('Usage: node chat.js load | node chat.js save --user <text> --reply <text>');
+    throw new Error('Usage: node chat.js load | node chat.js save --user <text> --reply <text> | node chat.js outbox-ack');
   }
   const ctx = loadChatContext(flags.userId ?? flags['user-id'] ?? DEFAULT_CHAT_USER);
   process.stdout.write(ctx.markdown.endsWith('\n') ? ctx.markdown : `${ctx.markdown}\n`);
