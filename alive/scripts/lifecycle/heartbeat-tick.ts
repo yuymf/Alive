@@ -270,18 +270,18 @@ function resolveSkillConfig(skillName: string, actionContext?: string, persona?:
 export async function regularTick(
   llm: { callJSON<T>(prompt: string): Promise<T>; call(prompt: string): Promise<string> },
 ): Promise<void> {
+  const persona = loadPersona();
+  // Persona TZ before any local hour/date (Shanghai box vs Tokyo persona midnight skew)
+  setTimezone(persona.schedule?.timezone ?? null);
+
   const currentTime = now();
   const hour = getLocalHour(currentTime);
   const weekday = getLocalWeekday(currentTime);
   const todayStr = getLocalDate(currentTime);
   const timeStr = getLocalTimeHHMM(currentTime);
 
-  const persona = loadPersona();
   const voiceSignature = buildVoiceSignature(persona);
   const intentEnabled = isFeatureEnabled(persona, 'intent');
-
-  // 0b. Set timezone from persona config (fixes UTC vs local time issue)
-  setTimezone(persona.schedule?.timezone ?? null);
 
   // 1. Read state (+ hydration for backward compat)
   let emotion = hydrateEmotionState(readJSON(PATHS.emotionState, DEFAULT_EMOTION) as unknown as Record<string, unknown>);
@@ -940,6 +940,9 @@ function writeFlowTickState(
 export async function main(
   llm: { callJSON<T>(prompt: string): Promise<T>; call(prompt: string): Promise<string> },
 ): Promise<void> {
+  const persona = loadPersona();
+  setTimezone(persona.schedule?.timezone ?? null);
+
   const currentTime = now();
   const hour = getLocalHour(currentTime);
   const todayStr = getLocalDate(currentTime);

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -83,14 +83,41 @@ describe('chat load/save loop', () => {
     expect(ctx.markdown).toContain('Right now');
   });
 
-  it('load consumes outbox once', () => {
+  it('load peeks outbox without deleting', () => {
     boot();
     deliverText('记得把照片发我');
     const first = loadChatContext();
     expect(first.outbox).toHaveLength(1);
     expect(first.outbox[0].text).toContain('照片');
     const second = loadChatContext();
-    expect(second.outbox).toHaveLength(0);
-    expect(second.markdown).toContain('(empty)');
+    expect(second.outbox).toHaveLength(1);
+    expect(second.markdown).toContain('照片');
+  });
+
+  it('save acks outbox and clears pending items', () => {
+    boot();
+    deliverText('记得把照片发我');
+    expect(loadChatContext().outbox).toHaveLength(1);
+    saveChatTurn({
+      user: '收到了吗',
+      reply: '收到啦，照片记得发我',
+    });
+    const after = loadChatContext();
+    expect(after.outbox).toHaveLength(0);
+    expect(after.markdown).toContain('(empty)');
+  });
+
+  it('chat diary stamp uses persona timezone', () => {
+    boot();
+    // System Asia/Shanghai; Minase Asia/Tokyo. Instant = JST Mar12 00:30 / CST Mar11 23:30.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2026, 2, 11, 15, 30, 0)));
+    try {
+      saveChatTurn({ user: '还醒着吗', reply: '刚过零点啦' });
+      const diary = fs.readFileSync(path.join(tmp, 'personas', 'minase', 'diary.md'), 'utf8');
+      expect(diary).toContain('## 2026-03-12 00:30');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

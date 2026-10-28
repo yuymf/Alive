@@ -51,14 +51,22 @@ export function listOutbox(): OutboxItem[] {
     .filter((item): item is OutboxItem => item !== null);
 }
 
-/** Return pending items and delete the files so the host delivers them once. */
-export function consumeOutbox(): OutboxItem[] {
+/** Delete pending outbox files after the host has delivered them. */
+export function ackOutbox(): number {
   const dir = outboxDir();
-  if (!fs.existsSync(dir)) return [];
-  const items = listOutbox();
+  if (!fs.existsSync(dir)) return 0;
+  let cleared = 0;
   for (const name of fs.readdirSync(dir).filter((n) => n.endsWith('.json'))) {
     fs.unlinkSync(path.join(dir, name));
+    cleared += 1;
   }
+  return cleared;
+}
+
+/** Peek + ack. Prefer listOutbox() for load and ackOutbox() after delivery. */
+export function consumeOutbox(): OutboxItem[] {
+  const items = listOutbox();
+  ackOutbox();
   return items;
 }
 

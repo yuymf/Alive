@@ -213,13 +213,50 @@ async function cmdStart() {
   const stack = loadVoiceStack();
   await stack.startVoiceStack();
   process.stdout.write('alive start — hourly tick + voice stack (Ctrl+C to stop)\n');
+
+  const timeUtils = require(path.join(ROOT, 'dist-alive', 'scripts', 'utils', 'time-utils.js'));
+  const fileUtils = require(path.join(ROOT, 'dist-alive', 'scripts', 'utils', 'file-utils.js'));
+  const personaLoader = require(path.join(ROOT, 'dist-alive', 'scripts', 'persona', 'persona-loader.js'));
+
   let lastHour = -1;
+  let tickRunning = false;
   const tick = async () => {
-    const hour = new Date().getHours();
-    if (hour === lastHour) return;
-    lastHour = hour;
+    if (tickRunning) return;
     try {
-      await host.boot.boot('tick');
+      fileUtils.loadAliveEnv();
+      personaLoader.clearPersonaCache();
+      const persona = personaLoader.loadPersona();
+      timeUtils.setTimezone(persona.schedule?.timezone ?? null);
+      const hour = timeUtils.getLocalHour();
+      if (hour === lastHour) return;
+
+      const aliveHome = process.env.ALIVE_HOME || path.join(os.homedir(), '.alive');
+      const lockDir = path.join(aliveHome, 'runtime');
+      const lockPath = path.join(lockDir, 'tick.lock');
+      fs.mkdirSync(lockDir, { recursive: true });
+      let lockFd;
+      try {
+        lockFd = fs.openSync(lockPath, 'wx');
+        fs.writeFileSync(lockFd, String(process.pid));
+      } catch (err) {
+        if (err && err.code === 'EEXIST') {
+          process.stdout.write('tick already running — skip\n');
+          return;
+        }
+        throw err;
+      }
+
+      tickRunning = true;
+      try {
+        await host.boot.boot('tick');
+        lastHour = hour; // only after successful tick
+      } catch (err) {
+        console.error(`❌ ${err.message}`);
+      } finally {
+        tickRunning = false;
+        try { fs.closeSync(lockFd); } catch { /* ignore */ }
+        try { fs.unlinkSync(lockPath); } catch { /* ignore */ }
+      }
     } catch (err) {
       console.error(`❌ ${err.message}`);
     }
