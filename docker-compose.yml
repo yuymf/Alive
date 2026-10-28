@@ -1,0 +1,36 @@
+# Alive release Compose — one command for newcomers.
+# 1) cp .env.example .env   # fill LLM_API_KEY if you want heartbeats
+# 2) docker compose up --build
+# Call page: http://127.0.0.1:8766
+#
+# Not a Next.js/Vercel app. Prefer this Docker path (or any Docker host:
+# Railway / Fly / Render "Docker" deploy). npm install -g @yuymf/alive for CLI-only.
+
+services:
+  alive:
+    build: .
+    image: alive:local
+    ports:
+      - "${ALIVE_VOICE_PORT:-8766}:8766"
+    environment:
+      ALIVE_HOME: /data/alive
+      ALIVE_VOICE_HOST: "0.0.0.0"
+      ALIVE_VOICE_PORT: "8766"
+      ALIVE_PERSONA: ${ALIVE_PERSONA:-minase}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_API_BASE: ${LLM_API_BASE:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      AIHUBMIX_API_KEY: ${AIHUBMIX_API_KEY:-}
+      FAL_KEY: ${FAL_KEY:-}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      CARTESIA_API_KEY: ${CARTESIA_API_KEY:-}
+      VOXCPM_URL: ${VOXCPM_URL:-}
+      TALK_TO_FENGGE_URL: ${TALK_TO_FENGGE_URL:-}
+    volumes:
+      - alive-home:/data/alive
+    restart: unless-stopped
+
+volumes:
+  alive-home:

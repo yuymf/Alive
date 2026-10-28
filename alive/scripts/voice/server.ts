@@ -159,9 +159,11 @@ export function createVoiceServer(): http.Server {
 
 export function startVoiceServer(port = Number(process.env.ALIVE_VOICE_PORT || 8766)): http.Server {
   const server = createVoiceServer();
-  server.listen(port, '127.0.0.1', () => {
+  const host = (process.env.ALIVE_VOICE_HOST || '127.0.0.1').trim() || '127.0.0.1';
+  server.listen(port, host, () => {
     const cfg = readLiveKitConfig();
-    console.log(`[alive voice] http://127.0.0.1:${port} livekit=${cfg ? cfg.url : 'direct'}`);
+    const display = host === '0.0.0.0' ? '127.0.0.1' : host;
+    console.log(`[alive voice] http://${display}:${port} (bind ${host}) livekit=${cfg ? cfg.url : 'direct'}`);
   });
   return server;
 }

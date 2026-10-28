@@ -167,7 +167,7 @@ user-invocable: true
 
 通用联动底稿先参考：
 
-- `/home/lyx/skill/shared/persona-collab-protocol.md`
+- shared collab protocol notes in your skill tree (if you keep one)
 
 在此基础上，再叠加下面这些塔菲补丁：
 
