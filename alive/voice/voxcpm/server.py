@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import os
+from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
@@ -72,6 +73,49 @@ def _load_model():
     return _model
 
 
+def _downmix_to_mono(audio: np.ndarray) -> np.ndarray:
+    """Take channel 0 of a multi-channel buffer; VoxCPM voice prompts are mono today."""
+    if audio.ndim > 1:
+        return audio[:, 0]
+    return audio
+
+
+def _resample_int16(audio: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
+    """Resample int16 PCM by a real filter, never by decimation.
+
+    soxr is the fast path (small wheel, HQ filter); scipy's polyphase resampler is the
+    fallback for boxes that already ship scipy. If neither is importable we raise instead
+    of returning audio at the wrong rate: a silent 48k stream played as 24k shifts pitch
+    down an octave, which is worse than a visible 500.
+    """
+    x = audio.astype(np.float32) / 32768.0
+    try:
+        import soxr
+    except ImportError:
+        soxr = None
+    if soxr is not None:
+        y = soxr.resample(x, src_sr, dst_sr, quality="HQ")
+    else:
+        try:
+            from scipy.signal import resample_poly
+        except ImportError as exc:  # pragma: no cover - depends on host packages
+            raise RuntimeError(
+                f"重采样不可用：模型输出 {src_sr}Hz，下游固定 {dst_sr}Hz。请 pip install soxr（或 scipy）。"
+            ) from exc
+        ratio = Fraction(dst_sr, src_sr)
+        y = resample_poly(x, ratio.numerator, ratio.denominator)
+    # Resamplers overshoot ±1.0 on transients; saturate instead of letting int16 wrap.
+    return np.clip(np.rint(y * 32768.0), -32768, 32767).astype(np.int16)
+
+
+def _pcm_at_target_rate(audio: np.ndarray, file_sr: int) -> np.ndarray:
+    """Return mono int16 PCM at SAMPLE_RATE, converting for real when the model emits 48k."""
+    audio = _downmix_to_mono(audio)  # downmix before resampling: per-channel filters cost 2x
+    if file_sr == SAMPLE_RATE:
+        return audio  # zero-copy passthrough; no resample, no re-quantise
+    return _resample_int16(np.ascontiguousarray(audio), file_sr, SAMPLE_RATE)
+
+
 def _synthesize(text: str, voice: str) -> bytes:
     if not text:
         raise HTTPException(status_code=400, detail="input 不能为空")
@@ -97,12 +141,7 @@ def _synthesize(text: str, voice: str) -> bytes:
     sf.write(buf, wav, sr, format="WAV", subtype="PCM_16")
     buf.seek(0)
     audio, file_sr = sf.read(buf, dtype="int16")
-    if file_sr != SAMPLE_RATE:
-        # keep it simple: most VoxCPM builds already emit 24k
-        pass
-    if audio.ndim > 1:
-        audio = audio[:, 0]
-    return audio.astype(np.int16).tobytes()
+    return _pcm_at_target_rate(audio, file_sr).tobytes()
 
 
 @app.get("/health")
