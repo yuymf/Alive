@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -26,12 +28,23 @@ for name in (".env",):
 AGENT_NAME = os.getenv("AGENT_NAME", "alive-voice").strip() or "alive-voice"
 VOICE_URL = os.getenv("ALIVE_VOICE_URL", "http://127.0.0.1:8766").rstrip("/")
 
-# 让 qwen 在「查机器/显卡」时确实 emit tool_call，而不是自己编一句敷衍。
+# 让 qwen 在「查机器/显卡」时确实 emit tool_call，而且**同一条回复里带过渡语**。
+# 两条措辞都是实测选出来的（probe_toolcall4.py，每格 n=10）：
+#  · 加 reasoning_effort="none" 关掉 thinking 后，原指令会退化成「只调工具不吭声」，
+#    于是工具后台跑的那十几秒里用户一个字都听不到 —— 过渡语必须和 tool_call 同轮产出。
+#  · 指令改成「这一轮必须同时做两件事：先写半句接话 + 调用工具」后，
+#    tool_call 10/10、工具+正文 10/10、首正文中位 204ms（原指令 0/10 带正文）。
 _TOOL_GUIDE = (
-    "\n\n[工具使用] 当用户让你查机器、看显卡/GPU 忙不忙、查磁盘状态，或让你"
-    "「帮我跑个任务/派个活」时，必须调用 inspect_machine 工具，绝不自己编数据。"
-    "工具会立刻返回即时读数，完整结果由后台约十几秒后自动播报；"
-    "调用后先用一两句短句自然回应，让用户继续说，不要说「请稍等我算一下」这类干等的话。"
+    "\n\n[工具使用 · 硬性规则] 只要用户提到查机器、显卡/GPU 忙不忙、算力、显存、磁盘、"
+    "「帮我跑个任务/派个活」，你这一轮回复必须**同时**做两件事：\n"
+    "1) 先写**半句到一句**口语化的接话（例如「哦好，我看一眼哈」），不要写空；\n"
+    "2) 并在这同一条回复里调用 inspect_machine 工具。\n"
+    "两件事必须在同一条回复内一起完成——先说话再调用，不要只调用不吭声，"
+    "也不要只说「我看看」「查不了」「工具没接上」而不用工具。"
+    "调用时 what 参数**只填一个短词**（gpu / disk / all 之一），绝对不要复述用户的话——"
+    "参数每多写一个字，用户就多等一帧才听到你的接话。"
+    "工具立刻返回即时读数（约 0.05s），不会让你等；完整结果由后台十几秒后自动播报。"
+    "你说完那一两句之后就让用户继续说，不要加「请稍等」这类干等的话。"
 )
 
 
@@ -71,11 +84,18 @@ def _build_stt():
 
 
 def _build_llm():
+    # reasoning_effort="none" is the single biggest latency win: qwen3.8-27b otherwise
+    # emits 84-298 characters of reasoning before the first spoken token, which the
+    # voice pipeline pays as dead air (measured 1.4-5.9s -> 0.16-0.30s). The livekit
+    # openai plugin forwards it as a real request field, so the server honours it.
+    # chat_template_kwargs.enable_thinking=false and a "/no_think" prefix both measured
+    # ineffective against this server and are deliberately not used.
     return openai.LLM(
         model=os.getenv("LLM_MODEL") or "gpt-4o-mini",
         api_key=os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"),
         base_url=os.getenv("LLM_API_BASE") or None,
         temperature=0.8,
+        reasoning_effort=os.getenv("LLM_REASONING_EFFORT", "none"),  # type: ignore[arg-type]
     )
 
 
@@ -179,6 +199,25 @@ async def entrypoint(ctx: JobContext) -> None:
             "preemptive_generation": {"enabled": False},
         }
     )
+
+    # 分段延迟打点：ttfb/ttft 是框架自己量的，不是估算。写进 agent.log 供 harness 抽取，
+    # 也让「每格数字来自日志时间戳」这条验收要求有据可查（卡面 invariant #2）。
+    def _on_metrics(event) -> None:
+        m = getattr(event, "metrics", event)  # MetricsCollectedEvent 是包装层
+        fields: dict[str, object] = {"kind": type(m).__name__}
+        for name in ("timestamp", "ttfb", "ttft", "duration", "audio_duration",
+                     "characters_count", "completion_tokens", "prompt_tokens",
+                     "end_of_utterance_delay", "transcription_delay", "cancelled",
+                     "speech_id"):
+            value = getattr(m, name, None)
+            if value is not None:
+                fields[name] = round(value, 4) if isinstance(value, float) else value
+        # 指标自带 timestamp 是「本段结束时刻」的 monotonic 时钟，无法与客户端录音对齐；
+        # 补一个墙钟才能把「TTS 首块生成」与「客户端真的听到」拆开（playout 段）。
+        fields["wall"] = round(time.time(), 4)
+        print("[latency] " + json.dumps(fields, ensure_ascii=False), flush=True)
+
+    session.on("metrics_collected", _on_metrics)
     await session.start(agent=AliveVoiceAgent(instructions), room=ctx.room)
 
 
