@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, JobExecutorType, cli
 from livekit.plugins import openai, silero
 
+from work_tools import inspect_machine  # Step1-B: 真 @function_tool（后台长活与 session 解耦）
+
 for name in (".env",):
     home = os.environ.get("ALIVE_HOME") or str(Path.home() / ".alive")
     env_file = Path(home) / name
@@ -23,6 +25,14 @@ for name in (".env",):
 
 AGENT_NAME = os.getenv("AGENT_NAME", "alive-voice").strip() or "alive-voice"
 VOICE_URL = os.getenv("ALIVE_VOICE_URL", "http://127.0.0.1:8766").rstrip("/")
+
+# 让 qwen 在「查机器/显卡」时确实 emit tool_call，而不是自己编一句敷衍。
+_TOOL_GUIDE = (
+    "\n\n[工具使用] 当用户让你查机器、看显卡/GPU 忙不忙、查磁盘状态，或让你"
+    "「帮我跑个任务/派个活」时，必须调用 inspect_machine 工具，绝不自己编数据。"
+    "工具会立刻返回即时读数，完整结果由后台约十几秒后自动播报；"
+    "调用后先用一两句短句自然回应，让用户继续说，不要说「请稍等我算一下」这类干等的话。"
+)
 
 
 def _fetch_prompt() -> str:
@@ -141,7 +151,8 @@ class AliveVoiceAgent(Agent):
             else silero.VAD.load()
         )
         super().__init__(
-            instructions=instructions,
+            instructions=instructions + _TOOL_GUIDE,
+            tools=[inspect_machine],
             stt=_build_stt(),
             llm=_build_llm(),
             tts=_build_tts(),
