@@ -51,6 +51,9 @@ def _build_stt():
         )
     api_key = (os.getenv("OPENAI_API_KEY") or os.getenv("LLM_API_KEY") or "").strip()
     return openai.STT(
+        # 默认值是插件自带的 gpt-4o-mini-transcribe；自建的 OpenAI 兼容 STT（如 speaches）
+        # 只有 whisper 系模型，必须用 OPENAI_STT_MODEL=whisper-1 之类的值覆盖。
+        model=os.getenv("OPENAI_STT_MODEL") or "gpt-4o-mini-transcribe",
         api_key=api_key or None,
         base_url=os.getenv("OPENAI_STT_BASE") or os.getenv("LLM_API_BASE") or None,
         language=os.getenv("STT_LANGUAGE", "zh"),
