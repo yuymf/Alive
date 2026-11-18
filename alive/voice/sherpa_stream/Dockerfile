@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir \
         "numpy==2.2.6" \
         "aiohttp==3.14.5"
 
-COPY server.py /app/server.py
+COPY server.py tail_flush.py /app/
 
 EXPOSE 8802
 CMD ["python", "server.py"]

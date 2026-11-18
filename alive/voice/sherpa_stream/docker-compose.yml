@@ -19,6 +19,7 @@ services:
       SHERPA_PORT: "8802"
       SHERPA_NUM_THREADS: "2"
       SHERPA_STABLE_MS: "220"
+      SHERPA_TAIL_PAD_MS: "400"   # flush 前补右上下文，修末字截断（t_0b114497）
       SHERPA_MODEL_DIR: /models/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30
     volumes:
       - /mnt/data/models/sherpa-streaming:/models:ro
