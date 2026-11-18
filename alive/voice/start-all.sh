@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 # 一条命令起 Alive 全双工语音三件套：VoxCPM2 TTS 侧车 / LiveKit 服务器 / agent worker。
 #
+# Step3-P2（t_abbf56c0）：agent worker 已迁进 Docker 常驻容器 alive-voice-worker
+#   （host-net / CPU-only / 0 显存 / 实测空闲端口 18081）。本脚本的 start_agent /
+#   stop_one(agent) / status 改用容器编排（alive/voice/worker/workerctl.sh）；
+#   VoxCPM2 侧车与 LiveKit 服务器仍按原逻辑裸机管理，不动。
+#   worker 日志 append 到 ~/.alive/logs/agent.log，harness 读同一 inode 的增量。
+#
+# 回退到裸机 venv（切回过渡态，一行，从仓库根执行）：
+#   docker compose -f alive/voice/worker/docker-compose.yml down && \
+#     ( cd alive/voice/agent && setsid nohup env SHERPA_WS_URL=ws://127.0.0.1:8802/v1/stt/stream \
+#       SHERPA_PREFLIGHT=0 ALIVE_VAD_MIN_SILENCE=0.35 ../../.venv-voice/bin/python agent.py dev \
+#       >> ~/.alive/logs/agent.log 2>&1 & )
+#
 # 用法：
 #   alive/voice/start-all.sh start     # 启动（已跑的跳过）+ 等健康 + 预热模型
 #   alive/voice/start-all.sh stop      # 停三件套
@@ -17,6 +29,9 @@ ALIVE_HOME="${ALIVE_HOME:-$HOME/.alive}"
 RUN_DIR="${ALIVE_RUN_DIR:-$ALIVE_HOME/run}"
 LOG_DIR="${ALIVE_LOG_DIR:-$ALIVE_HOME/logs}"
 PY="${ALIVE_PY:-$REPO_ROOT/.venv-voice/bin/python}"
+WORKERCTL="$HERE/worker/workerctl.sh"
+# 容器 worker 的 dev/health 端口（切换前 ss 实测空闲，不抢 8081 生产号）
+WORKER_PORT=18081
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
 for f in "$HERE/voice.env" "$ALIVE_HOME/.env"; do
@@ -110,26 +125,31 @@ warmup() {
 }
 
 start_agent() {
-  if pid_alive "$RUN_DIR/agent.pid"; then
-    echo "[agent] already running pid=$(cat "$RUN_DIR/agent.pid")"
-  else
-    echo "[agent] starting worker (port $LIVEKIT_WORKER_PORT, url $LIVEKIT_URL)"
-    ( cd "$HERE/agent" && setsid nohup "$PY" agent.py dev >"$LOG_DIR/agent.log" 2>&1 & echo $! >"$RUN_DIR/agent.pid" )
-  fi
+  # Step3-P2：worker 是 Docker 常驻容器（0 显存 / CPU-only / host-net），不再裸机起 venv。
+  echo "[agent] up container alive-voice-worker (host-net, health port $WORKER_PORT)"
+  bash "$WORKERCTL" up
   for _ in $(seq 1 90); do
-    if grep -qE "registered worker|registered.*worker" "$LOG_DIR/agent.log" 2>/dev/null; then
-      local lp; lp=$(pid_of_port "$LIVEKIT_WORKER_PORT"); [ -n "$lp" ] && echo "$lp" >"$RUN_DIR/agent.pid"
-      echo "[agent] registered: $(grep -E 'registered worker' "$LOG_DIR/agent.log" | tail -1) pid=$(cat "$RUN_DIR/agent.pid")"
+    local st
+    st=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+      alive-voice-worker 2>/dev/null || true)
+    if [ "$st" = "healthy" ]; then
+      echo "[agent] registered: $(grep -E 'registered worker' "$LOG_DIR/agent.log" 2>/dev/null | tail -1)"
       return 0
     fi
     sleep 1
   done
-  echo "[agent] 没等到注册，见 $LOG_DIR/agent.log" >&2
+  echo "[agent] 未 healthy，见: bash $WORKERCTL logs" >&2
   return 1
 }
 
 stop_one() {
   local name="$1" pidfile="$RUN_DIR/$1.pid"
+  if [ "$name" = "agent" ]; then
+    echo "[agent] stopping container alive-voice-worker (VoxCPM/LiveKit 不动)"
+    bash "$WORKERCTL" down
+    rm -f "$pidfile"
+    return 0
+  fi
   if pid_alive "$pidfile"; then
     local p; p=$(cat "$pidfile")
     echo "[$name] stopping pid=$p"
@@ -143,11 +163,13 @@ stop_one() {
 }
 
 status() {
-  for n in voxcpm livekit agent; do
+  for n in voxcpm livekit; do
     if pid_alive "$RUN_DIR/$n.pid"; then echo "$n: pid=$(cat "$RUN_DIR/$n.pid")"; else echo "$n: down"; fi
   done
-  ss -tlnp 2>/dev/null | grep -E ":($VOXCPM_PORT|7880|7881|$LIVEKIT_WORKER_PORT)\b" || true
+  echo "agent(container): $(docker ps --filter name=^/alive-voice-worker$ --format '{{.Status}}' 2>/dev/null || echo down)"
+  ss -tlnp 2>/dev/null | grep -E ":($VOXCPM_PORT|7880|7881|$WORKER_PORT)\b" || true
   echo "voxcpm health: $(health_voxcpm 2>/dev/null || echo down)"
+  echo "worker health: $(curl -sS --noproxy '*' -m 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$WORKER_PORT/" 2>/dev/null || echo down)"
 }
 
 case "${1:-start}" in
