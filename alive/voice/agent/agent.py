@@ -33,6 +33,11 @@ from livekit.plugins import openai, silero
 
 from work_tools import inspect_machine  # Step1-B: 真 @function_tool（后台长活与 session 解耦）
 
+try:
+    from emotion_runtime import build_runtime as _build_emotion_runtime
+except Exception:  # noqa: BLE001 - emotion is an add-on; its absence must not stop the call
+    _build_emotion_runtime = None
+
 for name in (".env",):
     home = os.environ.get("ALIVE_HOME") or str(Path.home() / ".alive")
     env_file = Path(home) / name
@@ -326,7 +331,7 @@ def _build_llm():
     )
 
 
-def _build_tts():
+def _build_tts(control_provider=None):
     provider = (os.getenv("TTS_PROVIDER") or "voxcpm").strip().lower()
     if provider == "openai":
         return openai.TTS(
@@ -336,7 +341,7 @@ def _build_tts():
         )
     from voxcpm_tts import VoxCPMHttpTTS
 
-    return VoxCPMHttpTTS()
+    return VoxCPMHttpTTS(control_provider=control_provider)
 
 
 def _build_models() -> dict:
@@ -471,7 +476,7 @@ def _install_wide_accepted_sources_patch() -> None:
 
 
 class AliveVoiceAgent(Agent):
-    def __init__(self, instructions: str) -> None:
+    def __init__(self, instructions: str, emotion=None) -> None:
         vad_instance = (
             EnergyVAD(
                 speech_threshold=500,
@@ -488,12 +493,15 @@ class AliveVoiceAgent(Agent):
             else silero.VAD.load()
         )
         models = _build_models()
+        # Emotion is read here (in-memory snapshot closure) so the synth path pays one
+        # attribute read per request and never an await, a lock, or a file stat.
+        control_provider = (emotion.control_for_speech if emotion is not None else None)
         super().__init__(
             instructions=instructions + _TOOL_GUIDE,
             tools=[inspect_machine],
             stt=models["stt"],
             llm=models["llm"],
-            tts=_build_tts(),   # 每轮新建，避免 aiohttp session 跨 event loop
+            tts=_build_tts(control_provider),   # 每轮新建，避免 aiohttp session 跨 event loop
             vad=vad_instance,
         )
 
@@ -564,7 +572,34 @@ async def entrypoint(ctx: JobContext) -> None:
         print("[latency] " + json.dumps(fields, ensure_ascii=False), flush=True)
 
     session.on("metrics_collected", _on_metrics)
-    await session.start(agent=AliveVoiceAgent(instructions), room=ctx.room)
+
+    # --- emotion: state source + acoustic channel ---------------------------
+    # Constructed per job (per call) from ALIVE_PERSONA, so three VUPs on the same
+    # worker never share a state object. control_for_speech() is the only thing the
+    # TTS path touches, and it is an attribute read on a plain string.
+    emotion = None
+    if _build_emotion_runtime is not None:
+        try:
+            emotion = _build_emotion_runtime()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[emotion] init failed: {exc!r}", flush=True)
+
+    if emotion is not None:
+        def _on_transcript(ev) -> None:
+            # `user_input_transcribed` also fires with is_final=False for interim
+            # results; only the final text is evidence of what the user meant.
+            if not getattr(ev, "is_final", True):
+                return
+            text = getattr(ev, "transcript", "") or ""
+            try:
+                emotion.observe_transcript(text)   # pure CPU, ~µs, no I/O
+            except Exception as exc:  # noqa: BLE001
+                print(f"[emotion] observe failed: {exc!r}", flush=True)
+
+        session.on("user_input_transcribed", _on_transcript)
+        emotion.start_writer()
+
+    await session.start(agent=AliveVoiceAgent(instructions, emotion), room=ctx.room)
 
 
 def main() -> None:

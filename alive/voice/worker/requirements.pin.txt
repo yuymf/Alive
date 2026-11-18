@@ -16,3 +16,4 @@ python-dotenv==1.2.2
 numpy==2.2.6
 onnxruntime==1.23.2
 websockets==16.1.1
+PyYAML==6.0.3

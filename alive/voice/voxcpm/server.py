@@ -42,6 +42,9 @@ class SpeechIn(BaseModel):
     text: str | None = None
     voice: str = "default"
     response_format: str = "pcm"
+    # VoxCPM2 style/emotion control, e.g. "开心，语速稍快，音调上扬"。
+    # Upstream turns this into a `(control)text` prefix — see _final_text.
+    control: str | None = None
 
 
 class VoiceIn(BaseModel):
@@ -52,6 +55,19 @@ class VoiceIn(BaseModel):
 
 def _text(body: SpeechIn) -> str:
     return (body.input or body.text or "").strip()
+
+
+def _final_text(text: str, control: str | None) -> str:
+    """Prefix the control instruction the way upstream's CLI does.
+
+    VoxCPM2 has no emotion/style *argument* on ``_generate()``; the only supported
+    channel is a ``(instruction)`` prefix on the text itself (``cli.py:build_final_text``).
+    Doing it here rather than in the caller keeps every entry point (stream / sync /
+    mock) on one implementation, so the A/B md5 difference can't come from a caller
+    that forgot the prefix.
+    """
+    control = (control or "").strip()
+    return f"({control}){text}" if control else text
 
 
 def _voice_paths(name: str) -> tuple[Path, Path]:
@@ -147,12 +163,21 @@ def _pcm_at_target_rate(audio: np.ndarray, file_sr: int) -> np.ndarray:
     return _resample_int16(np.ascontiguousarray(audio), file_sr, SAMPLE_RATE)
 
 
-def _voice_kwargs(voice: str) -> dict:
+def _voice_kwargs(voice: str, *, reference_only: bool = False) -> dict:
+    """Voice-conditioning kwargs.
+
+    ``reference_only=True`` is forced whenever a control instruction is used: upstream
+    ``cli.py:119-125`` refuses ``--control`` together with ``--prompt-text``, because a
+    continuation prompt ("say exactly this next") and a style instruction ("say it
+    happily") contradict each other. Reference-only mode still clones the timbre
+    (``reference_wav_path`` is structurally isolated via ref_audio tokens), it just
+    drops the "continue this transcript" half.
+    """
     wav_path, prompt_path = _voice_paths(voice)
     kwargs: dict = {}
     if wav_path.exists():
         kwargs["reference_wav_path"] = str(wav_path)
-        if prompt_path.exists():
+        if not reference_only and prompt_path.exists():
             prompt = prompt_path.read_text(encoding="utf-8").strip()
             if prompt:
                 kwargs["prompt_wav_path"] = str(wav_path)
@@ -163,11 +188,11 @@ def _voice_kwargs(voice: str) -> dict:
 # build_prompt_cache() re-encodes the reference wav through the AudioVAE: 1.5s cold,
 # ~0.11s warm. Cached per voice so only the first utterance of a call pays it; the
 # key carries the wav mtime so re-registering a voice invalidates the entry.
-_prompt_cache: dict[str, tuple[tuple[float, int], object]] = {}
+_prompt_cache: dict[str, tuple[tuple[float, int, bool], object]] = {}
 _prompt_cache_lock = threading.Lock()
 
 
-def _cached_prompt_cache(model, voice: str):
+def _cached_prompt_cache(model, voice: str, *, reference_only: bool = False):
     wav_path, _ = _voice_paths(voice)
     if not wav_path.exists():
         return None
@@ -175,12 +200,14 @@ def _cached_prompt_cache(model, voice: str):
         stat = wav_path.stat()
     except OSError:
         return None
-    key = (stat.st_mtime, stat.st_size)
+    # Key carries the mode: reference-only and ref+continuation are different caches
+    # (different encoded feats), and a call can flip between them per-utterance.
+    key = (stat.st_mtime, stat.st_size, reference_only)
     with _prompt_cache_lock:
         hit = _prompt_cache.get(voice)
         if hit and hit[0] == key:
             return hit[1]
-    kwargs = _voice_kwargs(voice)
+    kwargs = _voice_kwargs(voice, reference_only=reference_only)
     cache = model.tts_model.build_prompt_cache(
         prompt_text=kwargs.get("prompt_text"),
         prompt_wav_path=kwargs.get("prompt_wav_path"),
@@ -195,7 +222,7 @@ def _model_sample_rate(model) -> int:
     return int(getattr(getattr(model, "tts_model", None), "sample_rate", SAMPLE_RATE))
 
 
-def _synthesize(text: str, voice: str) -> bytes:
+def _synthesize(text: str, voice: str, control: str | None = None) -> bytes:
     if not text:
         raise HTTPException(status_code=400, detail="input 不能为空")
     model = _load_model()
@@ -203,11 +230,22 @@ def _synthesize(text: str, voice: str) -> bytes:
         seconds = max(0.4, min(8.0, len(text) * 0.08))
         n = int(SAMPLE_RATE * seconds)
         pcm = np.zeros(n, dtype=np.int16)
+        if control:
+            # Mock must still distinguish controls, otherwise every A/B md5 check
+            # would "pass" by accident on silence. A control-dependent tone beats a
+            # zero buffer: it proves the plumbing, nothing about the real model.
+            # Derived from codepoints, NOT hash(): Python randomises str hashing per
+            # process, so two different controls could map to the same tone and make
+            # this assertion flaky ~1/7 of the time.
+            tone = 220.0 + 30.0 * (sum(ord(c) for c in control) % 7)
+            t = np.arange(n, dtype=np.float32) / SAMPLE_RATE
+            pcm = (8000 * np.sin(2 * np.pi * tone * t)).astype(np.int16)
         return pcm.tobytes()
 
-    kwargs = _voice_kwargs(voice)
+    control = (control or "").strip() or None
+    kwargs = _voice_kwargs(voice, reference_only=bool(control))
     with _MODEL_LOCK:
-        wav = model.generate(text=text, **kwargs)
+        wav = model.generate(text=_final_text(text, control), **kwargs)
     sr = _model_sample_rate(model)
     buf = io.BytesIO()
     sf.write(buf, wav, sr, format="WAV", subtype="PCM_16")
@@ -216,7 +254,7 @@ def _synthesize(text: str, voice: str) -> bytes:
     return _pcm_at_target_rate(audio, file_sr).tobytes()
 
 
-def _stream_pcm(text: str, voice: str):
+def _stream_pcm(text: str, voice: str, control: str | None = None):
     """Yield int16 PCM at SAMPLE_RATE as the model produces it.
 
     ``generate_streaming`` yields one decoded chunk per autoregressive step (~100ms of
@@ -235,21 +273,32 @@ def _stream_pcm(text: str, voice: str):
     if not text:
         raise HTTPException(status_code=400, detail="input 不能为空")
     model = _load_model()
+    control = (control or "").strip() or None
     if model == "mock":
         seconds = max(0.4, min(8.0, len(text) * 0.08))
         step = SAMPLE_RATE // 10
-        for _ in range(0, int(SAMPLE_RATE * seconds), step):
-            yield np.zeros(step, dtype=np.int16).tobytes()
+        # Same reasoning as the sync mock: silence for every control would let an A/B
+        # byte-comparison pass while the streaming path (the one the worker uses)
+        # ignored `control` entirely.
+        phase = float(sum(ord(c) for c in (control or "")) % 7) * 30.0
+        n = int(SAMPLE_RATE * seconds)
+        t = np.arange(n, dtype=np.float32) / SAMPLE_RATE
+        wave_pcm = (8000 * np.sin(2 * np.pi * (220.0 + phase) * t)).astype(np.int16)
+        for i in range(0, n, step):
+            yield wave_pcm[i:i + step].tobytes()
         return
 
-    cache = _cached_prompt_cache(model, voice)
+    # Continuation (prompt_text) and control are mutually exclusive upstream, so a
+    # styled utterance drops to reference-only cloning. The prompt cache is keyed by
+    # mode, so switching costs one re-encode, not one per chunk.
+    cache = _cached_prompt_cache(model, voice, reference_only=bool(control))
     src_sr = _model_sample_rate(model)
     resampler = _StreamResampler(src_sr, SAMPLE_RATE)
     ratio_cap = float(os.getenv("VOXCPM_STREAM_RATIO_CAP", "3.0"))
 
     with _MODEL_LOCK:
         gen = model.tts_model.generate_with_prompt_cache_streaming(
-            target_text=text,
+            target_text=_final_text(text, control),
             prompt_cache=cache,
             min_len=2,
             max_len=4096,
@@ -308,13 +357,13 @@ def register_voice(body: VoiceIn):
 
 @app.post("/v1/audio/speech")
 def speech(body: SpeechIn):
-    pcm = _synthesize(_text(body), body.voice)
+    pcm = _synthesize(_text(body), body.voice, body.control)
     return Response(content=pcm, media_type="application/octet-stream")
 
 
 @app.post("/v1/audio/speech/stream")
 def speech_stream(body: SpeechIn):
-    pcm_iter = _stream_pcm(_text(body), body.voice)
+    pcm_iter = _stream_pcm(_text(body), body.voice, body.control)
     return StreamingResponse(pcm_iter, media_type="application/octet-stream")
 
 

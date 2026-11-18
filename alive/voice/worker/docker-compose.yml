@@ -42,9 +42,15 @@ services:
       ALIVE_VAD_MIN_SILENCE: "${ALIVE_VAD_MIN_SILENCE:-0.35}"  # 单一真源，与 harness 同源
       PYTHONUNBUFFERED: "1"
       TZ: "Asia/Hong_Kong"                    # 日志时间戳对齐宿主，便于 harness/证据核对
+      # 情绪状态写回宿主的人格目录（同一份文件 :8766 的 buildVoiceSystemPrompt 读），
+      # 容器内 ALIVE_HOME=/nonexistent，故必须显式指路，不能靠 ALIVE_HOME 推导。
+      ALIVE_PERSONA_STATE_ROOT: "/personas"
+      ALIVE_EMOTION_MAP: "/app/emotion/control-map.yaml"
     volumes:
       # 仅运行日志目录（非生产数据目录）；harness(latency_e2e.py) 读同一 inode 的增量。
       - ${HOME}/.alive/logs:/logs
+      # 情绪状态正本：worker 是它的唯一写者，:8766 的 prompt 层是读者。
+      - ${HOME}/.alive/personas:/personas
       - /etc/localtime:/etc/localtime:ro
     # 关键：livekit-agents 1.8.12 每 job 起 runner/turn-detector/httpclient，
     # dockerd 默认 nofile=1024 会在首个 job 触发 EMFILE(_stt_pump 连 sherpa 失败)。

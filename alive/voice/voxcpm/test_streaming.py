@@ -116,7 +116,7 @@ class _FakeModel:
 def test_stream_yields_first_chunk_long_before_total(monkeypatch):
     fake = _FakeModel(steps=20, delay=0.02)  # 20 * 20ms = 0.4s of compute
     monkeypatch.setattr(server, "_load_model", lambda: fake)
-    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice: None)
+    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice, **kw: None)
 
     t0 = time.perf_counter()
     first_at = None
@@ -138,7 +138,7 @@ def test_batch_then_slice_would_fail_the_first_chunk_criterion(monkeypatch):
     """反例击穿：旧实现（整段合成完再切）首块时刻 ≈ 总耗时 → 上一条判据会红。"""
     fake = _FakeModel(steps=10, delay=0.02)
     monkeypatch.setattr(server, "_load_model", lambda: fake)
-    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice: None)
+    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice, **kw: None)
 
     t0 = time.perf_counter()
     pcm = b"".join(server._stream_pcm("测试。", "default"))
@@ -171,7 +171,7 @@ def test_stream_passes_ratio_cap_so_runaway_utts_are_bounded(monkeypatch):
 
     m = _Model()
     monkeypatch.setattr(server, "_load_model", lambda: m)
-    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice: None)
+    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice, **kw: None)
     monkeypatch.delenv("VOXCPM_STREAM_RATIO_CAP", raising=False)
 
     list(server._stream_pcm("测试一句短话。", "default"))
@@ -198,7 +198,7 @@ def test_ratio_cap_is_env_overridable(monkeypatch):
 
     m = _Model()
     monkeypatch.setattr(server, "_load_model", lambda: m)
-    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice: None)
+    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice, **kw: None)
     monkeypatch.setenv("VOXCPM_STREAM_RATIO_CAP", "2.5")
 
     list(server._stream_pcm("测试。", "default"))
@@ -239,7 +239,7 @@ def test_model_calls_are_serialised(monkeypatch):
 
     fake = _SlowModel(steps=4, delay=0.01)
     monkeypatch.setattr(server, "_load_model", lambda: fake)
-    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice: None)
+    monkeypatch.setattr(server, "_cached_prompt_cache", lambda model, voice, **kw: None)
 
     threads = [threading.Thread(target=lambda: list(server._stream_pcm("测试。", "default")))
                for _ in range(3)]

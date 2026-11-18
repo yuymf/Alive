@@ -18,9 +18,13 @@ WORKDIR /app
 COPY worker/requirements.pin.txt /app/requirements.pin.txt
 RUN pip install --no-cache-dir -r /app/requirements.pin.txt
 
-# 只 COPY worker 运行需要的 5 个 .py（不含测试 / __pycache__ / 模型 / voice.env）。
+# 只 COPY worker 运行需要的 .py（不含测试 / __pycache__ / 模型 / voice.env）。
 COPY agent/agent.py agent/energy_vad.py agent/work_tools.py \
-     agent/sherpa_stream_stt.py agent/voxcpm_tts.py /app/
+     agent/sherpa_stream_stt.py agent/voxcpm_tts.py agent/emotion_runtime.py /app/
+
+# 情绪→控制串映射表：外部表，改表不改代码。路径由 ALIVE_EMOTION_MAP 显式钉住，
+# 不依赖 __file__ 推导（容器里 .py 是平铺的，推导会落到 /emotion 上）。
+COPY emotion/control-map.yaml /app/emotion/control-map.yaml
 
 # exec 让 python 成为 PID 1，docker stop 的 SIGTERM 直达 livekit cli（优雅注销）。
 # >> append：容器每次 restart 重新 open 同一 inode，从当前 EOF 追加，无稀疏 NUL 洞。

@@ -64,6 +64,7 @@ class VoxCPMHttpTTS(TTS):
         url: str | None = None,
         voice: str | None = None,
         sample_rate: int = TARGET_SAMPLE_RATE,
+        control_provider=None,
     ) -> None:
         super().__init__(
             capabilities=TTSCapabilities(streaming=True),
@@ -75,6 +76,10 @@ class VoxCPMHttpTTS(TTS):
             voice=(voice or os.getenv("VOXCPM_VOICE", "default")).strip() or "default",
             sample_rate=sample_rate,
         )
+        # Called once per request, right before the POST. It must be a pure in-memory
+        # read: anything that awaits or touches disk here would land on the
+        # user-speaks→first-audio path, which the card forbids.
+        self._control_provider = control_provider
         self._http_session: aiohttp.ClientSession | None = None
 
     @property
@@ -109,6 +114,9 @@ async def _post_stream(tts: VoxCPMHttpTTS, text: str, request_id: str, output_em
     """POST one chunk to /stream and push every PCM chunk straight through."""
     sess = await tts._ensure_session()
     payload = {"input": text, "voice": tts._opts.voice, "response_format": "pcm"}
+    control = tts._control_provider() if tts._control_provider else None
+    if control:
+        payload["control"] = control
     async with sess.post(f"{tts._opts.url}/v1/audio/speech/stream", json=payload) as resp:
         if resp.status >= 400:
             body = await resp.text()

@@ -1,0 +1,63 @@
+# 情绪 → VoxCPM2 控制串 映射表（外部文件，改这张表不需要改代码）
+#
+# 为什么是这张表：VoxCPM2 的 `_generate()` 没有 emotion/style 参数，唯一受支持的
+# 情绪通道是把一句中文风格指令写成 `(指令)正文` 前缀（见上游 cli.py:build_final_text）。
+# 所以「情绪→声音」= 四维数值 → 一段中文描述 → 前缀。表在这里，代码只负责查表与拼接。
+#
+# 规则：
+#   * 每个维度按数值升序排列，命中第一条 `value <= up_to` 的规则；
+#     最后一条不带 up_to = 兜底（必须存在，否则越界值无解）。
+#   * 四个维度各出一句，用 sentence_join 拼起来，再截到 max_control_chars。
+#   * persona_overrides 里 append 的句子在最后追加（每个 VUP 自己的口音/习惯）。
+#   * 改表后不需要重启 VoxCPM，worker 每次启动重读；文件 mtime 变化会在运行中热生效。
+version: 1
+sentence_join: "，"
+max_control_chars: 64
+
+dimensions:
+  # valence: -1 极负面 → +1 极正面
+  valence:
+    - up_to: -0.5
+      phrase: "语气低落"
+    - up_to: -0.2
+      phrase: "情绪有点沉"
+    - up_to: 0.2
+      phrase: "情绪平稳"
+    - up_to: 0.6
+      phrase: "心情不错"
+    - phrase: "非常开心，语气明亮"
+
+  # arousal: 0 昏昏欲睡 → 1 亢奋
+  arousal:
+    - up_to: 0.25
+      phrase: "语速偏慢"
+    - up_to: 0.45
+      phrase: "语速正常"
+    - up_to: 0.7
+      phrase: "语速稍快"
+    - phrase: "语速快，音调上扬"
+
+  # energy: 0 快没电了 → 1 精力充沛
+  energy:
+    - up_to: 0.3
+      phrase: "声音有点虚"
+    - up_to: 0.6
+      phrase: "声音有力"
+    - phrase: "中气十足"
+
+  # stress: 0 放松 → 1 紧绷
+  stress:
+    - up_to: 0.3
+      phrase: "语气放松"
+    - up_to: 0.6
+      phrase: "语气略紧"
+    - phrase: "语气紧绷"
+
+# 每个 VUP 自己的说话习惯，追加在四维描述之后。
+persona_overrides:
+  minase:
+    append: "带一点元气"
+  guodegang:
+    append: "带一点说相声的抑扬顿挫"
+  ace-taffy:
+    append: "尾音带一点撒娇"
