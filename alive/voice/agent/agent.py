@@ -70,8 +70,12 @@ _MODELS: dict = {}
 _WARMED = False
 
 SHERPA_WS_URL = os.getenv("SHERPA_WS_URL", "").strip()
-# PREFLIGHT 抢跑：默认关。打开后 LiveKit 在用户说完前起跑 LLM，需实测
-# V1（单轮 commit）/ V3（首音不早于话术）/「不砍回答」双口径后才可启用。
+# PREFLIGHT 抢跑：默认关，且实测无效，勿启用。t_65f84c9c 结论：
+# preflight 发的是增长中的稳定前缀，末字「状态」只在 P0 flush 后才出现，
+# 任何 pre-flush 前缀都过不了 LiveKit _transcripts_equivalent(前缀, FINAL)，
+# 抢跑生成恒被作废重建 → LLM 起点在 commit 之后，与判停窗口重叠实测 0.000s。
+# 逐项证据见 var/voice-evidence/t_65f84c9c/REPORT.md；门禁见
+# alive/voice/test_step3_preflight.py。放开 V1–V3 闸体是明令禁止的。
 ENABLE_PREFLIGHT = os.getenv("SHERPA_PREFLIGHT", "0").strip() == "1"
 WARM_LLM = os.getenv("ALIVE_WARM_LLM", "1").strip() == "1"
 
