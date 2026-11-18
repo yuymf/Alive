@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import httpx
 from dotenv import load_dotenv
 from livekit.agents import Agent, AgentServer, AgentSession, JobContext, JobExecutorType, cli
+from livekit.agents.types import FlushSentinel
 from livekit.plugins import openai, silero
 
 from work_tools import inspect_machine  # Step1-B: 真 @function_tool（后台长活与 session 解耦）
@@ -60,6 +61,174 @@ _TOOL_GUIDE = (
     "工具立刻返回即时读数（约 0.05s），不会让你等；完整结果由后台十几秒后自动播报。"
     "你说完那一两句之后就让用户继续说，不要加「请稍等」这类干等的话。"
 )
+
+# ---------------------------------------------------------------------------
+# Step3-P3 (t_e61fc3ac)：LLM 首字长尾「快速失败 + 降级过渡语」
+# ---------------------------------------------------------------------------
+# 根因：框架的 LLMStream._main_task 每次 attempt 内跑整条 _run()，上游 LM Studio
+# 单次 `Request timed out` 会静默挂 ~16s 才抛错、再 retry in 0.1s；用户 19.61s
+# 听不到一个字（[latency] LLMMetrics ttft=16.3196s）。抢跑/PREFLIGHT 省的是 0.3s，
+# 挡不住稳态的单次上游超时。这里在 llm_node 接缝上加一道**独立于框架内部重试**的
+# 墙钟看门狗：
+#   * 首 chunk 在 cap 内到达 → 逐字节原样转发，正常轮零回归（不碰 gate/闸/上游）。
+#   * cap 超时 → 立即取消挂死 stream（不等 16s、不静默重试），先 yield 一句真话
+#     作为**独立 segment**（FlushSentinel 切段，TTS 立刻播出，首字 <2.5s），随后
+#     重新发起一次有界请求，把工具读数与完整回答在后续 segment 照常播报——
+#     assistant_texts 不会被砍成只有过渡语。
+# 只改 LLM 调用路径与降级分支：不动 LLM_MODEL / reasoning_effort / sherpa /
+# VoxCPM / 人格正本 / latency_e2e.py 的 V1–V3 闸体。
+def _clamp_timeout(v) -> float:
+    # 默认 ≤2s；配置也不许塞到 120s 那种「堵住真死」，下限防 0 立即降级。
+    return max(0.5, min(float(v), 5.0))
+
+
+# LLM 调用超时上限：可配置常量，默认 1.5s（卡面要求默认 ≤2s）。
+#
+# 为什么是 1.5 而不是卡面上限 2.0：首字口径是 e2e = STT 终句(~0.4s) +
+# 本 cap + 过渡语 TTS ttfb(~0.1s) + 管线(~0.3s) ≈ cap + 0.8s。实测 cap=2.0
+# 时注入轮 e2e=2.76s > 卡面 <2.5s；cap=1.5 实测 2.301s。稳态 ttft 实测
+# 0.21–0.92s，1.5s 对健康轮仍有余量，不误降级（见 t_e61fc3ac/REPORT.md）。
+LLM_TTFT_TIMEOUT_S = _clamp_timeout(os.getenv("ALIVE_LLM_TTFT_TIMEOUT_S", "1.5"))
+# 降级过渡语：一句真话（确实卡住了），不是编造的领域读数。
+LLM_DEGRADE_PHRASE = os.getenv("ALIVE_LLM_DEGRADE_PHRASE", "我卡了一下，等半秒")
+LLM_STILL_STALLED_PHRASE = os.getenv(
+    "ALIVE_LLM_STILL_STALLED_PHRASE", "还没缓过来，我先把查到的报给你")
+
+# 可控注入（mock，仅本机验收用）：一次性控制文件，由 harness driver 在该组
+# harness 启动前写入、worker 在 llm_node 入口读一次即消费（unlink）。文件不存在
+# 时 = 生产默认（hold_s=0 / fast_fail=True），行为与现状逐字节一致。
+#   {"hold_s": 16.0, "fast_fail": true}   -> 挂住单次 LLM 请求 16s，走降级
+#   {"hold_s": 16.0, "fast_fail": false}  -> 复现修复前的 19s 长尾（A/B 对照）
+# hold 发生在**客户端 LLM 调用路径内**（pump 转发首 chunk 前 sleep），LM Studio
+# 全程只收到 1 个正常快请求，绝不被拖垮；不改上游、不重启/替换 LM Studio。
+def _fault_paths():
+    seen = set()
+    for p in (
+        os.getenv("ALIVE_VOICE_P3_FAULT_FILE"),
+        "/logs/.p3_llm_fault.json",
+        os.path.join(os.path.expanduser("~"), ".alive", "logs", ".p3_llm_fault.json"),
+    ):
+        if p and p not in seen:
+            seen.add(p)
+            yield p
+
+
+def _read_fault() -> dict:
+    for p in _fault_paths():
+        try:
+            if not os.path.isfile(p):
+                continue
+            data = json.loads(Path(p).read_text(encoding="utf-8") or "{}")
+            # persist=True：本组 harness 的每一次 attempt 都注入（V1 作废重跑时不被
+            # one-shot 消费掉）；driver 在该组结束后显式删除文件，不留下地雷。
+            if not bool(data.get("persist", False)):
+                try:
+                    os.unlink(p)  # one-shot：只影响该组 harness 的第一轮 LLM 生成
+                except OSError:
+                    pass
+            return {
+                "hold_s": max(0.0, float(data.get("hold_s", 0.0))),
+                "fast_fail": bool(data.get("fast_fail", True)),
+                # 可选：单组覆盖首字看门狗上限，用于不重建镜像的实测标定；
+                # 缺省 None = 用模块级生产默认 LLM_TTFT_TIMEOUT_S。
+                "cap_s": (None if data.get("cap_s") is None
+                          else _clamp_timeout(data["cap_s"])),
+            }
+        except (OSError, ValueError, TypeError, AttributeError, KeyError):
+            continue
+    return {"hold_s": 0.0, "fast_fail": True, "cap_s": None}
+
+
+def _log_latency(kind: str, **fields: object) -> None:
+    # 与 _on_metrics 同格式，供 harness / 报告从 agent.log 抽 [latency] 行。
+    rec = {"kind": kind, "wall": round(time.time(), 4)}
+    rec.update(fields)
+    print("[latency] " + json.dumps(rec, ensure_ascii=False), flush=True)
+
+
+async def _pump_to_queue(gen, q, END, hold_s, log) -> None:
+    """把一次 llm_node 迭代灌进队列；hold_s>0 时把单次 LLM 请求的**首 chunk**挂住。
+
+    hold 发生在 gen 已经开始迭代（LLM 请求已发出、上游已正常秒回）之后、首 chunk
+    转发给用户之前 —— 这样「单次 LLM 请求被挂 >10s」是可控的客户端 mock，用户侧
+    死寂与真上游超时逐字节同构，而 LM Studio 全程只收到正常快请求、绝不被拖垮。
+    """
+    try:
+        held = False
+        async for chunk in gen:
+            if hold_s > 0 and not held:
+                held = True
+                log("LLMInjectHold", event="start", hold_s=hold_s)
+                await asyncio.sleep(hold_s)
+                log("LLMInjectHold", event="end", hold_s=hold_s)
+            q.put_nowait(("chunk", chunk))
+    except asyncio.CancelledError:
+        raise
+    except BaseException as exc:  # noqa: BLE001 - 把真实异常交给生成管线
+        q.put_nowait(("error", exc))
+    finally:
+        q.put_nowait(("end", END))
+
+
+async def _fastfail_llm_chunks(make_iter, *, cap_s, hold_s, fast_fail, phrase,
+                               still_phrase, log, reissue_cap_s=None):
+    """带首 chunk 墙钟看门狗的 LLM 生成。正常轮原样转发；超时走降级过渡语。
+
+    重发请求用更宽松但仍有界的 reissue_cap_s：此刻过渡语已经播出，用户不再
+    处于死寂，若仍套首字 cap 会把「LM Studio 偶发 ttft=1.9s 但能给出完整回答」
+    误判成二次卡死，砍成只有过渡语（违反卡面「工具读数仍要播报」）。
+    """
+    import contextlib
+
+    if reissue_cap_s is None:
+        reissue_cap_s = min(5.0, max(cap_s * 3.0, 2.0))
+
+    for attempt in (0, 1):
+        h = hold_s if attempt == 0 else 0.0
+        attempt_cap = cap_s if attempt == 0 else reissue_cap_s
+        watch = fast_fail  # 两次 attempt 都受有界墙钟约束，绝不回到 16s 静默重试
+        gen = make_iter()
+        q: asyncio.Queue = asyncio.Queue()
+        END = object()
+        task = asyncio.create_task(_pump_to_queue(gen, q, END, h, log))
+        try:
+            if watch:
+                try:
+                    first = await asyncio.wait_for(q.get(), timeout=attempt_cap)
+                except asyncio.TimeoutError:
+                    task.cancel()  # 立即放弃挂死的 stream，不等 16s、不静默重试
+                    if attempt == 0:
+                        log("LLMDegrade", event="fast_fail", cap_s=cap_s, phrase=phrase)
+                        yield phrase
+                        yield FlushSentinel()  # 独立 segment，过渡语立刻播出
+                        continue               # 重发一次有界请求，后续 segment 播报读数
+                    log("LLMDegrade", event="reissue_stalled", cap_s=reissue_cap_s,
+                        phrase=still_phrase)
+                    yield still_phrase
+                    return
+            else:
+                first = await q.get()  # A/B 对照：无看门狗，复现修复前长尾
+
+            if first[0] == "error":
+                raise first[1]
+            if first[0] == "end":
+                return
+            yield first[1]
+            while True:
+                kind, payload = await q.get()
+                if kind == "end":
+                    break
+                if kind == "error":
+                    raise payload
+                yield payload
+            return
+        finally:
+            if not task.done():
+                task.cancel()
+            with contextlib.suppress(BaseException):
+                await task
+            with contextlib.suppress(BaseException):
+                await gen.aclose()
 
 # ---------------------------------------------------------------------------
 # 预热与共享单例（进程启动期，不在 job 的 event loop 上）
@@ -327,6 +496,33 @@ class AliveVoiceAgent(Agent):
             tts=_build_tts(),   # 每轮新建，避免 aiohttp session 跨 event loop
             vad=vad_instance,
         )
+
+    async def llm_node(self, chat_ctx, tools, model_settings):
+        """Step3-P3：首 chunk 墙钟看门狗 + 快速失败降级过渡语。
+
+        正常轮（首 chunk 在 LLM_TTFT_TIMEOUT_S 内到达）逐 chunk 原样转发，代码路径
+        与 Agent.default.llm_node 完全一致，零回归。单次上游超时时立即 yield 真话
+        过渡语并切段播出，再重发一次有界请求把工具读数/完整回答补在后续 segment。
+        """
+        fault = _read_fault()
+        cap_s = fault["cap_s"] or LLM_TTFT_TIMEOUT_S
+        # 零参 super() 依赖当前帧第一个参数，嵌套函数里没有 self —— 显式绑定后
+        # 再收进闭包，降级重发时才能拿到一条全新的 LLM 请求（async generator）。
+        base_llm_node = super().llm_node
+
+        def _make_iter():
+            return base_llm_node(chat_ctx, tools, model_settings)
+
+        async for item in _fastfail_llm_chunks(
+            _make_iter,
+            cap_s=cap_s,
+            hold_s=fault["hold_s"],
+            fast_fail=fault["fast_fail"],
+            phrase=LLM_DEGRADE_PHRASE,
+            still_phrase=LLM_STILL_STALLED_PHRASE,
+            log=_log_latency,
+        ):
+            yield item
 
 
 server = AgentServer(
