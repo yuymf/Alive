@@ -45,10 +45,13 @@ STT_BASE = os.environ.get("OPENAI_STT_BASE", "http://10.89.22.4:8000/v1")
 STT_MODEL = os.environ.get("OPENAI_STT_MODEL", "whisper-1")
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
-# 与 agent.py 里 EnergyVAD(...) 的参数保持一致
+# Step2：与 agent.py 的 EnergyVAD 共用同一 env 旋钮（单一真源，防漂移）。
+# 旧值 0.5 是 VAD=0.5 时代的产物；Step2 收到 0.35 后，0.35~0.5s 的句中停顿
+# 会穿过预检、被 agent 切成两轮（V1 作废）。实测 clean render 命中率仅 ~19%
+# （见 var/voice-evidence/t_b2d062f6/gap_probe.log），故重渲染次数提到 24。
 VAD_SILENCE_THRESHOLD = 200
-VAD_MIN_SILENCE = 0.5
-RENDER_TRIES = 8
+VAD_MIN_SILENCE = float(os.environ.get("ALIVE_VAD_MIN_SILENCE", "0.35"))
+RENDER_TRIES = 24
 
 
 def wav_bytes(pcm: np.ndarray, sr: int) -> bytes:

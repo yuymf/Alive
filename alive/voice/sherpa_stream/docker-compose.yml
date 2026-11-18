@@ -1,0 +1,41 @@
+# Homelab Docker dogfood：sherpa-onnx 流式 STT 服务
+#   - 纯 CPU，无 GPU 设备映射（0 显存，不占两张 A6000）
+#   - cpus 硬限额，白天常驻也不抢算力
+#   - 模型只读挂载 /mnt/data/models（不进镜像、不写生产数据目录）
+#   - 独立端口 8802，不碰 80/443 与既有 asr/speaches 栈
+# 起：docker compose -f alive/voice/sherpa_stream/docker-compose.yml up -d --build
+# 验：curl --noproxy '*' -s http://127.0.0.1:8802/health
+services:
+  sherpa-stt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: alive-sherpa-stt:local
+    container_name: alive-sherpa-stt
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8802:8802"
+    environment:
+      SHERPA_PORT: "8802"
+      SHERPA_NUM_THREADS: "2"
+      SHERPA_STABLE_MS: "220"
+      SHERPA_MODEL_DIR: /models/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30
+    volumes:
+      - /mnt/data/models/sherpa-streaming:/models:ro
+    cpus: 2.0
+    mem_limit: 1500m
+    # 显式不给 GPU：无 deploy.resources.reservations.devices / 无 NVIDIA_VISIBLE_DEVICES
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8802/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+# 本机已有 43 个 docker 网络，默认地址池已被 subnetted（fleet 已知坑）：
+# 显式钉一个未被占用的子网，否则 `docker compose up` 直接失败。
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.89.90.0/24

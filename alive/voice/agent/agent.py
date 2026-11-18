@@ -1,8 +1,22 @@
 #!/usr/bin/env python3
-"""Alive LiveKit worker: STT → 人格 LLM → VoxCPM TTS."""
+"""Alive LiveKit worker: 流式 STT → 人格 LLM → VoxCPM TTS.
+
+Step2（t_b2d062f6）：
+  * STT 从 speaches 批式换成 sherpa-onnx 流式（Docker/CPU，0 显存）：
+    边说边 decode，VAD 判停 flush 时终句已在手上（tail 0.54s → 0.016s）。
+  * worker 启动预热：预建 STT/LLM/TTS 单例、预取人格 prompt、发一次真实 LLM
+    完成请求编译 LM Studio 的 prompt cache —— 收掉冷启动首轮 3.834s。
+  * event-loop 阻塞：把 `_fetch_prompt()` 的同步 httpx 改成共享 AsyncClient 的
+    await；把 plugin 的 httpx2 SSL context 构造从 entrypoint 挪到进程启动期。
+
+不变：`work_tools.py` / `voice.env` / `voxcpm_tts.py::SynthesizeStream` 零改动；
+人格正本、VoxCPM2、qwen3.8-27b 不换。
+"""
 
 from __future__ import annotations
 
+import asyncio
+import gc
 import json
 import os
 import sys
@@ -47,21 +61,61 @@ _TOOL_GUIDE = (
     "你说完那一两句之后就让用户继续说，不要加「请稍等」这类干等的话。"
 )
 
+# ---------------------------------------------------------------------------
+# 预热与共享单例（进程启动期，不在 job 的 event loop 上）
+# ---------------------------------------------------------------------------
+_HTTP: httpx.AsyncClient | None = None
+_PROMPT_CACHE: str | None = None
+_MODELS: dict = {}
+_WARMED = False
 
-def _fetch_prompt() -> str:
+SHERPA_WS_URL = os.getenv("SHERPA_WS_URL", "").strip()
+# PREFLIGHT 抢跑：默认关。打开后 LiveKit 在用户说完前起跑 LLM，需实测
+# V1（单轮 commit）/ V3（首音不早于话术）/「不砍回答」双口径后才可启用。
+ENABLE_PREFLIGHT = os.getenv("SHERPA_PREFLIGHT", "0").strip() == "1"
+WARM_LLM = os.getenv("ALIVE_WARM_LLM", "1").strip() == "1"
+
+
+def _fetch_prompt_sync() -> str:
+    """启动期同步取人格（此时没有 event loop，不构成阻塞告警）。"""
     try:
-        resp = httpx.get(f"{VOICE_URL}/api/prompt", timeout=5.0)
-        resp.raise_for_status()
-        text = resp.text.strip()
+        r = httpx.get(f"{VOICE_URL}/api/prompt", timeout=5.0, trust_env=False)
+        r.raise_for_status()
+        text = r.text.strip()
         if text:
             return text
     except Exception as exc:
+        print(f"[alive-agent] prompt prefetch failed: {exc!r}", flush=True)
+    name = os.getenv("ALIVE_PERSONA", "角色")
+    return f"你是{name}。这是一通实时语音电话。用「我」短句说话。不要说你是 AI。"
+
+
+async def _fetch_prompt() -> str:
+    """job 内取人格：把同步 httpx 丢进线程池（`to_thread`），不上 event loop。
+
+    THREAD executor 每个 job 一个 event loop，共享 AsyncClient 会撞 "attached to a
+    different loop"；`to_thread` 既保持每轮取到最新人格，又让 105–145ms 的
+    socket/SSL 同步工作不阻塞音频与 turn handling。失败时回退启动期缓存。
+    """
+    global _PROMPT_CACHE
+    try:
+        text = await asyncio.to_thread(_fetch_prompt_sync)
+        _PROMPT_CACHE = text
+        return text
+    except Exception as exc:
         print(f"[alive-agent] prompt fetch failed: {exc!r}", flush=True)
+    if _PROMPT_CACHE:
+        return _PROMPT_CACHE
     name = os.getenv("ALIVE_PERSONA", "角色")
     return f"你是{name}。这是一通实时语音电话。用「我」短句说话。不要说你是 AI。"
 
 
 def _build_stt():
+    # Step2：只要配了 SHERPA_WS_URL 就走 Docker/CPU 流式 STT；
+    # 否则完全沿用原有 speaches 批式 / cartesia 分支（回退路径，未删除）。
+    if SHERPA_WS_URL:
+        from sherpa_stream_stt import SherpaStreamSTT
+        return SherpaStreamSTT(ws_url=SHERPA_WS_URL)
     provider = (os.getenv("STT_PROVIDER") or "").strip().lower()
     cartesia_key = (os.getenv("CARTESIA_API_KEY") or "").strip()
     if provider == "cartesia" or (not provider and cartesia_key):
@@ -112,10 +166,93 @@ def _build_tts():
     return VoxCPMHttpTTS()
 
 
+def _build_models() -> dict:
+    """构造 STT/LLM 单例：把 httpx2 的 SSL context 构造挪出 event loop。
+
+    注意：TTS 不入单例。`VoxCPMHttpTTS._ensure_session()` 会把 aiohttp session
+    绑到首个 job 的 event loop；THREAD executor 每个 job 各自一个 loop，复用会
+    撞 "Event loop is closed"。TTS 构造函数本身不建 HTTP client（惰性），
+    每轮新建既零成本又保持原语义。
+    """
+    global _MODELS
+    if not _MODELS:
+        _MODELS = {"stt": _build_stt(), "llm": _build_llm()}
+        _build_tts()  # 启动期构造一次仅作导入/SSL 预热，不作为共享实例
+    return _MODELS
+
+
+def _warm_llm(prompt: str) -> None:
+    """启动期发一次真实 completion，让 LM Studio 编译人格 prompt 的 KV cache。
+
+    冷启动首轮 ttft=1.44s 的根因是 LM Studio 首次加载/编译长人格 prompt；
+    预热后首轮应回到稳态 ~0.2s。失败只告警，不影响 worker 起。
+    """
+    base = os.getenv("LLM_API_BASE")
+    if not WARM_LLM or not base:
+        return
+    url = f"{base.rstrip('/')}/chat/completions"
+    payload = {
+        "model": os.getenv("LLM_MODEL") or "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": prompt + _TOOL_GUIDE},
+            {"role": "user", "content": "你好"},
+        ],
+        "max_tokens": 1,
+        "temperature": 0.0,
+        "reasoning_effort": "none",
+        "stream": False,
+    }
+    try:
+        t0 = time.perf_counter()
+        r = httpx.post(url, json=payload, timeout=30.0, trust_env=False)
+        print(f"[alive-agent] LLM warmup http={r.status_code} "
+              f"{time.perf_counter()-t0:.2f}s", flush=True)
+    except Exception as exc:
+        print(f"[alive-agent] LLM warmup failed: {exc!r}", flush=True)
+
+
+def _prewarm_ffi() -> None:
+    """启动期构造一个一次性 APM，把 FFI client 的一次性初始化挪出 event loop。
+
+    APM 本身保持每 session 新建（不改语义），只是 FFI 已热，避免 105ms 首建阻塞。
+    """
+    try:
+        import livekit.rtc as rtc
+        apm = rtc.AudioProcessingModule(auto_gain_control=True)
+        del apm
+        gc.collect()
+    except Exception as exc:
+        print(f"[alive-agent] APM prewarm failed: {exc!r}", flush=True)
+
+
+def _prewarm() -> None:
+    """进程/线程启动期执行（此时没有 job event loop）。幂等。"""
+    global _PROMPT_CACHE, _WARMED
+    if _WARMED:
+        return
+    if _PROMPT_CACHE is None:
+        _PROMPT_CACHE = _fetch_prompt_sync()
+    _build_models()          # httpx2 SSL context 在这里构造，不再落在 entrypoint 的 loop 上
+    _prewarm_ffi()           # FFI 一次性初始化，不落在 session.start 的 loop 上
+    _warm_llm(_PROMPT_CACHE) # LM Studio prompt cache 编译
+    try:
+        gc.freeze()           # 已热对象进永久代，削减通话期 GC 停顿（145ms 那次 gc_time=0.134）
+    except Exception:
+        pass
+    _WARMED = True
+    print(f"[alive-agent] prewarm done: stt={SHERPA_WS_URL or 'batch'} "
+          f"prompt_chars={len(_PROMPT_CACHE)} preflight={ENABLE_PREFLIGHT}", flush=True)
+
+
+def _setup_fnc(proc) -> None:
+    """AgentServer.setup_fnc：job executor 初始化时（无 event loop）再保底预热一次。"""
+    _prewarm()
+
+
 try:
     from energy_vad import EnergyVAD
     _has_energy_vad = True
-except Exception as e:
+except Exception:
     _has_energy_vad = False
 
 
@@ -126,6 +263,7 @@ def _install_wide_accepted_sources_patch() -> None:
         import livekit.rtc as rtc
         if getattr(_input_mod._ParticipantAudioInputStream.__init__, "_wide_sources_patched", False):
             return
+
         def wide_init(self, room, *, sample_rate, num_channels, noise_cancellation,
                       auto_gain_control=True, pre_connect_audio_handler=None, frame_size_ms=50):
             from livekit.agents.voice.room_io._input import _ParticipantInputStream
@@ -151,6 +289,7 @@ def _install_wide_accepted_sources_patch() -> None:
             self._pre_connect_audio_handler = pre_connect_audio_handler
             self._apm = None
             if auto_gain_control:
+                # 保持每 session 一个 APM（不改语义）；FFI 已在启动期预热
                 self._apm = rtc.AudioProcessingModule(auto_gain_control=True)
         wide_init._wide_sources_patched = True
         _input_mod._ParticipantAudioInputStream.__init__ = wide_init
@@ -165,17 +304,23 @@ class AliveVoiceAgent(Agent):
                 speech_threshold=500,
                 silence_threshold=200,
                 min_speech_duration=0.3,
-                min_silence_duration=0.5,
+                # Step2：真流式 STT 在判停时终句已在手上，0.5s 静音确认成了
+                # 最大的固定块。收到 0.35s 连续无声即判停，省约 0.15s。
+                # 与 latency_e2e.py 的触发音频预检共用 ALIVE_VAD_MIN_SILENCE：
+                # 两处各自硬编码会漂移（漂移时 0.35~0.5s 句中停顿被切两轮）。
+                # V1 单轮 commit 由 harness 实测把关。
+                min_silence_duration=float(os.getenv("ALIVE_VAD_MIN_SILENCE", "0.35")),
             )
             if _has_energy_vad
             else silero.VAD.load()
         )
+        models = _build_models()
         super().__init__(
             instructions=instructions + _TOOL_GUIDE,
             tools=[inspect_machine],
-            stt=_build_stt(),
-            llm=_build_llm(),
-            tts=_build_tts(),
+            stt=models["stt"],
+            llm=models["llm"],
+            tts=_build_tts(),   # 每轮新建，避免 aiohttp session 跨 event loop
             vad=vad_instance,
         )
 
@@ -184,6 +329,7 @@ server = AgentServer(
     job_executor_type=JobExecutorType.THREAD,
     initialize_process_timeout=90.0,
     port=int(os.getenv("LIVEKIT_WORKER_PORT", "8081")),
+    setup_fnc=_setup_fnc,
 )
 
 
@@ -191,17 +337,17 @@ server = AgentServer(
 async def entrypoint(ctx: JobContext) -> None:
     _install_wide_accepted_sources_patch()
     await ctx.connect()
-    instructions = _fetch_prompt()
+    instructions = await _fetch_prompt()   # async：不再同步阻塞 event loop
     print(f"[alive-agent] prompt chars={len(instructions)} room={ctx.room.name}", flush=True)
     session = AgentSession(
         turn_handling={
             "interruption": {"enabled": True},
-            "preemptive_generation": {"enabled": False},
+            "preemptive_generation": {"enabled": ENABLE_PREFLIGHT},
         }
     )
 
     # 分段延迟打点：ttfb/ttft 是框架自己量的，不是估算。写进 agent.log 供 harness 抽取，
-    # 也让「每格数字来自日志时间戳」这条验收要求有据可查（卡面 invariant #2）。
+    # 也让「每格数字来自日志时间戳」这条验收要求有据可查（卡面 invariant #3）。
     def _on_metrics(event) -> None:
         m = getattr(event, "metrics", event)  # MetricsCollectedEvent 是包装层
         fields: dict[str, object] = {"kind": type(m).__name__}
@@ -222,6 +368,7 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 def main() -> None:
+    _prewarm()
     cli.run_app(server)
 
 
