@@ -1,0 +1,19 @@
+# worker 镜像 build context = alive/voice/。Dockerfile 只显式 COPY 5 个 .py + 依赖锁，
+# 其余一律排除：尤其含 LiveKit/LLM 凭据的 voice.env 绝不进 build context/镜像层。
+voice.env
+voice.env.example
+.env.example
+.env
+*.env
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+web/
+voxcpm/
+sherpa_stream/
+test_*.py
+verify_*.py
+worker/docker-compose.yml
+worker/workerctl.sh
+worker/requirements.pin.txt.bak
