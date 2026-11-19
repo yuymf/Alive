@@ -1,11 +1,13 @@
 import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
-import { loadAliveEnv } from '../utils/file-utils';
+import { loadAliveEnv, setPersonaName } from '../utils/file-utils';
 import { createRoomAndToken, livekitConfigured, readLiveKitConfig } from './livekit-token';
 import { buildVoiceSystemPrompt, findPersonaAvatarPath, loadVoiceLife } from './persona-prompt';
 import { runVoiceTurn } from './turn';
 import { formatVoiceCheck, readVoiceStackStatus } from './config';
+import { resolveTeamMember } from './team';
+import { clearPersonaCache } from '../persona/persona-loader';
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -58,6 +60,13 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
+function applyPersona(persona: string | undefined): { id: string; agent_name: string; voice: string; worker_port: number } {
+  const member = resolveTeamMember(persona);
+  setPersonaName(member.id);
+  clearPersonaCache();
+  return { id: member.id, agent_name: member.agent_name, voice: member.voice, worker_port: member.worker_port };
+}
+
 export function createVoiceServer(): http.Server {
   loadAliveEnv();
   const web = findVoiceWebDir();
@@ -77,10 +86,34 @@ export function createVoiceServer(): http.Server {
     try {
       if (req.method === 'GET' && url.pathname === '/api/life') {
         const stack = await readVoiceStackStatus();
-        json(res, 200, { ok: true, ...stack, ...loadVoiceLife() });
+        let member;
+        try {
+          member = applyPersona(url.searchParams.get('persona') || undefined);
+        } catch (err) {
+          json(res, 400, { error: 'unknown-persona', message: (err as Error).message });
+          return;
+        }
+        const life = loadVoiceLife();
+        json(res, 200, {
+          ok: true,
+          ...stack,
+          ...life,
+          agent_name: member.agent_name,
+          agentName: member.agent_name,
+          workerPort: member.worker_port,
+          persona: member.id,
+          voice: member.voice,
+          avatar: life.avatar ? `/api/avatar?persona=${encodeURIComponent(member.id)}` : undefined,
+        });
         return;
       }
       if (req.method === 'GET' && url.pathname === '/api/avatar') {
+        try {
+          applyPersona(url.searchParams.get('persona') || undefined);
+        } catch (err) {
+          json(res, 400, { error: 'unknown-persona', message: (err as Error).message });
+          return;
+        }
         const avatarPath = findPersonaAvatarPath();
         if (!avatarPath || !fs.existsSync(avatarPath)) {
           json(res, 404, { error: 'avatar not found' });
@@ -102,6 +135,12 @@ export function createVoiceServer(): http.Server {
         return;
       }
       if (req.method === 'GET' && url.pathname === '/api/prompt') {
+        try {
+          applyPersona(url.searchParams.get('persona') || undefined);
+        } catch (err) {
+          json(res, 400, { error: 'unknown-persona', message: (err as Error).message });
+          return;
+        }
         text(res, 200, buildVoiceSystemPrompt());
         return;
       }
@@ -111,13 +150,22 @@ export function createVoiceServer(): http.Server {
           return;
         }
         const raw = await readBody(req);
-        const data = raw ? JSON.parse(raw) as { room?: string; identity?: string; name?: string } : {};
+        const data = raw ? JSON.parse(raw) as { room?: string; identity?: string; name?: string; persona?: string } : {};
+        const persona = data.persona || url.searchParams.get('persona') || undefined;
+        let member;
+        try {
+          member = applyPersona(persona);
+        } catch (err) {
+          json(res, 400, { error: 'unknown-persona', persona, message: (err as Error).message });
+          return;
+        }
         const token = await createRoomAndToken({
-          roomBase: data.room || 'alive-room',
+          roomBase: data.room || `alive-${member.id}`,
           identity: data.identity,
           name: data.name || '主人',
+          agentName: member.agent_name,
         });
-        json(res, 200, token);
+        json(res, 200, { ...token, persona: member.id, voice: member.voice });
         return;
       }
       if (req.method === 'POST' && url.pathname === '/api/turn') {

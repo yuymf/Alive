@@ -39,6 +39,7 @@ describe('voice server', () => {
     key: process.env.LIVEKIT_API_KEY,
     secret: process.env.LIVEKIT_API_SECRET,
   };
+  const prevVox = process.env.VOXCPM_URL;
   let tmp = '';
   let server: http.Server | null = null;
 
@@ -62,6 +63,8 @@ describe('voice server', () => {
     else process.env.LIVEKIT_API_KEY = prevLivekit.key;
     if (prevLivekit.secret === undefined) delete process.env.LIVEKIT_API_SECRET;
     else process.env.LIVEKIT_API_SECRET = prevLivekit.secret;
+    if (prevVox === undefined) delete process.env.VOXCPM_URL;
+    else process.env.VOXCPM_URL = prevVox;
     resetBasePaths();
     clearPersonaCache();
   });
@@ -78,6 +81,7 @@ describe('voice server', () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.LIVEKIT_API_KEY;
     delete process.env.LIVEKIT_API_SECRET;
+    process.env.VOXCPM_URL = 'http://127.0.0.1:1';
     resetBasePaths();
     setPersonaName('minase');
     clearPersonaCache();
@@ -135,6 +139,48 @@ describe('voice server', () => {
     expect(status).toBe(503);
     expect(body.error).toBe('livekit-not-configured');
     expect(body.mode).toBe('direct');
+  });
+
+  it('GET /api/life?persona= routes three distinct agent_name values', async () => {
+    boot();
+    initMemory(tmp, 'guodegang', repoRootFromHere());
+    initMemory(tmp, 'ace-taffy', repoRootFromHere());
+    server = createVoiceServer();
+    const port = await listen(server);
+    const names: string[] = [];
+    const agents: string[] = [];
+    for (const persona of ['minase', 'guodegang', 'ace-taffy']) {
+      const { status, body } = await json(port, `/api/life?persona=${persona}`);
+      expect(status).toBe(200);
+      expect(body.persona).toBe(persona);
+      expect(String(body.agent_name)).toBe(`alive-${persona}`);
+      expect(String(body.agentName)).toBe(`alive-${persona}`);
+      names.push(String(body.personaName));
+      agents.push(String(body.agent_name));
+    }
+    expect(new Set(names).size).toBe(3);
+    expect(new Set(agents).size).toBe(3);
+    expect(names[0]).toBe('水瀬');
+    expect(names[1]).toBe('郭德纲');
+    expect(names[2]).toBe('永雏塔菲');
+    const bad = await json(port, '/api/life?persona=not-a-role');
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toBe('unknown-persona');
+  });
+
+  it('GET /api/prompt?persona= returns that persona, not a leftover cache', async () => {
+    boot();
+    initMemory(tmp, 'guodegang', repoRootFromHere());
+    server = createVoiceServer();
+    const port = await listen(server);
+    const a = await fetch(`http://127.0.0.1:${port}/api/prompt?persona=minase`);
+    const b = await fetch(`http://127.0.0.1:${port}/api/prompt?persona=guodegang`);
+    const ta = await a.text();
+    const tb = await b.text();
+    expect(ta).toContain('水瀬');
+    expect(tb).toContain('郭德纲');
+    expect(ta).not.toContain('郭德纲');
+    expect(tb).not.toContain('水瀬');
   });
 
   it('POST /api/turn answers offline without LLM_API_KEY', async () => {

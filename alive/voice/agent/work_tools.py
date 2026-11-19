@@ -148,6 +148,39 @@ def get_provider() -> WorkProvider:
     return GpuProbeProvider()
 
 
+def read_own_mood(*, persona: str | None = None, alive_home: "os.PathLike[str] | str | None" = None) -> str:
+    """读 ~/.alive/personas/<id>/state/emotion-state.json，不编造心情。"""
+    import json
+    from pathlib import Path
+
+    pid = (persona or os.getenv("ALIVE_PERSONA") or "").strip() or "unknown"
+    home = Path(alive_home or os.getenv("ALIVE_HOME") or (Path.home() / ".alive"))
+    path = home / "personas" / pid / "state" / "emotion-state.json"
+    if not path.is_file():
+        return f"{pid} 此刻心情说不清：没有自己的心情文件。"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return f"{pid} 此刻心情说不清：心情文件读不出来。"
+    mood = data.get("mood") if isinstance(data, dict) else None
+    desc = ""
+    if isinstance(mood, dict):
+        desc = str(mood.get("description") or "").strip()
+    elif isinstance(mood, str):
+        desc = mood.strip()
+    if not desc:
+        return f"{pid} 此刻心情说不清：文件里没有 description。"
+    return f"{pid} 此刻心情是：{desc}"
+
+
+@function_tool()
+async def report_mood(ctx: RunContext) -> str:
+    """回报你自己此刻的心情。用户问心情、状态、今天感觉怎么样时必须调用，
+    绝不编一句通用的「还行」。读的是你自己那份 emotion-state.json。"""
+    _log("TOOL_CALL", what="mood", persona=os.getenv("ALIVE_PERSONA", ""))
+    return read_own_mood()
+
+
 async def _background_probe(session, provider: WorkProvider, goal: str) -> None:
     """游离后台长活：与 speech handle / activity 生命周期解耦。"""
     t0 = time.monotonic()

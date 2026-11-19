@@ -42,13 +42,15 @@ export async function createRoomAndToken(opts: {
   roomBase?: string;
   identity?: string;
   name?: string;
-}): Promise<{ token: string; room: string; identity: string; livekit_url: string; dispatched: boolean }> {
+  agentName?: string;
+}): Promise<{ token: string; room: string; identity: string; livekit_url: string; dispatched: boolean; agent_name: string }> {
   const cfg = readLiveKitConfig();
   if (!cfg) throw new Error('LIVEKIT_URL / LIVEKIT_API_KEY / LIVEKIT_API_SECRET 未配置');
 
   const identity = opts.identity || `owner-${Math.random().toString(36).slice(2, 8)}`;
   const room = `${opts.roomBase || 'alive-room'}-${Math.random().toString(16).slice(2, 6)}`;
   const host = livekitHttpHost(cfg.url);
+  const dispatchName = (opts.agentName || agentName()).trim() || agentName();
 
   try {
     const rooms = new RoomServiceClient(host, cfg.apiKey, cfg.apiSecret);
@@ -60,7 +62,7 @@ export async function createRoomAndToken(opts: {
     }
   }
 
-  const dispatched = await dispatchVoiceAgent(cfg, room);
+  const dispatched = await dispatchVoiceAgent(cfg, room, dispatchName);
 
   const access = new AccessToken(cfg.apiKey, cfg.apiSecret, {
     identity,
@@ -70,5 +72,5 @@ export async function createRoomAndToken(opts: {
   access.addGrant({ roomJoin: true, room, canPublish: true, canSubscribe: true });
   const token = await access.toJwt();
 
-  return { token, room, identity, livekit_url: cfg.url, dispatched };
+  return { token, room, identity, livekit_url: cfg.url, dispatched, agent_name: dispatchName };
 }

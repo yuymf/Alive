@@ -473,7 +473,8 @@ function stopTimer() {
 
 async function loadLife() {
   try {
-    const resp = await fetch('/api/life');
+    const persona = new URLSearchParams(location.search).get('persona');
+    const resp = await fetch(persona ? '/api/life?persona=' + encodeURIComponent(persona) : '/api/life');
     life = await resp.json();
     const name = life.personaName || 'Alive';
     $('whoName').textContent = name;
@@ -919,10 +920,11 @@ async function connectLiveKit() {
   const LivekitClient = window.LivekitClient;
   if (!LivekitClient) throw new Error('LiveKit client missing');
   const identity = 'owner-' + Math.random().toString(36).slice(2, 8);
+  const persona = new URLSearchParams(location.search).get('persona');
   const resp = await fetch('/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ room: 'alive-room', identity, name: '主人' }),
+    body: JSON.stringify({ room: persona ? 'alive-' + persona : 'alive-room', identity, name: '主人', persona: persona || undefined }),
   });
   if (!resp.ok) throw new Error('token failed');
   const data = await resp.json();

@@ -31,7 +31,7 @@ from livekit.agents import Agent, AgentServer, AgentSession, JobContext, JobExec
 from livekit.agents.types import FlushSentinel
 from livekit.plugins import openai, silero
 
-from work_tools import inspect_machine  # Step1-B: 真 @function_tool（后台长活与 session 解耦）
+from work_tools import inspect_machine, report_mood  # Step1-B 干活 + Step2 各报自己的心情
 
 try:
     from emotion_runtime import build_runtime as _build_emotion_runtime
@@ -65,6 +65,8 @@ _TOOL_GUIDE = (
     "参数每多写一个字，用户就多等一帧才听到你的接话。"
     "工具立刻返回即时读数（约 0.05s），不会让你等；完整结果由后台十几秒后自动播报。"
     "你说完那一两句之后就让用户继续说，不要加「请稍等」这类干等的话。"
+    "当用户问心情、状态、今天感觉怎么样时，必须调用 report_mood，把工具返回的原话念出来，"
+    "不许换成「还行」「挺好的」这种通用句。"
 )
 
 # ---------------------------------------------------------------------------
@@ -256,15 +258,19 @@ WARM_LLM = os.getenv("ALIVE_WARM_LLM", "1").strip() == "1"
 
 def _fetch_prompt_sync() -> str:
     """启动期同步取人格（此时没有 event loop，不构成阻塞告警）。"""
+    persona = (os.getenv("ALIVE_PERSONA") or "").strip()
+    url = f"{VOICE_URL}/api/prompt"
+    if persona:
+        url = f"{url}?persona={persona}"
     try:
-        r = httpx.get(f"{VOICE_URL}/api/prompt", timeout=5.0, trust_env=False)
+        r = httpx.get(url, timeout=5.0, trust_env=False)
         r.raise_for_status()
         text = r.text.strip()
         if text:
             return text
     except Exception as exc:
         print(f"[alive-agent] prompt prefetch failed: {exc!r}", flush=True)
-    name = os.getenv("ALIVE_PERSONA", "角色")
+    name = persona or "角色"
     return f"你是{name}。这是一通实时语音电话。用「我」短句说话。不要说你是 AI。"
 
 
@@ -498,7 +504,7 @@ class AliveVoiceAgent(Agent):
         control_provider = (emotion.control_for_speech if emotion is not None else None)
         super().__init__(
             instructions=instructions + _TOOL_GUIDE,
-            tools=[inspect_machine],
+            tools=[inspect_machine, report_mood],
             stt=models["stt"],
             llm=models["llm"],
             tts=_build_tts(control_provider),   # 每轮新建，避免 aiohttp session 跨 event loop

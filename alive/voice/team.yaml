@@ -1,0 +1,20 @@
+# Path A: one LiveKit worker process per persona.
+# agent_name is the dispatch key (@server.rtc_session, registration-time).
+# cloned=false → VoxCPM default voice. Do not claim it was cloned.
+# 8083 is occupied by another container's docker-proxy on this host; use verified-free ports.
+members:
+  - id: minase
+    agent_name: alive-minase
+    voice: default
+    cloned: false
+    worker_port: 8082
+  - id: guodegang
+    agent_name: alive-guodegang
+    voice: default
+    cloned: false
+    worker_port: 8084
+  - id: ace-taffy
+    agent_name: alive-ace-taffy
+    voice: ace-taffy
+    cloned: true
+    worker_port: 8094
