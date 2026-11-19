@@ -51,13 +51,13 @@ def wav_bytes(pcm: np.ndarray, sr: int) -> bytes:
     return buf.getvalue()
 
 
-async def synth(pcm_url: str, text: str) -> tuple[np.ndarray, int]:
+async def synth(pcm_url: str, text: str, voice: str = "default") -> tuple[np.ndarray, int]:
     import aiohttp
 
     async with aiohttp.ClientSession() as s:
         async with s.post(
             f"{pcm_url}/v1/audio/speech",
-            json={"input": text, "voice": "default", "response_format": "pcm"},
+            json={"input": text, "voice": voice, "response_format": "pcm"},
             timeout=aiohttp.ClientTimeout(total=900),
         ) as r:
             body = await r.read()
@@ -298,6 +298,7 @@ def main() -> int:
     p.add_argument("--api-key", default=os.environ.get("LIVEKIT_API_KEY", "devkey"))
     p.add_argument("--api-secret", default=os.environ.get("LIVEKIT_API_SECRET", "secret"))
     p.add_argument("--agent-name", default=os.environ.get("AGENT_NAME", "alive-voice"))
+    p.add_argument("--voice", default=os.environ.get("VOXCPM_VOICE", "default"))
     p.add_argument("--stt-base", default=os.environ.get("OPENAI_STT_BASE", "http://10.89.22.4:8000/v1"))
     p.add_argument("--stt-language", default=os.environ.get("STT_LANGUAGE", "zh"))
     p.add_argument("--llm-base", default=os.environ.get("LLM_API_BASE", "http://localhost:1234/v1"))
@@ -325,7 +326,7 @@ def main() -> int:
             pcm24 = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).copy()
         print(f"[1] 复用已有 {user_wav_path} ({pcm24.size/24000:.2f}s)")
     else:
-        pcm24, sr = asyncio.run(synth(cfg.voxcpm_url, cfg.text))
+        pcm24, sr = asyncio.run(synth(cfg.voxcpm_url, cfg.text, cfg.voice))
         report["tts_bytes"] = pcm24.size * 2
         report["tts_seconds"] = round(pcm24.size / sr, 3)
         dur = pcm24.size / sr
